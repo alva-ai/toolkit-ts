@@ -1,0 +1,73 @@
+{
+  "name": "@alva-ai/toolkit",
+  "version": "0.1.0",
+  "description": "Alva REST API SDK and CLI — interact with the Alva platform from Node.js, the browser, or the command line.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./browser": "./dist/browser.global.js"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "alva": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alva-ai/toolkit-ts.git"
+  },
+  "keywords": [
+    "alva",
+    "sdk",
+    "cli",
+    "api",
+    "finance",
+    "trading",
+    "quant"
+  ],
+  "author": "Alva AI",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/alva-ai/toolkit-ts/issues"
+  },
+  "homepage": "https://github.com/alva-ai/toolkit-ts#readme",
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@vitest/coverage-v8": "^3.2.1",
+    "eslint": "^9.28.0",
+    "eslint-config-prettier": "^10.1.5",
+    "jiti": "^2.6.1",
+    "prettier": "^3.5.3",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.1",
+    "vitest": "^3.2.1"
+  }
+}
