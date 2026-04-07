@@ -1,0 +1,288 @@
+// --- Client config ---
+
+export interface AlvaClientConfig {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+// --- User ---
+
+export interface UserProfile {
+  id: number;
+  username: string;
+  subscription_tier: 'free' | 'pro';
+  telegram_username: string | null;
+}
+
+// --- Filesystem ---
+
+export interface FsReadParams {
+  path: string;
+  offset?: number;
+  size?: number;
+}
+
+export interface FsWriteParams {
+  path: string;
+  data: string;
+  mkdir_parents?: boolean;
+}
+
+export interface FsRawWriteParams {
+  path: string;
+  /** Raw file content: string, ArrayBuffer, Uint8Array, Blob, etc. */
+  body: BodyInit;
+  mkdir_parents?: boolean;
+}
+
+export interface FsWriteResponse {
+  bytes_written: number;
+}
+
+export interface FsStat {
+  name: string;
+  size: number;
+  mode: number;
+  mod_time: string;
+  is_dir: boolean;
+}
+
+export interface FsReaddirParams {
+  path: string;
+  recursive?: boolean;
+}
+
+export interface FsEntry {
+  name: string;
+  size: number;
+  is_dir: boolean;
+  mod_time?: string;
+  mode?: number;
+}
+
+export interface FsReaddirResponse {
+  entries: FsEntry[];
+}
+
+export interface FsMkdirParams {
+  path: string;
+}
+
+export interface FsRemoveParams {
+  path: string;
+  recursive?: boolean;
+}
+
+export interface FsRenameParams {
+  old_path: string;
+  new_path: string;
+}
+
+export interface FsCopyParams {
+  src_path: string;
+  dst_path: string;
+}
+
+export interface FsSymlinkParams {
+  target_path: string;
+  link_path: string;
+}
+
+export interface FsReadlinkParams {
+  path: string;
+}
+
+export interface FsChmodParams {
+  path: string;
+  mode: number;
+}
+
+export interface FsGrantParams {
+  path: string;
+  subject: string;
+  permission: string;
+}
+
+export interface FsRevokeParams {
+  path: string;
+  subject: string;
+  permission: string;
+}
+
+// --- Run ---
+
+export interface RunRequest {
+  code?: string;
+  entry_path?: string;
+  working_dir?: string;
+  args?: Record<string, unknown>;
+}
+
+export interface RunResponse {
+  result: string;
+  logs: string;
+  stats: { duration_ms: number };
+  status: 'completed' | 'failed';
+  error?: string;
+}
+
+// --- Deploy (Cronjobs) ---
+
+export interface CronjobCreateRequest {
+  path: string;
+  cron_expression: string;
+  name: string;
+  args?: Record<string, unknown>;
+  push_notify?: boolean;
+}
+
+export interface Cronjob {
+  id: number;
+  name: string;
+  path: string;
+  cron_expression: string;
+  status: string;
+  args: Record<string, unknown>;
+  push_notify: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CronjobListParams {
+  limit?: number;
+  cursor?: string;
+}
+
+export interface CronjobListResponse {
+  cronjobs: Cronjob[];
+  next_cursor?: string;
+}
+
+export interface CronjobUpdateRequest {
+  id: number;
+  name?: string;
+  cron_expression?: string;
+  args?: Record<string, unknown>;
+  push_notify?: boolean;
+}
+
+// --- Release ---
+
+export interface FeedReleaseRequest {
+  name: string;
+  version: string;
+  cronjob_id: number;
+  view_json?: Record<string, unknown>;
+  description?: string;
+}
+
+export interface FeedReleaseResponse {
+  feed_id: number;
+  name: string;
+  feed_major: number;
+}
+
+export interface PlaybookDraftRequest {
+  name: string;
+  display_name: string;
+  description?: string;
+  feeds: Array<{ feed_id: number; feed_major?: number }>;
+  trading_symbols?: string[];
+}
+
+export interface PlaybookDraftResponse {
+  playbook_id: number;
+  playbook_version_id: number;
+}
+
+export interface PlaybookReleaseRequest {
+  name: string;
+  version: string;
+  feeds: Array<{ feed_id: number; feed_major?: number }>;
+  changelog: string;
+}
+
+export interface PlaybookReleaseResponse {
+  playbook_id: number;
+  version: string;
+  published_url: string;
+}
+
+// --- Secrets ---
+
+export interface CreateSecretRequest {
+  name: string;
+  value: string;
+}
+
+export interface SecretMetadata {
+  name: string;
+  keyVersion: number;
+  createdAt: string;
+  updatedAt: string;
+  valueLength: number;
+  keyPrefix: string;
+}
+
+export interface Secret {
+  name: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- SDK Docs ---
+
+export interface ModuleDoc {
+  name: string;
+  doc: string;
+}
+
+export interface PartitionsResponse {
+  partitions: string[];
+}
+
+export interface PartitionSummaryResponse {
+  summary: string;
+}
+
+// --- Playbook Comments ---
+
+export interface CreateCommentRequest {
+  username: string;
+  name: string;
+  content: string;
+  parent_id?: number;
+}
+
+export interface Comment {
+  id: number;
+  playbook_id: number;
+  content: string;
+  pin_at: number | null;
+  created_at: number;
+  updated_at: number;
+  creator?: {
+    id: string;
+    name: string;
+    avatar: string;
+  };
+  agent?: {
+    name: string;
+  };
+}
+
+// --- Remix ---
+
+export interface RemixRequest {
+  child: { username: string; name: string };
+  parents: Array<{ username: string; name: string }>;
+}
+
+// --- Screenshot ---
+
+export interface ScreenshotParams {
+  url: string;
+  selector?: string;
+  xpath?: string;
+}
