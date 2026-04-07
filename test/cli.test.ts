@@ -181,10 +181,10 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('throws on unknown group', async () => {
+  it('throws on unknown group with help hint', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(
-      /Unknown command/
+      /Unknown command.*alva --help/
     );
   });
 
@@ -283,5 +283,74 @@ describe('help text', () => {
     };
     expect(result._help).toBe(true);
     expect(result.text).toContain('Usage: alva');
+  });
+
+  it('returns per-command help for fs --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('alva fs');
+    expect(result.text).toContain('read');
+    expect(result.text).toContain('write');
+    expect(result.text).toContain('--path');
+  });
+
+  it('returns per-command help for deploy --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['deploy', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('create');
+    expect(result.text).toContain('--cron');
+    expect(result.text).toContain('--push-notify');
+  });
+
+  it('returns per-command help for secrets --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['secrets', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('--name');
+    expect(result.text).toContain('--value');
+  });
+
+  it('returns per-command help for run --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['run', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('--code');
+    expect(result.text).toContain('--entry-path');
+  });
+
+  it('returns per-command help for remix --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['remix', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('--child-username');
+    expect(result.text).toContain('--parents');
+  });
+
+  it('returns per-command help for screenshot --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['screenshot', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('--url');
+    expect(result.text).toContain('--out');
   });
 });

@@ -10,20 +10,272 @@ const HELP_TEXT = `Usage: alva <command> [options]
 Commands:
   configure   Save API key and endpoint to config file
   user        User profile operations
-  fs          Filesystem operations
-  run         Execute code
-  deploy      Cronjob management
-  release     Feed and playbook releases
-  secrets     Secret management
-  sdk         SDK documentation
-  comments    Playbook comments
-  remix       Playbook remixing
-  screenshot  Capture web screenshots
+  fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
+  run         Execute code in the Alva runtime
+  deploy      Cronjob management (create, list, get, update, delete, pause, resume)
+  release     Feed and playbook releases (feed, playbook-draft, playbook)
+  secrets     Secret management (create, list, get, update, delete)
+  sdk         SDK documentation (doc, partitions, partition-summary)
+  comments    Playbook comments (create, pin, unpin)
+  remix       Save playbook remix lineage
+  screenshot  Capture a web screenshot as PNG
 
 Global options:
-  --api-key <key>    API key (overrides config file)
-  --base-url <url>   API base URL (overrides config file)
-  --help             Show this help message`;
+  --api-key <key>    API key (overrides env and config file)
+  --base-url <url>   API base URL (overrides env and config file)
+  --help             Show help (use 'alva <command> --help' for command details)
+
+Config resolution: --api-key flag > ALVA_API_KEY env > ~/.config/alva/config.json
+All output is JSON to stdout. Errors go to stderr as JSON with exit code 1.`;
+
+const COMMAND_HELP: Record<string, string> = {
+  configure: `Usage: alva configure --api-key <key> [--base-url <url>]
+
+Save API credentials to ~/.config/alva/config.json (mode 0600).
+After configuring, subsequent commands use the saved key automatically.
+
+Required:
+  --api-key <key>    Your Alva API key (starts with "alva_")
+
+Optional:
+  --base-url <url>   API base URL (default: https://api-llm.prd.alva.ai)
+
+Examples:
+  alva configure --api-key alva_abc123
+  alva configure --api-key alva_abc123 --base-url http://localhost:8080`,
+
+  user: `Usage: alva user <subcommand>
+
+Subcommands:
+  me    Get the authenticated user's profile (id, username, subscription tier)
+
+Examples:
+  alva user me`,
+
+  fs: `Usage: alva fs <subcommand> [options]
+
+Subcommands:
+  read       Read a file (returns JSON for virtual paths, binary for files)
+  write      Write text content to a file (use --data for inline, --file for upload)
+  stat       Get file metadata (name, size, mode, mod_time, is_dir)
+  readdir    List directory contents
+  mkdir      Create a directory
+  remove     Delete a file or directory
+  rename     Move/rename a file
+  copy       Copy a file
+  symlink    Create a symbolic link
+  readlink   Read a symlink target
+  chmod      Change file permissions (mode is octal, e.g. 755)
+  grant      Grant access permission to a user or group
+  revoke     Revoke access permission
+
+Common flags:
+  --path <path>          File or directory path (required for most subcommands)
+  --recursive            Enable recursive operation (readdir, remove)
+  --no-recursive         Disable recursive operation
+  --mkdir-parents        Create parent directories on write
+
+Examples:
+  alva fs readdir --path /
+  alva fs readdir --path ~/data --recursive
+  alva fs read --path ~/data/prices.json
+  alva fs read --path ~/data/prices.json --offset 0 --size 1024
+  alva fs write --path ~/hello.txt --data "Hello, world!"
+  alva fs write --path ~/image.png --file ./local-image.png --mkdir-parents
+  alva fs stat --path ~/hello.txt
+  alva fs mkdir --path ~/new-folder
+  alva fs remove --path ~/old-folder --recursive
+  alva fs rename --old-path ~/a.txt --new-path ~/b.txt
+  alva fs copy --src-path ~/a.txt --dst-path ~/b.txt
+  alva fs chmod --path ~/script.js --mode 755
+  alva fs grant --path ~/public --subject "special:user:*" --permission read
+  alva fs revoke --path ~/public --subject "special:user:*" --permission read`,
+
+  run: `Usage: alva run [options]
+
+Execute JavaScript code in the Alva V8 runtime. Provide either inline code
+or a path to a script file on ALFS.
+
+Options:
+  --code <code>          Inline JavaScript code to execute
+  --entry-path <path>    Path to a script file on ALFS
+  --working-dir <dir>    Working directory for the execution
+  --args <json>          JSON object of arguments passed to the script
+
+At least one of --code or --entry-path is required.
+
+Examples:
+  alva run --code "return 1 + 1"
+  alva run --code "return require('env').userId"
+  alva run --entry-path ~/scripts/my-script.js
+  alva run --entry-path ~/scripts/job.js --args '{"symbol":"BTC"}'`,
+
+  deploy: `Usage: alva deploy <subcommand> [options]
+
+Manage scheduled cronjobs that run your scripts on a cron schedule.
+
+Subcommands:
+  create     Create a new cronjob
+  list       List all cronjobs (supports pagination)
+  get        Get a single cronjob by ID
+  update     Update a cronjob's name, schedule, args, or notifications
+  delete     Delete a cronjob
+  pause      Pause a running cronjob
+  resume     Resume a paused cronjob
+
+Create flags:
+  --name <name>          Cronjob name (required)
+  --path <path>          Path to script on ALFS (required)
+  --cron <expression>    Cron expression, e.g. "*/5 * * * *" (required)
+  --args <json>          JSON object of arguments
+  --push-notify          Enable push notifications on completion
+  --no-push-notify       Disable push notifications
+
+List flags:
+  --limit <n>            Max results per page
+  --cursor <cursor>      Pagination cursor from previous response
+
+Get/Update/Delete/Pause/Resume flags:
+  --id <id>              Cronjob ID (required)
+
+Examples:
+  alva deploy create --name my-job --path ~/scripts/job.js --cron "0 * * * *"
+  alva deploy create --name alert --path ~/alert.js --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
+  alva deploy list
+  alva deploy list --limit 10
+  alva deploy get --id 42
+  alva deploy update --id 42 --cron "0 */2 * * *" --no-push-notify
+  alva deploy pause --id 42
+  alva deploy resume --id 42
+  alva deploy delete --id 42`,
+
+  release: `Usage: alva release <subcommand> [options]
+
+Publish feeds and playbooks to the Alva platform.
+
+Subcommands:
+  feed              Register a feed after deploying its cronjob
+  playbook-draft    Create a playbook draft (preview before publishing)
+  playbook          Publish a playbook (public or private based on subscription)
+
+Feed flags:
+  --name <name>          Feed name (required)
+  --version <version>    Semantic version (required)
+  --cronjob-id <id>      ID of the backing cronjob (required)
+  --view-json <json>     View configuration JSON
+  --description <text>   Feed description
+
+Playbook-draft flags:
+  --name <name>              URL-safe playbook name (required)
+  --display-name <name>      Human-readable display name (required)
+  --feeds <json>             JSON array of {feed_id, feed_major?} (required)
+  --description <text>       Playbook description
+  --trading-symbols <json>   JSON array of trading symbol strings
+
+Playbook flags:
+  --name <name>          Playbook name (required)
+  --version <version>    Semantic version (required)
+  --feeds <json>         JSON array of {feed_id, feed_major?} (required)
+  --changelog <text>     Release changelog (required)
+
+Examples:
+  alva release feed --name btc-ema --version 1.0.0 --cronjob-id 5
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Dashboard" --feeds '[{"feed_id":1}]'
+  alva release playbook --name btc-dashboard --version 1.0.0 --feeds '[{"feed_id":1}]' --changelog "Initial release"`,
+
+  secrets: `Usage: alva secrets <subcommand> [options]
+
+Manage encrypted secrets for use in your Alva scripts. Secrets are stored
+encrypted at rest and accessible via require("secret-manager") in the runtime.
+
+Subcommands:
+  create     Create a new secret
+  list       List all secrets (metadata only, not values)
+  get        Get a secret's plaintext value
+  update     Update a secret's value
+  delete     Delete a secret
+
+Flags:
+  --name <name>      Secret name (required for create, get, update, delete)
+  --value <value>    Secret value (required for create, update)
+
+Examples:
+  alva secrets create --name OPENAI_KEY --value sk-abc123
+  alva secrets list
+  alva secrets get --name OPENAI_KEY
+  alva secrets update --name OPENAI_KEY --value sk-new456
+  alva secrets delete --name OPENAI_KEY`,
+
+  sdk: `Usage: alva sdk <subcommand> [options]
+
+Browse Alva SDK documentation and available data partitions.
+
+Subcommands:
+  doc                 Get documentation for a specific SDK module
+  partitions          List all available data partitions
+  partition-summary   Get a summary of modules in a partition
+
+Flags:
+  --name <module>        Module name for 'doc' (required)
+  --partition <name>     Partition name for 'partition-summary' (required)
+
+Examples:
+  alva sdk partitions
+  alva sdk partition-summary --partition spot_market_price_and_volume
+  alva sdk doc --name "@arrays/crypto/ohlcv:v1.0.0"`,
+
+  comments: `Usage: alva comments <subcommand> [options]
+
+Manage comments on Alva playbooks.
+
+Subcommands:
+  create     Post a comment on a playbook
+  pin        Pin a comment
+  unpin      Unpin a comment
+
+Create flags:
+  --username <user>      Playbook owner username (required)
+  --name <name>          Playbook name (required)
+  --content <text>       Comment content (required)
+  --parent-id <id>       Parent comment ID (for replies)
+
+Pin/Unpin flags:
+  --comment-id <id>      Comment ID (required)
+
+Examples:
+  alva comments create --username alice --name btc-dashboard --content "Great analysis!"
+  alva comments create --username alice --name btc-dashboard --content "Reply" --parent-id 5
+  alva comments pin --comment-id 12
+  alva comments unpin --comment-id 12`,
+
+  remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
+
+Record remix lineage when creating a playbook based on existing playbooks.
+
+Required:
+  --child-username <username>   Your username (the remixer)
+  --child-name <name>           Your new playbook name
+  --parents <json>              JSON array of source playbooks: [{"username":"...", "name":"..."}]
+
+Examples:
+  alva remix --child-username alice --child-name my-btc --parents '[{"username":"bob","name":"btc-signals"}]'`,
+
+  screenshot: `Usage: alva screenshot --url <url> --out <file> [--selector <css>] [--xpath <xpath>]
+
+Capture a full-page screenshot of an Alva page and save it as PNG.
+
+Required:
+  --url <url>          URL or path to capture (e.g. /playbook/alice/dashboard)
+  --out <file>         Local file path to write the PNG output
+
+Optional:
+  --selector <css>     CSS selector to capture a specific element
+  --xpath <xpath>      XPath selector to capture a specific element
+
+Examples:
+  alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
+  alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"`,
+};
 
 interface WriteConfigDeps {
   env: Record<string, string | undefined>;
@@ -76,7 +328,12 @@ export async function handleConfigure(
   };
 }
 
-const BOOLEAN_FLAGS = new Set(['recursive', 'mkdir-parents', 'push-notify']);
+const BOOLEAN_FLAGS = new Set([
+  'recursive',
+  'mkdir-parents',
+  'push-notify',
+  'help',
+]);
 
 function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
@@ -157,12 +414,23 @@ export async function dispatch(
     return { _help: true, text: HELP_TEXT };
   }
 
+  // Per-command help: alva <command> --help
+  if (COMMAND_HELP[group] && (args[1] === '--help' || args[1] === '-h')) {
+    return { _help: true, text: COMMAND_HELP[group] };
+  }
+
   const subcommand = args[1];
   const flags = parseFlags(
     args.slice(
       group === 'run' || group === 'remix' || group === 'screenshot' ? 1 : 2
     )
   );
+
+  // Also check for --help in flags (e.g. alva fs read --help)
+  if (flags['help'] !== undefined) {
+    const helpText = COMMAND_HELP[group];
+    if (helpText) return { _help: true, text: helpText };
+  }
 
   switch (group) {
     case 'user':
@@ -456,7 +724,9 @@ export async function dispatch(
     }
 
     default:
-      throw new Error(`Unknown command: ${group}`);
+      throw new Error(
+        `Unknown command: '${group}'. Run 'alva --help' to see available commands.`
+      );
   }
 }
 
@@ -466,6 +736,10 @@ async function main() {
 
     // Handle configure before loading config (doesn't need existing auth)
     if (rawArgs[0] === 'configure') {
+      if (rawArgs[1] === '--help' || rawArgs[1] === '-h') {
+        process.stdout.write(COMMAND_HELP['configure'] + '\n');
+        return;
+      }
       const result = await handleConfigure(rawArgs);
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       return;
