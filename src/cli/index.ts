@@ -48,6 +48,12 @@ export async function handleConfigure(
       '--api-key is required. Usage: alva configure --api-key <key> [--base-url <url>]'
     );
   }
+  if (!apiKey.startsWith('alva_')) {
+    process.stderr?.write?.(
+      'Warning: API key does not start with "alva_". This may not be a valid Alva API key.\n'
+    );
+  }
+
   const baseUrl = flags['base-url'];
   const configInput: { apiKey: string; baseUrl?: string } = { apiKey };
   if (baseUrl) configInput.baseUrl = baseUrl;
@@ -76,7 +82,9 @@ function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg.startsWith('--')) {
+    if (arg.startsWith('--no-') && BOOLEAN_FLAGS.has(arg.slice(5))) {
+      flags[arg.slice(5)] = 'false';
+    } else if (arg.startsWith('--')) {
       const eqIdx = arg.indexOf('=');
       if (eqIdx !== -1) {
         flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
@@ -89,6 +97,39 @@ function parseFlags(argv: string[]): Record<string, string> {
     }
   }
   return flags;
+}
+
+function boolFlag(val: string | undefined): boolean | undefined {
+  if (val === 'true') return true;
+  if (val === 'false') return false;
+  return undefined;
+}
+
+function requireFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): string {
+  const val = flags[name];
+  if (val === undefined) {
+    throw new Error(`--${name} is required for '${command}'`);
+  }
+  return val;
+}
+
+function requireNumericFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): number {
+  const val = requireFlag(flags, name, command);
+  const n = Number(val);
+  if (Number.isNaN(n)) {
+    throw new Error(
+      `--${name} must be a number for '${command}', got '${val}'`
+    );
+  }
+  return n;
 }
 
 function num(val: string | undefined): number | undefined {
@@ -134,73 +175,77 @@ export async function dispatch(
       switch (subcommand) {
         case 'read':
           return client.fs.read({
-            path: flags['path'],
+            path: requireFlag(flags, 'path', 'fs read'),
             offset: num(flags['offset']),
             size: num(flags['size']),
           });
         case 'write':
           if (flags['file']) {
-            // Raw write mode: read file from disk and upload as binary
             const fileData = fs.readFileSync(flags['file']);
             return client.fs.rawWrite({
-              path: flags['path'],
+              path: requireFlag(flags, 'path', 'fs write'),
               body: fileData as unknown as BodyInit,
-              mkdir_parents:
-                flags['mkdir-parents'] === 'true' ? true : undefined,
+              mkdir_parents: boolFlag(flags['mkdir-parents']),
             });
           }
           return client.fs.write({
-            path: flags['path'],
-            data: flags['data'],
-            mkdir_parents: flags['mkdir-parents'] === 'true' ? true : undefined,
+            path: requireFlag(flags, 'path', 'fs write'),
+            data: requireFlag(flags, 'data', 'fs write'),
+            mkdir_parents: boolFlag(flags['mkdir-parents']),
           });
         case 'stat':
-          return client.fs.stat({ path: flags['path'] });
+          return client.fs.stat({
+            path: requireFlag(flags, 'path', 'fs stat'),
+          });
         case 'readdir':
           return client.fs.readdir({
-            path: flags['path'],
-            recursive: flags['recursive'] === 'true' ? true : undefined,
+            path: requireFlag(flags, 'path', 'fs readdir'),
+            recursive: boolFlag(flags['recursive']),
           });
         case 'mkdir':
-          return client.fs.mkdir({ path: flags['path'] });
+          return client.fs.mkdir({
+            path: requireFlag(flags, 'path', 'fs mkdir'),
+          });
         case 'remove':
           return client.fs.remove({
-            path: flags['path'],
-            recursive: flags['recursive'] === 'true' ? true : undefined,
+            path: requireFlag(flags, 'path', 'fs remove'),
+            recursive: boolFlag(flags['recursive']),
           });
         case 'rename':
           return client.fs.rename({
-            old_path: flags['old-path'],
-            new_path: flags['new-path'],
+            old_path: requireFlag(flags, 'old-path', 'fs rename'),
+            new_path: requireFlag(flags, 'new-path', 'fs rename'),
           });
         case 'copy':
           return client.fs.copy({
-            src_path: flags['src-path'],
-            dst_path: flags['dst-path'],
+            src_path: requireFlag(flags, 'src-path', 'fs copy'),
+            dst_path: requireFlag(flags, 'dst-path', 'fs copy'),
           });
         case 'symlink':
           return client.fs.symlink({
-            target_path: flags['target-path'],
-            link_path: flags['link-path'],
+            target_path: requireFlag(flags, 'target-path', 'fs symlink'),
+            link_path: requireFlag(flags, 'link-path', 'fs symlink'),
           });
         case 'readlink':
-          return client.fs.readlink({ path: flags['path'] });
+          return client.fs.readlink({
+            path: requireFlag(flags, 'path', 'fs readlink'),
+          });
         case 'chmod':
           return client.fs.chmod({
-            path: flags['path'],
-            mode: parseInt(flags['mode'], 8),
+            path: requireFlag(flags, 'path', 'fs chmod'),
+            mode: parseInt(requireFlag(flags, 'mode', 'fs chmod'), 8),
           });
         case 'grant':
           return client.fs.grant({
-            path: flags['path'],
-            subject: flags['subject'],
-            permission: flags['permission'],
+            path: requireFlag(flags, 'path', 'fs grant'),
+            subject: requireFlag(flags, 'subject', 'fs grant'),
+            permission: requireFlag(flags, 'permission', 'fs grant'),
           });
         case 'revoke':
           return client.fs.revoke({
-            path: flags['path'],
-            subject: flags['subject'],
-            permission: flags['permission'],
+            path: requireFlag(flags, 'path', 'fs revoke'),
+            subject: requireFlag(flags, 'subject', 'fs revoke'),
+            permission: requireFlag(flags, 'permission', 'fs revoke'),
           });
         default:
           throw new Error(`Unknown subcommand: fs ${subcommand}`);
@@ -220,13 +265,13 @@ export async function dispatch(
       switch (subcommand) {
         case 'create':
           return client.deploy.create({
-            name: flags['name'],
-            path: flags['path'],
-            cron_expression: flags['cron'],
+            name: requireFlag(flags, 'name', 'deploy create'),
+            path: requireFlag(flags, 'path', 'deploy create'),
+            cron_expression: requireFlag(flags, 'cron', 'deploy create'),
             args: jsonParse(flags['args']) as
               | Record<string, unknown>
               | undefined,
-            push_notify: flags['push-notify'] === 'true' ? true : undefined,
+            push_notify: boolFlag(flags['push-notify']),
           });
         case 'list':
           return client.deploy.list({
@@ -234,23 +279,31 @@ export async function dispatch(
             cursor: flags['cursor'],
           });
         case 'get':
-          return client.deploy.get({ id: Number(flags['id']) });
+          return client.deploy.get({
+            id: requireNumericFlag(flags, 'id', 'deploy get'),
+          });
         case 'update':
           return client.deploy.update({
-            id: Number(flags['id']),
+            id: requireNumericFlag(flags, 'id', 'deploy update'),
             name: flags['name'],
             cron_expression: flags['cron'],
             args: jsonParse(flags['args']) as
               | Record<string, unknown>
               | undefined,
-            push_notify: flags['push-notify'] === 'true' ? true : undefined,
+            push_notify: boolFlag(flags['push-notify']),
           });
         case 'delete':
-          return client.deploy.delete({ id: Number(flags['id']) });
+          return client.deploy.delete({
+            id: requireNumericFlag(flags, 'id', 'deploy delete'),
+          });
         case 'pause':
-          return client.deploy.pause({ id: Number(flags['id']) });
+          return client.deploy.pause({
+            id: requireNumericFlag(flags, 'id', 'deploy pause'),
+          });
         case 'resume':
-          return client.deploy.resume({ id: Number(flags['id']) });
+          return client.deploy.resume({
+            id: requireNumericFlag(flags, 'id', 'deploy resume'),
+          });
         default:
           throw new Error(`Unknown subcommand: deploy ${subcommand}`);
       }
@@ -261,9 +314,9 @@ export async function dispatch(
       switch (subcommand) {
         case 'feed':
           return client.release.feed({
-            name: flags['name'],
-            version: flags['version'],
-            cronjob_id: Number(flags['cronjob-id']),
+            name: requireFlag(flags, 'name', 'release feed'),
+            version: requireFlag(flags, 'version', 'release feed'),
+            cronjob_id: requireNumericFlag(flags, 'cronjob-id', 'release feed'),
             view_json: jsonParse(flags['view-json']) as
               | Record<string, unknown>
               | undefined,
@@ -271,10 +324,16 @@ export async function dispatch(
           });
         case 'playbook-draft':
           return client.release.playbookDraft({
-            name: flags['name'],
-            display_name: flags['display-name'],
+            name: requireFlag(flags, 'name', 'release playbook-draft'),
+            display_name: requireFlag(
+              flags,
+              'display-name',
+              'release playbook-draft'
+            ),
             description: flags['description'],
-            feeds: jsonParse(flags['feeds']) as Array<{
+            feeds: jsonParse(
+              requireFlag(flags, 'feeds', 'release playbook-draft')
+            ) as Array<{
               feed_id: number;
               feed_major?: number;
             }>,
@@ -284,13 +343,15 @@ export async function dispatch(
           });
         case 'playbook':
           return client.release.playbook({
-            name: flags['name'],
-            version: flags['version'],
-            feeds: jsonParse(flags['feeds']) as Array<{
+            name: requireFlag(flags, 'name', 'release playbook'),
+            version: requireFlag(flags, 'version', 'release playbook'),
+            feeds: jsonParse(
+              requireFlag(flags, 'feeds', 'release playbook')
+            ) as Array<{
               feed_id: number;
               feed_major?: number;
             }>,
-            changelog: flags['changelog'],
+            changelog: requireFlag(flags, 'changelog', 'release playbook'),
           });
         default:
           throw new Error(`Unknown subcommand: release ${subcommand}`);
@@ -302,20 +363,24 @@ export async function dispatch(
       switch (subcommand) {
         case 'create':
           return client.secrets.create({
-            name: flags['name'],
-            value: flags['value'],
+            name: requireFlag(flags, 'name', 'secrets create'),
+            value: requireFlag(flags, 'value', 'secrets create'),
           });
         case 'list':
           return client.secrets.list();
         case 'get':
-          return client.secrets.get({ name: flags['name'] });
+          return client.secrets.get({
+            name: requireFlag(flags, 'name', 'secrets get'),
+          });
         case 'update':
           return client.secrets.update({
-            name: flags['name'],
-            value: flags['value'],
+            name: requireFlag(flags, 'name', 'secrets update'),
+            value: requireFlag(flags, 'value', 'secrets update'),
           });
         case 'delete':
-          return client.secrets.delete({ name: flags['name'] });
+          return client.secrets.delete({
+            name: requireFlag(flags, 'name', 'secrets delete'),
+          });
         default:
           throw new Error(`Unknown subcommand: secrets ${subcommand}`);
       }
@@ -325,12 +390,14 @@ export async function dispatch(
       if (!subcommand) throw new Error('Missing subcommand for sdk');
       switch (subcommand) {
         case 'doc':
-          return client.sdk.doc({ name: flags['name'] });
+          return client.sdk.doc({
+            name: requireFlag(flags, 'name', 'sdk doc'),
+          });
         case 'partitions':
           return client.sdk.partitions();
         case 'partition-summary':
           return client.sdk.partitionSummary({
-            partition: flags['partition'],
+            partition: requireFlag(flags, 'partition', 'sdk partition-summary'),
           });
         default:
           throw new Error(`Unknown subcommand: sdk ${subcommand}`);
@@ -342,18 +409,22 @@ export async function dispatch(
       switch (subcommand) {
         case 'create':
           return client.comments.create({
-            username: flags['username'],
-            name: flags['name'],
-            content: flags['content'],
+            username: requireFlag(flags, 'username', 'comments create'),
+            name: requireFlag(flags, 'name', 'comments create'),
+            content: requireFlag(flags, 'content', 'comments create'),
             parent_id: num(flags['parent-id']),
           });
         case 'pin':
           return client.comments.pin({
-            comment_id: Number(flags['comment-id']),
+            comment_id: requireNumericFlag(flags, 'comment-id', 'comments pin'),
           });
         case 'unpin':
           return client.comments.unpin({
-            comment_id: Number(flags['comment-id']),
+            comment_id: requireNumericFlag(
+              flags,
+              'comment-id',
+              'comments unpin'
+            ),
           });
         default:
           throw new Error(`Unknown subcommand: comments ${subcommand}`);
@@ -363,29 +434,25 @@ export async function dispatch(
     case 'remix':
       return client.remix.save({
         child: {
-          username: flags['child-username'],
-          name: flags['child-name'],
+          username: requireFlag(flags, 'child-username', 'remix'),
+          name: requireFlag(flags, 'child-name', 'remix'),
         },
-        parents: jsonParse(flags['parents']) as Array<{
+        parents: jsonParse(requireFlag(flags, 'parents', 'remix')) as Array<{
           username: string;
           name: string;
         }>,
       });
 
     case 'screenshot': {
-      if (!flags['out']) {
-        throw new Error(
-          'screenshot requires --out <file> to write the PNG output'
-        );
-      }
+      const outFile = requireFlag(flags, 'out', 'screenshot');
       const result = await client.screenshot.capture({
-        url: flags['url'],
+        url: requireFlag(flags, 'url', 'screenshot'),
         selector: flags['selector'],
         xpath: flags['xpath'],
       });
       const buf = Buffer.from(result as ArrayBuffer);
-      fs.writeFileSync(flags['out'], buf);
-      return { written: flags['out'], bytes: buf.length };
+      fs.writeFileSync(outFile, buf);
+      return { written: outFile, bytes: buf.length };
     }
 
     default:

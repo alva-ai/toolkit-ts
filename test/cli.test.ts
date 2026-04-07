@@ -7,11 +7,44 @@ function makeClient(): AlvaClient {
   // Mock all resource methods
   client.user.me = vi.fn().mockResolvedValue({ id: 1, username: 'alice' });
   client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
+  client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
+  client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
+  client.fs.write = vi.fn().mockResolvedValue({ bytes_written: 2 });
+  client.fs.mkdir = vi.fn().mockResolvedValue(undefined);
+  client.fs.remove = vi.fn().mockResolvedValue(undefined);
+  client.fs.rename = vi.fn().mockResolvedValue(undefined);
+  client.fs.copy = vi.fn().mockResolvedValue(undefined);
+  client.fs.symlink = vi.fn().mockResolvedValue(undefined);
+  client.fs.readlink = vi.fn().mockResolvedValue({ target: '/t' });
+  client.fs.chmod = vi.fn().mockResolvedValue(undefined);
+  client.fs.grant = vi.fn().mockResolvedValue(undefined);
+  client.fs.revoke = vi.fn().mockResolvedValue(undefined);
   client.deploy.list = vi.fn().mockResolvedValue({ cronjobs: [] });
+  client.deploy.create = vi.fn().mockResolvedValue({ id: 1 });
+  client.deploy.get = vi.fn().mockResolvedValue({ id: 1 });
+  client.deploy.update = vi.fn().mockResolvedValue({ id: 1 });
+  client.deploy.delete = vi.fn().mockResolvedValue(undefined);
+  client.deploy.pause = vi.fn().mockResolvedValue(undefined);
+  client.deploy.resume = vi.fn().mockResolvedValue(undefined);
   client.secrets.create = vi.fn().mockResolvedValue(undefined);
+  client.secrets.list = vi.fn().mockResolvedValue({ secrets: [] });
+  client.secrets.get = vi.fn().mockResolvedValue({ name: 'K', value: 'V' });
+  client.secrets.update = vi.fn().mockResolvedValue(undefined);
+  client.secrets.delete = vi.fn().mockResolvedValue(undefined);
   client.run.execute = vi
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
+  client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
+  client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
+  client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
+  client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
+  client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
+  client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
+  client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
+  client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
+  client.remix.save = vi.fn().mockResolvedValue(undefined);
+  client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
   return client;
 }
 
@@ -63,6 +96,91 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches release feed', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'release',
+      'feed',
+      '--name',
+      'btc',
+      '--version',
+      '1.0',
+      '--cronjob-id',
+      '5',
+    ]);
+    expect(client.release.feed).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'btc', version: '1.0', cronjob_id: 5 })
+    );
+  });
+
+  it('dispatches sdk partitions', async () => {
+    const client = makeClient();
+    await dispatch(client, ['sdk', 'partitions']);
+    expect(client.sdk.partitions).toHaveBeenCalled();
+  });
+
+  it('dispatches sdk doc with --name', async () => {
+    const client = makeClient();
+    await dispatch(client, ['sdk', 'doc', '--name', 'ohlcv']);
+    expect(client.sdk.doc).toHaveBeenCalledWith({ name: 'ohlcv' });
+  });
+
+  it('dispatches comments create', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'comments',
+      'create',
+      '--username',
+      'alice',
+      '--name',
+      'pb',
+      '--content',
+      'Nice!',
+    ]);
+    expect(client.comments.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'alice',
+        name: 'pb',
+        content: 'Nice!',
+      })
+    );
+  });
+
+  it('dispatches remix', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'remix',
+      '--child-username',
+      'alice',
+      '--child-name',
+      'my-pb',
+      '--parents',
+      '[{"username":"bob","name":"src"}]',
+    ]);
+    expect(client.remix.save).toHaveBeenCalledWith({
+      child: { username: 'alice', name: 'my-pb' },
+      parents: [{ username: 'bob', name: 'src' }],
+    });
+  });
+
+  it('dispatches deploy create with --no-push-notify', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'create',
+      '--name',
+      'j',
+      '--path',
+      '~/j.js',
+      '--cron',
+      '* * * * *',
+      '--no-push-notify',
+    ]);
+    expect(client.deploy.create).toHaveBeenCalledWith(
+      expect.objectContaining({ push_notify: false })
+    );
+  });
+
   it('throws on unknown group', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(
@@ -74,6 +192,20 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await expect(dispatch(client, ['fs'])).rejects.toThrow(
       /Missing subcommand/
+    );
+  });
+
+  it('throws on missing required flag', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['fs', 'read'])).rejects.toThrow(
+      /--path is required/
+    );
+  });
+
+  it('throws on missing required flag for secrets', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['secrets', 'create'])).rejects.toThrow(
+      /--name is required/
     );
   });
 });

@@ -567,8 +567,7 @@ Not applicable — no database changes.
 - **npm org `@alva-ai`:** Must verify the npm org exists and user has publish access before first `npm publish`.
 - **CORS verification:** Browser SDK requires the Alva API to serve CORS headers. Must verify server-side CORS is configured before documenting browser usage as production-ready.
 - **npx support:** Test `npx @alva-ai/toolkit configure --api-key <key>` works after publishing.
-- **Changelog / versioning:** Consider adding `@changesets/cli` for semantic versioning and automated changelogs before publishing.
-- **`alva configure` validation:** Currently accepts any string as API key. Could add `alva_` prefix validation as a warning (not blocking).
-- **CLI required-flag validation:** CLI commands don't validate required flags — omitting `--path` sends literal `"undefined"` to the API instead of a clear client-side error.
-- **Boolean flag toggle:** `--push-notify` cannot be set to `false` once enabled. Consider `--no-push-notify` or `--push-notify=false` syntax.
-- **CLI test coverage:** `release`, `sdk`, `comments`, `remix`, `screenshot` CLI dispatch commands lack CLI-level test coverage (underlying resources are tested).
+- ~~**`alva configure` validation:**~~ Done — warns when API key doesn't start with `alva_`.
+- ~~**CLI required-flag validation:**~~ Done — all required flags validated with clear error messages.
+- ~~**Boolean flag toggle:**~~ Done — `--no-push-notify` and `--no-recursive` supported via `--no-<flag>` syntax.
+- ~~**CLI test coverage:**~~ Done — added tests for `release`, `sdk`, `comments`, `remix`, `--no-push-notify`, and required-flag validation (103 total tests).
