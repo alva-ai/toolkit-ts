@@ -5,7 +5,9 @@ import { AlvaClient } from '../src/client.js';
 function makeClient(): AlvaClient {
   const client = new AlvaClient({ apiKey: 'test-key' });
   // Mock all resource methods
-  client.user.me = vi.fn().mockResolvedValue({ id: 1, username: 'alice' });
+  client.user.me = vi
+    .fn()
+    .mockResolvedValue({ id: 1, username: 'alice', subscription_tier: 'free' });
   client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
   client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
   client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
@@ -53,7 +55,11 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     const result = await dispatch(client, ['user', 'me']);
     expect(client.user.me).toHaveBeenCalled();
-    expect(result).toEqual({ id: 1, username: 'alice' });
+    expect(result).toEqual({
+      id: 1,
+      username: 'alice',
+      subscription_tier: 'free',
+    });
   });
 
   it('dispatches fs read with --path', async () => {
@@ -210,6 +216,32 @@ describe('CLI dispatch', () => {
   });
 });
 
+describe('whoami', () => {
+  it('dispatches whoami and returns user info with meta', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['whoami'], {
+      profile: 'staging',
+      baseUrl: 'http://staging',
+    })) as Record<string, unknown>;
+    expect(client.user.me).toHaveBeenCalled();
+    expect(result.username).toBe('alice');
+    expect(result.subscription_tier).toBe('free');
+    expect(result._meta).toEqual({
+      profile: 'staging',
+      endpoint: 'http://staging',
+    });
+  });
+
+  it('defaults meta profile to "default"', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['whoami'])) as Record<
+      string,
+      unknown
+    >;
+    expect((result._meta as Record<string, unknown>).profile).toBe('default');
+  });
+});
+
 describe('handleConfigure', () => {
   it('calls writeConfig with --api-key', async () => {
     const deps = {
@@ -224,7 +256,11 @@ describe('handleConfigure', () => {
       deps
     );
     expect(result).toEqual(
-      expect.objectContaining({ apiKey: 'my-key', status: 'configured' })
+      expect.objectContaining({
+        apiKey: 'my-key',
+        status: 'configured',
+        profile: 'default',
+      })
     );
     expect(deps.writeFile).toHaveBeenCalled();
   });
@@ -245,6 +281,37 @@ describe('handleConfigure', () => {
       expect.objectContaining({
         apiKey: 'k',
         baseUrl: 'http://x',
+        status: 'configured',
+        profile: 'default',
+      })
+    );
+  });
+
+  it('calls writeConfig with --profile', async () => {
+    const deps = {
+      env: {} as Record<string, string | undefined>,
+      homedir: () => '/home/test',
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+    };
+    const result = await handleConfigure(
+      [
+        'configure',
+        '--profile',
+        'staging',
+        '--api-key',
+        'stg-key',
+        '--base-url',
+        'http://stg',
+      ],
+      deps
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        apiKey: 'stg-key',
+        baseUrl: 'http://stg',
+        profile: 'staging',
         status: 'configured',
       })
     );
@@ -285,6 +352,16 @@ describe('help text', () => {
     expect(result.text).toContain('Usage: alva');
   });
 
+  it('top-level help mentions --profile and whoami', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--profile');
+    expect(result.text).toContain('whoami');
+  });
+
   it('returns per-command help for fs --help', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['fs', '--help'])) as {
@@ -296,6 +373,8 @@ describe('help text', () => {
     expect(result.text).toContain('read');
     expect(result.text).toContain('write');
     expect(result.text).toContain('--path');
+    expect(result.text).toContain('@last');
+    expect(result.text).toContain('special:user:*');
   });
 
   it('returns per-command help for deploy --help', async () => {
@@ -308,6 +387,7 @@ describe('help text', () => {
     expect(result.text).toContain('create');
     expect(result.text).toContain('--cron');
     expect(result.text).toContain('--push-notify');
+    expect(result.text).toContain('Recommended cron schedules');
   });
 
   it('returns per-command help for secrets --help', async () => {
@@ -319,6 +399,7 @@ describe('help text', () => {
     expect(result._help).toBe(true);
     expect(result.text).toContain('--name');
     expect(result.text).toContain('--value');
+    expect(result.text).toContain('secret-manager');
   });
 
   it('returns per-command help for run --help', async () => {
@@ -330,6 +411,7 @@ describe('help text', () => {
     expect(result._help).toBe(true);
     expect(result.text).toContain('--code');
     expect(result.text).toContain('--entry-path');
+    expect(result.text).toContain('require(');
   });
 
   it('returns per-command help for remix --help', async () => {
@@ -352,5 +434,47 @@ describe('help text', () => {
     expect(result._help).toBe(true);
     expect(result.text).toContain('--url');
     expect(result.text).toContain('--out');
+  });
+
+  it('returns per-command help for configure --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['configure', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('--profile');
+    expect(result.text).toContain('profiles');
+  });
+
+  it('returns per-command help for whoami --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['whoami', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('whoami');
+  });
+
+  it('returns per-command help for sdk --help with partition names', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['sdk', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('spot_market_price_and_volume');
+    expect(result.text).toContain('equity_fundamentals');
+  });
+
+  it('returns per-command help for release --help with workflow', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['release', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('playbook-draft');
+    expect(result.text).toContain('--trading-symbols');
+    expect(result.text).toContain('Display name');
   });
 });

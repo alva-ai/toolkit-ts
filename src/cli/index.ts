@@ -8,7 +8,8 @@ import * as fsPromises from 'fs/promises';
 const HELP_TEXT = `Usage: alva <command> [options]
 
 Commands:
-  configure   Save API key and endpoint to config file
+  configure   Save API key and endpoint to a named profile
+  whoami      Verify credentials and show current user info
   user        User profile operations
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
@@ -21,33 +22,67 @@ Commands:
   screenshot  Capture a web screenshot as PNG
 
 Global options:
-  --api-key <key>    API key (overrides env and config file)
-  --base-url <url>   API base URL (overrides env and config file)
-  --help             Show help (use 'alva <command> --help' for command details)
+  --api-key <key>      API key (overrides env and config file)
+  --base-url <url>     API base URL (overrides env and config file)
+  --profile <name>     Named profile to use (default: "default")
+  --help               Show help (use 'alva <command> --help' for command details)
 
-Config resolution: --api-key flag > ALVA_API_KEY env > ~/.config/alva/config.json
-All output is JSON to stdout. Errors go to stderr as JSON with exit code 1.`;
+Config resolution: --api-key flag > ALVA_API_KEY env > profile in ~/.config/alva/config.json
+Profile resolution: --profile flag > ALVA_PROFILE env > "default"
+
+Quick start:
+  npm install -g @alva-ai/toolkit
+  alva configure --api-key alva_your_key_here
+  alva whoami`;
 
 const COMMAND_HELP: Record<string, string> = {
-  configure: `Usage: alva configure --api-key <key> [--base-url <url>]
+  configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
 Save API credentials to ~/.config/alva/config.json (mode 0600).
 After configuring, subsequent commands use the saved key automatically.
+Multiple profiles allow switching between environments (production, staging, etc.).
 
 Required:
-  --api-key <key>    Your Alva API key (starts with "alva_")
+  --api-key <key>      Your Alva API key (starts with "alva_")
 
 Optional:
-  --base-url <url>   API base URL (default: https://api-llm.prd.alva.ai)
+  --base-url <url>     API base URL (default: https://api-llm.prd.alva.ai)
+  --profile <name>     Profile name to save under (default: "default")
+
+Config file format:
+  {
+    "profiles": {
+      "default": { "apiKey": "alva_...", "baseUrl": "https://api-llm.prd.alva.ai" },
+      "staging": { "apiKey": "alva_...", "baseUrl": "https://api-llm.stg.alva.ai" }
+    }
+  }
 
 Examples:
   alva configure --api-key alva_abc123
-  alva configure --api-key alva_abc123 --base-url http://localhost:8080`,
+  alva configure --api-key alva_abc123 --base-url http://localhost:8080
+  alva configure --profile staging --api-key alva_stg_key --base-url https://api-llm.stg.alva.ai
+  alva --profile staging whoami`,
+
+  whoami: `Usage: alva whoami [--profile <name>]
+
+Verify that your credentials are valid by calling the Alva API. Shows your
+username, subscription tier, and which profile/endpoint is being used.
+Use this after 'alva configure' to confirm everything works.
+
+Examples:
+  alva whoami
+  alva --profile staging whoami`,
 
   user: `Usage: alva user <subcommand>
 
 Subcommands:
-  me    Get the authenticated user's profile (id, username, subscription tier)
+  me    Get the authenticated user's profile
+
+Response fields:
+  id                  User ID
+  username            Username (used in ALFS paths and playbook URLs)
+  subscription_tier   "free" or "pro" — determines release flow and feature gates
+  telegram_username   Telegram username if connected, null otherwise
 
 Examples:
   alva user me`,
@@ -55,11 +90,11 @@ Examples:
   fs: `Usage: alva fs <subcommand> [options]
 
 Subcommands:
-  read       Read a file (returns JSON for virtual paths, binary for files)
-  write      Write text content to a file (use --data for inline, --file for upload)
+  read       Read a file or time series data
+  write      Write content to a file (use --data for inline, --file for upload)
   stat       Get file metadata (name, size, mode, mod_time, is_dir)
   readdir    List directory contents
-  mkdir      Create a directory
+  mkdir      Create a directory (recursive by default)
   remove     Delete a file or directory
   rename     Move/rename a file
   copy       Copy a file
@@ -75,72 +110,123 @@ Common flags:
   --no-recursive         Disable recursive operation
   --mkdir-parents        Create parent directories on write
 
+Path conventions:
+  ~/...                  Home-relative path (expands to /alva/home/<username>/...)
+  /alva/home/alice/...   Absolute path (required for public/unauthenticated reads)
+
+Time series reads:
+  Paths under feed data directories support virtual suffixes:
+    @last/{n}            Last N data points (chronological order)
+    @range/{start}..{end}  Between timestamps (RFC 3339 or Unix ms)
+    @range/{duration}    Recent data within duration (e.g. 7d, 1h)
+    @count               Data point count
+    @now                 Latest single data point
+
+Grant/revoke subjects:
+  special:user:*         Public (anyone, including unauthenticated)
+  special:user:+         Any authenticated user
+  user:<id>              Specific user by ID
+
 Examples:
-  alva fs readdir --path /
+  alva fs readdir --path ~/
   alva fs readdir --path ~/data --recursive
   alva fs read --path ~/data/prices.json
-  alva fs read --path ~/data/prices.json --offset 0 --size 1024
+  alva fs read --path ~/feeds/btc-ema/v1/data/metrics/prices/@last/100
+  alva fs read --path /alva/home/alice/feeds/btc-ema/v1/data/metrics/prices/@last/10
   alva fs write --path ~/hello.txt --data "Hello, world!"
-  alva fs write --path ~/image.png --file ./local-image.png --mkdir-parents
+  alva fs write --path ~/feeds/my-feed/v1/src/index.js --file ./local-script.js --mkdir-parents
   alva fs stat --path ~/hello.txt
-  alva fs mkdir --path ~/new-folder
+  alva fs mkdir --path ~/feeds/my-feed/v1/src
   alva fs remove --path ~/old-folder --recursive
   alva fs rename --old-path ~/a.txt --new-path ~/b.txt
   alva fs copy --src-path ~/a.txt --dst-path ~/b.txt
   alva fs chmod --path ~/script.js --mode 755
-  alva fs grant --path ~/public --subject "special:user:*" --permission read
-  alva fs revoke --path ~/public --subject "special:user:*" --permission read`,
+  alva fs grant --path ~/feeds/btc-ema --subject "special:user:*" --permission read
+  alva fs revoke --path ~/feeds/btc-ema --subject "special:user:*" --permission read`,
 
   run: `Usage: alva run [options]
 
 Execute JavaScript code in the Alva V8 runtime. Provide either inline code
-or a path to a script file on ALFS.
+or a path to a script file on ALFS. Scripts have access to 250+ financial
+data SDKs, ALFS, HTTP networking, and the Feed SDK.
 
 Options:
   --code <code>          Inline JavaScript code to execute
-  --entry-path <path>    Path to a script file on ALFS
-  --working-dir <dir>    Working directory for the execution
-  --args <json>          JSON object of arguments passed to the script
+  --entry-path <path>    Path to a script file on ALFS (home-relative)
+  --working-dir <dir>    Working directory for require() (inline code only)
+  --args <json>          JSON object passed to require("env").args
 
 At least one of --code or --entry-path is required.
 
+Response fields:
+  result    JSON-encoded return value of the script
+  logs      Captured stderr output
+  status    "completed" or "failed"
+  error     Error message (when status is "failed")
+
+Available runtime modules:
+  require("alfs")            Cloud filesystem (absolute paths only)
+  require("env")             userId, username, args from request
+  require("net/http")        fetch(url, init) for HTTP requests
+  require("secret-manager")  Read user-scoped third-party secrets
+  require("@alva/feed")      Feed SDK for data pipelines
+  require("@alva/algorithm") 50+ technical indicators
+  require("@alva/adk")       Agent SDK for LLM tool calling
+  require("@arrays/...")     250+ financial data SDKs
+
+Constraints:
+  No top-level await — wrap in (async () => { ... })();
+  No Node.js builtins (fs, path, http) — use alfs, net/http instead
+  2 GB heap limit per execution
+
 Examples:
-  alva run --code "return 1 + 1"
-  alva run --code "return require('env').userId"
-  alva run --entry-path ~/scripts/my-script.js
-  alva run --entry-path ~/scripts/job.js --args '{"symbol":"BTC"}'`,
+  alva run --code "1 + 2 + 3;"
+  alva run --code "JSON.stringify(require('env').args);" --args '{"symbol":"BTC"}'
+  alva run --entry-path ~/feeds/my-feed/v1/src/index.js
+  alva run --entry-path ~/tasks/analyze/src/index.js --args '{"symbol":"NVDA","limit":50}'`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
 Manage scheduled cronjobs that run your scripts on a cron schedule.
+Max 20 cronjobs per user. Min interval: 1 minute.
 
 Subcommands:
   create     Create a new cronjob
-  list       List all cronjobs (supports pagination)
+  list       List all cronjobs (supports cursor-based pagination)
   get        Get a single cronjob by ID
-  update     Update a cronjob's name, schedule, args, or notifications
+  update     Update a cronjob (partial update — only include changed fields)
   delete     Delete a cronjob
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
 
 Create flags:
-  --name <name>          Cronjob name (required)
-  --path <path>          Path to script on ALFS (required)
-  --cron <expression>    Cron expression, e.g. "*/5 * * * *" (required)
-  --args <json>          JSON object of arguments
-  --push-notify          Enable push notifications on completion
+  --name <name>          Cronjob name (required, 1-63 lowercase alphanumeric/hyphens)
+  --path <path>          Path to script on ALFS (required, must exist)
+  --cron <expression>    Cron expression (required, e.g. "0 */4 * * *")
+  --args <json>          JSON object passed to require("env").args
+  --push-notify          Enable Telegram push notifications on completion
   --no-push-notify       Disable push notifications
 
 List flags:
-  --limit <n>            Max results per page
+  --limit <n>            Max results per page (default: 20)
   --cursor <cursor>      Pagination cursor from previous response
 
 Get/Update/Delete/Pause/Resume flags:
   --id <id>              Cronjob ID (required)
 
+Name format: 1-63 lowercase alphanumeric or hyphens, no leading/trailing hyphens.
+  Valid:   btc-ema-update, my-strategy-1
+  Invalid: BTC EMA, -my-job-, my_job
+
+Recommended cron schedules:
+  "0 */4 * * *"    Every 4 hours (stock OHLCV, crypto technicals)
+  "0 8 * * *"      Daily at 8am (fundamentals, insider trades, earnings)
+  "*/5 * * * *"    Every 5 minutes (high-frequency alerts)
+  "0 0 * * *"      Daily at midnight (end-of-day summaries)
+
 Examples:
-  alva deploy create --name my-job --path ~/scripts/job.js --cron "0 * * * *"
-  alva deploy create --name alert --path ~/alert.js --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
+  alva deploy create --name btc-ema --path ~/feeds/btc-ema/v1/src/index.js --cron "0 */4 * * *"
+  alva deploy create --name alert --path ~/feeds/alert/v1/src/index.js --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
   alva deploy list
   alva deploy list --limit 10
   alva deploy get --id 42
@@ -151,53 +237,73 @@ Examples:
 
   release: `Usage: alva release <subcommand> [options]
 
-Publish feeds and playbooks to the Alva platform.
+Publish feeds and playbooks to the Alva platform. The typical workflow:
+  1. Deploy cronjob (alva deploy create)
+  2. Register feed (alva release feed)
+  3. Create playbook draft (alva release playbook-draft)
+  4. Write HTML to ALFS (alva fs write --path ~/playbooks/{name}/index.html)
+  5. Release playbook (alva release playbook)
 
 Subcommands:
   feed              Register a feed after deploying its cronjob
   playbook-draft    Create a playbook draft (preview before publishing)
-  playbook          Publish a playbook (public or private based on subscription)
+  playbook          Publish a playbook (public for free users, choice for pro)
 
 Feed flags:
-  --name <name>          Feed name (required)
-  --version <version>    Semantic version (required)
+  --name <name>          Feed name, unique per user (required)
+  --version <version>    Semantic version, e.g. "1.0.0" (required)
   --cronjob-id <id>      ID of the backing cronjob (required)
   --view-json <json>     View configuration JSON
   --description <text>   Feed description
 
 Playbook-draft flags:
-  --name <name>              URL-safe playbook name (required)
-  --display-name <name>      Human-readable display name (required)
+  --name <name>              URL-safe playbook name, unique per user (required)
+  --display-name <name>      Human-readable title, max 40 chars (required)
   --feeds <json>             JSON array of {feed_id, feed_major?} (required)
   --description <text>       Playbook description
-  --trading-symbols <json>   JSON array of trading symbol strings
+  --trading-symbols <json>   JSON array of tickers, e.g. '["BTC","ETH"]' (max 50)
 
 Playbook flags:
-  --name <name>          Playbook name (required)
-  --version <version>    Semantic version (required)
+  --name <name>          Playbook name, must already exist as draft (required)
+  --version <version>    Semantic version, e.g. "v1.0.0" (required)
   --feeds <json>         JSON array of {feed_id, feed_major?} (required)
   --changelog <text>     Release changelog (required)
 
+Display name conventions:
+  Format: [subject/theme] [analysis angle/strategy logic]
+  Max 40 characters. Avoid "My", "Test", or generic-only titles.
+  Good: "BTC Trend Dashboard", "NVDA Insider Activity Tracker"
+  Bad:  "My Dashboard", "Test V2", "Stock Dashboard"
+
 Examples:
-  alva release feed --name btc-ema --version 1.0.0 --cronjob-id 5
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Dashboard" --feeds '[{"feed_id":1}]'
-  alva release playbook --name btc-dashboard --version 1.0.0 --feeds '[{"feed_id":1}]' --changelog "Initial release"`,
+  alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
+  alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
+  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release"`,
 
   secrets: `Usage: alva secrets <subcommand> [options]
 
-Manage encrypted secrets for use in your Alva scripts. Secrets are stored
+Manage encrypted secrets for use in Alva scripts. Secrets are stored
 encrypted at rest and accessible via require("secret-manager") in the runtime.
 
+For sensitive secrets (API keys, tokens), prefer the web UI at https://alva.ai/apikey.
+Use the CLI for agent-managed CRUD operations.
+
 Subcommands:
-  create     Create a new secret
-  list       List all secrets (metadata only, not values)
+  create     Create a new secret (fails if name already exists)
+  list       List all secrets (metadata only: name, keyPrefix, timestamps)
   get        Get a secret's plaintext value
-  update     Update a secret's value
-  delete     Delete a secret
+  update     Update a secret's value (fails if name doesn't exist)
+  delete     Delete a secret (fails if name doesn't exist)
 
 Flags:
   --name <name>      Secret name (required for create, get, update, delete)
   --value <value>    Secret value (required for create, update)
+
+Runtime usage in scripts:
+  const secret = require("secret-manager");
+  const key = secret.loadPlaintext("OPENAI_API_KEY");
+  // Returns string if found, null if missing
 
 Examples:
   alva secrets create --name OPENAI_KEY --value sk-abc123
@@ -208,7 +314,10 @@ Examples:
 
   sdk: `Usage: alva sdk <subcommand> [options]
 
-Browse Alva SDK documentation and available data partitions.
+Browse Alva's 250+ financial data SDKs. Use the two-step discovery flow:
+  1. List partitions to find the right category
+  2. Get partition summary to see available modules
+  3. Get full documentation for a specific module
 
 Subcommands:
   doc                 Get documentation for a specific SDK module
@@ -219,38 +328,53 @@ Flags:
   --name <module>        Module name for 'doc' (required)
   --partition <name>     Partition name for 'partition-summary' (required)
 
+Key partitions:
+  spot_market_price_and_volume         Spot OHLCV for crypto and equities
+  crypto_futures_data                  Perpetual futures, funding rates, OI
+  crypto_technical_metrics             MA, RSI, MACD, MVRV, SOPR, NUPL (20 modules)
+  equity_fundamentals                  Income, balance sheet, PE, ROE (31 modules)
+  equity_estimates_and_targets         Analyst targets, consensus estimates
+  equity_ownership_and_flow            Insider trades, senator trading, institutions
+  macro_and_economics_data             CPI, GDP, Treasury rates, VIX (20 modules)
+  technical_indicator_calculation_helpers  50+ pure calculators (RSI, MACD, Bollinger)
+
 Examples:
   alva sdk partitions
   alva sdk partition-summary --partition spot_market_price_and_volume
-  alva sdk doc --name "@arrays/crypto/ohlcv:v1.0.0"`,
+  alva sdk doc --name "@arrays/crypto/ohlcv:v1.0.0"
+  alva sdk doc --name "@arrays/data/stock/ohlcv:v1.0.0"`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
-Manage comments on Alva playbooks.
+Manage comments on Alva playbooks. Supports top-level comments and threaded
+replies. One comment per playbook can be pinned (pinning a new one unpins
+the previous).
 
 Subcommands:
-  create     Post a comment on a playbook
-  pin        Pin a comment
-  unpin      Unpin a comment
+  create     Post a comment on a playbook (or reply to an existing comment)
+  pin        Pin a top-level comment (owner/admin only)
+  unpin      Unpin a comment (owner/admin only)
 
 Create flags:
-  --username <user>      Playbook owner username (required)
+  --username <user>      Playbook owner's username (required)
   --name <name>          Playbook name (required)
   --content <text>       Comment content (required)
-  --parent-id <id>       Parent comment ID (for replies)
+  --parent-id <id>       Parent comment ID (for threaded replies, omit for top-level)
 
 Pin/Unpin flags:
   --comment-id <id>      Comment ID (required)
 
 Examples:
   alva comments create --username alice --name btc-dashboard --content "Great analysis!"
-  alva comments create --username alice --name btc-dashboard --content "Reply" --parent-id 5
+  alva comments create --username alice --name btc-dashboard --content "Thanks!" --parent-id 5
   alva comments pin --comment-id 12
   alva comments unpin --comment-id 12`,
 
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
 Record remix lineage when creating a playbook based on existing playbooks.
+Call this after releasing a remixed playbook to establish the parent-child
+relationship in the database.
 
 Required:
   --child-username <username>   Your username (the remixer)
@@ -258,11 +382,12 @@ Required:
   --parents <json>              JSON array of source playbooks: [{"username":"...", "name":"..."}]
 
 Examples:
-  alva remix --child-username alice --child-name my-btc --parents '[{"username":"bob","name":"btc-signals"}]'`,
+  alva remix --child-username bob --child-name my-btc --parents '[{"username":"alice","name":"btc-signals"}]'`,
 
   screenshot: `Usage: alva screenshot --url <url> --out <file> [--selector <css>] [--xpath <xpath>]
 
-Capture a full-page screenshot of an Alva page and save it as PNG.
+Capture a screenshot of an Alva page and save it as PNG. Useful for verifying
+playbook rendering before release.
 
 Required:
   --url <url>          URL or path to capture (e.g. /playbook/alice/dashboard)
@@ -292,12 +417,17 @@ interface WriteConfigDeps {
 export async function handleConfigure(
   args: string[],
   deps?: WriteConfigDeps
-): Promise<{ status: string; apiKey: string; baseUrl?: string }> {
+): Promise<{
+  status: string;
+  apiKey: string;
+  baseUrl?: string;
+  profile: string;
+}> {
   const flags = parseFlags(args.slice(1));
   const apiKey = flags['api-key'];
   if (!apiKey) {
     throw new Error(
-      '--api-key is required. Usage: alva configure --api-key <key> [--base-url <url>]'
+      '--api-key is required. Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]'
     );
   }
   if (!apiKey.startsWith('alva_')) {
@@ -307,6 +437,7 @@ export async function handleConfigure(
   }
 
   const baseUrl = flags['base-url'];
+  const profileName = flags['profile'] || 'default';
   const configInput: { apiKey: string; baseUrl?: string } = { apiKey };
   if (baseUrl) configInput.baseUrl = baseUrl;
 
@@ -320,11 +451,12 @@ export async function handleConfigure(
     readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
   };
 
-  const result = await writeConfig(configInput, writeDeps);
+  const result = await writeConfig(configInput, writeDeps, profileName);
   return {
     status: 'configured',
     apiKey: result.apiKey!,
     baseUrl: result.baseUrl,
+    profile: profileName,
   };
 }
 
@@ -406,7 +538,8 @@ function jsonParse(val: string | undefined): unknown {
 
 export async function dispatch(
   client: AlvaClient,
-  args: string[]
+  args: string[],
+  meta?: { profile?: string; baseUrl?: string }
 ): Promise<unknown> {
   const group = args[0];
 
@@ -417,6 +550,18 @@ export async function dispatch(
   // Per-command help: alva <command> --help
   if (COMMAND_HELP[group] && (args[1] === '--help' || args[1] === '-h')) {
     return { _help: true, text: COMMAND_HELP[group] };
+  }
+
+  // whoami: verify credentials and show user info
+  if (group === 'whoami') {
+    const user = await client.user.me();
+    return {
+      ...(user as unknown as Record<string, unknown>),
+      _meta: {
+        profile: meta?.profile ?? 'default',
+        endpoint: meta?.baseUrl ?? client.baseUrl,
+      },
+    };
   }
 
   const subcommand = args[1];
@@ -757,21 +902,28 @@ async function main() {
       baseUrl: config.baseUrl,
     });
 
-    // Remove --api-key and --base-url flags (both --flag value and --flag=value forms)
+    // Remove global flags (--api-key, --base-url, --profile and their values)
     const cleanArgs: string[] = [];
     for (let i = 0; i < rawArgs.length; i++) {
       const a = rawArgs[i];
-      if (a === '--api-key' || a === '--base-url') {
+      if (a === '--api-key' || a === '--base-url' || a === '--profile') {
         i++; // skip the next arg (the value)
         continue;
       }
-      if (a.startsWith('--api-key=') || a.startsWith('--base-url=')) {
+      if (
+        a.startsWith('--api-key=') ||
+        a.startsWith('--base-url=') ||
+        a.startsWith('--profile=')
+      ) {
         continue;
       }
       cleanArgs.push(a);
     }
 
-    const result = await dispatch(client, cleanArgs);
+    const result = await dispatch(client, cleanArgs, {
+      profile: config.profile,
+      baseUrl: config.baseUrl,
+    });
     if (result && typeof result === 'object' && '_help' in result) {
       const helpResult = result as unknown as { text: string };
       process.stdout.write(helpResult.text + '\n');
