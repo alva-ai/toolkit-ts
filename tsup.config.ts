@@ -1,4 +1,7 @@
 import { defineConfig } from 'tsup';
+import pkg from './package.json';
+
+const define = { __VERSION__: JSON.stringify(pkg.version) };
 
 export default defineConfig([
   {
@@ -9,6 +12,7 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     target: 'node18',
+    define,
   },
   {
     entry: { cli: 'src/cli/index.ts' },
@@ -17,6 +21,7 @@ export default defineConfig([
     sourcemap: true,
     target: 'node18',
     banner: { js: '#!/usr/bin/env node' },
+    define,
   },
   {
     entry: { browser: 'src/browser.ts' },
@@ -26,5 +31,6 @@ export default defineConfig([
     minify: true,
     sourcemap: true,
     dts: false,
+    define,
   },
 ]);

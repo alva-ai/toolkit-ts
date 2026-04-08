@@ -882,9 +882,17 @@ export async function dispatch(
   }
 }
 
+declare const __VERSION__: string;
+const CLI_VERSION: string = typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
+
 async function main() {
   try {
     const rawArgs = process.argv.slice(2);
+
+    if (rawArgs[0] === '--version' || rawArgs[0] === '-v') {
+      process.stdout.write(CLI_VERSION + '\n');
+      return;
+    }
 
     // Handle configure before loading config (doesn't need existing auth)
     if (rawArgs[0] === 'configure') {
