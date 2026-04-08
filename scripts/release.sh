@@ -95,6 +95,10 @@ info "Bumping $BUMP version..."
 NEW_VERSION=$(npm version "$BUMP" --no-git-tag-version)
 info "New version: $NEW_VERSION"
 
+# Rebuild so the new version is baked into dist/ via tsup define
+info "Rebuilding with new version..."
+npm run build
+
 # Commit and tag
 git add package.json package-lock.json
 git commit -m "$NEW_VERSION"

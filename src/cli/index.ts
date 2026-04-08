@@ -5,6 +5,32 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
 
+declare const __VERSION__: string;
+export const CLI_VERSION: string =
+  typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
+
+/**
+ * Returns true if version `a` is strictly older than version `b`.
+ * Compares major.minor.patch as integers. Returns false on malformed input.
+ */
+export function isVersionOlderThan(a: string, b: string): boolean {
+  const parse = (v: string): number[] | null => {
+    if (!v) return null;
+    const parts = v.split('.').map(Number);
+    if (parts.some(isNaN)) return null;
+    while (parts.length < 3) parts.push(0);
+    return parts;
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (!pa || !pb) return false;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] < pb[i]) return true;
+    if (pa[i] > pb[i]) return false;
+  }
+  return false;
+}
+
 const HELP_TEXT = `Usage: alva <command> [options]
 
 Commands:
@@ -25,6 +51,7 @@ Global options:
   --api-key <key>      API key (overrides env and config file)
   --base-url <url>     API base URL (overrides env and config file)
   --profile <name>     Named profile to use (default: "default")
+  -v, --version        Show CLI version
   --help               Show help (use 'alva <command> --help' for command details)
 
 Config resolution: --api-key flag > ALVA_API_KEY env > profile in ~/.config/alva/config.json
@@ -541,7 +568,7 @@ function jsonParse(val: string | undefined): unknown {
 export async function dispatch(
   client: AlvaClient,
   args: string[],
-  meta?: { profile?: string; baseUrl?: string }
+  meta?: { profile?: string; baseUrl?: string; cliVersion?: string }
 ): Promise<unknown> {
   const group = args[0];
 
@@ -557,13 +584,27 @@ export async function dispatch(
   // whoami: verify credentials and show user info
   if (group === 'whoami') {
     const user = await client.user.me();
-    return {
-      ...(user as unknown as Record<string, unknown>),
+    const record = user as unknown as Record<string, unknown>;
+    const version = meta?.cliVersion ?? CLI_VERSION;
+    const result: Record<string, unknown> = {
+      ...record,
       _meta: {
         profile: meta?.profile ?? 'default',
         endpoint: meta?.baseUrl ?? client.baseUrl,
       },
     };
+    const minVersion = record.toolkit_min_version;
+    if (
+      typeof minVersion === 'string' &&
+      version &&
+      version !== 'dev' &&
+      isVersionOlderThan(version, minVersion)
+    ) {
+      result._warning =
+        `Warning: your toolkit version (${version}) is older than the minimum recommended version (${minVersion}). ` +
+        `Please upgrade: npm install -g @alva-ai/toolkit`;
+    }
+    return result;
   }
 
   const subcommand = args[1];
@@ -886,6 +927,12 @@ async function main() {
   try {
     const rawArgs = process.argv.slice(2);
 
+    // Handle --version before loading config (doesn't need auth)
+    if (rawArgs[0] === '-v' || rawArgs[0] === '--version') {
+      process.stdout.write(`alva version ${CLI_VERSION}\n`);
+      return;
+    }
+
     // Handle configure before loading config (doesn't need existing auth)
     if (rawArgs[0] === 'configure') {
       if (rawArgs[1] === '--help' || rawArgs[1] === '-h') {
@@ -930,7 +977,14 @@ async function main() {
     const result = await dispatch(client, cleanArgs, {
       profile: config.profile,
       baseUrl: config.baseUrl,
+      cliVersion: CLI_VERSION,
     });
+    if (result && typeof result === 'object' && '_warning' in result) {
+      process.stderr.write(
+        (result as unknown as { _warning: string })._warning + '\n'
+      );
+      delete (result as Record<string, unknown>)._warning;
+    }
     if (result && typeof result === 'object' && '_help' in result) {
       const helpResult = result as unknown as { text: string };
       process.stdout.write(helpResult.text + '\n');
