@@ -108,7 +108,8 @@ Common flags:
   --path <path>          File or directory path (required for most subcommands)
   --recursive            Enable recursive operation (readdir, remove)
   --no-recursive         Disable recursive operation
-  --mkdir-parents        Create parent directories on write
+  --mkdir-parents        Create parent directories on write (default for write)
+  --no-mkdir-parents     Disable automatic parent directory creation on write
 
 Path conventions:
   ~/...                  Home-relative path (expands to /alva/home/<username>/...)
@@ -260,6 +261,7 @@ Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
   --display-name <name>      Human-readable title, max 40 chars (required)
   --feeds <json>             JSON array of {feed_id, feed_major?} (required)
+  --changelog <text>         Release changelog (required)
   --description <text>       Playbook description
   --trading-symbols <json>   JSON array of tickers, e.g. '["BTC","ETH"]' (max 50)
 
@@ -278,7 +280,7 @@ Display name conventions:
 Examples:
   alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --changelog "Initial release" --trading-symbols '["BTC"]'
   alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release"`,
 
   secrets: `Usage: alva secrets <subcommand> [options]
@@ -598,13 +600,13 @@ export async function dispatch(
             return client.fs.rawWrite({
               path: requireFlag(flags, 'path', 'fs write'),
               body: fileData as unknown as BodyInit,
-              mkdir_parents: boolFlag(flags['mkdir-parents']),
+              mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
             });
           }
           return client.fs.write({
             path: requireFlag(flags, 'path', 'fs write'),
             data: requireFlag(flags, 'data', 'fs write'),
-            mkdir_parents: boolFlag(flags['mkdir-parents']),
+            mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
           });
         case 'stat':
           return client.fs.stat({
@@ -753,6 +755,11 @@ export async function dispatch(
             trading_symbols: flags['trading-symbols']
               ? (jsonParse(flags['trading-symbols']) as string[])
               : undefined,
+            changelog: requireFlag(
+              flags,
+              'changelog',
+              'release playbook-draft'
+            ),
           });
         case 'playbook':
           return client.release.playbook({
