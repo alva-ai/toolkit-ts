@@ -883,7 +883,8 @@ export async function dispatch(
 }
 
 declare const __VERSION__: string;
-const CLI_VERSION: string = typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
+const CLI_VERSION: string =
+  typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
 
 async function main() {
   try {

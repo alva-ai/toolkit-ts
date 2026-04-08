@@ -1,7 +1,8 @@
 declare const __VERSION__: string;
 
 /** SDK version, injected at build time from package.json. */
-export const VERSION: string = typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
+export const VERSION: string =
+  typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
 
 export { AlvaClient } from './client.js';
 export { AlvaError } from './error.js';
