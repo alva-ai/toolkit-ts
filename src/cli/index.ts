@@ -929,6 +929,10 @@ async function main() {
       process.stdout.write(helpResult.text + '\n');
       return;
     }
+    if (result instanceof ArrayBuffer) {
+      process.stdout.write(Buffer.from(result));
+      return;
+    }
     if (result !== undefined) {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     }
