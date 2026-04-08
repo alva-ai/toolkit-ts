@@ -188,6 +188,7 @@ export interface PlaybookDraftRequest {
   description?: string;
   feeds: Array<{ feed_id: number; feed_major?: number }>;
   trading_symbols?: string[];
+  changelog?: string;
 }
 
 export interface PlaybookDraftResponse {
