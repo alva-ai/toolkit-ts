@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { dispatch, handleConfigure } from '../src/cli/index.js';
+import {
+  dispatch,
+  handleConfigure,
+  CLI_VERSION,
+  isVersionOlderThan,
+} from '../src/cli/index.js';
 import { AlvaClient } from '../src/client.js';
 
 function makeClient(): AlvaClient {
@@ -476,5 +481,103 @@ describe('help text', () => {
     expect(result.text).toContain('playbook-draft');
     expect(result.text).toContain('--trading-symbols');
     expect(result.text).toContain('Display name');
+  });
+});
+
+describe('CLI_VERSION', () => {
+  it('falls back to dev when __VERSION__ is not defined at build time', () => {
+    expect(CLI_VERSION).toBe('dev');
+  });
+});
+
+describe('isVersionOlderThan', () => {
+  it('returns true when a < b', () => {
+    expect(isVersionOlderThan('0.1.0', '0.1.2')).toBe(true);
+  });
+
+  it('returns false when equal', () => {
+    expect(isVersionOlderThan('0.1.2', '0.1.2')).toBe(false);
+  });
+
+  it('returns false when a > b (minor)', () => {
+    expect(isVersionOlderThan('0.2.0', '0.1.2')).toBe(false);
+  });
+
+  it('returns false when a > b (major)', () => {
+    expect(isVersionOlderThan('1.0.0', '0.9.9')).toBe(false);
+  });
+
+  it('returns false for malformed first arg', () => {
+    expect(isVersionOlderThan('bad', '0.1.0')).toBe(false);
+  });
+
+  it('returns false for malformed second arg', () => {
+    expect(isVersionOlderThan('0.1.0', 'bad')).toBe(false);
+  });
+
+  it('handles two-part versions (missing patch)', () => {
+    expect(isVersionOlderThan('0.1', '0.1.1')).toBe(true);
+  });
+
+  it('returns false for empty strings', () => {
+    expect(isVersionOlderThan('', '0.1.0')).toBe(false);
+  });
+});
+
+describe('whoami version check', () => {
+  it('sets _warning when CLI is older than min version', async () => {
+    const client = makeClient();
+    client.user.me = vi.fn().mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      subscription_tier: 'free',
+      toolkit_min_version: '99.0.0',
+    });
+    const result = (await dispatch(client, ['whoami'], {
+      cliVersion: '0.1.2',
+    })) as Record<string, unknown>;
+    expect(result._warning).toBeDefined();
+    expect(result._warning as string).toContain('upgrade');
+  });
+
+  it('no _warning when CLI version >= min version', async () => {
+    const client = makeClient();
+    client.user.me = vi.fn().mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      subscription_tier: 'free',
+      toolkit_min_version: '0.1.0',
+    });
+    const result = (await dispatch(client, ['whoami'], {
+      cliVersion: '0.1.2',
+    })) as Record<string, unknown>;
+    expect(result._warning).toBeUndefined();
+  });
+
+  it('no _warning when server omits toolkit_min_version', async () => {
+    const client = makeClient();
+    client.user.me = vi.fn().mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      subscription_tier: 'free',
+    });
+    const result = (await dispatch(client, ['whoami'], {
+      cliVersion: '0.1.2',
+    })) as Record<string, unknown>;
+    expect(result._warning).toBeUndefined();
+  });
+
+  it('no _warning when server returns malformed version', async () => {
+    const client = makeClient();
+    client.user.me = vi.fn().mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      subscription_tier: 'free',
+      toolkit_min_version: 'bad',
+    });
+    const result = (await dispatch(client, ['whoami'], {
+      cliVersion: '0.1.2',
+    })) as Record<string, unknown>;
+    expect(result._warning).toBeUndefined();
   });
 });
