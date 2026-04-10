@@ -15,10 +15,9 @@ export class TradingResource {
 
   async accounts(): Promise<TradingAccount[]> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      '/api/v1/trading/accounts'
-    ) as Promise<TradingAccount[]>;
+    return this.client._request('GET', '/api/v1/trading/accounts') as Promise<
+      TradingAccount[]
+    >;
   }
 
   async portfolio(accountId: string): Promise<TradingPortfolio> {
@@ -113,9 +112,7 @@ export class TradingResource {
     }) as Promise<ExecuteSignalResult>;
   }
 
-  async updateRiskRules(
-    rules: TradingRiskRuleInput
-  ): Promise<TradingRiskRule> {
+  async updateRiskRules(rules: TradingRiskRuleInput): Promise<TradingRiskRule> {
     this.client._requireAuth();
     return this.client._request('PUT', '/api/v1/trading/risk-rules', {
       body: rules,

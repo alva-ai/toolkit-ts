@@ -1021,26 +1021,14 @@ export async function dispatch(
           return client.trading.riskRules();
         case 'subscribe':
           return client.trading.subscribe({
-            accountId: requireFlag(
-              flags,
-              'account-id',
-              'trading subscribe'
-            ),
+            accountId: requireFlag(flags, 'account-id', 'trading subscribe'),
             sourceUsername: requireFlag(
               flags,
               'source-username',
               'trading subscribe'
             ),
-            sourceFeed: requireFlag(
-              flags,
-              'source-feed',
-              'trading subscribe'
-            ),
-            playbookId: requireFlag(
-              flags,
-              'playbook-id',
-              'trading subscribe'
-            ),
+            sourceFeed: requireFlag(flags, 'source-feed', 'trading subscribe'),
+            playbookId: requireFlag(flags, 'playbook-id', 'trading subscribe'),
             playbookVersion: requireFlag(
               flags,
               'playbook-version',
@@ -1054,11 +1042,7 @@ export async function dispatch(
           );
         case 'execute':
           return client.trading.execute({
-            accountId: requireFlag(
-              flags,
-              'account-id',
-              'trading execute'
-            ),
+            accountId: requireFlag(flags, 'account-id', 'trading execute'),
             signalJson: requireFlag(flags, 'signal', 'trading execute'),
             dryRun: boolFlag(flags['dry-run']) ?? false,
             sourceUsername: flags['source-username'],
