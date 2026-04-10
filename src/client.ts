@@ -22,6 +22,7 @@ interface RequestOptions {
 
 export class AlvaClient {
   readonly baseUrl: string;
+  readonly token?: string;
   readonly apiKey?: string;
 
   private _fs?: FsResource;
@@ -37,6 +38,7 @@ export class AlvaClient {
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    this.token = config.token;
     this.apiKey = config.apiKey;
   }
 
@@ -72,10 +74,10 @@ export class AlvaClient {
   }
 
   _requireAuth(): void {
-    if (!this.apiKey) {
+    if (!this.token && !this.apiKey) {
       throw new AlvaError(
         'UNAUTHENTICATED',
-        'API key is required for this operation. Pass apiKey in the constructor.',
+        'Authentication is required. Pass token or apiKey in the constructor.',
         401
       );
     }
@@ -102,7 +104,9 @@ export class AlvaClient {
     }
 
     const headers: Record<string, string> = {};
-    if (this.apiKey) {
+    if (this.token) {
+      headers.Authorization = `${this.token}`;
+    } else if (this.apiKey) {
       headers['X-Alva-Api-Key'] = this.apiKey;
     }
 
