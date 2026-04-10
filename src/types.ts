@@ -288,3 +288,108 @@ export interface ScreenshotParams {
   selector?: string;
   xpath?: string;
 }
+
+// Trading
+
+export interface TradingAccount {
+  id: string;
+  name: string;
+  exchange: string;
+  paper: boolean;
+  identifier: string;
+  createdAtMs: number;
+  subscriptions: AccountSubscription[];
+}
+
+export interface AccountSubscription {
+  id: string;
+  sourceUsername: string;
+  sourceFeed: string;
+  playbookId: string;
+  playbookName: string;
+  active: boolean;
+}
+
+export interface TradingSubscription {
+  id: string;
+  accountId: string;
+  sourceUsername: string;
+  sourceFeed: string;
+  active: boolean;
+  deactivateReason?: string;
+  playbookId: string;
+  playbookVersion: string;
+  createdAtMs: number;
+  watermark: number;
+}
+
+export interface TradingOrder {
+  orderId: string;
+  symbol: string;
+  side: string;
+  requestedQty: number;
+  filledQty: number;
+  price: number;
+  status: string;
+  rejectReason?: string;
+  source: string;
+  sourcePlaybook: string;
+  subscriptionId?: string;
+  dryRun: boolean;
+  createdAtMs: number;
+}
+
+export interface PortfolioAsset {
+  symbol: string;
+  side: string;
+  quantity: number;
+  entryPrice: number;
+  currentPrice?: number;
+  marketValue?: number;
+  unrealizedPnl?: number;
+  allocation?: number;
+}
+
+export interface TradingPortfolio {
+  equity: number;
+  cash: number;
+  unrealizedPnl?: number;
+  assets: PortfolioAsset[];
+}
+
+export interface EquityPoint {
+  timestamp: number;
+  equity: number;
+  pnl: number;
+  pnlPct: number;
+}
+
+export interface RiskRuleEntry {
+  value: number;
+  enabled: boolean;
+}
+
+export interface TradingRiskRule {
+  maxSingleOrder: RiskRuleEntry;
+  maxDailyTurnover: RiskRuleEntry;
+  maxDailyOrders: RiskRuleEntry;
+}
+
+export type TradingRiskRuleInput = TradingRiskRule;
+
+export interface ExecuteSignalOrder {
+  orderId: string;
+  symbol: string;
+  side: string;
+  requestedQty: number;
+  filledQty: number;
+  price: number;
+  status: string;
+  rejectReason?: string;
+}
+
+export interface ExecuteSignalResult {
+  status: string;
+  orders: ExecuteSignalOrder[];
+  error?: string;
+}

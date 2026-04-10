@@ -45,6 +45,7 @@ Commands:
   sdk         SDK documentation (doc, partitions, partition-summary)
   comments    Playbook comments (create, pin, unpin)
   remix       Save playbook remix lineage
+  trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   screenshot  Capture a web screenshot as PNG
 
 Global options:
@@ -429,6 +430,73 @@ Optional:
 Examples:
   alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
   alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"`,
+
+  trading: `Usage: alva trading <subcommand> [options]
+
+Manage trading accounts, portfolios, orders, subscriptions, and risk rules.
+
+Subcommands:
+  accounts             List all trading accounts
+  portfolio            Get portfolio for an account
+  orders               List orders for an account
+  subscriptions        List subscriptions for an account
+  equity-history       Get equity history for an account
+  risk-rules           Show risk rules
+  subscribe            Subscribe an account to a source feed
+  unsubscribe          Unsubscribe by subscription ID
+  execute              Execute a signal on an account
+  update-risk-rules    Update risk rules
+
+Portfolio/Orders/Subscriptions/Equity-history flags:
+  --account-id <id>    Trading account ID (required)
+
+Orders optional flags:
+  --limit <n>          Max results
+  --source <source>    Filter by source
+  --since <timestamp>  Filter orders since timestamp
+
+Equity-history optional flags:
+  --timeframe <tf>     Timeframe (e.g. "1d", "1h")
+  --since-ms <ms>      Start timestamp in ms
+  --until-ms <ms>      End timestamp in ms
+
+Subscribe flags:
+  --account-id <id>            Account ID (required)
+  --source-username <user>     Source username (required)
+  --source-feed <feed>         Source feed (required)
+  --playbook-id <id>           Playbook ID (required)
+  --playbook-version <ver>     Playbook version (required)
+  --execute-latest             Execute latest signal on subscribe
+
+Unsubscribe flags:
+  --subscription-id <id>       Subscription ID (required)
+
+Execute flags:
+  --account-id <id>            Account ID (required)
+  --signal <json>              Signal JSON (required)
+  --dry-run                    Dry run mode
+  --source-username <user>     Source username (optional)
+  --source-feed <feed>         Source feed (optional)
+
+Update-risk-rules flags:
+  --max-single-order-value <n>       Max single order value (required)
+  --max-single-order-enabled <bool>  Max single order enabled (required)
+  --max-daily-turnover-value <n>     Max daily turnover value (required)
+  --max-daily-turnover-enabled <bool> Max daily turnover enabled (required)
+  --max-daily-orders-value <n>       Max daily orders value (required)
+  --max-daily-orders-enabled <bool>  Max daily orders enabled (required)
+
+Examples:
+  alva trading accounts
+  alva trading portfolio --account-id acc_123
+  alva trading orders --account-id acc_123 --limit 10
+  alva trading subscriptions --account-id acc_123
+  alva trading equity-history --account-id acc_123 --timeframe 1d
+  alva trading risk-rules
+  alva trading subscribe --account-id acc_123 --source-username alice --source-feed btc-signals --playbook-id pb_1 --playbook-version v1.0.0
+  alva trading unsubscribe --subscription-id sub_456
+  alva trading execute --account-id acc_123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
+  alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
 };
 
 interface WriteConfigDeps {
@@ -494,6 +562,8 @@ const BOOLEAN_FLAGS = new Set([
   'mkdir-parents',
   'push-notify',
   'help',
+  'execute-latest',
+  'dry-run',
 ]);
 
 function parseFlags(argv: string[]): Record<string, string> {
@@ -914,6 +984,131 @@ export async function dispatch(
       const buf = Buffer.from(result as ArrayBuffer);
       fs.writeFileSync(outFile, buf);
       return { written: outFile, bytes: buf.length };
+    }
+
+    case 'trading': {
+      if (!subcommand) throw new Error('Missing subcommand for trading');
+      switch (subcommand) {
+        case 'accounts':
+          return client.trading.accounts();
+        case 'portfolio':
+          return client.trading.portfolio(
+            requireFlag(flags, 'account-id', 'trading portfolio')
+          );
+        case 'orders':
+          return client.trading.orders({
+            accountId: requireFlag(flags, 'account-id', 'trading orders'),
+            source: flags['source'],
+            since: num(flags['since']),
+            limit: num(flags['limit']),
+          });
+        case 'subscriptions':
+          return client.trading.subscriptions(
+            requireFlag(flags, 'account-id', 'trading subscriptions')
+          );
+        case 'equity-history':
+          return client.trading.equityHistory({
+            accountId: requireFlag(
+              flags,
+              'account-id',
+              'trading equity-history'
+            ),
+            timeframe: flags['timeframe'],
+            sinceMs: num(flags['since-ms']),
+            untilMs: num(flags['until-ms']),
+          });
+        case 'risk-rules':
+          return client.trading.riskRules();
+        case 'subscribe':
+          return client.trading.subscribe({
+            accountId: requireFlag(
+              flags,
+              'account-id',
+              'trading subscribe'
+            ),
+            sourceUsername: requireFlag(
+              flags,
+              'source-username',
+              'trading subscribe'
+            ),
+            sourceFeed: requireFlag(
+              flags,
+              'source-feed',
+              'trading subscribe'
+            ),
+            playbookId: requireFlag(
+              flags,
+              'playbook-id',
+              'trading subscribe'
+            ),
+            playbookVersion: requireFlag(
+              flags,
+              'playbook-version',
+              'trading subscribe'
+            ),
+            executeLatest: boolFlag(flags['execute-latest']),
+          });
+        case 'unsubscribe':
+          return client.trading.unsubscribe(
+            requireFlag(flags, 'subscription-id', 'trading unsubscribe')
+          );
+        case 'execute':
+          return client.trading.execute({
+            accountId: requireFlag(
+              flags,
+              'account-id',
+              'trading execute'
+            ),
+            signalJson: requireFlag(flags, 'signal', 'trading execute'),
+            dryRun: boolFlag(flags['dry-run']) ?? false,
+            sourceUsername: flags['source-username'],
+            sourceFeed: flags['source-feed'],
+          });
+        case 'update-risk-rules':
+          return client.trading.updateRiskRules({
+            maxSingleOrder: {
+              value: requireNumericFlag(
+                flags,
+                'max-single-order-value',
+                'trading update-risk-rules'
+              ),
+              enabled:
+                requireFlag(
+                  flags,
+                  'max-single-order-enabled',
+                  'trading update-risk-rules'
+                ) === 'true',
+            },
+            maxDailyTurnover: {
+              value: requireNumericFlag(
+                flags,
+                'max-daily-turnover-value',
+                'trading update-risk-rules'
+              ),
+              enabled:
+                requireFlag(
+                  flags,
+                  'max-daily-turnover-enabled',
+                  'trading update-risk-rules'
+                ) === 'true',
+            },
+            maxDailyOrders: {
+              value: requireNumericFlag(
+                flags,
+                'max-daily-orders-value',
+                'trading update-risk-rules'
+              ),
+              enabled:
+                requireFlag(
+                  flags,
+                  'max-daily-orders-enabled',
+                  'trading update-risk-rules'
+                ) === 'true',
+            },
+          });
+        default:
+          throw new Error(`Unknown subcommand: trading ${subcommand}`);
+      }
     }
 
     default:
