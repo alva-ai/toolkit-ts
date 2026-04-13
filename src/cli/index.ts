@@ -1,6 +1,7 @@
 import { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 import { loadConfig, writeConfig } from './config.js';
+import { handleAuthLogin } from './auth.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -46,6 +47,7 @@ Commands:
   comments    Playbook comments (create, pin, unpin)
   remix       Save playbook remix lineage
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
+  auth        Authentication (login via browser)
   screenshot  Capture a web screenshot as PNG
 
 Global options:
@@ -90,6 +92,15 @@ Examples:
   alva configure --api-key alva_abc123 --base-url http://localhost:8080
   alva configure --profile staging --api-key alva_stg_key --base-url https://api-llm.stg.alva.ai
   alva --profile staging whoami`,
+
+  auth: `Usage: alva auth <subcommand>
+
+Subcommands:
+  login       Open browser to authenticate and save credentials
+
+Examples:
+  alva auth login
+  alva auth login --profile staging`,
 
   whoami: `Usage: alva whoami [--profile <name>]
 
@@ -1095,6 +1106,25 @@ export async function dispatch(
       }
     }
 
+    case 'auth': {
+      // bare `auth`, `auth --help`, `auth login --help` all show help
+      const authSub = args[1];
+      if (
+        !authSub ||
+        authSub === '--help' ||
+        authSub === '-h' ||
+        args[2] === '--help' ||
+        args[2] === '-h'
+      ) {
+        return { _help: true, text: COMMAND_HELP.auth };
+      }
+      // auth login is handled in main() before loadConfig; if we reach here
+      // it means dispatch was called directly (shouldn't happen in production)
+      throw new Error(
+        `Unknown auth subcommand: '${authSub}'. Run 'alva auth --help' for usage.`
+      );
+    }
+
     default:
       throw new Error(
         `Unknown command: '${group}'. Run 'alva --help' to see available commands.`
@@ -1120,6 +1150,28 @@ async function main() {
       }
       const result = await handleConfigure(rawArgs);
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      return;
+    }
+
+    // Handle auth before loading config (user doesn't have config yet when logging in)
+    if (rawArgs[0] === 'auth') {
+      const authSub = rawArgs[1];
+      if (
+        !authSub ||
+        authSub === '--help' ||
+        authSub === '-h' ||
+        rawArgs[2] === '--help' ||
+        rawArgs[2] === '-h'
+      ) {
+        process.stdout.write(`${COMMAND_HELP.auth}\n`);
+        return;
+      }
+      if (authSub === 'login') {
+        const result = await handleAuthLogin(rawArgs);
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+      }
+      process.stdout.write(`${COMMAND_HELP.auth}\n`);
       return;
     }
 
