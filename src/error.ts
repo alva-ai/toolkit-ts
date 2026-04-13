@@ -9,3 +9,13 @@ export class AlvaError extends Error {
     this.status = status;
   }
 }
+
+export class CliUsageError extends Error {
+  readonly command?: string;
+
+  constructor(message: string, command?: string) {
+    super(message);
+    this.name = 'CliUsageError';
+    this.command = command;
+  }
+}
