@@ -10,6 +10,7 @@ import { CommentsResource } from './resources/comments.js';
 import { RemixResource } from './resources/remix.js';
 import { ScreenshotResource } from './resources/screenshot.js';
 import { UserResource } from './resources/user.js';
+import { TradingResource } from './resources/trading.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 
@@ -35,6 +36,7 @@ export class AlvaClient {
   private _remix?: RemixResource;
   private _screenshot?: ScreenshotResource;
   private _user?: UserResource;
+  private _trading?: TradingResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -71,6 +73,9 @@ export class AlvaClient {
   }
   get user(): UserResource {
     return (this._user ??= new UserResource(this));
+  }
+  get trading(): TradingResource {
+    return (this._trading ??= new TradingResource(this));
   }
 
   _requireAuth(): void {
