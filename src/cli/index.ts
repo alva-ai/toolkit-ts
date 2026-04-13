@@ -534,10 +534,7 @@ export async function handleConfigure(
   const flags = parseFlags(args.slice(1));
   const apiKey = flags['api-key'];
   if (!apiKey) {
-    throw new CliUsageError(
-      '--api-key is required',
-      'configure'
-    );
+    throw new CliUsageError('--api-key is required', 'configure');
   }
   if (!apiKey.startsWith('alva_')) {
     process.stderr?.write?.(
@@ -707,12 +704,14 @@ export async function dispatch(
 
   switch (group) {
     case 'user':
-      if (!subcommand) throw new CliUsageError('Missing subcommand for user', 'user');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for user', 'user');
       if (subcommand === 'me') return client.user.me();
       throw new CliUsageError(`Unknown subcommand: user ${subcommand}`, 'user');
 
     case 'fs': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for fs', 'fs');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for fs', 'fs');
       switch (subcommand) {
         case 'read':
           return client.fs.read({
@@ -802,7 +801,8 @@ export async function dispatch(
       });
 
     case 'deploy': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for deploy', 'deploy');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for deploy', 'deploy');
       switch (subcommand) {
         case 'create':
           return client.deploy.create({
@@ -846,12 +846,16 @@ export async function dispatch(
             id: requireNumericFlag(flags, 'id', 'deploy resume'),
           });
         default:
-          throw new CliUsageError(`Unknown subcommand: deploy ${subcommand}`, 'deploy');
+          throw new CliUsageError(
+            `Unknown subcommand: deploy ${subcommand}`,
+            'deploy'
+          );
       }
     }
 
     case 'release': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for release', 'release');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for release', 'release');
       switch (subcommand) {
         case 'feed':
           return client.release.feed({
@@ -900,12 +904,16 @@ export async function dispatch(
             changelog: requireFlag(flags, 'changelog', 'release playbook'),
           });
         default:
-          throw new CliUsageError(`Unknown subcommand: release ${subcommand}`, 'release');
+          throw new CliUsageError(
+            `Unknown subcommand: release ${subcommand}`,
+            'release'
+          );
       }
     }
 
     case 'secrets': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for secrets', 'secrets');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for secrets', 'secrets');
       switch (subcommand) {
         case 'create':
           return client.secrets.create({
@@ -928,12 +936,16 @@ export async function dispatch(
             name: requireFlag(flags, 'name', 'secrets delete'),
           });
         default:
-          throw new CliUsageError(`Unknown subcommand: secrets ${subcommand}`, 'secrets');
+          throw new CliUsageError(
+            `Unknown subcommand: secrets ${subcommand}`,
+            'secrets'
+          );
       }
     }
 
     case 'sdk': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for sdk', 'sdk');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for sdk', 'sdk');
       switch (subcommand) {
         case 'doc':
           return client.sdk.doc({
@@ -946,12 +958,16 @@ export async function dispatch(
             partition: requireFlag(flags, 'partition', 'sdk partition-summary'),
           });
         default:
-          throw new CliUsageError(`Unknown subcommand: sdk ${subcommand}`, 'sdk');
+          throw new CliUsageError(
+            `Unknown subcommand: sdk ${subcommand}`,
+            'sdk'
+          );
       }
     }
 
     case 'comments': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for comments', 'comments');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for comments', 'comments');
       switch (subcommand) {
         case 'create':
           return client.comments.create({
@@ -973,7 +989,10 @@ export async function dispatch(
             ),
           });
         default:
-          throw new CliUsageError(`Unknown subcommand: comments ${subcommand}`, 'comments');
+          throw new CliUsageError(
+            `Unknown subcommand: comments ${subcommand}`,
+            'comments'
+          );
       }
     }
 
@@ -1002,7 +1021,8 @@ export async function dispatch(
     }
 
     case 'trading': {
-      if (!subcommand) throw new CliUsageError('Missing subcommand for trading', 'trading');
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for trading', 'trading');
       switch (subcommand) {
         case 'accounts':
           return client.trading.accounts();
@@ -1106,7 +1126,10 @@ export async function dispatch(
             },
           });
         default:
-          throw new CliUsageError(`Unknown subcommand: trading ${subcommand}`, 'trading');
+          throw new CliUsageError(
+            `Unknown subcommand: trading ${subcommand}`,
+            'trading'
+          );
       }
     }
 
@@ -1124,16 +1147,11 @@ export async function dispatch(
       }
       // auth login is handled in main() before loadConfig; if we reach here
       // it means dispatch was called directly (shouldn't happen in production)
-      throw new CliUsageError(
-        `Unknown auth subcommand: '${authSub}'`,
-        'auth'
-      );
+      throw new CliUsageError(`Unknown auth subcommand: '${authSub}'`, 'auth');
     }
 
     default:
-      throw new CliUsageError(
-        `Unknown command: '${group}'`
-      );
+      throw new CliUsageError(`Unknown command: '${group}'`);
   }
 }
 
@@ -1240,7 +1258,11 @@ async function main() {
       if (help) process.stderr.write(`\n${help}\n`);
       process.exit(1);
     } else if (err instanceof AlvaError) {
-      const error = { code: err.code, message: err.message, status: err.status };
+      const error = {
+        code: err.code,
+        message: err.message,
+        status: err.status,
+      };
       process.stderr.write(`${JSON.stringify({ error }, null, 2)}\n`);
       process.exit(1);
     } else {

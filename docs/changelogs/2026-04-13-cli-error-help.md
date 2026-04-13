@@ -3,8 +3,14 @@
 ## 1. Background
 
 The `alva` CLI currently outputs errors as raw JSON to stderr:
+
 ```json
-{"error":{"code":"CLI_ERROR","message":"--path is required for 'fs read'"}}
+{
+  "error": {
+    "code": "CLI_ERROR",
+    "message": "--path is required for 'fs read'"
+  }
+}
 ```
 
 This gives the user no actionable guidance — they must manually run
@@ -35,10 +41,13 @@ relevant command's help text, all to stderr.
 ### Primary behavior
 
 When a user makes a CLI usage error, stderr output changes from:
+
 ```
 {"error":{"code":"CLI_ERROR","message":"--path is required for 'fs read'"}}
 ```
+
 to:
+
 ```
 Error: --path is required for 'fs read'
 
@@ -175,16 +184,16 @@ will break. This was explicitly approved as acceptable. API errors
 
 ### Error path analysis
 
-| Error site | What triggers it | Handling | User sees |
-|---|---|---|---|
-| `requireFlag()` | Missing required `--flag` | `CliUsageError(msg, group)` | `Error: --path is required for 'fs read'\n\n<fs help>` |
-| `requireNumericFlag()` | Non-numeric flag value | `CliUsageError(msg, group)` | `Error: --id must be a number...\n\n<deploy help>` |
-| Missing subcommand | `alva deploy` with no sub | `CliUsageError(msg, group)` | `Error: Missing subcommand for deploy\n\n<deploy help>` |
-| Unknown subcommand | `alva fs foo` | `CliUsageError(msg, group)` | `Error: Unknown subcommand: fs foo\n\n<fs help>` |
-| Unknown command | `alva foo` | `CliUsageError(msg, undefined)` | `Error: Unknown command: 'foo'...\n\n<global help>` |
-| `handleConfigure` | Missing `--api-key` | `CliUsageError(msg, 'configure')` | `Error: --api-key is required...\n\n<configure help>` |
-| `AlvaError` | API/network error | Unchanged JSON | `{"error":{"code":"...","message":"..."}}` |
-| Unknown `Error` | Unexpected runtime error | Human-readable, no help | `Error: <message>` |
+| Error site             | What triggers it          | Handling                          | User sees                                               |
+| ---------------------- | ------------------------- | --------------------------------- | ------------------------------------------------------- |
+| `requireFlag()`        | Missing required `--flag` | `CliUsageError(msg, group)`       | `Error: --path is required for 'fs read'\n\n<fs help>`  |
+| `requireNumericFlag()` | Non-numeric flag value    | `CliUsageError(msg, group)`       | `Error: --id must be a number...\n\n<deploy help>`      |
+| Missing subcommand     | `alva deploy` with no sub | `CliUsageError(msg, group)`       | `Error: Missing subcommand for deploy\n\n<deploy help>` |
+| Unknown subcommand     | `alva fs foo`             | `CliUsageError(msg, group)`       | `Error: Unknown subcommand: fs foo\n\n<fs help>`        |
+| Unknown command        | `alva foo`                | `CliUsageError(msg, undefined)`   | `Error: Unknown command: 'foo'...\n\n<global help>`     |
+| `handleConfigure`      | Missing `--api-key`       | `CliUsageError(msg, 'configure')` | `Error: --api-key is required...\n\n<configure help>`   |
+| `AlvaError`            | API/network error         | Unchanged JSON                    | `{"error":{"code":"...","message":"..."}}`              |
+| Unknown `Error`        | Unexpected runtime error  | Human-readable, no help           | `Error: <message>`                                      |
 
 No critical gaps. Every user-facing error has explicit handling.
 
@@ -247,17 +256,17 @@ No critical gaps. Every user-facing error has explicit handling.
 
 ### Unit tests
 
-| Test case | Input | Expected behavior |
-|-----------|-------|-------------------|
-| CliUsageError has correct name | `new CliUsageError('msg', 'fs')` | `err.name === 'CliUsageError'`, `err.command === 'fs'` |
-| CliUsageError with undefined command | `new CliUsageError('msg')` | `err.command === undefined` |
-| Missing subcommand throws CliUsageError | `dispatch(client, ['fs'])` | Rejects with `CliUsageError`, `command === 'fs'` |
-| Unknown subcommand throws CliUsageError | `dispatch(client, ['fs', 'foo'])` | Rejects with `CliUsageError`, `command === 'fs'` |
-| Unknown command throws CliUsageError | `dispatch(client, ['foo'])` | Rejects with `CliUsageError`, `command === undefined` |
-| Missing required flag throws CliUsageError | `dispatch(client, ['fs', 'read'])` | Rejects with `CliUsageError`, `command === 'fs'` |
-| Missing numeric flag throws CliUsageError | `dispatch(client, ['deploy', 'get'])` | Rejects with `CliUsageError`, `command === 'deploy'` |
-| Invalid numeric flag throws CliUsageError | `dispatch(client, ['deploy', 'get', '--id', 'abc'])` | Rejects with `CliUsageError`, `command === 'deploy'` |
-| Multiple command groups (spot check) | `dispatch(client, ['secrets'])`, `dispatch(client, ['trading'])` | Each rejects with `CliUsageError`, correct `command` |
+| Test case                                  | Input                                                            | Expected behavior                                      |
+| ------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------ |
+| CliUsageError has correct name             | `new CliUsageError('msg', 'fs')`                                 | `err.name === 'CliUsageError'`, `err.command === 'fs'` |
+| CliUsageError with undefined command       | `new CliUsageError('msg')`                                       | `err.command === undefined`                            |
+| Missing subcommand throws CliUsageError    | `dispatch(client, ['fs'])`                                       | Rejects with `CliUsageError`, `command === 'fs'`       |
+| Unknown subcommand throws CliUsageError    | `dispatch(client, ['fs', 'foo'])`                                | Rejects with `CliUsageError`, `command === 'fs'`       |
+| Unknown command throws CliUsageError       | `dispatch(client, ['foo'])`                                      | Rejects with `CliUsageError`, `command === undefined`  |
+| Missing required flag throws CliUsageError | `dispatch(client, ['fs', 'read'])`                               | Rejects with `CliUsageError`, `command === 'fs'`       |
+| Missing numeric flag throws CliUsageError  | `dispatch(client, ['deploy', 'get'])`                            | Rejects with `CliUsageError`, `command === 'deploy'`   |
+| Invalid numeric flag throws CliUsageError  | `dispatch(client, ['deploy', 'get', '--id', 'abc'])`             | Rejects with `CliUsageError`, `command === 'deploy'`   |
+| Multiple command groups (spot check)       | `dispatch(client, ['secrets'])`, `dispatch(client, ['trading'])` | Each rejects with `CliUsageError`, correct `command`   |
 
 ### Integration / E2E tests
 
@@ -267,10 +276,10 @@ stderr output is sufficient.
 
 ### Edge cases
 
-| Edge case | Input | Expected |
-|-----------|-------|----------|
-| Command exists but not in COMMAND_HELP | Hypothetical | Error message only, no help (graceful fallback) |
-| handleConfigure missing api-key | `handleConfigure(['configure'])` | Throws `CliUsageError` with `command === 'configure'` |
+| Edge case                              | Input                            | Expected                                              |
+| -------------------------------------- | -------------------------------- | ----------------------------------------------------- |
+| Command exists but not in COMMAND_HELP | Hypothetical                     | Error message only, no help (graceful fallback)       |
+| handleConfigure missing api-key        | `handleConfigure(['configure'])` | Throws `CliUsageError` with `command === 'configure'` |
 
 ## 6. Human Interaction
 
@@ -291,36 +300,38 @@ including the corresponding command's help text.
 ### Changes made
 
 **Source code:**
+
 - `src/error.ts` — Added `CliUsageError` class (extends `Error`, carries
   optional `command` field mapping to `COMMAND_HELP` keys)
 - `src/cli/index.ts` — (1) Import `CliUsageError`; (2) `requireFlag()`
   and `requireNumericFlag()` now throw `CliUsageError` with group name
   extracted via `command.split(' ')[0]`; (3) All 18 direct `throw new
-  Error(...)` in `dispatch()` converted to `throw new CliUsageError(...)`;
+Error(...)` in `dispatch()` converted to `throw new CliUsageError(...)`;
   (4) `handleConfigure()` error converted; (5) `main()` catch block now
   outputs human-readable `Error: <msg>\n\n<help>` for `CliUsageError`,
   preserves JSON for `AlvaError`, plain text for other errors
 
 **Test code:**
+
 - `test/error.test.ts` (new) — 2 tests for `CliUsageError` construction
 - `test/cli.test.ts` — 10 new tests for error-path behavior
 
 ### Tests added
 
-| Test case | File | Verifies |
-|-----------|------|----------|
-| CliUsageError sets name and command | test/error.test.ts | Constructor with command |
-| CliUsageError with undefined command | test/error.test.ts | Constructor without command |
-| Missing flag throws CliUsageError (fs read) | test/cli.test.ts | requireFlag -> CliUsageError, command='fs' |
-| Invalid numeric flag throws CliUsageError | test/cli.test.ts | requireNumericFlag -> CliUsageError, command='deploy' |
-| Missing subcommand (fs) | test/cli.test.ts | dispatch(['fs']) -> command='fs' |
-| Missing subcommand (deploy) | test/cli.test.ts | dispatch(['deploy']) -> command='deploy' |
-| Unknown subcommand (fs foo) | test/cli.test.ts | dispatch(['fs','foo']) -> command='fs' |
-| Unknown command (foo) | test/cli.test.ts | dispatch(['foo']) -> command=undefined |
-| Missing subcommand (secrets) | test/cli.test.ts | dispatch(['secrets']) -> command='secrets' |
-| Missing subcommand (trading) | test/cli.test.ts | dispatch(['trading']) -> command='trading' |
-| Unknown auth subcommand | test/cli.test.ts | dispatch(['auth','foo']) -> command='auth' |
-| handleConfigure missing api-key | test/cli.test.ts | CliUsageError, command='configure' |
+| Test case                                   | File               | Verifies                                              |
+| ------------------------------------------- | ------------------ | ----------------------------------------------------- |
+| CliUsageError sets name and command         | test/error.test.ts | Constructor with command                              |
+| CliUsageError with undefined command        | test/error.test.ts | Constructor without command                           |
+| Missing flag throws CliUsageError (fs read) | test/cli.test.ts   | requireFlag -> CliUsageError, command='fs'            |
+| Invalid numeric flag throws CliUsageError   | test/cli.test.ts   | requireNumericFlag -> CliUsageError, command='deploy' |
+| Missing subcommand (fs)                     | test/cli.test.ts   | dispatch(['fs']) -> command='fs'                      |
+| Missing subcommand (deploy)                 | test/cli.test.ts   | dispatch(['deploy']) -> command='deploy'              |
+| Unknown subcommand (fs foo)                 | test/cli.test.ts   | dispatch(['fs','foo']) -> command='fs'                |
+| Unknown command (foo)                       | test/cli.test.ts   | dispatch(['foo']) -> command=undefined                |
+| Missing subcommand (secrets)                | test/cli.test.ts   | dispatch(['secrets']) -> command='secrets'            |
+| Missing subcommand (trading)                | test/cli.test.ts   | dispatch(['trading']) -> command='trading'            |
+| Unknown auth subcommand                     | test/cli.test.ts   | dispatch(['auth','foo']) -> command='auth'            |
+| handleConfigure missing api-key             | test/cli.test.ts   | CliUsageError, command='configure'                    |
 
 ### Migration
 

@@ -224,8 +224,7 @@ describe('CLI dispatch', () => {
   it('throws CliUsageError with command="fs" when --path missing for fs read', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['fs', 'read'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'fs'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'fs'
     );
   });
 
@@ -234,32 +233,28 @@ describe('CLI dispatch', () => {
     await expect(
       dispatch(client, ['deploy', 'get', '--id', 'abc'])
     ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'deploy'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'deploy'
     );
   });
 
   it('throws CliUsageError with command="fs" for missing fs subcommand', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['fs'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'fs'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'fs'
     );
   });
 
   it('throws CliUsageError with command="deploy" for missing deploy subcommand', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['deploy'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'deploy'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'deploy'
     );
   });
 
   it('throws CliUsageError with command="fs" for unknown fs subcommand', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['fs', 'foo'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'fs'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'fs'
     );
   });
 
@@ -290,8 +285,7 @@ describe('CLI dispatch', () => {
   it('throws CliUsageError with command="auth" for unknown auth subcommand', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['auth', 'foo'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'auth'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'auth'
     );
   });
 });

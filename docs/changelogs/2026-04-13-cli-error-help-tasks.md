@@ -12,6 +12,7 @@ The class extends `Error`, has a `command?: string` field that maps to
 `COMMAND_HELP` keys. Export it.
 
 **Steps:**
+
 - [ ] Write test: `CliUsageError` sets name, message, command correctly;
       command can be undefined
 - [ ] Run test, verify fail: `npx vitest run`
@@ -31,6 +32,7 @@ The class extends `Error`, has a `command?: string` field that maps to
 `command` parameter using `command.split(' ')[0]`.
 
 **Steps:**
+
 - [ ] Write tests: `dispatch(client, ['fs', 'read'])` (missing --path)
       rejects with `CliUsageError` where `command === 'fs'`;
       `dispatch(client, ['deploy', 'get', '--id', 'abc'])` rejects with
@@ -64,15 +66,8 @@ Also update `handleConfigure()` error (line 537) to throw
 `CliUsageError('--api-key is required...', 'configure')`.
 
 **Steps:**
-- [ ] Write tests:
-      - `dispatch(client, ['fs'])` -> CliUsageError, command='fs'
-      - `dispatch(client, ['deploy'])` -> CliUsageError, command='deploy'
-      - `dispatch(client, ['fs', 'foo'])` -> CliUsageError, command='fs'
-      - `dispatch(client, ['foo'])` -> CliUsageError, command=undefined
-      - `dispatch(client, ['secrets'])` -> CliUsageError, command='secrets'
-      - `dispatch(client, ['trading'])` -> CliUsageError, command='trading'
-      - `dispatch(client, ['auth', 'foo'])` -> CliUsageError, command='auth'
-      - `handleConfigure(['configure'])` -> CliUsageError, command='configure'
+
+- [ ] Write tests: - `dispatch(client, ['fs'])` -> CliUsageError, command='fs' - `dispatch(client, ['deploy'])` -> CliUsageError, command='deploy' - `dispatch(client, ['fs', 'foo'])` -> CliUsageError, command='fs' - `dispatch(client, ['foo'])` -> CliUsageError, command=undefined - `dispatch(client, ['secrets'])` -> CliUsageError, command='secrets' - `dispatch(client, ['trading'])` -> CliUsageError, command='trading' - `dispatch(client, ['auth', 'foo'])` -> CliUsageError, command='auth' - `handleConfigure(['configure'])` -> CliUsageError, command='configure'
 - [ ] Run test, verify fail: `npx vitest run`
 - [ ] Update all throw sites in dispatch() and handleConfigure()
 - [ ] Run test, verify pass: `npx vitest run`
@@ -86,6 +81,7 @@ Also update `handleConfigure()` error (line 537) to throw
 **Files:** `src/cli/index.ts`
 
 **What to do:** Update `main()` catch block to:
+
 1. `CliUsageError` -> human-readable `Error: <msg>\n\n<help>` to stderr
 2. `AlvaError` -> unchanged JSON format
 3. Other `Error` -> human-readable `Error: <msg>` (no help)
@@ -94,6 +90,7 @@ No unit test for main() — it's the integration boundary. Verify by running
 the CLI manually.
 
 **Steps:**
+
 - [ ] Update catch block per the design in section 4
 - [ ] Run all tests to verify no regressions: `npx vitest run`
 - [ ] Run lint: `npx eslint .`
