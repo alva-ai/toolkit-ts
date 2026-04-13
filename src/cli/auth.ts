@@ -25,9 +25,7 @@ export interface AuthLoginDeps {
   generateState: () => string;
   openBrowser: (url: string) => Promise<void>;
   writeConfigDeps: WriteConfigDeps;
-  createServer: (
-    handler: http.RequestListener
-  ) => http.Server;
+  createServer: (handler: http.RequestListener) => http.Server;
   timeout?: number;
   log: (msg: string) => void;
 }

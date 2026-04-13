@@ -56,6 +56,7 @@ User runs `alva auth login`. The CLI:
 - `alva auth login --profile staging` — saves the key under the "staging" profile
 - `alva auth login --auth-url http://localhost:3000` — uses a custom frontend
   URL for the auth page (for local development)
+
 ### Failure modes
 
 - **State mismatch** → reject the callback, print error, keep server running
@@ -206,17 +207,17 @@ CODE PATH COVERAGE
 
 ### Unit tests
 
-| Test case | Input | Expected behavior |
-|-----------|-------|-------------------|
-| Happy path login | Valid callback with `api_key=alva_abc&state=<matching>` | Resolves with `{status: "logged_in", apiKey: "alva_abc", profile: "default"}`, writeConfig called |
-| State mismatch | Callback with `state=wrong` | Server responds 400, promise stays pending (not resolved) |
-| Missing api_key | Callback with `state=<matching>` but no `api_key` | Server responds 400, promise stays pending |
-| Timeout | No callback within timeout period | Rejects with timeout error message |
-| --profile flag | `["auth", "login", "--profile", "staging"]` | Config saved under "staging" profile |
-| --auth-url flag | `["auth", "login", "--auth-url", "http://localhost:3000"]` | Browser opened with `http://localhost:3000/cli-auth?...` |
-| openBrowser success | Normal exec | `exec` called with platform-appropriate command and the URL |
-| openBrowser failure | exec rejects | Error swallowed, no throw |
-| generateState | No input | Returns 64-character hex string (32 bytes) |
+| Test case           | Input                                                      | Expected behavior                                                                                 |
+| ------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Happy path login    | Valid callback with `api_key=alva_abc&state=<matching>`    | Resolves with `{status: "logged_in", apiKey: "alva_abc", profile: "default"}`, writeConfig called |
+| State mismatch      | Callback with `state=wrong`                                | Server responds 400, promise stays pending (not resolved)                                         |
+| Missing api_key     | Callback with `state=<matching>` but no `api_key`          | Server responds 400, promise stays pending                                                        |
+| Timeout             | No callback within timeout period                          | Rejects with timeout error message                                                                |
+| --profile flag      | `["auth", "login", "--profile", "staging"]`                | Config saved under "staging" profile                                                              |
+| --auth-url flag     | `["auth", "login", "--auth-url", "http://localhost:3000"]` | Browser opened with `http://localhost:3000/cli-auth?...`                                          |
+| openBrowser success | Normal exec                                                | `exec` called with platform-appropriate command and the URL                                       |
+| openBrowser failure | exec rejects                                               | Error swallowed, no throw                                                                         |
+| generateState       | No input                                                   | Returns 64-character hex string (32 bytes)                                                        |
 
 ### Integration / E2E tests
 
@@ -227,19 +228,21 @@ sufficient coverage.
 
 ### Edge cases
 
-| Edge case | Expected behavior |
-|-----------|-------------------|
+| Edge case                        | Expected behavior                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
 | Multiple callbacks (first valid) | First valid callback resolves, server shuts down, subsequent requests get connection refused |
-| Ctrl+C during wait | Process exits cleanly, server closed |
-| Very long api_key in query param | Accepted (no length limit on CLI side) |
+| Ctrl+C during wait               | Process exits cleanly, server closed                                                         |
+| Very long api_key in query param | Accepted (no length limit on CLI side)                                                       |
 
 ## 6. Human Interaction
 
 ### Initial thoughts
+
 User requested "create cli func about auth login that visit a link and then
 callback with a link contains api key."
 
 ### Iteration feedback
+
 - Command should be `alva auth login` (not `alva login`) for extensibility
 - Confirmed Option A: CLI + Frontend only (no backend changes)
 - Confirmed Approach B: separate `cli/auth.ts` module
@@ -270,22 +273,22 @@ callback with a link contains api key."
 
 ### Tests added
 
-| Test case | File | Verifies |
-|-----------|------|----------|
-| generateState returns 64-char hex | auth.test.ts | `crypto.randomBytes(32)` produces valid hex |
-| Happy path login | auth.test.ts | Valid callback resolves with `logged_in`, writeConfig called |
-| State mismatch | auth.test.ts | 400 response, promise stays pending |
-| Missing api_key | auth.test.ts | 400 response, promise stays pending |
-| Timeout | auth.test.ts | Rejects with timeout error after configured duration |
-| --profile flag | auth.test.ts | Config saved under named profile |
-| --auth-url flag | auth.test.ts | Browser URL uses custom auth URL |
-| openBrowser success | auth.test.ts | `openBrowser` called with correct URL params |
-| openBrowser failure | auth.test.ts | Error swallowed, login completes on callback |
-| Server listen error | auth.test.ts | Rejects with the server error |
-| auth login --help | cli.test.ts | Returns help text for auth login |
-| auth --help | cli.test.ts | Returns help text for auth |
-| auth without subcommand | cli.test.ts | Shows help |
-| Top-level help mentions auth | cli.test.ts | `auth` appears in main help text |
+| Test case                         | File         | Verifies                                                     |
+| --------------------------------- | ------------ | ------------------------------------------------------------ |
+| generateState returns 64-char hex | auth.test.ts | `crypto.randomBytes(32)` produces valid hex                  |
+| Happy path login                  | auth.test.ts | Valid callback resolves with `logged_in`, writeConfig called |
+| State mismatch                    | auth.test.ts | 400 response, promise stays pending                          |
+| Missing api_key                   | auth.test.ts | 400 response, promise stays pending                          |
+| Timeout                           | auth.test.ts | Rejects with timeout error after configured duration         |
+| --profile flag                    | auth.test.ts | Config saved under named profile                             |
+| --auth-url flag                   | auth.test.ts | Browser URL uses custom auth URL                             |
+| openBrowser success               | auth.test.ts | `openBrowser` called with correct URL params                 |
+| openBrowser failure               | auth.test.ts | Error swallowed, login completes on callback                 |
+| Server listen error               | auth.test.ts | Rejects with the server error                                |
+| auth login --help                 | cli.test.ts  | Returns help text for auth login                             |
+| auth --help                       | cli.test.ts  | Returns help text for auth                                   |
+| auth without subcommand           | cli.test.ts  | Shows help                                                   |
+| Top-level help mentions auth      | cli.test.ts  | `auth` appears in main help text                             |
 
 All 14 planned test cases from section 5 coverage diagram are implemented.
 Zero gaps.

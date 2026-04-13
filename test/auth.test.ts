@@ -147,9 +147,9 @@ describe('handleAuthLogin', () => {
   it('timeout: rejects with timeout error when no callback received', async () => {
     const { deps } = makeDeps({ timeout: 100 });
 
-    await expect(
-      handleAuthLogin(['auth', 'login'], deps)
-    ).rejects.toThrow('Login timed out waiting for callback');
+    await expect(handleAuthLogin(['auth', 'login'], deps)).rejects.toThrow(
+      'Login timed out waiting for callback'
+    );
   });
 
   it('--profile flag: saves config under specified profile', async () => {
@@ -268,8 +268,8 @@ describe('handleAuthLogin', () => {
       },
     });
 
-    await expect(
-      handleAuthLogin(['auth', 'login'], deps)
-    ).rejects.toThrow('EADDRINUSE');
+    await expect(handleAuthLogin(['auth', 'login'], deps)).rejects.toThrow(
+      'EADDRINUSE'
+    );
   });
 });
