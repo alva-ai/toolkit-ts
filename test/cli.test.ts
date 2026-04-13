@@ -336,6 +336,50 @@ describe('handleConfigure', () => {
   });
 });
 
+describe('auth help', () => {
+  it('top-level help mentions auth', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('auth');
+  });
+
+  it('auth --help returns help text', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['auth', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('auth');
+    expect(result.text).toContain('login');
+  });
+
+  it('auth login --help returns help text', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['auth', 'login', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('auth');
+    expect(result.text).toContain('login');
+  });
+
+  it('auth without subcommand shows help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['auth'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('auth');
+    expect(result.text).toContain('login');
+  });
+});
+
 describe('help text', () => {
   it('dispatch returns help object when no args', async () => {
     const client = makeClient();
