@@ -6,6 +6,7 @@ import {
   isVersionOlderThan,
 } from '../src/cli/index.js';
 import { AlvaClient } from '../src/client.js';
+import { CliUsageError } from '../src/error.js';
 
 function makeClient(): AlvaClient {
   const client = new AlvaClient({ apiKey: 'test-key' });
@@ -195,7 +196,7 @@ describe('CLI dispatch', () => {
   it('throws on unknown group with help hint', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(
-      /Unknown command.*alva --help/
+      /Unknown command/
     );
   });
 
@@ -217,6 +218,80 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await expect(dispatch(client, ['secrets', 'create'])).rejects.toThrow(
       /--name is required/
+    );
+  });
+
+  it('throws CliUsageError with command="fs" when --path missing for fs read', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['fs', 'read'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'fs'
+    );
+  });
+
+  it('throws CliUsageError with command="deploy" when --id is non-numeric for deploy get', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['deploy', 'get', '--id', 'abc'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'deploy'
+    );
+  });
+
+  it('throws CliUsageError with command="fs" for missing fs subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['fs'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'fs'
+    );
+  });
+
+  it('throws CliUsageError with command="deploy" for missing deploy subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['deploy'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'deploy'
+    );
+  });
+
+  it('throws CliUsageError with command="fs" for unknown fs subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['fs', 'foo'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'fs'
+    );
+  });
+
+  it('throws CliUsageError with command=undefined for unknown top-level command', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['foo'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === undefined
+    );
+  });
+
+  it('throws CliUsageError with command="secrets" for missing secrets subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['secrets'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'secrets'
+    );
+  });
+
+  it('throws CliUsageError with command="trading" for missing trading subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['trading'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'trading'
+    );
+  });
+
+  it('throws CliUsageError with command="auth" for unknown auth subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['auth', 'foo'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'auth'
     );
   });
 });
@@ -332,6 +407,20 @@ describe('handleConfigure', () => {
     };
     await expect(handleConfigure(['configure'], deps)).rejects.toThrow(
       /--api-key is required/
+    );
+  });
+
+  it('throws CliUsageError with command="configure" when --api-key is missing', async () => {
+    const deps = {
+      env: {} as Record<string, string | undefined>,
+      homedir: () => '/home/test',
+      mkdir: vi.fn(),
+      writeFile: vi.fn(),
+      readFile: vi.fn(),
+    };
+    await expect(handleConfigure(['configure'], deps)).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'configure'
     );
   });
 });
