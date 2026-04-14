@@ -167,6 +167,40 @@ export interface CronjobUpdateRequest {
   push_notify?: boolean;
 }
 
+export interface CronjobRunsListParams {
+  cronjob_id: number;
+  first?: number;
+  cursor?: number;
+}
+
+export interface CronjobRun {
+  id: number;
+  cronjob_id: number;
+  status: string;
+  error: string;
+  duration_ms: number;
+  credits_used: number;
+  created_at: string;
+}
+
+export interface CronjobRunStats {
+  total_runs: number;
+  success_count: number;
+  fail_count: number;
+  last_run_at?: string;
+  last_success_at?: string;
+}
+
+export interface CronjobRunsListResponse {
+  runs: CronjobRun[];
+  stats?: CronjobRunStats;
+  next_cursor?: number;
+}
+
+export interface CronjobRunLogsResponse {
+  logs: string;
+}
+
 // --- Release ---
 
 export interface FeedReleaseRequest {

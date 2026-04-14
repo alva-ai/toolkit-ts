@@ -34,6 +34,8 @@ function makeClient(): AlvaClient {
   client.deploy.delete = vi.fn().mockResolvedValue(undefined);
   client.deploy.pause = vi.fn().mockResolvedValue(undefined);
   client.deploy.resume = vi.fn().mockResolvedValue(undefined);
+  client.deploy.listRuns = vi.fn().mockResolvedValue({ runs: [] });
+  client.deploy.getRunLogs = vi.fn().mockResolvedValue({ logs: '' });
   client.secrets.create = vi.fn().mockResolvedValue(undefined);
   client.secrets.list = vi.fn().mockResolvedValue({ secrets: [] });
   client.secrets.get = vi.fn().mockResolvedValue({ name: 'K', value: 'V' });
@@ -81,6 +83,22 @@ describe('CLI dispatch', () => {
     await dispatch(client, ['deploy', 'list', '--limit', '5']);
     expect(client.deploy.list).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 5 })
+    );
+  });
+
+  it('dispatches deploy runs with --id', async () => {
+    const client = makeClient();
+    await dispatch(client, ['deploy', 'runs', '--id', '42']);
+    expect(client.deploy.listRuns).toHaveBeenCalledWith(
+      expect.objectContaining({ cronjob_id: 42 })
+    );
+  });
+
+  it('dispatches deploy run-logs with --id and --run-id', async () => {
+    const client = makeClient();
+    await dispatch(client, ['deploy', 'run-logs', '--id', '42', '--run-id', '7']);
+    expect(client.deploy.getRunLogs).toHaveBeenCalledWith(
+      expect.objectContaining({ cronjob_id: 42, run_id: 7 })
     );
   });
 

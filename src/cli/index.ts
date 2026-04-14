@@ -273,7 +273,10 @@ Examples:
   alva deploy update --id 42 --cron "0 */2 * * *" --no-push-notify
   alva deploy pause --id 42
   alva deploy resume --id 42
-  alva deploy delete --id 42`,
+  alva deploy delete --id 42
+  alva deploy runs --id 42
+  alva deploy runs --id 42 --first 10
+  alva deploy run-logs --id 42 --run-id 123`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -844,6 +847,17 @@ export async function dispatch(
         case 'resume':
           return client.deploy.resume({
             id: requireNumericFlag(flags, 'id', 'deploy resume'),
+          });
+        case 'runs':
+          return client.deploy.listRuns({
+            cronjob_id: requireNumericFlag(flags, 'id', 'deploy runs'),
+            first: num(flags['first']),
+            cursor: num(flags['cursor']),
+          });
+        case 'run-logs':
+          return client.deploy.getRunLogs({
+            cronjob_id: requireNumericFlag(flags, 'id', 'deploy run-logs'),
+            run_id: requireNumericFlag(flags, 'run-id', 'deploy run-logs'),
           });
         default:
           throw new CliUsageError(
