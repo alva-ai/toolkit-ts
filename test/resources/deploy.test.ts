@@ -106,4 +106,36 @@ describe('DeployResource', () => {
       '/api/v1/deploy/cronjob/123/resume'
     );
   });
+
+  it('listRuns sends GET /api/v1/deploy/cronjob/:id/runs with pagination', async () => {
+    const client = makeClient();
+    const deploy = new DeployResource(client);
+    await deploy.listRuns({ cronjob_id: 42, first: 10, cursor: 99 });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/deploy/cronjob/42/runs',
+      { query: { first: 10, cursor: 99 } }
+    );
+  });
+
+  it('listRuns sends GET with default params', async () => {
+    const client = makeClient();
+    const deploy = new DeployResource(client);
+    await deploy.listRuns({ cronjob_id: 42 });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/deploy/cronjob/42/runs',
+      { query: { first: undefined, cursor: undefined } }
+    );
+  });
+
+  it('getRunLogs sends GET /api/v1/deploy/cronjob/:id/runs/:runId/logs', async () => {
+    const client = makeClient();
+    const deploy = new DeployResource(client);
+    await deploy.getRunLogs({ cronjob_id: 42, run_id: 7 });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/deploy/cronjob/42/runs/7/logs'
+    );
+  });
 });

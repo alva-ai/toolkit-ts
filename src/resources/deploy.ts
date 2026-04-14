@@ -5,6 +5,9 @@ import type {
   CronjobListParams,
   CronjobListResponse,
   CronjobUpdateRequest,
+  CronjobRunsListParams,
+  CronjobRunsListResponse,
+  CronjobRunLogsResponse,
 } from '../types.js';
 
 export class DeployResource {
@@ -65,5 +68,29 @@ export class DeployResource {
       'POST',
       `/api/v1/deploy/cronjob/${params.id}/resume`
     );
+  }
+
+  async listRuns(
+    params: CronjobRunsListParams
+  ): Promise<CronjobRunsListResponse> {
+    this.client._requireAuth();
+    return this.client._request(
+      'GET',
+      `/api/v1/deploy/cronjob/${params.cronjob_id}/runs`,
+      {
+        query: { first: params.first, cursor: params.cursor },
+      }
+    ) as Promise<CronjobRunsListResponse>;
+  }
+
+  async getRunLogs(params: {
+    cronjob_id: number;
+    run_id: number;
+  }): Promise<CronjobRunLogsResponse> {
+    this.client._requireAuth();
+    return this.client._request(
+      'GET',
+      `/api/v1/deploy/cronjob/${params.cronjob_id}/runs/${params.run_id}/logs`
+    ) as Promise<CronjobRunLogsResponse>;
   }
 }
