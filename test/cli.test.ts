@@ -96,7 +96,14 @@ describe('CLI dispatch', () => {
 
   it('dispatches deploy run-logs with --id and --run-id', async () => {
     const client = makeClient();
-    await dispatch(client, ['deploy', 'run-logs', '--id', '42', '--run-id', '7']);
+    await dispatch(client, [
+      'deploy',
+      'run-logs',
+      '--id',
+      '42',
+      '--run-id',
+      '7',
+    ]);
     expect(client.deploy.getRunLogs).toHaveBeenCalledWith(
       expect.objectContaining({ cronjob_id: 42, run_id: 7 })
     );
