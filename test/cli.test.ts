@@ -8,6 +8,15 @@ import {
 import { AlvaClient } from '../src/client.js';
 import { CliUsageError } from '../src/error.js';
 
+vi.mock('fs', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync as (...args: unknown[]) => unknown),
+  };
+});
+import * as fs from 'fs';
+
 function makeClient(): AlvaClient {
   const client = new AlvaClient({ apiKey: 'test-key' });
   // Mock all resource methods
@@ -131,6 +140,101 @@ describe('CLI dispatch', () => {
     expect(client.run.execute).toHaveBeenCalledWith(
       expect.objectContaining({ code: '1+1' })
     );
+  });
+
+  it('dispatches run with --local-file', async () => {
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue('console.log("hello")');
+    const client = makeClient();
+    await dispatch(client, ['run', '--local-file', '/tmp/script.js']);
+    expect(mock).toHaveBeenCalledWith('/tmp/script.js', 'utf-8');
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'console.log("hello")' })
+    );
+    mock.mockReset();
+  });
+
+  it('dispatches run with --local-file and --args', async () => {
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue('require("env").args');
+    const client = makeClient();
+    await dispatch(client, [
+      'run',
+      '--local-file',
+      '/tmp/script.js',
+      '--args',
+      '{"symbol":"BTC"}',
+    ]);
+    expect(mock).toHaveBeenCalledWith('/tmp/script.js', 'utf-8');
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'require("env").args',
+        args: { symbol: 'BTC' },
+      })
+    );
+    mock.mockReset();
+  });
+
+  it('throws CliUsageError when --code and --local-file are both provided', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'run',
+        '--code',
+        '1+1',
+        '--local-file',
+        '/tmp/script.js',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('throws CliUsageError when --local-file and --entry-path are both provided', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'run',
+        '--local-file',
+        '/tmp/script.js',
+        '--entry-path',
+        '~/feeds/my-feed/v1/src/index.js',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('throws CliUsageError when --code and --entry-path are both provided', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'run',
+        '--code',
+        '1+1',
+        '--entry-path',
+        '~/feeds/my-feed/v1/src/index.js',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('throws Error when --local-file points to non-existent file', async () => {
+    const mock = vi.mocked(fs.readFileSync).mockImplementation(() => {
+      const err = new Error(
+        "ENOENT: no such file or directory, open '/tmp/nope.js'"
+      );
+      (err as NodeJS.ErrnoException).code = 'ENOENT';
+      throw err;
+    });
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['run', '--local-file', '/tmp/nope.js'])
+    ).rejects.toThrow('ENOENT');
+    mock.mockReset();
   });
 
   it('dispatches release feed', async () => {
@@ -568,6 +672,7 @@ describe('help text', () => {
     expect(result._help).toBe(true);
     expect(result.text).toContain('--code');
     expect(result.text).toContain('--entry-path');
+    expect(result.text).toContain('--local-file');
     expect(result.text).toContain('require(');
   });
 
