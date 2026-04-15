@@ -131,7 +131,7 @@ export async function handleAuthLogin(
 
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
-        '<html><body><h1>Success</h1><p>You are now logged in. You can close this tab.</p></body></html>'
+        '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:rgba(246,246,246,1);font-family:system-ui,sans-serif"><div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:40px"><h1 style="font-size:45px;font-weight:400;line-height:120%;margin:0">Turn Ideas into Live<br>Investing Playbooks in Minutes</h1><p style="font-size:24px;font-weight:400;margin:0">You\'re all set for Alva.</p></div></body></html>'
       );
 
       server.close();
@@ -150,7 +150,7 @@ export async function handleAuthLogin(
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as { port: number };
       const callbackUrl = `http://127.0.0.1:${addr.port}/callback`;
-      const loginUrl = `${authUrl}/apikey?callback_url=${encodeURIComponent(callbackUrl)}&state=${state}`;
+      const loginUrl = `${authUrl}/authorize?callback_url=${encodeURIComponent(callbackUrl)}&state=${state}`;
       d.log(
         `Opening browser...\nIf it doesn't open, visit:\n${loginUrl}\n\nWaiting for login callback...\n`
       );

@@ -83,7 +83,7 @@ describe('handleAuthLogin', () => {
       `http://127.0.0.1:${port}/callback?api_key=alva_abc&state=${fixedState}`
     );
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('Success');
+    expect(res.body).toContain('all set for Alva');
 
     const result = await loginPromise;
     expect(result).toEqual({
@@ -183,7 +183,7 @@ describe('handleAuthLogin', () => {
     );
     const openedUrl = await waitForServer(getCapturedUrl);
 
-    expect(openedUrl).toContain('http://localhost:3000/apikey?');
+    expect(openedUrl).toContain('http://localhost:3000/authorize?');
 
     await loginPromise.catch(() => {
       // Timeout cleanup
@@ -198,7 +198,7 @@ describe('handleAuthLogin', () => {
 
     expect(deps.openBrowser).toHaveBeenCalledTimes(1);
     const url = deps.openBrowser.mock.calls[0][0] as string;
-    expect(url).toContain('/apikey?');
+    expect(url).toContain('/authorize?');
     expect(url).toContain('callback_url=');
     expect(url).toContain('state=');
 
