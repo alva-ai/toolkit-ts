@@ -192,11 +192,13 @@ data SDKs, ALFS, HTTP networking, and the Feed SDK.
 
 Options:
   --code <code>          Inline JavaScript code to execute
+  --local-file <path>    Path to a local file whose contents are sent as code
   --entry-path <path>    Path to a script file on ALFS (home-relative)
   --working-dir <dir>    Working directory for require() (inline code only)
   --args <json>          JSON object passed to require("env").args
 
-At least one of --code or --entry-path is required.
+At least one of --code, --local-file, or --entry-path is required.
+These three options are mutually exclusive.
 
 Response fields:
   result    JSON-encoded return value of the script
@@ -223,7 +225,8 @@ Examples:
   alva run --code "1 + 2 + 3;"
   alva run --code "JSON.stringify(require('env').args);" --args '{"symbol":"BTC"}'
   alva run --entry-path ~/feeds/my-feed/v1/src/index.js
-  alva run --entry-path ~/tasks/analyze/src/index.js --args '{"symbol":"NVDA","limit":50}'`,
+  alva run --entry-path ~/tasks/analyze/src/index.js --args '{"symbol":"NVDA","limit":50}'
+  alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
@@ -795,13 +798,27 @@ export async function dispatch(
       }
     }
 
-    case 'run':
+    case 'run': {
+      const sourceFlags = ['code', 'local-file', 'entry-path'].filter(
+        (f) => flags[f] !== undefined
+      );
+      if (sourceFlags.length > 1) {
+        throw new CliUsageError(
+          `--${sourceFlags.join(' and --')} are mutually exclusive`,
+          'run'
+        );
+      }
+      let code = flags['code'];
+      if (flags['local-file']) {
+        code = fs.readFileSync(flags['local-file'], 'utf-8') as string;
+      }
       return client.run.execute({
-        code: flags['code'],
+        code,
         entry_path: flags['entry-path'],
         working_dir: flags['working-dir'],
         args: jsonParse(flags['args']) as Record<string, unknown> | undefined,
       });
+    }
 
     case 'deploy': {
       if (!subcommand)
