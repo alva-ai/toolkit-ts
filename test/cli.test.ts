@@ -10,7 +10,10 @@ import { CliUsageError } from '../src/error.js';
 
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
-  return { ...actual, readFileSync: vi.fn(actual.readFileSync as (...args: unknown[]) => unknown) };
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync as (...args: unknown[]) => unknown),
+  };
 });
 import * as fs from 'fs';
 
@@ -140,7 +143,9 @@ describe('CLI dispatch', () => {
   });
 
   it('dispatches run with --local-file', async () => {
-    const mock = vi.mocked(fs.readFileSync).mockReturnValue('console.log("hello")');
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue('console.log("hello")');
     const client = makeClient();
     await dispatch(client, ['run', '--local-file', '/tmp/script.js']);
     expect(mock).toHaveBeenCalledWith('/tmp/script.js', 'utf-8');
@@ -151,7 +156,9 @@ describe('CLI dispatch', () => {
   });
 
   it('dispatches run with --local-file and --args', async () => {
-    const mock = vi.mocked(fs.readFileSync).mockReturnValue('require("env").args');
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue('require("env").args');
     const client = makeClient();
     await dispatch(client, [
       'run',

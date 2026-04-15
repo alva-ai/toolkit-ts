@@ -15,6 +15,7 @@ and pass contents as `code`. Update help text. Mock `fs.readFileSync` in
 tests via `vi.mock('fs')`.
 
 **Steps:**
+
 - [ ] Write failing tests: --local-file happy path, --local-file with --args,
       --code + --local-file conflict, --local-file + --entry-path conflict,
       --local-file file not found, help text includes --local-file

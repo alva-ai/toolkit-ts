@@ -188,15 +188,15 @@ Zero gaps.
 
 ### Unit tests
 
-| Test case | Input | Expected behavior |
-|-----------|-------|-------------------|
-| Dispatches run with --local-file | `['run', '--local-file', './script.js']` | `readFileSync('./script.js', 'utf-8')` called; `execute({code: '<file contents>'})` called |
-| --local-file with --args | `['run', '--local-file', './s.js', '--args', '{"x":1}']` | `execute({code: '...', args: {x:1}})` |
-| --local-file with --working-dir | `['run', '--local-file', './s.js', '--working-dir', '/d']` | `execute({code: '...', working_dir: '/d'})` |
-| --code + --local-file conflict | `['run', '--code', '1+1', '--local-file', './s.js']` | Throws `CliUsageError` with `command === 'run'` |
-| --local-file + --entry-path conflict | `['run', '--local-file', './s.js', '--entry-path', '~/f']` | Throws `CliUsageError` with `command === 'run'` |
-| --local-file file not found | `['run', '--local-file', './missing.js']` | Throws error (ENOENT from readFileSync) |
-| Help text includes --local-file | `['run', '--help']` | Help text contains `--local-file` |
+| Test case                            | Input                                                      | Expected behavior                                                                          |
+| ------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Dispatches run with --local-file     | `['run', '--local-file', './script.js']`                   | `readFileSync('./script.js', 'utf-8')` called; `execute({code: '<file contents>'})` called |
+| --local-file with --args             | `['run', '--local-file', './s.js', '--args', '{"x":1}']`   | `execute({code: '...', args: {x:1}})`                                                      |
+| --local-file with --working-dir      | `['run', '--local-file', './s.js', '--working-dir', '/d']` | `execute({code: '...', working_dir: '/d'})`                                                |
+| --code + --local-file conflict       | `['run', '--code', '1+1', '--local-file', './s.js']`       | Throws `CliUsageError` with `command === 'run'`                                            |
+| --local-file + --entry-path conflict | `['run', '--local-file', './s.js', '--entry-path', '~/f']` | Throws `CliUsageError` with `command === 'run'`                                            |
+| --local-file file not found          | `['run', '--local-file', './missing.js']`                  | Throws error (ENOENT from readFileSync)                                                    |
+| Help text includes --local-file      | `['run', '--help']`                                        | Help text contains `--local-file`                                                          |
 
 ### E2E tests
 
@@ -247,17 +247,18 @@ implement only the file-based option.
 
 ### Tests added
 
-| Test case | Verifies |
-|-----------|----------|
-| dispatches run with --local-file | Happy path: readFileSync called, contents sent as code |
-| dispatches run with --local-file and --args | Combines with --args correctly |
-| throws CliUsageError when --code and --local-file are both provided | Mutual exclusion |
-| throws CliUsageError when --local-file and --entry-path are both provided | Mutual exclusion |
-| throws CliUsageError when --code and --entry-path are both provided | Mutual exclusion (new, not in original plan) |
-| throws Error when --local-file points to non-existent file | ENOENT propagation |
-| help text includes --local-file | Help text updated |
+| Test case                                                                 | Verifies                                               |
+| ------------------------------------------------------------------------- | ------------------------------------------------------ |
+| dispatches run with --local-file                                          | Happy path: readFileSync called, contents sent as code |
+| dispatches run with --local-file and --args                               | Combines with --args correctly                         |
+| throws CliUsageError when --code and --local-file are both provided       | Mutual exclusion                                       |
+| throws CliUsageError when --local-file and --entry-path are both provided | Mutual exclusion                                       |
+| throws CliUsageError when --code and --entry-path are both provided       | Mutual exclusion (new, not in original plan)           |
+| throws Error when --local-file points to non-existent file                | ENOENT propagation                                     |
+| help text includes --local-file                                           | Help text updated                                      |
 
 **Coverage cross-reference against plan:**
+
 - [DONE] reads file, passes contents as code
 - [DONE] works with --args
 - [SKIPPED] works with --working-dir — `--working-dir` is an independent
