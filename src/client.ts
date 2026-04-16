@@ -110,7 +110,7 @@ export class AlvaClient {
 
     const headers: Record<string, string> = {};
     if (this.token) {
-      headers.Authorization = `${this.token}`;
+      headers['x-Playbook-Viewer'] = this.token;
     } else if (this.apiKey) {
       headers['X-Alva-Api-Key'] = this.apiKey;
     }
