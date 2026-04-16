@@ -76,6 +76,7 @@ array of objects (e.g. `[{date, close, volume, ...}, ...]`) instead of an
 that fails UTF-8 decode).
 
 This is scoped to `fs.read()` only, not `_request()`, because:
+
 - Only fs/read has the octet-stream-but-actually-JSON problem
 - Changing `_request` would affect all API calls
 - `fs.read` already documents returning `ArrayBuffer | unknown`
@@ -86,6 +87,7 @@ silently replaced with U+FFFD instead of throwing, which would return a
 corrupted string instead of preserving the original `ArrayBuffer`.
 
 **Risks:**
+
 - Minor type change: text file reads return `string` instead of `ArrayBuffer`.
   No known consumers rely on ArrayBuffer semantics for text reads.
 - Performance: `TextDecoder({ fatal: true })` short-circuits on the first
@@ -94,6 +96,7 @@ corrupted string instead of preserving the original `ArrayBuffer`.
 **Scope:** single-service, toolkit-ts only.
 
 **Reference files:**
+
 - Handler pattern: `src/resources/fs.ts` — `read()` method
 - Test pattern: existing tests in toolkit-ts (need to check test setup)
 
@@ -101,10 +104,10 @@ corrupted string instead of preserving the original `ArrayBuffer`.
 
 ### Affected modules
 
-| Service | Code | Deployment |
-|---------|------|------------|
+| Service    | Code                                                    | Deployment                 |
+| ---------- | ------------------------------------------------------- | -------------------------- |
 | toolkit-ts | `src/resources/fs.ts` — add post-processing in `read()` | npm publish (version bump) |
-| toolkit-ts | `test/resources/fs.test.ts` — add decode tests | none |
+| toolkit-ts | `test/resources/fs.test.ts` — add decode tests          | none                       |
 
 No other services affected. Gateway, alfs, alva-backend unchanged.
 
@@ -126,6 +129,7 @@ None.
 **Minor breaking change:** `fs.read()` previously always returned
 `ArrayBuffer` for fs/read responses (because gateway returns
 `octet-stream`). After this change:
+
 - Time series paths → returns parsed JS object (array)
 - Text files → returns `string`
 - Binary files → returns `ArrayBuffer` (unchanged)
@@ -176,13 +180,13 @@ Zero gaps.
 
 ### Unit test cases
 
-| Test case | Mock `_request` returns | Expected `read()` returns |
-|-----------|------------------------|---------------------------|
-| ArrayBuffer containing JSON array | `ArrayBuffer` of `'[{"date":1,"close":100}]'` | parsed array `[{date:1,close:100}]` |
-| ArrayBuffer containing plain text | `ArrayBuffer` of `'console.log("hi");'` | string `'console.log("hi");'` |
-| ArrayBuffer containing binary | `ArrayBuffer` of `[0x00, 0xFF, 0x80]` | original `ArrayBuffer` (TextDecoder fatal throws) |
-| Non-ArrayBuffer (already parsed) | `{some: "object"}` | `{some: "object"}` passthrough |
-| Empty ArrayBuffer | `ArrayBuffer` of `''` | `''` (empty string, JSON.parse fails) |
+| Test case                         | Mock `_request` returns                       | Expected `read()` returns                         |
+| --------------------------------- | --------------------------------------------- | ------------------------------------------------- |
+| ArrayBuffer containing JSON array | `ArrayBuffer` of `'[{"date":1,"close":100}]'` | parsed array `[{date:1,close:100}]`               |
+| ArrayBuffer containing plain text | `ArrayBuffer` of `'console.log("hi");'`       | string `'console.log("hi");'`                     |
+| ArrayBuffer containing binary     | `ArrayBuffer` of `[0x00, 0xFF, 0x80]`         | original `ArrayBuffer` (TextDecoder fatal throws) |
+| Non-ArrayBuffer (already parsed)  | `{some: "object"}`                            | `{some: "object"}` passthrough                    |
+| Empty ArrayBuffer                 | `ArrayBuffer` of `''`                         | `''` (empty string, JSON.parse fails)             |
 
 ### E2E Required: no
 

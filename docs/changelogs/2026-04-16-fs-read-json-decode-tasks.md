@@ -13,6 +13,7 @@ binary, non-ArrayBuffer passthrough, empty). All tests should fail initially
 since the decode logic doesn't exist yet.
 
 **Steps:**
+
 - [ ] Write 5 test cases per the test plan table in section 5
 - [ ] Run `npm test`, verify all 5 fail (read() returns ArrayBuffer, not parsed)
 - [ ] Commit test file only
@@ -30,6 +31,7 @@ post-processing: if result is `ArrayBuffer`, try `TextDecoder({ fatal: true })`
 next-best return value.
 
 Pseudocode:
+
 ```
 const result = await this.client._request(...)
 if (!(result instanceof ArrayBuffer)) return result
@@ -40,6 +42,7 @@ try {
 ```
 
 **Steps:**
+
 - [ ] Implement the decode logic in `read()`
 - [ ] Run `npm test`, verify all 5 new tests pass
 - [ ] Run existing tests, verify none break
@@ -48,6 +51,7 @@ try {
 ---
 
 **Dependency graph:**
+
 ```
 Task 1 (tests) → Task 2 (implementation)
 ```
