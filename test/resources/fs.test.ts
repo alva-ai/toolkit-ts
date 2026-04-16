@@ -45,6 +45,53 @@ describe('FsResource', () => {
         },
       });
     });
+
+    it('decodes ArrayBuffer containing JSON array', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      const json = '[{"date":1,"close":100}]';
+      client._request.mockResolvedValue(new TextEncoder().encode(json).buffer);
+      const result = await fs.read({ path: '~/data.json' });
+      expect(result).toEqual([{ date: 1, close: 100 }]);
+    });
+
+    it('decodes ArrayBuffer containing plain text', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      const text = 'console.log("hi");';
+      client._request.mockResolvedValue(new TextEncoder().encode(text).buffer);
+      const result = await fs.read({ path: '~/script.js' });
+      expect(result).toBe('console.log("hi");');
+    });
+
+    it('returns ArrayBuffer as-is for binary data', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      const binary = new Uint8Array([0x00, 0xff, 0x80]).buffer;
+      client._request.mockResolvedValue(binary);
+      const result = await fs.read({ path: '~/image.bin' });
+      expect(result).toBeInstanceOf(ArrayBuffer);
+      expect(new Uint8Array(result as ArrayBuffer)).toEqual(
+        new Uint8Array([0x00, 0xff, 0x80])
+      );
+    });
+
+    it('passes through non-ArrayBuffer values', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      const obj = { some: 'object' };
+      client._request.mockResolvedValue(obj);
+      const result = await fs.read({ path: '~/data.json' });
+      expect(result).toEqual({ some: 'object' });
+    });
+
+    it('decodes empty ArrayBuffer to empty string', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      client._request.mockResolvedValue(new TextEncoder().encode('').buffer);
+      const result = await fs.read({ path: '~/empty.txt' });
+      expect(result).toBe('');
+    });
   });
 
   describe('write', () => {

@@ -23,9 +23,20 @@ export class FsResource {
 
   /** Returns `ArrayBuffer` for binary files, or parsed JSON for time-series virtual paths. */
   async read(params: FsReadParams): Promise<ArrayBuffer | unknown> {
-    return this.client._request('GET', '/api/v1/fs/read', {
+    const result = await this.client._request('GET', '/api/v1/fs/read', {
       query: { path: params.path, offset: params.offset, size: params.size },
     });
+    if (!(result instanceof ArrayBuffer)) return result;
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(result);
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    } catch {
+      return result;
+    }
   }
 
   /** Write file using JSON body (Mode 2). For text content. */
