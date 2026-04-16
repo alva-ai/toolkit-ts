@@ -1070,6 +1070,12 @@ export async function dispatch(
         xpath: flags['xpath'],
       });
       const buf = Buffer.from(result as ArrayBuffer);
+      if (buf.length === 0) {
+        throw new CliUsageError(
+          'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
+          'screenshot'
+        );
+      }
       fs.writeFileSync(outFile, buf);
       return { written: outFile, bytes: buf.length };
     }
