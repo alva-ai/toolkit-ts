@@ -133,17 +133,20 @@ try {
 ## CLI Commands
 
 ```
-alva configure --api-key <key> [--base-url <url>]
+alva configure --api-key <key> [--base-url <url>] [--profile <name>]
+alva whoami [--profile <name>]
+alva auth login [--profile <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json>]
-alva deploy <create|list|get|update|delete|pause|resume>
+alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
 alva comments <create|pin|unpin>
 alva remix --child-username <u> --child-name <n> --parents <json>
 alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
+alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
 ```
 
 ## Contributing

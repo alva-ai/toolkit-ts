@@ -36,18 +36,18 @@ const HELP_TEXT = `Usage: alva <command> [options]
 
 Commands:
   configure   Save API key and endpoint to a named profile
-  whoami      Verify credentials and show current user info
-  user        User profile operations
+  whoami      Verify credentials and show current identity
+  user        User profile operations (me)
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
-  deploy      Cronjob management (create, list, get, update, delete, pause, resume)
+  deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   comments    Playbook comments (create, pin, unpin)
   remix       Save playbook remix lineage
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
-  auth        Authentication (login via browser)
+  auth        Authentication (login)
   screenshot  Capture a web screenshot as PNG
 
 Global options:
@@ -143,16 +143,26 @@ Subcommands:
   grant      Grant access permission to a user or group
   revoke     Revoke access permission
 
-Common flags:
-  --path <path>          File or directory path (required for most subcommands)
-  --recursive            Enable recursive operation (readdir, remove)
-  --no-recursive         Disable recursive operation
-  --mkdir-parents        Create parent directories on write (default for write)
-  --no-mkdir-parents     Disable automatic parent directory creation on write
+Subcommand flags:
+  read       --path (required), [--offset <n>], [--size <n>]
+  write      --path (required), --data <text> OR --file <local-path> (one required),
+             [--mkdir-parents | --no-mkdir-parents]
+  stat       --path (required)
+  readdir    --path (required), [--recursive | --no-recursive]
+  mkdir      --path (required)
+  remove     --path (required), [--recursive | --no-recursive]
+  rename     --old-path (required), --new-path (required)
+  copy       --src-path (required), --dst-path (required)
+  symlink    --target-path (required), --link-path (required)
+  readlink   --path (required)
+  chmod      --path (required), --mode <octal> (required)
+  grant      --path (required), --subject <s> (required), --permission <p> (required)
+  revoke     --path (required), --subject <s> (required), --permission <p> (required)
 
 Path conventions:
   ~/...                  Home-relative path (expands to /alva/home/<username>/...)
   /alva/home/alice/...   Absolute path (required for public/unauthenticated reads)
+  Quote tilde paths to prevent shell expansion: --path "~/data" (not --path ~/data).
 
 Time series reads:
   Paths under feed data directories support virtual suffixes:
@@ -168,21 +178,23 @@ Grant/revoke subjects:
   user:<id>              Specific user by ID
 
 Examples:
-  alva fs readdir --path ~/
-  alva fs readdir --path ~/data --recursive
-  alva fs read --path ~/data/prices.json
-  alva fs read --path ~/feeds/btc-ema/v1/data/metrics/prices/@last/100
+  alva fs readdir --path "~/"
+  alva fs readdir --path "~/data" --recursive
+  alva fs read --path "~/data/prices.json"
+  alva fs read --path "~/feeds/btc-ema/v1/data/metrics/prices/@last/100"
   alva fs read --path /alva/home/alice/feeds/btc-ema/v1/data/metrics/prices/@last/10
-  alva fs write --path ~/hello.txt --data "Hello, world!"
-  alva fs write --path ~/feeds/my-feed/v1/src/index.js --file ./local-script.js --mkdir-parents
-  alva fs stat --path ~/hello.txt
-  alva fs mkdir --path ~/feeds/my-feed/v1/src
-  alva fs remove --path ~/old-folder --recursive
-  alva fs rename --old-path ~/a.txt --new-path ~/b.txt
-  alva fs copy --src-path ~/a.txt --dst-path ~/b.txt
-  alva fs chmod --path ~/script.js --mode 755
-  alva fs grant --path ~/feeds/btc-ema --subject "special:user:*" --permission read
-  alva fs revoke --path ~/feeds/btc-ema --subject "special:user:*" --permission read`,
+  alva fs write --path "~/hello.txt" --data "Hello, world!"
+  alva fs write --path "~/feeds/my-feed/v1/src/index.js" --file ./local-script.js --mkdir-parents
+  alva fs stat --path "~/hello.txt"
+  alva fs mkdir --path "~/feeds/my-feed/v1/src"
+  alva fs remove --path "~/old-folder" --recursive
+  alva fs rename --old-path "~/a.txt" --new-path "~/b.txt"
+  alva fs copy --src-path "~/a.txt" --dst-path "~/b.txt"
+  alva fs chmod --path "~/script.js" --mode 755
+  alva fs grant --path "~/feeds/btc-ema" --subject "special:user:*" --permission read
+  alva fs revoke --path "~/feeds/btc-ema" --subject "special:user:*" --permission read
+  alva fs symlink --target-path "~/real-file.txt" --link-path "~/my-link.txt"
+  alva fs readlink --path "~/my-link.txt"`,
 
   run: `Usage: alva run [options]
 
@@ -224,8 +236,8 @@ Constraints:
 Examples:
   alva run --code "1 + 2 + 3;"
   alva run --code "JSON.stringify(require('env').args);" --args '{"symbol":"BTC"}'
-  alva run --entry-path ~/feeds/my-feed/v1/src/index.js
-  alva run --entry-path ~/tasks/analyze/src/index.js --args '{"symbol":"NVDA","limit":50}'
+  alva run --entry-path "~/feeds/my-feed/v1/src/index.js"
+  alva run --entry-path "~/tasks/analyze/src/index.js" --args '{"symbol":"NVDA","limit":50}'
   alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
@@ -241,6 +253,8 @@ Subcommands:
   delete     Delete a cronjob
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
+  runs       List runs for a cronjob (cursor-paginated)
+  run-logs   Get stdout/stderr logs for a single cronjob run
 
 Create flags:
   --name <name>          Cronjob name (required, 1-63 lowercase alphanumeric/hyphens)
@@ -257,6 +271,15 @@ List flags:
 Get/Update/Delete/Pause/Resume flags:
   --id <id>              Cronjob ID (required)
 
+Runs flags:
+  --id <id>              Cronjob ID (required)
+  --first <n>            Max results per page
+  --cursor <cursor>      Pagination cursor from previous response
+
+Run-logs flags:
+  --id <id>              Cronjob ID (required)
+  --run-id <id>          Run ID (required)
+
 Name format: 1-63 lowercase alphanumeric or hyphens, no leading/trailing hyphens.
   Valid:   btc-ema-update, my-strategy-1
   Invalid: BTC EMA, -my-job-, my_job
@@ -268,8 +291,8 @@ Recommended cron schedules:
   "0 0 * * *"      Daily at midnight (end-of-day summaries)
 
 Examples:
-  alva deploy create --name btc-ema --path ~/feeds/btc-ema/v1/src/index.js --cron "0 */4 * * *"
-  alva deploy create --name alert --path ~/feeds/alert/v1/src/index.js --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
+  alva deploy create --name btc-ema --path "~/feeds/btc-ema/v1/src/index.js" --cron "0 */4 * * *"
+  alva deploy create --name alert --path "~/feeds/alert/v1/src/index.js" --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
   alva deploy list
   alva deploy list --limit 10
   alva deploy get --id 42

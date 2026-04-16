@@ -739,6 +739,268 @@ describe('help text', () => {
     expect(result.text).toContain('--trading-symbols');
     expect(result.text).toContain('Display name');
   });
+
+  // --- Cases 3-21: targeted help-text assertions ---
+
+  it('case 3: user line lists (me) inline', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('(me)');
+  });
+
+  it('case 4: deploy line lists runs and run-logs', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('runs');
+    expect(result.text).toContain('run-logs');
+  });
+
+  it('case 5: auth line uses (login) format', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('(login)');
+  });
+
+  it('case 6: deploy --help lists runs and run-logs', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['deploy', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('runs');
+    expect(result.text).toContain('run-logs');
+  });
+
+  it('case 7: deploy --help has Runs flags section with --first', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['deploy', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toMatch(/Runs flags:[\s\S]*?--first/);
+  });
+
+  it('case 8: deploy --help has Run-logs flags section with --run-id', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['deploy', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toMatch(/Run-logs flags:[\s\S]*?--run-id/);
+  });
+
+  it('case 9: fs --help has symlink example', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('alva fs symlink');
+  });
+
+  it('case 10: fs --help has readlink example', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('alva fs readlink');
+  });
+
+  it('case 11: fs --help per-sub flags for read', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--offset');
+    expect(result.text).toContain('--size');
+  });
+
+  it('case 12: fs --help per-sub flags for write', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--data');
+    expect(result.text).toContain('--file');
+  });
+
+  it('case 13: fs --help per-sub flags for rename', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--old-path');
+    expect(result.text).toContain('--new-path');
+  });
+
+  it('case 14: fs --help per-sub flags for copy', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--src-path');
+    expect(result.text).toContain('--dst-path');
+  });
+
+  it('case 15: fs --help per-sub flags for symlink', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--target-path');
+    expect(result.text).toContain('--link-path');
+  });
+
+  it('case 16: fs --help per-sub flags for chmod', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--mode');
+  });
+
+  it('case 17: fs --help per-sub flags for grant/revoke', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--subject');
+    expect(result.text).toContain('--permission');
+  });
+
+  it('case 18: fs --help shell-quoting note', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toMatch(/quote[\s\S]*?tilde|tilde[\s\S]*?quote/i);
+  });
+
+  it('case 19: fs --help quoted tilde example', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['fs', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('"~/');
+  });
+
+  it('case 20: run --help quoted tilde example', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['run', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('"~/');
+  });
+
+  it('case 21: deploy --help quoted tilde example', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['deploy', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('"~/');
+  });
+});
+
+describe('help-text drift guard', () => {
+  // Groups with subcommand dispatch. Flag-only top-level commands (run,
+  // remix, screenshot, whoami, configure) are excluded — they have no
+  // subcommand enumeration.
+  const DISPATCHABLE_SUBCOMMANDS: Record<string, string[]> = {
+    user: ['me'],
+    fs: [
+      'read',
+      'write',
+      'stat',
+      'readdir',
+      'mkdir',
+      'remove',
+      'rename',
+      'copy',
+      'symlink',
+      'readlink',
+      'chmod',
+      'grant',
+      'revoke',
+    ],
+    deploy: [
+      'create',
+      'list',
+      'get',
+      'update',
+      'delete',
+      'pause',
+      'resume',
+      'runs',
+      'run-logs',
+    ],
+    release: ['feed', 'playbook-draft', 'playbook'],
+    secrets: ['create', 'list', 'get', 'update', 'delete'],
+    sdk: ['doc', 'partitions', 'partition-summary'],
+    comments: ['create', 'pin', 'unpin'],
+    trading: [
+      'accounts',
+      'portfolio',
+      'orders',
+      'subscriptions',
+      'equity-history',
+      'risk-rules',
+      'subscribe',
+      'unsubscribe',
+      'execute',
+      'update-risk-rules',
+    ],
+    auth: ['login'],
+  };
+
+  it('case 1: group help contains every subcommand', async () => {
+    const client = makeClient();
+    for (const [group, subs] of Object.entries(DISPATCHABLE_SUBCOMMANDS)) {
+      const result = (await dispatch(client, [group, '--help'])) as {
+        _help: boolean;
+        text: string;
+      };
+      for (const sub of subs) {
+        expect(result.text.includes(sub)).toBe(true);
+      }
+    }
+  });
+
+  it('case 2: top-level help contains every subcommand inline on its group line', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    const lines = result.text.split('\n');
+    for (const [group, subs] of Object.entries(DISPATCHABLE_SUBCOMMANDS)) {
+      const groupLine = lines.find((line) => line.includes(group));
+      expect(groupLine).toBeDefined();
+      for (const sub of subs) {
+        expect(groupLine!.includes(sub)).toBe(true);
+      }
+    }
+  });
 });
 
 describe('CLI_VERSION', () => {
