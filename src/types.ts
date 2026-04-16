@@ -1,7 +1,7 @@
 // --- Client config ---
 
 export interface AlvaClientConfig {
-  token?: string;
+  viewer_token?: string;
   apiKey?: string;
   baseUrl?: string;
 }

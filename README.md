@@ -86,7 +86,7 @@ Add the browser bundle via a CDN:
 <script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
 <script>
   const client = new AlvaToolkit.AlvaClient({
-    token: 'your_token_here',
+    viewer_token,
   });
 
   client.fs.readdir({ path: '/' }).then((entries) => {
@@ -132,7 +132,7 @@ try {
 
 ## CLI Commands
 
-```
+```text
 alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 alva whoami [--profile <name>]
 alva auth login [--profile <name>]
