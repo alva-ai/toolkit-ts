@@ -1308,6 +1308,14 @@ async function main() {
       process.stdout.write(Buffer.from(result));
       return;
     }
+    if (typeof result === 'string') {
+      // Print raw string (e.g. `fs read` of a plain-text file). JSON-stringifying
+      // would wrap it in quotes and emit an escaped form, which is wrong for
+      // scripting/pipe use and breaks downstream consumers that expect the
+      // exact file bytes.
+      process.stdout.write(result);
+      return;
+    }
     if (result !== undefined) {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     }
