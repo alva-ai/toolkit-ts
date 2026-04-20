@@ -1,4 +1,4 @@
-const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
+import { DEFAULT_ARRAYS_BASE_URL } from '../client.js';
 
 export interface CliConfig {
   apiKey?: string;
