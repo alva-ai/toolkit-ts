@@ -53,6 +53,19 @@ describe('AlvaClient', () => {
       const client = new AlvaClient({ apiKey: 'test-key' });
       expect(client.apiKey).toBe('test-key');
     });
+
+    it('arraysBaseUrl defaults to https://data-tools.prd.space.id', () => {
+      const client = new AlvaClient({ apiKey: 'k' });
+      expect(client.arraysBaseUrl).toBe('https://data-tools.prd.space.id');
+    });
+
+    it('arraysBaseUrl uses config value when provided', () => {
+      const client = new AlvaClient({
+        apiKey: 'k',
+        arraysBaseUrl: 'https://custom.example',
+      });
+      expect(client.arraysBaseUrl).toBe('https://custom.example');
+    });
   });
 
   describe('_request', () => {
@@ -259,6 +272,68 @@ describe('AlvaClient', () => {
         expect((e as AlvaError).status).toBe(400);
         expect((e as AlvaError).message).toContain('bad request');
       }
+    });
+
+    it('_request sends to override baseUrl when options.baseUrl is set', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'k' });
+
+      await client._request('GET', '/v1/skills', {
+        baseUrl: 'https://data-tools.prd.space.id',
+      });
+
+      const [url] = fetch.mock.calls[0];
+      expect(url).toBe('https://data-tools.prd.space.id/v1/skills');
+    });
+
+    it('_request does not send X-Alva-Api-Key when noAuth is true', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'my-key' });
+
+      await client._request('GET', '/v1/skills', { noAuth: true });
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['X-Alva-Api-Key']).toBeUndefined();
+    });
+
+    it('_request does not send x-Playbook-Viewer when noAuth is true', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ viewer_token: 'vtok' });
+
+      await client._request('GET', '/v1/skills', { noAuth: true });
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['x-Playbook-Viewer']).toBeUndefined();
+    });
+
+    it('_request still sends X-Alva-Api-Key by default (no noAuth)', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'my-key' });
+
+      await client._request('GET', '/api/v1/me');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['X-Alva-Api-Key']).toBe('my-key');
+    });
+
+    it('_request honors both baseUrl and noAuth together', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'my-key' });
+
+      await client._request('GET', '/v1/skills', {
+        baseUrl: 'https://data-tools.prd.space.id',
+        noAuth: true,
+      });
+
+      const [url, init] = fetch.mock.calls[0];
+      expect(url).toBe('https://data-tools.prd.space.id/v1/skills');
+      expect(init.headers['X-Alva-Api-Key']).toBeUndefined();
+      expect(init.headers['x-Playbook-Viewer']).toBeUndefined();
     });
 
     it('omits undefined query params', async () => {
