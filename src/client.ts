@@ -11,6 +11,7 @@ import { RemixResource } from './resources/remix.js';
 import { ScreenshotResource } from './resources/screenshot.js';
 import { UserResource } from './resources/user.js';
 import { TradingResource } from './resources/trading.js';
+import { ArraysJwtResource } from './resources/arraysJwt.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 
@@ -37,6 +38,7 @@ export class AlvaClient {
   private _screenshot?: ScreenshotResource;
   private _user?: UserResource;
   private _trading?: TradingResource;
+  private _arraysJwt?: ArraysJwtResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -76,6 +78,9 @@ export class AlvaClient {
   }
   get trading(): TradingResource {
     return (this._trading ??= new TradingResource(this));
+  }
+  get arraysJwt(): ArraysJwtResource {
+    return (this._arraysJwt ??= new ArraysJwtResource(this));
   }
 
   _requireAuth(): void {

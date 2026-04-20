@@ -50,6 +50,20 @@ All output is JSON for easy piping:
 alva fs readdir --path / | jq '.entries[].name'
 ```
 
+### Arrays JWT
+
+`alva configure` auto-provisions an Arrays JWT server-side (idempotent,
+soft-fails on network errors — `configure` still exits 0). The token is
+stored in your sandbox secrets as `ARRAYS_JWT`; the CLI never handles
+the token string itself.
+
+Inspect or re-run manually:
+
+```bash
+alva arrays-jwt ensure   # sign-if-needed; returns expires_at + tier
+alva arrays-jwt status   # returns exists + renewal_needed
+```
+
 ### Config Resolution
 
 The CLI resolves config in this order:
