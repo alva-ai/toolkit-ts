@@ -20,6 +20,7 @@ Test commands: `npm test` (vitest), `npm run lint`, `npm run typecheck`.
 constructor with `DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id'`.
 
 **Steps:**
+
 - [ ] Add failing tests in `test/client.test.ts` for the 7 client-level cases in §5
 - [ ] `npm test` — verify red for the right reason
 - [ ] Implement in `src/types.ts` + `src/client.ts`
@@ -42,6 +43,7 @@ encodes `name` in path and passes `path` as `query.endpoint`. No
 `AlvaClient`.
 
 **Steps:**
+
 - [ ] Write failing tests per §5 (6 cases)
 - [ ] `npm test` — red
 - [ ] Implement `src/resources/skills.ts` + client getter
@@ -62,6 +64,7 @@ Resolve via `parseFlag(argv, '--arrays-endpoint')` first, then
 `baseUrl` resolution structure.
 
 **Steps:**
+
 - [ ] Write failing tests per §5 (5 cases)
 - [ ] `npm test` — red
 - [ ] Implement
@@ -77,6 +80,7 @@ Resolve via `parseFlag(argv, '--arrays-endpoint')` first, then
 **Files:** `src/cli/index.ts`, `test/cli.test.ts`
 
 **What to do:**
+
 - Add `COMMAND_HELP.skills` entry (follow `sdk` help as template; document the three subcommands, flags, and the `--arrays-endpoint` / `ARRAYS_ENDPOINT` override).
 - Add `skills` to the `HELP_TEXT` Commands list and mention `--arrays-endpoint` under Global options.
 - Add `case 'skills':` to `dispatch` with `list` / `summary` / `endpoint` subcommands; use `requireFlag` for `--name` / `--path`.
@@ -84,6 +88,7 @@ Resolve via `parseFlag(argv, '--arrays-endpoint')` first, then
 - In `main`, replace the inline loop with a call to `stripGlobalFlags`, and pass `config.arraysBaseUrl` into `new AlvaClient({...})`.
 
 **Steps:**
+
 - [ ] Write failing tests per §5 (12 cases)
 - [ ] `npm test` — red
 - [ ] Implement
@@ -107,6 +112,7 @@ test locally:
 Check `alva --help` renders the new row.
 
 **Steps:**
+
 - [ ] Bump version
 - [ ] `npm run build`
 - [ ] Manual smoke (all three subcommands + help)

@@ -176,13 +176,13 @@ only a new HTTP client surface pointed at an external host plus CLI
 glue; grep for `toolkit-ts` in the monorepo shows it is consumed only
 by docs/examples, not by runtime services.
 
-| File | Change |
-|---|---|
-| `src/types.ts` | add `arraysBaseUrl?: string` field to `AlvaClientConfig` |
-| `src/client.ts` | add `arraysBaseUrl` field + `DEFAULT_ARRAYS_BASE_URL`; add `baseUrl?` and `noAuth?` to `RequestOptions`; branch in `_request` to use override URL and skip Alva auth header; wire `skills` getter |
-| `src/resources/skills.ts` | NEW — `SkillsResource` class with 3 methods |
-| `src/cli/config.ts` | add `arraysBaseUrl` to `ResolvedConfig`; resolve via `--arrays-endpoint` flag > `ARRAYS_ENDPOINT` env > default |
-| `src/cli/index.ts` | add `COMMAND_HELP.skills`; add `skills` entry to `HELP_TEXT`; add `case 'skills'` to `dispatch`; extract global-flag stripping into a `stripGlobalFlags(argv)` helper (so it is unit-testable) and add `--arrays-endpoint` to its strip list; pass `arraysBaseUrl` to `AlvaClient` constructor |
+| File                      | Change                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/types.ts`            | add `arraysBaseUrl?: string` field to `AlvaClientConfig`                                                                                                                                                                                                                                       |
+| `src/client.ts`           | add `arraysBaseUrl` field + `DEFAULT_ARRAYS_BASE_URL`; add `baseUrl?` and `noAuth?` to `RequestOptions`; branch in `_request` to use override URL and skip Alva auth header; wire `skills` getter                                                                                              |
+| `src/resources/skills.ts` | NEW — `SkillsResource` class with 3 methods                                                                                                                                                                                                                                                    |
+| `src/cli/config.ts`       | add `arraysBaseUrl` to `ResolvedConfig`; resolve via `--arrays-endpoint` flag > `ARRAYS_ENDPOINT` env > default                                                                                                                                                                                |
+| `src/cli/index.ts`        | add `COMMAND_HELP.skills`; add `skills` entry to `HELP_TEXT`; add `case 'skills'` to `dispatch`; extract global-flag stripping into a `stripGlobalFlags(argv)` helper (so it is unit-testable) and add `--arrays-endpoint` to its strip list; pass `arraysBaseUrl` to `AlvaClient` constructor |
 
 **Deployment:** none. Library ships via `npm publish` on version bump;
 no infra artifacts.
@@ -310,54 +310,54 @@ Zero gaps.
 
 **`test/resources/skills.test.ts`** (new)
 
-| Test | Mock `_request` setup | Expected |
-|---|---|---|
-| `list()` sends correct request | capture args | called with `('GET', '/api/v1/skills', { baseUrl: <arrays>, noAuth: true })` |
-| `summary()` encodes name | name = `foo/bar` | path is `/api/v1/skills/foo%2Fbar` |
-| `endpoint()` sends endpoint query | name=`x`, path=`company/list` | query includes `endpoint: 'company/list'` |
-| all three pass `noAuth: true` | any | options include `noAuth: true` |
-| all three pass arrays baseUrl | client constructed with `arraysBaseUrl: 'https://custom'` | options include `baseUrl: 'https://custom'` |
-| no `_requireAuth` | spy on `_requireAuth` | not called for any of the three |
+| Test                              | Mock `_request` setup                                     | Expected                                                                     |
+| --------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `list()` sends correct request    | capture args                                              | called with `('GET', '/api/v1/skills', { baseUrl: <arrays>, noAuth: true })` |
+| `summary()` encodes name          | name = `foo/bar`                                          | path is `/api/v1/skills/foo%2Fbar`                                           |
+| `endpoint()` sends endpoint query | name=`x`, path=`company/list`                             | query includes `endpoint: 'company/list'`                                    |
+| all three pass `noAuth: true`     | any                                                       | options include `noAuth: true`                                               |
+| all three pass arrays baseUrl     | client constructed with `arraysBaseUrl: 'https://custom'` | options include `baseUrl: 'https://custom'`                                  |
+| no `_requireAuth`                 | spy on `_requireAuth`                                     | not called for any of the three                                              |
 
 **`test/client.test.ts`** (extend)
 
-| Test | Setup | Expected |
-|---|---|---|
-| `_request` with `baseUrl` override | fetch mock | URL starts with override, not `this.baseUrl` |
-| `_request` with `noAuth: true` | apiKey set, fetch mock | no `X-Alva-Api-Key` header sent |
-| `_request` with `noAuth: true` and viewer_token | viewer_token set, fetch mock | no `x-Playbook-Viewer` header sent |
-| `_request` without `noAuth` (default) | apiKey set | header sent as today (regression guard) |
-| `arraysBaseUrl` defaults to `https://data-tools.prd.space.id` | no config | field matches |
-| `arraysBaseUrl` uses config value | config `{arraysBaseUrl: 'https://x'}` | field matches |
-| `skills` getter memoizes | two accesses | same instance |
+| Test                                                          | Setup                                 | Expected                                     |
+| ------------------------------------------------------------- | ------------------------------------- | -------------------------------------------- |
+| `_request` with `baseUrl` override                            | fetch mock                            | URL starts with override, not `this.baseUrl` |
+| `_request` with `noAuth: true`                                | apiKey set, fetch mock                | no `X-Alva-Api-Key` header sent              |
+| `_request` with `noAuth: true` and viewer_token               | viewer_token set, fetch mock          | no `x-Playbook-Viewer` header sent           |
+| `_request` without `noAuth` (default)                         | apiKey set                            | header sent as today (regression guard)      |
+| `arraysBaseUrl` defaults to `https://data-tools.prd.space.id` | no config                             | field matches                                |
+| `arraysBaseUrl` uses config value                             | config `{arraysBaseUrl: 'https://x'}` | field matches                                |
+| `skills` getter memoizes                                      | two accesses                          | same instance                                |
 
 **`test/config.test.ts`** (extend)
 
-| Test | argv / env | Expected `arraysBaseUrl` |
-|---|---|---|
-| default | `[]` / `{}` | `https://data-tools.prd.space.id` |
-| from env | `[]` / `{ARRAYS_ENDPOINT: 'https://e'}` | `https://e` |
-| from flag | `['--arrays-endpoint', 'https://f']` / `{}` | `https://f` |
-| flag beats env | `['--arrays-endpoint', 'https://f']` / `{ARRAYS_ENDPOINT: 'https://e'}` | `https://f` |
-| `--arrays-endpoint=x` form | `['--arrays-endpoint=https://g']` / `{}` | `https://g` |
+| Test                       | argv / env                                                              | Expected `arraysBaseUrl`          |
+| -------------------------- | ----------------------------------------------------------------------- | --------------------------------- |
+| default                    | `[]` / `{}`                                                             | `https://data-tools.prd.space.id` |
+| from env                   | `[]` / `{ARRAYS_ENDPOINT: 'https://e'}`                                 | `https://e`                       |
+| from flag                  | `['--arrays-endpoint', 'https://f']` / `{}`                             | `https://f`                       |
+| flag beats env             | `['--arrays-endpoint', 'https://f']` / `{ARRAYS_ENDPOINT: 'https://e'}` | `https://f`                       |
+| `--arrays-endpoint=x` form | `['--arrays-endpoint=https://g']` / `{}`                                | `https://g`                       |
 
 **`test/cli.test.ts`** (extend)
 
-| Test | args | Expected |
-|---|---|---|
-| `skills` no sub | `['skills']` | CliUsageError |
-| `skills list` | `['skills', 'list']` | `client.skills.list()` called |
-| `skills summary --name x` | `['skills', 'summary', '--name', 'x']` | `client.skills.summary({name:'x'})` |
-| `skills summary` missing name | `['skills', 'summary']` | CliUsageError |
-| `skills endpoint --name x --path p` | args | `client.skills.endpoint({name:'x', path:'p'})` |
-| `skills endpoint --name x` missing path | | CliUsageError |
-| `skills endpoint --path p` missing name | | CliUsageError |
-| `skills bogus` | `['skills', 'bogus']` | CliUsageError |
-| `skills --help` | `['skills', '--help']` | returns `_help` with skills help text |
-| top-level `--help` lists skills | `['--help']` | `HELP_TEXT` contains `skills` line |
-| `stripGlobalFlags` removes `--arrays-endpoint <v>` | argv = `['--arrays-endpoint', 'https://x', 'skills', 'list']` | returns `['skills','list']` |
-| `stripGlobalFlags` removes `--arrays-endpoint=<v>` | argv = `['--arrays-endpoint=https://x', 'skills', 'list']` | returns `['skills','list']` |
-| `stripGlobalFlags` preserves other args | argv = `['--api-key','k','skills','summary','--name','x']` | returns `['skills','summary','--name','x']` |
+| Test                                               | args                                                          | Expected                                       |
+| -------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------- |
+| `skills` no sub                                    | `['skills']`                                                  | CliUsageError                                  |
+| `skills list`                                      | `['skills', 'list']`                                          | `client.skills.list()` called                  |
+| `skills summary --name x`                          | `['skills', 'summary', '--name', 'x']`                        | `client.skills.summary({name:'x'})`            |
+| `skills summary` missing name                      | `['skills', 'summary']`                                       | CliUsageError                                  |
+| `skills endpoint --name x --path p`                | args                                                          | `client.skills.endpoint({name:'x', path:'p'})` |
+| `skills endpoint --name x` missing path            |                                                               | CliUsageError                                  |
+| `skills endpoint --path p` missing name            |                                                               | CliUsageError                                  |
+| `skills bogus`                                     | `['skills', 'bogus']`                                         | CliUsageError                                  |
+| `skills --help`                                    | `['skills', '--help']`                                        | returns `_help` with skills help text          |
+| top-level `--help` lists skills                    | `['--help']`                                                  | `HELP_TEXT` contains `skills` line             |
+| `stripGlobalFlags` removes `--arrays-endpoint <v>` | argv = `['--arrays-endpoint', 'https://x', 'skills', 'list']` | returns `['skills','list']`                    |
+| `stripGlobalFlags` removes `--arrays-endpoint=<v>` | argv = `['--arrays-endpoint=https://x', 'skills', 'list']`    | returns `['skills','list']`                    |
+| `stripGlobalFlags` preserves other args            | argv = `['--api-key','k','skills','summary','--name','x']`    | returns `['skills','summary','--name','x']`    |
 
 ### Security boundary tests
 
