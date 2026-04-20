@@ -4,6 +4,7 @@ import {
   handleConfigure,
   CLI_VERSION,
   isVersionOlderThan,
+  stripGlobalFlags,
 } from '../src/cli/index.js';
 import { AlvaClient } from '../src/client.js';
 import { CliUsageError } from '../src/error.js';
@@ -59,6 +60,16 @@ function makeClient(): AlvaClient {
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
   client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
   client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
+  // Override the lazy skills getter with a mocked instance for tests
+  const mockSkills = {
+    list: vi.fn().mockResolvedValue({ skills: [] }),
+    summary: vi.fn().mockResolvedValue({ endpoints: [] }),
+    endpoint: vi.fn().mockResolvedValue({ doc: '' }),
+  };
+  Object.defineProperty(client, 'skills', {
+    get: () => mockSkills,
+    configurable: true,
+  });
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
@@ -1028,6 +1039,7 @@ describe('help-text drift guard', () => {
     release: ['feed', 'playbook-draft', 'playbook'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
+    skills: ['list', 'summary', 'endpoint'],
     comments: ['create', 'pin', 'unpin'],
     trading: [
       'accounts',
@@ -1071,6 +1083,118 @@ describe('help-text drift guard', () => {
         expect(groupLine!.includes(sub)).toBe(true);
       }
     }
+  });
+});
+
+describe('skills dispatch', () => {
+  it('throws CliUsageError when skills has no subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['skills'])).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('dispatches skills list', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'list']);
+    expect(client.skills.list).toHaveBeenCalled();
+  });
+
+  it('dispatches skills summary with --name', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'summary', '--name', 'x']);
+    expect(client.skills.summary).toHaveBeenCalledWith({ name: 'x' });
+  });
+
+  it('throws when skills summary missing --name', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['skills', 'summary'])).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('dispatches skills endpoint with --name and --path', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'skills',
+      'endpoint',
+      '--name',
+      'x',
+      '--path',
+      'p',
+    ]);
+    expect(client.skills.endpoint).toHaveBeenCalledWith({
+      name: 'x',
+      path: 'p',
+    });
+  });
+
+  it('throws when skills endpoint missing --path', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['skills', 'endpoint', '--name', 'x'])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('throws when skills endpoint missing --name', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['skills', 'endpoint', '--path', 'p'])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('throws on unknown skills subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['skills', 'bogus'])).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('skills --help returns help text', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['skills', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('Browse the Arrays backend');
+  });
+
+  it('top-level --help lists skills', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('skills');
+  });
+});
+
+describe('stripGlobalFlags', () => {
+  it('removes --arrays-endpoint <v>', () => {
+    expect(
+      stripGlobalFlags(['--arrays-endpoint', 'https://x', 'skills', 'list'])
+    ).toEqual(['skills', 'list']);
+  });
+
+  it('removes --arrays-endpoint=<v>', () => {
+    expect(
+      stripGlobalFlags(['--arrays-endpoint=https://x', 'skills', 'list'])
+    ).toEqual(['skills', 'list']);
+  });
+
+  it('preserves non-global args', () => {
+    expect(
+      stripGlobalFlags(['--api-key', 'k', 'skills', 'summary', '--name', 'x'])
+    ).toEqual(['skills', 'summary', '--name', 'x']);
+  });
+
+  it('is idempotent on already-clean argv', () => {
+    expect(stripGlobalFlags(['skills', 'list'])).toEqual(['skills', 'list']);
   });
 });
 
