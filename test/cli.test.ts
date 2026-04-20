@@ -60,16 +60,9 @@ function makeClient(): AlvaClient {
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
   client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
   client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
-  // Override the lazy skills getter with a mocked instance for tests
-  const mockSkills = {
-    list: vi.fn().mockResolvedValue({ skills: [] }),
-    summary: vi.fn().mockResolvedValue({ endpoints: [] }),
-    endpoint: vi.fn().mockResolvedValue({ doc: '' }),
-  };
-  Object.defineProperty(client, 'skills', {
-    get: () => mockSkills,
-    configurable: true,
-  });
+  client.skills.list = vi.fn().mockResolvedValue({ skills: [] });
+  client.skills.summary = vi.fn().mockResolvedValue({ endpoints: [] });
+  client.skills.endpoint = vi.fn().mockResolvedValue({ doc: '' });
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
