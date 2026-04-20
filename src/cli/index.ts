@@ -45,6 +45,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
+  skills      Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   remix       Save playbook remix lineage
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
@@ -53,9 +54,10 @@ Commands:
   arrays-jwt  Manage Arrays JWT provisioning (ensure, status)
 
 Global options:
-  --api-key <key>      API key (overrides env and config file)
-  --base-url <url>     API base URL (overrides env and config file)
-  --profile <name>     Named profile to use (default: "default")
+  --api-key <key>        API key (overrides env and config file)
+  --base-url <url>       API base URL (overrides env and config file)
+  --profile <name>       Named profile to use (default: "default")
+  --arrays-endpoint <url>  Arrays backend URL (or ARRAYS_ENDPOINT env; default: https://data-tools.prd.space.id)
   -v, --version        Show CLI version
   --help               Show help (use 'alva <command> --help' for command details)
 
@@ -417,6 +419,29 @@ Examples:
   alva sdk partition-summary --partition spot_market_price_and_volume
   alva sdk doc --name "@arrays/crypto/ohlcv:v1.0.0"
   alva sdk doc --name "@arrays/data/stock/ohlcv:v1.0.0"`,
+
+  skills: `Usage: alva skills <subcommand> [options]
+
+Browse the Arrays backend's data-skill documentation. These endpoints are
+public — no Alva credentials required.
+
+Subcommands:
+  list       List all available data skills
+  summary    Get the endpoints table for a skill (requires --name)
+  endpoint   Get full documentation for a specific endpoint (requires --name and --path)
+
+Flags:
+  --name <name>      Skill name (required for summary and endpoint)
+  --path <path>      Endpoint path (required for endpoint)
+
+Global override:
+  --arrays-endpoint <url>   Arrays backend URL (or ARRAYS_ENDPOINT env)
+                            Default: https://data-tools.prd.space.id
+
+Examples:
+  alva skills list
+  alva skills summary --name <skill>
+  alva skills endpoint --name <skill> --path <endpoint-path>`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -1049,6 +1074,29 @@ export async function dispatch(
       }
     }
 
+    case 'skills': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for skills', 'skills');
+      switch (subcommand) {
+        case 'list':
+          return client.skills.list();
+        case 'summary':
+          return client.skills.summary({
+            name: requireFlag(flags, 'name', 'skills summary'),
+          });
+        case 'endpoint':
+          return client.skills.endpoint({
+            name: requireFlag(flags, 'name', 'skills endpoint'),
+            path: requireFlag(flags, 'path', 'skills endpoint'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: skills ${subcommand}`,
+            'skills'
+          );
+      }
+    }
+
     case 'comments': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for comments', 'comments');
@@ -1261,6 +1309,33 @@ export async function dispatch(
   }
 }
 
+/**
+ * Strips global flags (--api-key, --base-url, --profile, --arrays-endpoint)
+ * and their associated values from an argv list. Supports both
+ * `--flag value` and `--flag=value` forms.
+ */
+export function stripGlobalFlags(argv: string[]): string[] {
+  const GLOBAL_FLAGS = [
+    '--api-key',
+    '--base-url',
+    '--profile',
+    '--arrays-endpoint',
+  ];
+  const result: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (GLOBAL_FLAGS.includes(a)) {
+      i++; // skip the value
+      continue;
+    }
+    if (GLOBAL_FLAGS.some((f) => a.startsWith(`${f}=`))) {
+      continue;
+    }
+    result.push(a);
+  }
+  return result;
+}
+
 async function main() {
   try {
     const rawArgs = process.argv.slice(2);
@@ -1314,25 +1389,10 @@ async function main() {
     const client = new AlvaClient({
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
+      arraysBaseUrl: config.arraysBaseUrl,
     });
 
-    // Remove global flags (--api-key, --base-url, --profile and their values)
-    const cleanArgs: string[] = [];
-    for (let i = 0; i < rawArgs.length; i++) {
-      const a = rawArgs[i];
-      if (a === '--api-key' || a === '--base-url' || a === '--profile') {
-        i++; // skip the next arg (the value)
-        continue;
-      }
-      if (
-        a.startsWith('--api-key=') ||
-        a.startsWith('--base-url=') ||
-        a.startsWith('--profile=')
-      ) {
-        continue;
-      }
-      cleanArgs.push(a);
-    }
+    const cleanArgs = stripGlobalFlags(rawArgs);
 
     const result = await dispatch(client, cleanArgs, {
       profile: config.profile,

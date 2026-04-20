@@ -1,6 +1,9 @@
+import { DEFAULT_ARRAYS_BASE_URL } from '../client.js';
+
 export interface CliConfig {
   apiKey?: string;
   baseUrl?: string;
+  arraysBaseUrl: string;
   profile?: string;
 }
 
@@ -119,6 +122,7 @@ export async function writeConfig(
   return {
     apiKey: profileData.apiKey,
     baseUrl: profileData.baseUrl,
+    arraysBaseUrl: DEFAULT_ARRAYS_BASE_URL,
     profile: profileName,
   };
 }
@@ -153,6 +157,10 @@ export function loadConfig(deps: ConfigDeps): CliConfig {
   const baseUrlFlag = parseFlag(argv, '--base-url');
   const baseUrlEnv = env.ALVA_ENDPOINT;
 
+  // Resolve arrays base URL: flag > env > default (no file layer)
+  const arraysBaseUrlFlag = parseFlag(argv, '--arrays-endpoint');
+  const arraysBaseUrlEnv = env.ARRAYS_ENDPOINT;
+
   // Resolve API key: flag > env > file
   const apiKeyFlag = parseFlag(argv, '--api-key');
   const apiKeyEnv = env.ALVA_API_KEY;
@@ -179,6 +187,8 @@ export function loadConfig(deps: ConfigDeps): CliConfig {
   return {
     apiKey: apiKeyFlag ?? apiKeyEnv ?? fileProfile.apiKey,
     baseUrl: baseUrlFlag ?? baseUrlEnv ?? fileProfile.baseUrl,
+    arraysBaseUrl:
+      arraysBaseUrlFlag ?? arraysBaseUrlEnv ?? DEFAULT_ARRAYS_BASE_URL,
     profile: profileName,
   };
 }

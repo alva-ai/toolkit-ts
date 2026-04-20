@@ -6,6 +6,7 @@ import { DeployResource } from './resources/deploy.js';
 import { ReleaseResource } from './resources/release.js';
 import { SecretsResource } from './resources/secrets.js';
 import { SdkDocsResource } from './resources/sdkDocs.js';
+import { SkillsResource } from './resources/skills.js';
 import { CommentsResource } from './resources/comments.js';
 import { RemixResource } from './resources/remix.js';
 import { ScreenshotResource } from './resources/screenshot.js';
@@ -14,16 +15,22 @@ import { TradingResource } from './resources/trading.js';
 import { ArraysJwtResource } from './resources/arraysJwt.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
+export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
 
 interface RequestOptions {
   query?: Record<string, unknown>;
   body?: unknown;
   /** Send raw body with application/octet-stream content type (for binary writes). */
   rawBody?: BodyInit;
+  /** Override the base URL for this request (e.g. the Arrays data-tools endpoint). */
+  baseUrl?: string;
+  /** If true, skip attaching any Alva auth header (X-Alva-Api-Key / x-Playbook-Viewer). */
+  noAuth?: boolean;
 }
 
 export class AlvaClient {
   readonly baseUrl: string;
+  readonly arraysBaseUrl: string;
   readonly viewer_token?: string;
   readonly apiKey?: string;
 
@@ -33,6 +40,7 @@ export class AlvaClient {
   private _release?: ReleaseResource;
   private _secrets?: SecretsResource;
   private _sdk?: SdkDocsResource;
+  private _skills?: SkillsResource;
   private _comments?: CommentsResource;
   private _remix?: RemixResource;
   private _screenshot?: ScreenshotResource;
@@ -42,6 +50,7 @@ export class AlvaClient {
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    this.arraysBaseUrl = config.arraysBaseUrl ?? DEFAULT_ARRAYS_BASE_URL;
     this.viewer_token = config.viewer_token;
     this.apiKey = config.apiKey;
   }
@@ -63,6 +72,9 @@ export class AlvaClient {
   }
   get sdk(): SdkDocsResource {
     return (this._sdk ??= new SdkDocsResource(this));
+  }
+  get skills(): SkillsResource {
+    return (this._skills ??= new SkillsResource(this));
   }
   get comments(): CommentsResource {
     return (this._comments ??= new CommentsResource(this));
@@ -98,7 +110,8 @@ export class AlvaClient {
     path: string,
     options?: RequestOptions
   ): Promise<unknown> {
-    let url = `${this.baseUrl}${path}`;
+    const baseUrl = options?.baseUrl ?? this.baseUrl;
+    let url = `${baseUrl}${path}`;
 
     if (options?.query) {
       const params = new URLSearchParams();
@@ -114,10 +127,12 @@ export class AlvaClient {
     }
 
     const headers: Record<string, string> = {};
-    if (this.viewer_token) {
-      headers['x-Playbook-Viewer'] = this.viewer_token;
-    } else if (this.apiKey) {
-      headers['X-Alva-Api-Key'] = this.apiKey;
+    if (!options?.noAuth) {
+      if (this.viewer_token) {
+        headers['x-Playbook-Viewer'] = this.viewer_token;
+      } else if (this.apiKey) {
+        headers['X-Alva-Api-Key'] = this.apiKey;
+      }
     }
 
     let fetchBody: BodyInit | undefined;

@@ -4,6 +4,7 @@ export interface AlvaClientConfig {
   viewer_token?: string;
   apiKey?: string;
   baseUrl?: string;
+  arraysBaseUrl?: string;
 }
 
 // --- User ---
