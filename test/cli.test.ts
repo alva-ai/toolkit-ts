@@ -453,6 +453,7 @@ describe('handleConfigure', () => {
       mkdir: vi.fn().mockResolvedValue(undefined),
       writeFile: vi.fn().mockResolvedValue(undefined),
       readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      runHooks: vi.fn().mockResolvedValue(undefined),
     };
     const result = await handleConfigure(
       ['configure', '--api-key', 'my-key'],
@@ -475,6 +476,7 @@ describe('handleConfigure', () => {
       mkdir: vi.fn().mockResolvedValue(undefined),
       writeFile: vi.fn().mockResolvedValue(undefined),
       readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      runHooks: vi.fn().mockResolvedValue(undefined),
     };
     const result = await handleConfigure(
       ['configure', '--api-key', 'k', '--base-url', 'http://x'],
@@ -497,6 +499,7 @@ describe('handleConfigure', () => {
       mkdir: vi.fn().mockResolvedValue(undefined),
       writeFile: vi.fn().mockResolvedValue(undefined),
       readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      runHooks: vi.fn().mockResolvedValue(undefined),
     };
     const result = await handleConfigure(
       [
@@ -545,6 +548,74 @@ describe('handleConfigure', () => {
       (err: unknown) =>
         err instanceof CliUsageError && err.command === 'configure'
     );
+  });
+
+  it('invokes runHooks with client built from input (test #12)', async () => {
+    const runHooks = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      env: {} as Record<string, string | undefined>,
+      homedir: () => '/home/test',
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      runHooks,
+    };
+    const result = await handleConfigure(
+      ['configure', '--api-key', 'alva_x', '--base-url', 'http://x.test'],
+      deps
+    );
+    expect(result).toEqual(
+      expect.objectContaining({ status: 'configured', apiKey: 'alva_x' })
+    );
+    expect(runHooks).toHaveBeenCalledTimes(1);
+    const clientArg = runHooks.mock.calls[0][0] as AlvaClient;
+    expect(clientArg).toBeInstanceOf(AlvaClient);
+    expect(clientArg.apiKey).toBe('alva_x');
+    expect(clientArg.baseUrl).toBe('http://x.test');
+  });
+
+  it('tolerates runHooks rejection (test #13)', async () => {
+    const runHooks = vi.fn().mockRejectedValue(new Error('boom'));
+    const stderrSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+    try {
+      const deps = {
+        env: {} as Record<string, string | undefined>,
+        homedir: () => '/home/test',
+        mkdir: vi.fn().mockResolvedValue(undefined),
+        writeFile: vi.fn().mockResolvedValue(undefined),
+        readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+        runHooks,
+      };
+      const result = await handleConfigure(
+        ['configure', '--api-key', 'alva_x'],
+        deps
+      );
+      expect(result).toEqual(
+        expect.objectContaining({ status: 'configured', apiKey: 'alva_x' })
+      );
+      const combined = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(combined).toContain('warning: post-configure hooks crashed: boom');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('skips hooks on write failure (test #14)', async () => {
+    const runHooks = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      env: {} as Record<string, string | undefined>,
+      homedir: () => '/home/test',
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      writeFile: vi.fn().mockRejectedValue(new Error('EACCES')),
+      readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      runHooks,
+    };
+    await expect(
+      handleConfigure(['configure', '--api-key', 'alva_x'], deps)
+    ).rejects.toThrow(/EACCES/);
+    expect(runHooks).not.toHaveBeenCalled();
   });
 });
 
@@ -1098,5 +1169,55 @@ describe('whoami version check', () => {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
     expect(result._warning).toBeUndefined();
+  });
+});
+
+describe('arrays-jwt dispatch', () => {
+  it('dispatches arrays-jwt ensure', async () => {
+    const client = makeClient();
+    const mockResp = {
+      expires_at: 1,
+      tier: 'SUBSCRIPTION_TIER_FREE',
+      renewed: true,
+    };
+    client.arraysJwt.ensure = vi.fn().mockResolvedValue(mockResp);
+    const result = await dispatch(client, ['arrays-jwt', 'ensure']);
+    expect(client.arraysJwt.ensure).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(mockResp);
+  });
+
+  it('dispatches arrays-jwt status', async () => {
+    const client = makeClient();
+    const mockResp = {
+      exists: true,
+      expires_at: 1,
+      tier: 'SUBSCRIPTION_TIER_FREE',
+      renewal_needed: false,
+    };
+    client.arraysJwt.status = vi.fn().mockResolvedValue(mockResp);
+    const result = await dispatch(client, ['arrays-jwt', 'status']);
+    expect(client.arraysJwt.status).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(mockResp);
+  });
+
+  it('throws on unknown arrays-jwt subcommand with helpful message', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['arrays-jwt', 'bogus'])).rejects.toThrow(
+      /arrays-jwt/
+    );
+    await expect(dispatch(client, ['arrays-jwt', 'bogus'])).rejects.toThrow(
+      /--help/
+    );
+  });
+
+  it('arrays-jwt --help returns help object', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['arrays-jwt', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(typeof result.text).toBe('string');
+    expect(result.text.length).toBeGreaterThan(0);
   });
 });

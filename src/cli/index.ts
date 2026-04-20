@@ -2,6 +2,7 @@ import { AlvaClient } from '../client.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import { loadConfig, writeConfig } from './config.js';
 import { handleAuthLogin } from './auth.js';
+import { runPostConfigureHooks } from './postConfigureHooks.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -49,6 +50,7 @@ Commands:
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   auth        Authentication (login)
   screenshot  Capture a web screenshot as PNG
+  arrays-jwt  Manage Arrays JWT provisioning (ensure, status)
 
 Global options:
   --api-key <key>      API key (overrides env and config file)
@@ -71,6 +73,8 @@ const COMMAND_HELP: Record<string, string> = {
 Save API credentials to ~/.config/alva/config.json (mode 0600).
 After configuring, subsequent commands use the saved key automatically.
 Multiple profiles allow switching between environments (production, staging, etc.).
+Also auto-runs 'alva arrays-jwt ensure' to provision the server-side Arrays JWT
+(soft-fail: a network/auth failure prints a stderr warning but exit stays 0).
 
 Required:
   --api-key <key>      Your Alva API key (starts with "alva_")
@@ -537,6 +541,20 @@ Examples:
   alva trading unsubscribe --subscription-id sub_456
   alva trading execute --account-id acc_123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
   alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
+
+  'arrays-jwt': `Usage: alva arrays-jwt <subcommand>
+
+Manage the Arrays JWT used by sandbox scripts (secret.loadPlaintext('ARRAYS_JWT')).
+The JWT is stored server-side as a jagent secret; the CLI never receives the
+token itself. 'alva configure' auto-runs 'ensure' after saving credentials.
+
+Subcommands:
+  ensure    Provision or refresh the Arrays JWT (idempotent)
+  status    Show Arrays JWT presence, expiry, tier, and renewal hint
+
+Examples:
+  alva arrays-jwt ensure
+  alva arrays-jwt status`,
 };
 
 interface WriteConfigDeps {
@@ -549,6 +567,7 @@ interface WriteConfigDeps {
     options: { mode: number }
   ) => Promise<void>;
   readFile: (path: string) => Promise<string>;
+  runHooks?: (client: AlvaClient) => Promise<void>;
 }
 
 export async function handleConfigure(
@@ -587,6 +606,17 @@ export async function handleConfigure(
   };
 
   const result = await writeConfig(configInput, writeDeps, profileName);
+
+  const client = new AlvaClient(baseUrl ? { apiKey, baseUrl } : { apiKey });
+  const runHooks =
+    writeDeps.runHooks ?? ((c: AlvaClient) => runPostConfigureHooks(c));
+  try {
+    await runHooks(client);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr?.write?.(`warning: post-configure hooks crashed: ${msg}\n`);
+  }
+
   return {
     status: 'configured',
     apiKey: result.apiKey!,
@@ -1061,6 +1091,22 @@ export async function dispatch(
           name: string;
         }>,
       });
+
+    case 'arrays-jwt': {
+      switch (subcommand) {
+        case 'ensure':
+          return client.arraysJwt.ensure();
+        case 'status':
+          return client.arraysJwt.status();
+        default: {
+          const sub = subcommand ?? '';
+          const label = sub ? `arrays-jwt ${sub}` : 'arrays-jwt';
+          throw new Error(
+            `Unknown subcommand '${label}'. Use 'alva arrays-jwt --help' for usage.`
+          );
+        }
+      }
+    }
 
     case 'screenshot': {
       const outFile = requireFlag(flags, 'out', 'screenshot');
