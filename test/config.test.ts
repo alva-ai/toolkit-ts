@@ -204,6 +204,66 @@ describe('loadConfig', () => {
     expect(result.profile).toBe('nonexistent');
   });
 
+  it('arraysBaseUrl defaults to https://data-tools.prd.space.id', () => {
+    const result = loadConfig({
+      argv: [],
+      env: {},
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.arraysBaseUrl).toBe('https://data-tools.prd.space.id');
+  });
+
+  it('ARRAYS_ENDPOINT env overrides default arraysBaseUrl', () => {
+    const result = loadConfig({
+      argv: [],
+      env: { ARRAYS_ENDPOINT: 'https://e.example' },
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.arraysBaseUrl).toBe('https://e.example');
+  });
+
+  it('--arrays-endpoint flag overrides default arraysBaseUrl', () => {
+    const result = loadConfig({
+      argv: ['--arrays-endpoint', 'https://f.example'],
+      env: {},
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.arraysBaseUrl).toBe('https://f.example');
+  });
+
+  it('--arrays-endpoint flag wins over ARRAYS_ENDPOINT env', () => {
+    const result = loadConfig({
+      argv: ['--arrays-endpoint', 'https://f.example'],
+      env: { ARRAYS_ENDPOINT: 'https://e.example' },
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.arraysBaseUrl).toBe('https://f.example');
+  });
+
+  it('--arrays-endpoint=value form is parsed', () => {
+    const result = loadConfig({
+      argv: ['--arrays-endpoint=https://g.example'],
+      env: {},
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.arraysBaseUrl).toBe('https://g.example');
+  });
+
   it('defaults profile to "default"', () => {
     const result = loadConfig({
       argv: [],
