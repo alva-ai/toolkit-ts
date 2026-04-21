@@ -37,7 +37,7 @@ introducing new commands.
 
 **Premises validated with user:**
 
-- **P1** — "Silent step" in whoami means *visibility*, not *renewal*.
+- **P1** — "Silent step" in whoami means _visibility_, not _renewal_.
   Whoami reports status; explicit `ensure` / re-running `configure`
   remain the renewal path.
 - **P2** — Status failure is fully soft: `_meta.arrays_jwt` is omitted
@@ -147,6 +147,7 @@ backend, proto, or deployment changes.
 ### Affected modules and services
 
 **toolkit-ts (@alva-ai/toolkit)**
+
 - Code:
   - `src/cli/index.ts` — whoami handler (lines 750-773) gains a
     try/catch around `client.arraysJwt.status()` that folds the result
@@ -163,6 +164,7 @@ backend, proto, or deployment changes.
   artifacts. `git grep whoami` shows no infra dependencies.
 
 **All other services (alva-backend, alva-gateway, alfs, etc.)**
+
 - Code: none.
 - Deployment: none.
 - Verified: The status RPC (`GET /api/v1/arrays-jwt/status`) already
@@ -199,12 +201,12 @@ None.
 
 ### Error path analysis
 
-| METHOD / CODEPATH | WHAT CAN GO WRONG | HANDLING | USER SEES |
-|---|---|---|---|
-| whoami handler — `client.user.me()` | Network, auth, 5xx | Exception propagates, CLI prints error | Non-zero exit, stderr error (unchanged behavior) |
-| whoami handler — `client.arraysJwt.status()` | Network / 5xx | try/catch swallows; omit `_meta.arrays_jwt` | Whoami succeeds with identity info; no stderr noise |
-| whoami handler — `client.arraysJwt.status()` | Auth rejected (401/403) | Same as above — swallow and omit | Same — user should already see this via `me()` having failed; independent failure is rare but harmless |
-| whoami handler — malformed status response | Unexpected shape | Passthrough (current SDK returns typed response; malformed = SDK throws → swallowed) | Field omitted |
+| METHOD / CODEPATH                            | WHAT CAN GO WRONG       | HANDLING                                                                             | USER SEES                                                                                              |
+| -------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| whoami handler — `client.user.me()`          | Network, auth, 5xx      | Exception propagates, CLI prints error                                               | Non-zero exit, stderr error (unchanged behavior)                                                       |
+| whoami handler — `client.arraysJwt.status()` | Network / 5xx           | try/catch swallows; omit `_meta.arrays_jwt`                                          | Whoami succeeds with identity info; no stderr noise                                                    |
+| whoami handler — `client.arraysJwt.status()` | Auth rejected (401/403) | Same as above — swallow and omit                                                     | Same — user should already see this via `me()` having failed; independent failure is rare but harmless |
+| whoami handler — malformed status response   | Unexpected shape        | Passthrough (current SDK returns typed response; malformed = SDK throws → swallowed) | Field omitted                                                                                          |
 
 No critical gaps. The "swallow and omit" pattern is intentional and
 matches P2.
@@ -245,12 +247,12 @@ No GAPs.
 
 ### Test cases (unit)
 
-| Test case | Input | Expected behavior |
-|---|---|---|
+| Test case                             | Input                                                                                                                                              | Expected behavior                                                                                                                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | whoami happy path with status success | `makeClient()` with `arraysJwt.status` mocked to return `{exists:true, expires_at:1777344297, renewal_needed:false, tier:'SUBSCRIPTION_TIER_PRO'}` | Result has `_meta.arrays_jwt` deep-equal to mock response; `_meta.profile`/`endpoint` unchanged; `username`/`id` unchanged. `client.arraysJwt.status` called once. |
-| whoami with status failure | `arraysJwt.status.mockRejectedValue(new Error('network'))` | Result has identity fields + `_meta.profile`/`endpoint`; `_meta.arrays_jwt` is `undefined`. No stderr output. `user.me` still called. |
-| whoami help mentions arrays_jwt | `dispatch(client, ['whoami', '--help'])` | Returned help text contains the substring `arrays_jwt` (or similar marker). |
-| existing whoami tests unchanged | (regression) | Both existing whoami tests at lines 426-450 must still pass after `makeClient()` gains the new mock. |
+| whoami with status failure            | `arraysJwt.status.mockRejectedValue(new Error('network'))`                                                                                         | Result has identity fields + `_meta.profile`/`endpoint`; `_meta.arrays_jwt` is `undefined`. No stderr output. `user.me` still called.                              |
+| whoami help mentions arrays_jwt       | `dispatch(client, ['whoami', '--help'])`                                                                                                           | Returned help text contains the substring `arrays_jwt` (or similar marker).                                                                                        |
+| existing whoami tests unchanged       | (regression)                                                                                                                                       | Both existing whoami tests at lines 426-450 must still pass after `makeClient()` gains the new mock.                                                               |
 
 ### Test cases (integration / e2e)
 
@@ -288,8 +290,9 @@ This enables existing whoami tests to still pass once the production
 code calls the method.
 
 **Steps:**
+
 - [ ] Add the mock line with realistic default
-  `{exists: true, expires_at: <future-timestamp>, renewal_needed: false, tier: 'SUBSCRIPTION_TIER_PRO'}`
+      `{exists: true, expires_at: <future-timestamp>, renewal_needed: false, tier: 'SUBSCRIPTION_TIER_PRO'}`
 - [ ] Run `npm test` — all existing tests still pass
 - [ ] Commit
 
@@ -305,6 +308,7 @@ after `const user = await client.user.me();`, call
 response as `_meta.arrays_jwt`. On failure, leave the field off.
 
 **Key snippet (pattern, not literal code):**
+
 ```ts
 let arraysJwt: Awaited<ReturnType<typeof client.arraysJwt.status>> | undefined;
 try {
@@ -323,10 +327,11 @@ const result: Record<string, unknown> = {
 ```
 
 **Steps:**
+
 - [ ] Write failing test: whoami with status success populates
-  `_meta.arrays_jwt` with mock response
+      `_meta.arrays_jwt` with mock response
 - [ ] Write failing test: whoami with `status.mockRejectedValue(...)`
-  returns result with `_meta.arrays_jwt === undefined`
+      returns result with `_meta.arrays_jwt === undefined`
 - [ ] Run `npm test` — new tests fail for the right reason
 - [ ] Implement the try/catch + spread in the handler
 - [ ] Run `npm test` — all tests pass
@@ -345,14 +350,15 @@ when the backend is reachable. Add one line in `README.md` near the
 whoami mention pointing out the same field.
 
 **Steps:**
+
 - [ ] Edit COMMAND_HELP['whoami'] string
 - [ ] Add a test assertion: the help text for whoami contains
-  "arrays_jwt" (extend the existing help test at line 787)
+      "arrays_jwt" (extend the existing help test at line 787)
 - [ ] Edit README.md — one line in the Arrays JWT section or under
-  CLI Quick Start
+      CLI Quick Start
 - [ ] Run `npm test`
 - [ ] Run `node dist/cli.js whoami` against stg to sanity-check
-  output shape (requires `npm run build` first)
+      output shape (requires `npm run build` first)
 - [ ] Commit
 
 ### Dependency graph
