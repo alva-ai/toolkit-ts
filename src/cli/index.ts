@@ -51,7 +51,7 @@ Commands:
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   auth        Authentication (login)
   screenshot  Capture a web screenshot as PNG
-  arrays-jwt  Manage Arrays JWT provisioning (ensure, status)
+  arrays      Arrays backend operations (token ensure, token status)
 
 Global options:
   --api-key <key>        API key (overrides env and config file)
@@ -75,7 +75,7 @@ const COMMAND_HELP: Record<string, string> = {
 Save API credentials to ~/.config/alva/config.json (mode 0600).
 After configuring, subsequent commands use the saved key automatically.
 Multiple profiles allow switching between environments (production, staging, etc.).
-Also auto-runs 'alva arrays-jwt ensure' to provision the server-side Arrays JWT
+Also auto-runs 'alva arrays token ensure' to provision the server-side Arrays JWT
 (soft-fail: a network/auth failure prints a stderr warning but exit stays 0).
 
 Required:
@@ -570,19 +570,19 @@ Examples:
   alva trading execute --account-id acc_123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
   alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
 
-  'arrays-jwt': `Usage: alva arrays-jwt <subcommand>
+  arrays: `Usage: alva arrays token <subcommand>
 
 Manage the Arrays JWT used by sandbox scripts (secret.loadPlaintext('ARRAYS_JWT')).
 The JWT is stored server-side as a jagent secret; the CLI never receives the
-token itself. 'alva configure' auto-runs 'ensure' after saving credentials.
+token itself. 'alva configure' auto-runs 'token ensure' after saving credentials.
 
 Subcommands:
-  ensure    Provision or refresh the Arrays JWT (idempotent)
-  status    Show Arrays JWT presence, expiry, tier, and renewal hint
+  token ensure    Provision or refresh the Arrays JWT (idempotent)
+  token status    Show Arrays JWT presence, expiry, tier, and renewal hint
 
 Examples:
-  alva arrays-jwt ensure
-  alva arrays-jwt status`,
+  alva arrays token ensure
+  alva arrays token status`,
 };
 
 interface WriteConfigDeps {
@@ -1153,20 +1153,29 @@ export async function dispatch(
         }>,
       });
 
-    case 'arrays-jwt': {
-      switch (subcommand) {
-        case 'ensure':
-          return client.arraysJwt.ensure();
-        case 'status':
-          return client.arraysJwt.status();
-        default: {
-          const sub = subcommand ?? '';
-          const label = sub ? `arrays-jwt ${sub}` : 'arrays-jwt';
-          throw new Error(
-            `Unknown subcommand '${label}'. Use 'alva arrays-jwt --help' for usage.`
-          );
+    case 'arrays': {
+      if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+        return { _help: true, text: COMMAND_HELP.arrays };
+      }
+      if (subcommand === 'token') {
+        const leaf = args[2];
+        if (!leaf || leaf === '--help' || leaf === '-h') {
+          return { _help: true, text: COMMAND_HELP.arrays };
+        }
+        switch (leaf) {
+          case 'ensure':
+            return client.arraysJwt.ensure();
+          case 'status':
+            return client.arraysJwt.status();
+          default:
+            throw new Error(
+              `Unknown subcommand 'arrays token ${leaf}'. Use 'alva arrays --help' for usage.`
+            );
         }
       }
+      throw new Error(
+        `Unknown subcommand 'arrays ${subcommand}'. Use 'alva arrays --help' for usage.`
+      );
     }
 
     case 'screenshot': {

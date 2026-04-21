@@ -60,8 +60,8 @@ the token string itself.
 Inspect or re-run manually:
 
 ```bash
-alva arrays-jwt ensure   # sign-if-needed; returns expires_at + tier
-alva arrays-jwt status   # returns exists + renewal_needed
+alva arrays token ensure   # sign-if-needed; returns expires_at + tier
+alva arrays token status   # returns exists + renewal_needed
 ```
 
 `alva whoami` also reports current JWT status under `_meta.arrays_jwt`.
