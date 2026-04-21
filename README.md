@@ -64,6 +64,19 @@ alva arrays-jwt ensure   # sign-if-needed; returns expires_at + tier
 alva arrays-jwt status   # returns exists + renewal_needed
 ```
 
+`alva whoami` also reports current JWT status under `_meta.arrays_jwt`.
+
+### Data Skills
+
+Browse the Arrays backend's data-skill documentation. These endpoints are
+public — no Alva credentials required.
+
+```bash
+alva skills list                                           # catalog of skills
+alva skills summary --name <skill>                         # endpoints table for a skill
+alva skills endpoint --name <skill> --path <endpoint-path> # full endpoint spec
+```
+
 ### Config Resolution
 
 The CLI resolves config in this order:
@@ -157,6 +170,7 @@ alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
+alva skills <list|summary|endpoint> [--name <skill>] [--path <endpoint-path>]
 alva comments <create|pin|unpin>
 alva remix --child-username <u> --child-name <n> --parents <json>
 alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
