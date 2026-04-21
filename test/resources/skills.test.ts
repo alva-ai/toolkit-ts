@@ -139,8 +139,8 @@ describe('SkillsResource', () => {
     const client = makeClient();
     client._request.mockResolvedValue({ success: true, data: [] });
     const skills = new SkillsResource(client);
-    await expect(
-      skills.endpoint({ name: 'x', path: 'p' })
-    ).rejects.toThrow(/empty skills endpoint/);
+    await expect(skills.endpoint({ name: 'x', path: 'p' })).rejects.toThrow(
+      /empty skills endpoint/
+    );
   });
 });

@@ -35,7 +35,8 @@ export class SkillsResource {
       }
     )) as Envelope<SkillDoc[]>;
     const doc = res.data?.[0];
-    if (!doc) throw new Error(`empty skills summary response for "${params.name}"`);
+    if (!doc)
+      throw new Error(`empty skills summary response for "${params.name}"`);
     return doc;
   }
 
