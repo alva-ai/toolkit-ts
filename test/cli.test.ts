@@ -61,8 +61,12 @@ function makeClient(): AlvaClient {
   client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
   client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
   client.skills.list = vi.fn().mockResolvedValue({ skills: [] });
-  client.skills.summary = vi.fn().mockResolvedValue({ endpoints: [] });
-  client.skills.endpoint = vi.fn().mockResolvedValue({ doc: '' });
+  client.skills.summary = vi
+    .fn()
+    .mockResolvedValue({ name: 'x', description: '', content: '' });
+  client.skills.endpoint = vi
+    .fn()
+    .mockResolvedValue({ name: 'x', description: '', content: '' });
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
