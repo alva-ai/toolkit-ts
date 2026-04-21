@@ -114,6 +114,9 @@ Verify that your credentials are valid by calling the Alva API. Shows your
 username, subscription tier, and which profile/endpoint is being used.
 Use this after 'alva configure' to confirm everything works.
 
+Output also includes _meta.arrays_jwt (exists, expires_at, renewal_needed,
+tier) when the backend is reachable; the field is omitted on RPC failure.
+
 Examples:
   alva whoami
   alva --profile staging whoami`,
@@ -752,12 +755,22 @@ export async function dispatch(
     const user = await client.user.me();
     const record = user as unknown as Record<string, unknown>;
     const version = meta?.cliVersion ?? CLI_VERSION;
+    let arraysJwtStatus: unknown;
+    try {
+      arraysJwtStatus = await client.arraysJwt.status();
+    } catch {
+      // soft-fail: omit arrays_jwt from _meta on failure
+    }
+    const metaBlock: Record<string, unknown> = {
+      profile: meta?.profile ?? 'default',
+      endpoint: meta?.baseUrl ?? client.baseUrl,
+    };
+    if (arraysJwtStatus !== undefined) {
+      metaBlock.arrays_jwt = arraysJwtStatus;
+    }
     const result: Record<string, unknown> = {
       ...record,
-      _meta: {
-        profile: meta?.profile ?? 'default',
-        endpoint: meta?.baseUrl ?? client.baseUrl,
-      },
+      _meta: metaBlock,
     };
     const minVersion = record.toolkit_min_version;
     if (

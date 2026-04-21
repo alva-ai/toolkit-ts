@@ -67,6 +67,12 @@ function makeClient(): AlvaClient {
   client.skills.endpoint = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
+  client.arraysJwt.status = vi.fn().mockResolvedValue({
+    exists: true,
+    expires_at: 1800000000,
+    renewal_needed: false,
+    tier: 'SUBSCRIPTION_TIER_PRO',
+  });
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
@@ -437,7 +443,7 @@ describe('whoami', () => {
     expect(client.user.me).toHaveBeenCalled();
     expect(result.username).toBe('alice');
     expect(result.subscription_tier).toBe('free');
-    expect(result._meta).toEqual({
+    expect(result._meta).toMatchObject({
       profile: 'staging',
       endpoint: 'http://staging',
     });
@@ -450,6 +456,35 @@ describe('whoami', () => {
       unknown
     >;
     expect((result._meta as Record<string, unknown>).profile).toBe('default');
+  });
+
+  it('includes arrays_jwt in _meta on status success', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['whoami'])) as Record<
+      string,
+      unknown
+    >;
+    expect(client.arraysJwt.status).toHaveBeenCalled();
+    const meta = result._meta as Record<string, unknown>;
+    expect(meta.arrays_jwt).toEqual({
+      exists: true,
+      expires_at: 1800000000,
+      renewal_needed: false,
+      tier: 'SUBSCRIPTION_TIER_PRO',
+    });
+  });
+
+  it('omits arrays_jwt when status RPC fails', async () => {
+    const client = makeClient();
+    client.arraysJwt.status = vi.fn().mockRejectedValue(new Error('network'));
+    const result = (await dispatch(client, ['whoami'])) as Record<
+      string,
+      unknown
+    >;
+    const meta = result._meta as Record<string, unknown>;
+    expect(meta.arrays_jwt).toBeUndefined();
+    expect(result.id).toBeDefined();
+    expect(result.username).toBe('alice');
   });
 });
 
@@ -796,6 +831,7 @@ describe('help text', () => {
     };
     expect(result._help).toBe(true);
     expect(result.text).toContain('whoami');
+    expect(result.text.toLowerCase()).toContain('arrays_jwt');
   });
 
   it('returns per-command help for sdk --help with partition names', async () => {
