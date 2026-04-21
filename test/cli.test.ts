@@ -1329,8 +1329,8 @@ describe('whoami version check', () => {
   });
 });
 
-describe('arrays-jwt dispatch', () => {
-  it('dispatches arrays-jwt ensure', async () => {
+describe('arrays token dispatch', () => {
+  it('dispatches arrays token ensure', async () => {
     const client = makeClient();
     const mockResp = {
       expires_at: 1,
@@ -1338,12 +1338,12 @@ describe('arrays-jwt dispatch', () => {
       renewed: true,
     };
     client.arraysJwt.ensure = vi.fn().mockResolvedValue(mockResp);
-    const result = await dispatch(client, ['arrays-jwt', 'ensure']);
+    const result = await dispatch(client, ['arrays', 'token', 'ensure']);
     expect(client.arraysJwt.ensure).toHaveBeenCalledTimes(1);
     expect(result).toEqual(mockResp);
   });
 
-  it('dispatches arrays-jwt status', async () => {
+  it('dispatches arrays token status', async () => {
     const client = makeClient();
     const mockResp = {
       exists: true,
@@ -1352,29 +1352,57 @@ describe('arrays-jwt dispatch', () => {
       renewal_needed: false,
     };
     client.arraysJwt.status = vi.fn().mockResolvedValue(mockResp);
-    const result = await dispatch(client, ['arrays-jwt', 'status']);
+    const result = await dispatch(client, ['arrays', 'token', 'status']);
     expect(client.arraysJwt.status).toHaveBeenCalledTimes(1);
     expect(result).toEqual(mockResp);
   });
 
-  it('throws on unknown arrays-jwt subcommand with helpful message', async () => {
+  it('throws on unknown arrays token leaf with helpful message', async () => {
     const client = makeClient();
-    await expect(dispatch(client, ['arrays-jwt', 'bogus'])).rejects.toThrow(
-      /arrays-jwt/
+    await expect(
+      dispatch(client, ['arrays', 'token', 'bogus'])
+    ).rejects.toThrow(/arrays token/);
+    await expect(
+      dispatch(client, ['arrays', 'token', 'bogus'])
+    ).rejects.toThrow(/--help/);
+  });
+
+  it('throws on unknown arrays subgroup with helpful message', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['arrays', 'bogus'])).rejects.toThrow(
+      /arrays/
     );
-    await expect(dispatch(client, ['arrays-jwt', 'bogus'])).rejects.toThrow(
+    await expect(dispatch(client, ['arrays', 'bogus'])).rejects.toThrow(
       /--help/
     );
   });
 
-  it('arrays-jwt --help returns help object', async () => {
+  it('arrays --help returns help object listing ensure and status', async () => {
     const client = makeClient();
-    const result = (await dispatch(client, ['arrays-jwt', '--help'])) as {
+    const result = (await dispatch(client, ['arrays', '--help'])) as {
       _help: boolean;
       text: string;
     };
     expect(result._help).toBe(true);
-    expect(typeof result.text).toBe('string');
-    expect(result.text.length).toBeGreaterThan(0);
+    expect(result.text).toMatch(/ensure/);
+    expect(result.text).toMatch(/status/);
+  });
+
+  it('arrays token --help returns help object', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['arrays', 'token', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toMatch(/ensure/);
+    expect(result.text).toMatch(/status/);
+  });
+
+  it('old arrays-jwt verb is no longer recognized', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['arrays-jwt', 'ensure'])).rejects.toThrow(
+      /Unknown command/
+    );
   });
 });
