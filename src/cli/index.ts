@@ -338,7 +338,7 @@ Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
   --display-name <name>      Human-readable title, max 40 chars (required)
   --feeds <json>             JSON array of {feed_id, feed_major?} (required)
-  --changelog <text>         Release changelog (required)
+  --changelog <text>         Release changelog
   --description <text>       Playbook description
   --trading-symbols <json>   JSON array of tickers, e.g. '["BTC","ETH"]' (max 50)
 
@@ -1007,11 +1007,7 @@ export async function dispatch(
             trading_symbols: flags['trading-symbols']
               ? (jsonParse(flags['trading-symbols']) as string[])
               : undefined,
-            changelog: requireFlag(
-              flags,
-              'changelog',
-              'release playbook-draft'
-            ),
+            changelog: flags['changelog'] as string | undefined,
           });
         case 'playbook':
           return client.release.playbook({
