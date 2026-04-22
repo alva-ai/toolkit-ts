@@ -408,20 +408,15 @@ Flags:
   --partition <name>     Partition name for 'partition-summary' (required)
 
 Key partitions:
-  spot_market_price_and_volume         Spot OHLCV for crypto and equities
-  crypto_futures_data                  Perpetual futures, funding rates, OI
-  crypto_technical_metrics             MA, RSI, MACD, MVRV, SOPR, NUPL (20 modules)
-  equity_fundamentals                  Income, balance sheet, PE, ROE (31 modules)
-  equity_estimates_and_targets         Analyst targets, consensus estimates
-  equity_ownership_and_flow            Insider trades, senator trading, institutions
-  macro_and_economics_data             CPI, GDP, Treasury rates, VIX (20 modules)
+  feed_widgets                             Per-handle/channel rolling subscriptions
+  unified_search                           Web search and URL scraping tools (X/Grok, Google, Brave, serper, decodo)
   technical_indicator_calculation_helpers  50+ pure calculators (RSI, MACD, Bollinger)
 
 Examples:
   alva sdk partitions
-  alva sdk partition-summary --partition spot_market_price_and_volume
-  alva sdk doc --name "@arrays/crypto/ohlcv:v1.0.0"
-  alva sdk doc --name "@arrays/data/stock/ohlcv:v1.0.0"`,
+  alva sdk partition-summary --partition feed_widgets
+  alva sdk doc --name "@arrays/data/widget-scrap/twitter:v1.0.0"
+  alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"`,
 
   skills: `Usage: alva skills <subcommand> [options]
 
