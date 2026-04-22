@@ -900,8 +900,8 @@ describe('help text', () => {
       _help: boolean;
       text: string;
     };
-    expect(result.text).toContain('spot_market_price_and_volume');
-    expect(result.text).toContain('equity_fundamentals');
+    expect(result.text).toContain('feed_widgets');
+    expect(result.text).toContain('unified_search');
   });
 
   it('returns per-command help for release --help with workflow', async () => {
@@ -1206,23 +1206,23 @@ describe('skills dispatch', () => {
     );
   });
 
-  it('dispatches skills endpoint with --name and --path', async () => {
+  it('dispatches skills endpoint with --name and --file', async () => {
     const client = makeClient();
     await dispatch(client, [
       'skills',
       'endpoint',
       '--name',
       'x',
-      '--path',
+      '--file',
       'p',
     ]);
     expect(client.skills.endpoint).toHaveBeenCalledWith({
       name: 'x',
-      path: 'p',
+      file: 'p',
     });
   });
 
-  it('throws when skills endpoint missing --path', async () => {
+  it('throws when skills endpoint missing --file', async () => {
     const client = makeClient();
     await expect(
       dispatch(client, ['skills', 'endpoint', '--name', 'x'])
@@ -1234,7 +1234,7 @@ describe('skills dispatch', () => {
   it('throws when skills endpoint missing --name', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['skills', 'endpoint', '--path', 'p'])
+      dispatch(client, ['skills', 'endpoint', '--file', 'p'])
     ).rejects.toSatisfy(
       (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
     );

@@ -40,7 +40,7 @@ export class SkillsResource {
     return doc;
   }
 
-  async endpoint(params: { name: string; path: string }): Promise<SkillDoc> {
+  async endpoint(params: { name: string; file: string }): Promise<SkillDoc> {
     const encoded = encodeURIComponent(params.name);
     const res = (await this.client._request(
       'GET',
@@ -48,13 +48,13 @@ export class SkillsResource {
       {
         baseUrl: this.client.arraysBaseUrl,
         noAuth: true,
-        query: { endpoint: params.path },
+        query: { endpoint: params.file },
       }
     )) as Envelope<SkillDoc[]>;
     const doc = res.data?.[0];
     if (!doc) {
       throw new Error(
-        `empty skills endpoint response for "${params.name}" path "${params.path}"`
+        `empty skills endpoint response for "${params.name}" file "${params.file}"`
       );
     }
     return doc;

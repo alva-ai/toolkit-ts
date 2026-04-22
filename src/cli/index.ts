@@ -426,11 +426,11 @@ public — no Alva credentials required.
 Subcommands:
   list       List all available data skills
   summary    Get the endpoints table for a skill (requires --name)
-  endpoint   Get full documentation for a specific endpoint (requires --name and --path)
+  endpoint   Get full documentation for a specific endpoint (requires --name and --file)
 
 Flags:
   --name <name>      Skill name (required for summary and endpoint)
-  --path <path>      Endpoint path (required for endpoint)
+  --file <file>      Endpoint file name from the "File" column of 'skills summary' (required for endpoint)
 
 Global override:
   --arrays-endpoint <url>   Arrays backend URL (or ARRAYS_ENDPOINT env)
@@ -439,7 +439,7 @@ Global override:
 Examples:
   alva skills list
   alva skills summary --name <skill>
-  alva skills endpoint --name <skill> --path <endpoint-path>`,
+  alva skills endpoint --name <skill> --file <endpoint-file>`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -1091,7 +1091,7 @@ export async function dispatch(
         case 'endpoint':
           return client.skills.endpoint({
             name: requireFlag(flags, 'name', 'skills endpoint'),
-            path: requireFlag(flags, 'path', 'skills endpoint'),
+            file: requireFlag(flags, 'file', 'skills endpoint'),
           });
         default:
           throw new CliUsageError(

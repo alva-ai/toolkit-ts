@@ -52,22 +52,22 @@ describe('SkillsResource', () => {
     });
   });
 
-  it('endpoint() sends endpoint query param', async () => {
+  it('endpoint() sends endpoint query param from file arg', async () => {
     const client = makeClient();
     const skills = new SkillsResource(client);
-    await skills.endpoint({ name: 'x', path: 'company/list' });
+    await skills.endpoint({ name: 'x', file: 'company-list' });
     const call = client._request.mock.calls[0];
     expect(call[2]).toMatchObject({
       baseUrl: 'https://arrays.example',
       noAuth: true,
-      query: { endpoint: 'company/list' },
+      query: { endpoint: 'company-list' },
     });
   });
 
   it('endpoint() URL-encodes name in path', async () => {
     const client = makeClient();
     const skills = new SkillsResource(client);
-    await skills.endpoint({ name: 'foo/bar', path: 'p' });
+    await skills.endpoint({ name: 'foo/bar', file: 'p' });
     const call = client._request.mock.calls[0];
     expect(call[1]).toBe('/api/v1/skills/foo%2Fbar');
   });
@@ -81,7 +81,7 @@ describe('SkillsResource', () => {
     });
     await skills.list();
     await skills.summary({ name: 'x' });
-    await skills.endpoint({ name: 'x', path: 'p' });
+    await skills.endpoint({ name: 'x', file: 'p' });
     expect(client._requireAuth).not.toHaveBeenCalled();
   });
 
@@ -131,7 +131,7 @@ describe('SkillsResource', () => {
       data: [{ name: 'p', description: 'D', content: 'C' }],
     });
     const skills = new SkillsResource(client);
-    const result = await skills.endpoint({ name: 'x', path: 'p' });
+    const result = await skills.endpoint({ name: 'x', file: 'p' });
     expect(result).toEqual({ name: 'p', description: 'D', content: 'C' });
   });
 
@@ -139,7 +139,7 @@ describe('SkillsResource', () => {
     const client = makeClient();
     client._request.mockResolvedValue({ success: true, data: [] });
     const skills = new SkillsResource(client);
-    await expect(skills.endpoint({ name: 'x', path: 'p' })).rejects.toThrow(
+    await expect(skills.endpoint({ name: 'x', file: 'p' })).rejects.toThrow(
       /empty skills endpoint/
     );
   });
