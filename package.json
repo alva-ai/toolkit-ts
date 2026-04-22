@@ -1,6 +1,6 @@
 {
   "name": "@alva-ai/toolkit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Alva REST API SDK and CLI — interact with the Alva platform from Node.js, the browser, or the command line.",
   "type": "module",
   "exports": {
