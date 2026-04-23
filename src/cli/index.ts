@@ -333,6 +333,7 @@ Feed flags:
   --cronjob-id <id>      ID of the backing cronjob (required)
   --view-json <json>     View configuration JSON
   --description <text>   Feed description
+  --changelog <text>     Per-major changelog summary
 
 Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
@@ -983,6 +984,7 @@ export async function dispatch(
               | Record<string, unknown>
               | undefined,
             description: flags['description'],
+            changelog: flags['changelog'],
           });
         case 'playbook-draft':
           return client.release.playbookDraft({
