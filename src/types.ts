@@ -230,6 +230,7 @@ export interface FeedReleaseRequest {
   cronjob_id: number;
   view_json?: Record<string, unknown>;
   description?: string;
+  changelog?: string;
 }
 
 export interface FeedReleaseResponse {

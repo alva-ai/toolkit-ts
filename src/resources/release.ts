@@ -20,6 +20,7 @@ export class ReleaseResource {
         cronjob_id: params.cronjob_id,
         view_json: params.view_json,
         description: params.description,
+        changelog: params.changelog,
       },
     }) as Promise<FeedReleaseResponse>;
   }
