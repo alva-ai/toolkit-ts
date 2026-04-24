@@ -36,7 +36,6 @@ export class ReleaseResource {
         description: params.description,
         feeds: params.feeds,
         trading_symbols: params.trading_symbols,
-        changelog: params.changelog,
       },
     }) as Promise<PlaybookDraftResponse>;
   }
