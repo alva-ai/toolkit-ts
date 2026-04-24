@@ -268,7 +268,7 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('dispatches release playbook-draft without --changelog', async () => {
+  it('dispatches release playbook-draft', async () => {
     const client = makeClient();
     await dispatch(client, [
       'release',
@@ -285,29 +285,6 @@ describe('CLI dispatch', () => {
         name: 'btc-dashboard',
         display_name: 'BTC Trend Dashboard',
         feeds: [{ feed_id: 100 }],
-        changelog: undefined,
-      })
-    );
-  });
-
-  it('dispatches release playbook-draft with --changelog', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'release',
-      'playbook-draft',
-      '--name',
-      'btc-dashboard',
-      '--display-name',
-      'BTC Trend Dashboard',
-      '--feeds',
-      '[{"feed_id":100}]',
-      '--changelog',
-      'Initial release',
-    ]);
-    expect(client.release.playbookDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc-dashboard',
-        changelog: 'Initial release',
       })
     );
   });
