@@ -13,6 +13,7 @@ import { ScreenshotResource } from './resources/screenshot.js';
 import { UserResource } from './resources/user.js';
 import { TradingResource } from './resources/trading.js';
 import { ArraysJwtResource } from './resources/arraysJwt.js';
+import { NotificationsResource } from './resources/notifications.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -47,6 +48,7 @@ export class AlvaClient {
   private _user?: UserResource;
   private _trading?: TradingResource;
   private _arraysJwt?: ArraysJwtResource;
+  private _notifications?: NotificationsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -93,6 +95,9 @@ export class AlvaClient {
   }
   get arraysJwt(): ArraysJwtResource {
     return (this._arraysJwt ??= new ArraysJwtResource(this));
+  }
+  get notifications(): NotificationsResource {
+    return (this._notifications ??= new NotificationsResource(this));
   }
 
   _requireAuth(): void {
