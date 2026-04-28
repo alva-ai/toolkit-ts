@@ -14,6 +14,8 @@ export interface UserProfile {
   username: string;
   subscription_tier: 'free' | 'pro';
   telegram_username: string | null;
+  /** Caller's alfs home directory, e.g. `/alva/home/<username>`. */
+  home_path: string;
 }
 
 // --- Arrays JWT ---
@@ -237,6 +239,8 @@ export interface FeedReleaseResponse {
   feed_id: number;
   name: string;
   feed_major: number;
+  /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
+  feed_path: string;
 }
 
 export interface PlaybookDraftRequest {
@@ -250,6 +254,8 @@ export interface PlaybookDraftRequest {
 export interface PlaybookDraftResponse {
   playbook_id: number;
   playbook_version_id: number;
+  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
+  playbook_path: string;
 }
 
 export interface PlaybookReleaseRequest {
@@ -263,6 +269,8 @@ export interface PlaybookReleaseResponse {
   playbook_id: number;
   version: string;
   published_url: string;
+  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
+  playbook_path: string;
 }
 
 // --- Secrets ---
@@ -447,4 +455,52 @@ export interface ExecuteSignalResult {
   status: string;
   orders: ExecuteSignalOrder[];
   error?: string;
+}
+
+// --- Notifications ---
+
+export interface NotificationListParams {
+  username: string;
+  name: string;
+  channel?: string;
+  /** `sent` / `failed` / `filtered`. */
+  status?: string;
+  /** Unix seconds; only notifications newer than this. */
+  since_time?: number;
+  /** Page size, default 50, max 200. */
+  first?: number;
+  /** Opaque cursor token from previous page's `next_cursor`. */
+  cursor?: string;
+}
+
+export interface NotificationEvent {
+  id: string;
+  event_type: string;
+  user_id: string;
+  channel: string;
+  /** `sent` / `failed` / `filtered`. */
+  status: string;
+  /** Unix seconds. */
+  created_at: number;
+  message?: string;
+  error_msg?: string;
+  /** Present when notification is playbook-scoped. */
+  playbook_id?: string;
+  /** Present when notification is feed-scoped. */
+  feed_id?: string;
+}
+
+export interface PlaybookNotificationListResponse {
+  items: NotificationEvent[];
+  /** Empty when there is no next page. */
+  next_cursor: string;
+  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
+  playbook_path: string;
+}
+
+export interface FeedNotificationListResponse {
+  items: NotificationEvent[];
+  next_cursor: string;
+  /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
+  feed_path: string;
 }
