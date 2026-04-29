@@ -539,6 +539,11 @@ export interface PushSubscriptionPlaybookParams {
   name: string;
 }
 
+export interface PushSubscriptionFeedParams {
+  username: string;
+  name: string;
+}
+
 export interface PushSubscriptionListParams {
   /** Default `false`. When `true`, include rows with `subscribed=false`. */
   include_history?: boolean;
@@ -552,6 +557,12 @@ export interface SubscribePushTargetResponse {
   subscription: PushSubscription;
   /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
   playbook_path: string;
+}
+
+export interface SubscribeFeedPushTargetResponse {
+  subscription: PushSubscription;
+  /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
+  feed_path: string;
 }
 
 export interface UnsubscribePushTargetResponse {

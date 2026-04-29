@@ -47,6 +47,7 @@ Commands:
   sdk         SDK documentation (doc, partitions, partition-summary)
   skills      Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
+  push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   remix       Save playbook remix lineage
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   auth        Authentication (login)
@@ -466,6 +467,33 @@ Examples:
   alva comments create --username alice --name btc-dashboard --content "Thanks!" --parent-id 5
   alva comments pin --comment-id 12
   alva comments unpin --comment-id 12`,
+
+  'push-subscriptions': `Usage: alva push-subscriptions <subcommand> [options]
+
+Personal opt-in for DM/web push notifications. Independent of social
+follow: subscribing does not start following, unsubscribing does not
+unfollow. Following a playbook elsewhere will compound-subscribe
+automatically.
+
+Subcommands:
+  subscribe-playbook     Opt into push for a playbook (any of its feeds)
+  unsubscribe-playbook   Opt out of push for a playbook (soft-disable)
+  subscribe-feed         Opt into push for a single feed
+  unsubscribe-feed       Opt out of push for a single feed (soft-disable)
+  list                   List the caller's push subscriptions
+
+Subscribe/unsubscribe flags (playbook + feed):
+  --username <user>      Owner's username (required)
+  --name <name>          URL-safe playbook or feed name (required)
+
+List flags:
+  --include-history      Also return rows previously unsubscribed (default: false)
+
+Examples:
+  alva push-subscriptions subscribe-playbook --username alice --name btc-dashboard
+  alva push-subscriptions subscribe-feed     --username alice --name btc-ema-cross
+  alva push-subscriptions unsubscribe-feed   --username alice --name btc-ema-cross
+  alva push-subscriptions list --include-history`,
 
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
@@ -1128,6 +1156,77 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: comments ${subcommand}`,
             'comments'
+          );
+      }
+    }
+
+    case 'push-subscriptions': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for push-subscriptions',
+          'push-subscriptions'
+        );
+      switch (subcommand) {
+        case 'subscribe-playbook':
+          return client.pushSubscriptions.subscribePlaybook({
+            username: requireFlag(
+              flags,
+              'username',
+              'push-subscriptions subscribe-playbook'
+            ),
+            name: requireFlag(
+              flags,
+              'name',
+              'push-subscriptions subscribe-playbook'
+            ),
+          });
+        case 'unsubscribe-playbook':
+          return client.pushSubscriptions.unsubscribePlaybook({
+            username: requireFlag(
+              flags,
+              'username',
+              'push-subscriptions unsubscribe-playbook'
+            ),
+            name: requireFlag(
+              flags,
+              'name',
+              'push-subscriptions unsubscribe-playbook'
+            ),
+          });
+        case 'subscribe-feed':
+          return client.pushSubscriptions.subscribeFeed({
+            username: requireFlag(
+              flags,
+              'username',
+              'push-subscriptions subscribe-feed'
+            ),
+            name: requireFlag(
+              flags,
+              'name',
+              'push-subscriptions subscribe-feed'
+            ),
+          });
+        case 'unsubscribe-feed':
+          return client.pushSubscriptions.unsubscribeFeed({
+            username: requireFlag(
+              flags,
+              'username',
+              'push-subscriptions unsubscribe-feed'
+            ),
+            name: requireFlag(
+              flags,
+              'name',
+              'push-subscriptions unsubscribe-feed'
+            ),
+          });
+        case 'list':
+          return client.pushSubscriptions.list({
+            include_history: flags['include-history'] !== undefined,
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: push-subscriptions ${subcommand}`,
+            'push-subscriptions'
           );
       }
     }
