@@ -33,7 +33,7 @@ export class PushSubscriptionsResource {
     params: PushSubscriptionPlaybookParams
   ): Promise<SubscribePushTargetResponse> {
     this.client._requireAuth();
-    const path = `/api/v1/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}/push-subscription`;
+    const path = `/api/v1/push-subscriptions/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
     return this.client._request(
       'POST',
       path
@@ -48,7 +48,7 @@ export class PushSubscriptionsResource {
     params: PushSubscriptionPlaybookParams
   ): Promise<UnsubscribePushTargetResponse> {
     this.client._requireAuth();
-    const path = `/api/v1/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}/push-subscription`;
+    const path = `/api/v1/push-subscriptions/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
     return this.client._request(
       'DELETE',
       path
@@ -65,7 +65,7 @@ export class PushSubscriptionsResource {
     params: PushSubscriptionFeedParams
   ): Promise<SubscribeFeedPushTargetResponse> {
     this.client._requireAuth();
-    const path = `/api/v1/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}/push-subscription`;
+    const path = `/api/v1/push-subscriptions/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
     return this.client._request(
       'POST',
       path
@@ -80,7 +80,7 @@ export class PushSubscriptionsResource {
     params: PushSubscriptionFeedParams
   ): Promise<UnsubscribePushTargetResponse> {
     this.client._requireAuth();
-    const path = `/api/v1/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}/push-subscription`;
+    const path = `/api/v1/push-subscriptions/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
     return this.client._request(
       'DELETE',
       path
