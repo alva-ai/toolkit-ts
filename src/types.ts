@@ -504,3 +504,56 @@ export interface FeedNotificationListResponse {
   /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
   feed_path: string;
 }
+
+// --- Push Subscriptions ---
+
+/**
+ * Identifies the asset a personal push subscription is keyed to.
+ * `PLAYBOOK` is the only target supported today; `FEED` is reserved for
+ * a future phase where users can subscribe to a feed independent of any
+ * playbook that consumes it.
+ */
+export type PushTargetType = 'PLAYBOOK' | 'FEED' | 'UNSPECIFIED';
+
+export interface PushTarget {
+  type: PushTargetType;
+  /** Numeric id encoded as a string (matches the rest of the SDK). */
+  id: string;
+}
+
+export interface PushSubscription {
+  target: PushTarget;
+  /**
+   * `true` when the row is currently active. `false` means the user
+   * previously subscribed and then unsubscribed; the row is preserved
+   * so re-subscribe restores seniority via UPSERT-revive. Only present
+   * when `include_history=true` is passed to `list`.
+   */
+  subscribed: boolean;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+export interface PushSubscriptionPlaybookParams {
+  username: string;
+  name: string;
+}
+
+export interface PushSubscriptionListParams {
+  /** Default `false`. When `true`, include rows with `subscribed=false`. */
+  include_history?: boolean;
+}
+
+export interface PushSubscriptionListResponse {
+  items: PushSubscription[];
+}
+
+export interface SubscribePushTargetResponse {
+  subscription: PushSubscription;
+  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
+  playbook_path: string;
+}
+
+export interface UnsubscribePushTargetResponse {
+  ok: true;
+}
