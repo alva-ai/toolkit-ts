@@ -104,6 +104,30 @@ describe('SkillsResource', () => {
     });
   });
 
+  it('list() attaches endpoint tier counts for known Arrays skills', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          name: 'arrays-data-api-polymarket',
+          description: 'Prediction markets',
+        },
+      ],
+    });
+    const skills = new SkillsResource(client);
+    const result = await skills.list();
+    expect(result.skills[0]).toEqual(
+      expect.objectContaining({
+        metadata: {
+          endpoint_count: 18,
+          endpoint_tier_counts: { alternative: 18 },
+        },
+        endpoint_tier_counts: { alternative: 18 },
+      })
+    );
+  });
+
   it('summary() returns the single SkillDoc from data[0]', async () => {
     const client = makeClient();
     client._request.mockResolvedValue({
@@ -113,6 +137,38 @@ describe('SkillsResource', () => {
     const skills = new SkillsResource(client);
     const result = await skills.summary({ name: 'x' });
     expect(result).toEqual({ name: 'x', description: 'D', content: 'C' });
+  });
+
+  it('summary() attaches endpoint tier metadata for known Arrays skills', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          name: 'arrays-data-api-stock-screener',
+          description: 'D',
+          content: 'C',
+        },
+      ],
+    });
+    const skills = new SkillsResource(client);
+    const result = await skills.summary({
+      name: 'arrays-data-api-stock-screener',
+    });
+    expect(result.endpoint_metadata).toContainEqual(
+      expect.objectContaining({
+        file: 'basic-info-screener',
+        method: 'GET',
+        path: '/api/v1/stocks/screener/basic-info/{sub}',
+        tier: 'public',
+        required_subscription_tier: 'free',
+        pro_required: false,
+      })
+    );
+    expect(result.metadata).toEqual({
+      endpoint_count: 6,
+      endpoint_tier_counts: { public: 6 },
+    });
   });
 
   it('summary() throws on empty data', async () => {
@@ -133,6 +189,30 @@ describe('SkillsResource', () => {
     const skills = new SkillsResource(client);
     const result = await skills.endpoint({ name: 'x', file: 'p' });
     expect(result).toEqual({ name: 'p', description: 'D', content: 'C' });
+  });
+
+  it('endpoint() attaches tier metadata for known endpoint files', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      success: true,
+      data: [{ name: 'market-news', description: 'D', content: 'C' }],
+    });
+    const skills = new SkillsResource(client);
+    const result = await skills.endpoint({
+      name: 'arrays-data-api-news',
+      file: 'market-news',
+    });
+    expect(result.metadata).toEqual(
+      expect.objectContaining({
+        file: 'market-news',
+        method: 'GET',
+        path: '/api/v1/stocks/market-news',
+        tier: 'unstructured',
+        required_subscription_tier: 'pro',
+        access: 'pro_only',
+        pro_required: true,
+      })
+    );
   });
 
   it('endpoint() throws on empty data', async () => {
