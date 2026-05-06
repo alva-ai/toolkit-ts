@@ -26,3 +26,10 @@ export type {
   FsGrantParams,
   FsRevokeParams,
 } from './types.js';
+export type {
+  SkillDoc,
+  SkillEndpointMetadata,
+  SkillEndpointTier,
+  SkillMetadata,
+  SkillSummary,
+} from './resources/skills.js';

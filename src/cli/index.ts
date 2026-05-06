@@ -426,8 +426,8 @@ public — no Alva credentials required.
 
 Subcommands:
   list       List all available data skills
-  summary    Get the endpoints table for a skill (requires --name)
-  endpoint   Get full documentation for a specific endpoint (requires --name and --file)
+  summary    Get the endpoints table for a skill, plus local tier metadata (requires --name)
+  endpoint   Get full documentation and local tier metadata for a specific endpoint (requires --name and --file)
 
 Flags:
   --name <name>      Skill name (required for summary and endpoint)
