@@ -76,6 +76,18 @@ function makeClient(): AlvaClient {
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
+  client.channelGroupSubscriptions.context = vi
+    .fn()
+    .mockResolvedValue({ subscriptions: [] });
+  client.channelGroupSubscriptions.list = vi
+    .fn()
+    .mockResolvedValue({ subscriptions: [] });
+  client.channelGroupSubscriptions.subscribe = vi
+    .fn()
+    .mockResolvedValue({ ok: true, subscriptions: [] });
+  client.channelGroupSubscriptions.unsubscribe = vi
+    .fn()
+    .mockResolvedValue({ ok: true, subscriptions: [] });
   client.remix.save = vi.fn().mockResolvedValue(undefined);
   client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
   return client;
@@ -335,6 +347,80 @@ describe('CLI dispatch', () => {
         name: 'pb',
         content: 'Nice!',
       })
+    );
+  });
+
+  it('dispatches channel group-subscriptions context', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'channel',
+      'group-subscriptions',
+      'context',
+      '--session-id',
+      '123',
+    ]);
+    expect(client.channelGroupSubscriptions.context).toHaveBeenCalledWith({
+      session_id: '123',
+    });
+  });
+
+  it('dispatches channel group-subscriptions subscribe', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'channel',
+      'group-subscriptions',
+      'subscribe',
+      '--session-id',
+      '123',
+      '--target-type',
+      'feed',
+      '--target-id',
+      '8169',
+    ]);
+    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
+      session_id: '123',
+      target_type: 'feed',
+      target_id: '8169',
+    });
+  });
+
+  it('dispatches channel group-subscriptions unsubscribe', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'channel',
+      'group-subscriptions',
+      'unsubscribe',
+      '--session-id',
+      '123',
+      '--target-type',
+      'playbook',
+      '--target-id',
+      '42',
+    ]);
+    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
+      session_id: '123',
+      target_type: 'playbook',
+      target_id: '42',
+    });
+  });
+
+  it('throws CliUsageError when channel group target type is invalid', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'channel',
+        'group-subscriptions',
+        'subscribe',
+        '--session-id',
+        '123',
+        '--target-type',
+        'dashboard',
+        '--target-id',
+        '8169',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'channel'
     );
   });
 
@@ -709,6 +795,16 @@ describe('auth help', () => {
     expect(result.text).toContain('auth');
   });
 
+  it('top-level help mentions channel group subscriptions', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('channel');
+    expect(result.text).toContain('group-subscriptions');
+  });
+
   it('auth --help returns help text', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['auth', '--help'])) as {
@@ -879,6 +975,17 @@ describe('help text', () => {
     };
     expect(result.text).toContain('feed_widgets');
     expect(result.text).toContain('unified_search');
+  });
+
+  it('returns per-command help for channel --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['channel', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('group-subscriptions');
+    expect(result.text).toContain('--session-id');
+    expect(result.text).toContain('--target-type');
   });
 
   it('returns per-command help for release --help with workflow', async () => {
