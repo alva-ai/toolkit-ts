@@ -568,3 +568,62 @@ export interface SubscribeFeedPushTargetResponse {
 export interface UnsubscribePushTargetResponse {
   ok: true;
 }
+
+// --- Channel Group Subscriptions ---
+
+export type ChannelGroupSubscriptionTargetType = 'feed' | 'playbook';
+
+export interface ChannelGroupSubscriptionTarget {
+  type: ChannelGroupSubscriptionTargetType | '';
+  id: number;
+}
+
+export interface ChannelGroupSubscription {
+  event_type: string;
+  target: ChannelGroupSubscriptionTarget | null;
+  subscribed_by_user_id: number;
+  enabled: boolean;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+export interface ChannelGroupCallerInfo {
+  user_id: number;
+  is_admin: boolean;
+}
+
+export interface ChannelGroupAdminInfo {
+  user_id: number;
+  username: string;
+  telegram_user_id: string;
+  telegram_username: string;
+}
+
+export interface ChannelGroupSubscriptionSessionParams {
+  session_id: number | string;
+}
+
+export interface ChannelGroupSubscriptionMutationParams extends ChannelGroupSubscriptionSessionParams {
+  target_type: ChannelGroupSubscriptionTargetType;
+  target_id: number | string;
+}
+
+export interface ChannelGroupSubscriptionContextResponse {
+  channel_id: string;
+  remote_chat_id: string;
+  caller: ChannelGroupCallerInfo;
+  admin: ChannelGroupAdminInfo | null;
+  subscriptions: ChannelGroupSubscription[];
+}
+
+export interface ChannelGroupSubscriptionListResponse {
+  subscriptions: ChannelGroupSubscription[];
+}
+
+export interface ChannelGroupSubscriptionMutationResponse {
+  ok: boolean;
+  reason: string;
+  caller: ChannelGroupCallerInfo;
+  admin: ChannelGroupAdminInfo | null;
+  subscriptions: ChannelGroupSubscription[];
+}

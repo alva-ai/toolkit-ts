@@ -15,6 +15,7 @@ import { TradingResource } from './resources/trading.js';
 import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { PushSubscriptionsResource } from './resources/pushSubscriptions.js';
+import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -22,6 +23,8 @@ export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
 interface RequestOptions {
   query?: Record<string, unknown>;
   body?: unknown;
+  /** Raw JSON body, used when callers must preserve int64 numeric literals. */
+  jsonBody?: string;
   /** Send raw body with application/octet-stream content type (for binary writes). */
   rawBody?: BodyInit;
   /** Override the base URL for this request (e.g. the Arrays data-tools endpoint). */
@@ -51,6 +54,7 @@ export class AlvaClient {
   private _arraysJwt?: ArraysJwtResource;
   private _notifications?: NotificationsResource;
   private _pushSubscriptions?: PushSubscriptionsResource;
+  private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -104,6 +108,10 @@ export class AlvaClient {
   get pushSubscriptions(): PushSubscriptionsResource {
     return (this._pushSubscriptions ??= new PushSubscriptionsResource(this));
   }
+  get channelGroupSubscriptions(): ChannelGroupSubscriptionsResource {
+    return (this._channelGroupSubscriptions ??=
+      new ChannelGroupSubscriptionsResource(this));
+  }
 
   _requireAuth(): void {
     if (!this.viewer_token && !this.apiKey) {
@@ -149,6 +157,9 @@ export class AlvaClient {
     if (options?.rawBody !== undefined) {
       headers['Content-Type'] = 'application/octet-stream';
       fetchBody = options.rawBody;
+    } else if (options?.jsonBody !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      fetchBody = options.jsonBody;
     } else if (options?.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       fetchBody = JSON.stringify(options.body);

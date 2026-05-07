@@ -110,6 +110,23 @@ describe('AlvaClient', () => {
       expect(JSON.parse(init.body)).toEqual({ code: '1+1' });
     });
 
+    it('sends POST with raw JSON body', async () => {
+      const fetch = mockFetch({ body: { result: 'ok' } });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({});
+      const body =
+        '{"session_id":2047213140224270336,"target_type":"feed","target_id":8169}';
+
+      await client._request('POST', '/api/v1/channel/group-subscriptions', {
+        jsonBody: body,
+      });
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.method).toBe('POST');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      expect(init.body).toBe(body);
+    });
+
     it('sends POST with rawBody as octet-stream', async () => {
       const fetch = mockFetch({ body: { bytes_written: 3 } });
       globalThis.fetch = fetch;

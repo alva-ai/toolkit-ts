@@ -48,6 +48,7 @@ Commands:
   skills      Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
+  channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   auth        Authentication (login)
@@ -495,6 +496,32 @@ Examples:
   alva push-subscriptions unsubscribe-feed   --username alice --name btc-ema-cross
   alva push-subscriptions list --include-history`,
 
+  channel: `Usage: alva channel group-subscriptions <subcommand> [options]
+
+Manage push notifications delivered into the external group chat attached
+to a channel session. The group can subscribe to public feeds and playbooks.
+Subscribe/unsubscribe are idempotent no-ops unless the authenticated caller
+is that group's Alva admin.
+
+Subcommands:
+  context       Show group admin status and current subscriptions
+  list          List active subscriptions for the group
+  subscribe     Subscribe the group to a public feed or playbook
+  unsubscribe   Unsubscribe the group from a feed or playbook
+
+Common flags:
+  --session-id <id>      Channel session id for the group (required)
+
+Subscribe/unsubscribe flags:
+  --target-type <type>   feed or playbook (required)
+  --target-id <id>       Numeric feed_id or playbook_id (required)
+
+Examples:
+  alva channel group-subscriptions context --session-id 123
+  alva channel group-subscriptions list --session-id 123
+  alva channel group-subscriptions subscribe --session-id 123 --target-type feed --target-id 8169
+  alva channel group-subscriptions unsubscribe --session-id 123 --target-type playbook --target-id 42`,
+
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
 Record remix lineage when creating a playbook based on existing playbooks.
@@ -740,6 +767,34 @@ function requireNumericFlag(
     );
   }
   return n;
+}
+
+function requirePositiveIntegerStringFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): string {
+  const val = requireFlag(flags, name, command);
+  if (!/^[1-9]\d*$/.test(val)) {
+    const group = command.split(' ')[0];
+    throw new CliUsageError(
+      `--${name} must be a positive integer for '${command}', got '${val}'`,
+      group
+    );
+  }
+  return val;
+}
+
+function requireGroupSubscriptionTargetType(
+  flags: Record<string, string>,
+  command: string
+): 'feed' | 'playbook' {
+  const val = requireFlag(flags, 'target-type', command).trim().toLowerCase();
+  if (val === 'feed' || val === 'playbook') return val;
+  throw new CliUsageError(
+    `--target-type must be feed or playbook for '${command}', got '${val}'`,
+    command.split(' ')[0]
+  );
 }
 
 function num(val: string | undefined): number | undefined {
@@ -1227,6 +1282,81 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: push-subscriptions ${subcommand}`,
             'push-subscriptions'
+          );
+      }
+    }
+
+    case 'channel': {
+      if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+        return { _help: true, text: COMMAND_HELP.channel };
+      }
+      if (subcommand !== 'group-subscriptions') {
+        throw new CliUsageError(
+          `Unknown subcommand: channel ${subcommand}`,
+          'channel'
+        );
+      }
+      const leaf = args[2];
+      if (!leaf || leaf === '--help' || leaf === '-h') {
+        return { _help: true, text: COMMAND_HELP.channel };
+      }
+      const channelFlags = parseFlags(args.slice(3));
+      const commandName = `channel group-subscriptions ${leaf}`;
+      switch (leaf) {
+        case 'context':
+          return client.channelGroupSubscriptions.context({
+            session_id: requirePositiveIntegerStringFlag(
+              channelFlags,
+              'session-id',
+              commandName
+            ),
+          });
+        case 'list':
+          return client.channelGroupSubscriptions.list({
+            session_id: requirePositiveIntegerStringFlag(
+              channelFlags,
+              'session-id',
+              commandName
+            ),
+          });
+        case 'subscribe':
+          return client.channelGroupSubscriptions.subscribe({
+            session_id: requirePositiveIntegerStringFlag(
+              channelFlags,
+              'session-id',
+              commandName
+            ),
+            target_type: requireGroupSubscriptionTargetType(
+              channelFlags,
+              commandName
+            ),
+            target_id: requirePositiveIntegerStringFlag(
+              channelFlags,
+              'target-id',
+              commandName
+            ),
+          });
+        case 'unsubscribe':
+          return client.channelGroupSubscriptions.unsubscribe({
+            session_id: requirePositiveIntegerStringFlag(
+              channelFlags,
+              'session-id',
+              commandName
+            ),
+            target_type: requireGroupSubscriptionTargetType(
+              channelFlags,
+              commandName
+            ),
+            target_id: requirePositiveIntegerStringFlag(
+              channelFlags,
+              'target-id',
+              commandName
+            ),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: channel group-subscriptions ${leaf}`,
+            'channel'
           );
       }
     }

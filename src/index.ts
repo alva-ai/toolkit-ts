@@ -25,6 +25,16 @@ export type {
   FsChmodParams,
   FsGrantParams,
   FsRevokeParams,
+  ChannelGroupSubscriptionTargetType,
+  ChannelGroupSubscriptionTarget,
+  ChannelGroupSubscription,
+  ChannelGroupCallerInfo,
+  ChannelGroupAdminInfo,
+  ChannelGroupSubscriptionSessionParams,
+  ChannelGroupSubscriptionMutationParams,
+  ChannelGroupSubscriptionContextResponse,
+  ChannelGroupSubscriptionListResponse,
+  ChannelGroupSubscriptionMutationResponse,
 } from './types.js';
 export type {
   SkillDoc,

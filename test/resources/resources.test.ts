@@ -6,7 +6,9 @@ import { SdkDocsResource } from '../../src/resources/sdkDocs.js';
 import { CommentsResource } from '../../src/resources/comments.js';
 import { RemixResource } from '../../src/resources/remix.js';
 import { ScreenshotResource } from '../../src/resources/screenshot.js';
+import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
 import { AlvaClient } from '../../src/client.js';
+import { AlvaError } from '../../src/error.js';
 
 function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
@@ -200,6 +202,83 @@ describe('CommentsResource', () => {
       '/api/v1/playbook/comment/unpin',
       { body: { comment_id: 1 } }
     );
+  });
+});
+
+describe('ChannelGroupSubscriptionsResource', () => {
+  it('context() sends GET /api/v1/channel/group-subscriptions/context', async () => {
+    const client = makeClient();
+    const groups = new ChannelGroupSubscriptionsResource(client);
+    await groups.context({ session_id: '2047213140224270336' });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/channel/group-subscriptions/context',
+      {
+        query: { session_id: '2047213140224270336' },
+      }
+    );
+  });
+
+  it('list() sends GET /api/v1/channel/group-subscriptions', async () => {
+    const client = makeClient();
+    const groups = new ChannelGroupSubscriptionsResource(client);
+    await groups.list({ session_id: '2047213140224270336' });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/channel/group-subscriptions',
+      {
+        query: { session_id: '2047213140224270336' },
+      }
+    );
+  });
+
+  it('subscribe() preserves int64 session id in raw JSON', async () => {
+    const client = makeClient();
+    const groups = new ChannelGroupSubscriptionsResource(client);
+    await groups.subscribe({
+      session_id: '2047213140224270336',
+      target_type: 'feed',
+      target_id: '8169',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/channel/group-subscriptions',
+      {
+        jsonBody:
+          '{"session_id":2047213140224270336,"target_type":"feed","target_id":8169}',
+      }
+    );
+  });
+
+  it('unsubscribe() sends DELETE /api/v1/channel/group-subscriptions', async () => {
+    const client = makeClient();
+    const groups = new ChannelGroupSubscriptionsResource(client);
+    await groups.unsubscribe({
+      session_id: '2047213140224270336',
+      target_type: 'playbook',
+      target_id: '42',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'DELETE',
+      '/api/v1/channel/group-subscriptions',
+      {
+        jsonBody:
+          '{"session_id":2047213140224270336,"target_type":"playbook","target_id":42}',
+      }
+    );
+  });
+
+  it('rejects unsafe numeric ids before JSON serialization can round them', async () => {
+    const client = makeClient();
+    const groups = new ChannelGroupSubscriptionsResource(client);
+    await expect(
+      groups.subscribe({
+        session_id: 2047213140224270300,
+        target_type: 'feed',
+        target_id: 8169,
+      })
+    ).rejects.toBeInstanceOf(AlvaError);
+    expect(client._request).not.toHaveBeenCalled();
   });
 });
 
