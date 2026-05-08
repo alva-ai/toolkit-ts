@@ -138,9 +138,9 @@ describe('TemplatesResource.get', () => {
     const client = makeClient();
     client._request.mockResolvedValue({ success: true, data: [] });
     const r = new TemplatesResource(client);
-    await expect(
-      r.get({ username: 'alva', name: 'missing' })
-    ).rejects.toThrow(/empty templates get response/);
+    await expect(r.get({ username: 'alva', name: 'missing' })).rejects.toThrow(
+      /empty templates get response/
+    );
   });
 });
 
