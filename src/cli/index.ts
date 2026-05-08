@@ -46,6 +46,7 @@ Commands:
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skills      Data-skill documentation from the Arrays backend (list, summary, endpoint)
+  templates   Playbook templates discovery (list, categories, get, files)
   comments    Playbook comments (create, pin, unpin)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
@@ -419,6 +420,38 @@ Examples:
   alva sdk partition-summary --partition feed_widgets
   alva sdk doc --name "@arrays/data/widget-scrap/twitter:v1.0.0"
   alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"`,
+
+  templates: `Usage: alva templates <subcommand> [options]
+
+Discover playbook templates registered in the Alva backend. Templates
+are namespaced by (username, name): system-seeded templates use
+username='alva' (e.g. alva/ai-digest), user-created templates use the
+creator's username. All four routes are public read-only proxies of
+the backend TemplatesService.
+
+Subcommands:
+  list         List template summaries (filter by category and/or username)
+  categories   Distinct sorted set of categories used across all templates
+  get          Get one template's metadata + file listing (path + size_bytes, no content)
+  files        Get one template's full file content (for materialization)
+
+Flags:
+  --category <name>      (list) Filter by category, e.g. "research"
+  --username <user>      (list) Filter by owner username, e.g. "alva"
+  --username <user>      (get/files) Required: template owner username
+  --name <name>          (get/files) Required: template name
+
+Output: JSON to stdout. No filesystem side effects — pipe through jq or
+your own materializer if you need files on disk.
+
+Examples:
+  alva templates list
+  alva templates list --category research
+  alva templates list --username alva
+  alva templates list --category push --username alva
+  alva templates categories
+  alva templates get --username alva --name ai-digest
+  alva templates files --username alva --name ai-digest`,
 
   skills: `Usage: alva skills <subcommand> [options]
 
@@ -1180,6 +1213,38 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: skills ${subcommand}`,
             'skills'
+          );
+      }
+    }
+
+    case 'templates': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for templates',
+          'templates'
+        );
+      switch (subcommand) {
+        case 'list':
+          return client.templates.list({
+            category: flags['category'],
+            username: flags['username'],
+          });
+        case 'categories':
+          return client.templates.categories();
+        case 'get':
+          return client.templates.get({
+            username: requireFlag(flags, 'username', 'templates get'),
+            name: requireFlag(flags, 'name', 'templates get'),
+          });
+        case 'files':
+          return client.templates.files({
+            username: requireFlag(flags, 'username', 'templates files'),
+            name: requireFlag(flags, 'name', 'templates files'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: templates ${subcommand}`,
+            'templates'
           );
       }
     }
