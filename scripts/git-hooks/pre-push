@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Pre-push gate: mirrors the steps the GitHub Actions build job runs in
+# .github/workflows. Keep these in sync — if CI grows a step, add it here too.
+#
+# Skip with: `git push --no-verify` (only when you really mean it).
+
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "[pre-push] lint"
+npm run --silent lint
+
+echo "[pre-push] format:check"
+npm run --silent format:check
+
+echo "[pre-push] typecheck"
+npm run --silent typecheck
+
+echo "[pre-push] test"
+npm test --silent
+
+echo "[pre-push] build"
+npm run --silent build
+
+echo "[pre-push] all checks passed"
