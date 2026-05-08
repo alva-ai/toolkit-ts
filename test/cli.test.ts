@@ -67,6 +67,24 @@ function makeClient(): AlvaClient {
   client.skills.endpoint = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
+  client.templates.list = vi.fn().mockResolvedValue({ templates: [] });
+  client.templates.categories = vi.fn().mockResolvedValue({ categories: [] });
+  client.templates.get = vi.fn().mockResolvedValue({
+    username: 'alva',
+    name: 'ai-digest',
+    description: '',
+    categories: [],
+    creator_uid: 0,
+    updated_at: '',
+    files: [],
+  });
+  client.templates.files = vi.fn().mockResolvedValue({
+    username: 'alva',
+    name: 'ai-digest',
+    creator_uid: 0,
+    updated_at: '',
+    files: [],
+  });
   client.arraysJwt.status = vi.fn().mockResolvedValue({
     exists: true,
     expires_at: 1800000000,
@@ -1217,6 +1235,7 @@ describe('help-text drift guard', () => {
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
     skills: ['list', 'summary', 'endpoint'],
+    templates: ['list', 'categories', 'get', 'files'],
     comments: ['create', 'pin', 'unpin'],
     trading: [
       'accounts',
@@ -1348,6 +1367,126 @@ describe('skills dispatch', () => {
       text: string;
     };
     expect(result.text).toContain('skills');
+  });
+});
+
+describe('templates dispatch', () => {
+  it('throws CliUsageError when templates has no subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['templates'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'templates'
+    );
+  });
+
+  it('dispatches templates list with no filters', async () => {
+    const client = makeClient();
+    await dispatch(client, ['templates', 'list']);
+    expect(client.templates.list).toHaveBeenCalledWith({
+      category: undefined,
+      username: undefined,
+    });
+  });
+
+  it('forwards --category and --username on list', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'templates',
+      'list',
+      '--category',
+      'research',
+      '--username',
+      'alva',
+    ]);
+    expect(client.templates.list).toHaveBeenCalledWith({
+      category: 'research',
+      username: 'alva',
+    });
+  });
+
+  it('dispatches templates categories', async () => {
+    const client = makeClient();
+    await dispatch(client, ['templates', 'categories']);
+    expect(client.templates.categories).toHaveBeenCalled();
+  });
+
+  it('dispatches templates get with --username and --name', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'templates',
+      'get',
+      '--username',
+      'alva',
+      '--name',
+      'ai-digest',
+    ]);
+    expect(client.templates.get).toHaveBeenCalledWith({
+      username: 'alva',
+      name: 'ai-digest',
+    });
+  });
+
+  it('throws when templates get missing --username', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['templates', 'get', '--name', 'ai-digest'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'templates'
+    );
+  });
+
+  it('throws when templates get missing --name', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['templates', 'get', '--username', 'alva'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'templates'
+    );
+  });
+
+  it('dispatches templates files with --username and --name', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'templates',
+      'files',
+      '--username',
+      'alva',
+      '--name',
+      'ai-digest',
+    ]);
+    expect(client.templates.files).toHaveBeenCalledWith({
+      username: 'alva',
+      name: 'ai-digest',
+    });
+  });
+
+  it('throws on unknown templates subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['templates', 'bogus'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'templates'
+    );
+  });
+
+  it('templates --help returns help text', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['templates', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('Discover playbook templates');
+  });
+
+  it('top-level --help lists templates', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('templates');
   });
 });
 
