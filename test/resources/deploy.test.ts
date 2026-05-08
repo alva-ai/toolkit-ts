@@ -107,6 +107,20 @@ describe('DeployResource', () => {
     );
   });
 
+  it('trigger sends POST /api/v1/deploy/cronjob/:id/trigger and returns workflow_run_id', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValueOnce({
+      workflow_run_id: 'hatchet-wf-abc-123',
+    });
+    const deploy = new DeployResource(client);
+    const result = await deploy.trigger({ id: 42 });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/deploy/cronjob/42/trigger'
+    );
+    expect(result).toEqual({ workflow_run_id: 'hatchet-wf-abc-123' });
+  });
+
   it('listRuns sends GET /api/v1/deploy/cronjob/:id/runs with pagination', async () => {
     const client = makeClient();
     const deploy = new DeployResource(client);

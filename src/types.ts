@@ -204,6 +204,14 @@ export interface CronjobRun {
   duration_ms: number;
   credits_used: number;
   created_at: string;
+  /**
+   * Hatchet workflow run id captured at trigger time. Populated for runs
+   * persisted by recent worker binaries (both naturally-scheduled ticks and
+   * triggered runs); empty for older rows. External callers that issued
+   * `deploy.trigger()` filter by this field to find the run their request
+   * produced.
+   */
+  workflow_run_id?: string;
 }
 
 export interface CronjobRunStats {
@@ -222,6 +230,16 @@ export interface CronjobRunsListResponse {
 
 export interface CronjobRunLogsResponse {
   logs: string;
+}
+
+export interface CronjobTriggerResponse {
+  /**
+   * Hatchet workflow run id at enqueue. Async — the persisted
+   * `cronjob_runs` row appears only after the worker finishes the run.
+   * Callers verify completion by polling `deploy.listRuns({cronjob_id})`
+   * and matching `runs[].workflow_run_id` against this value.
+   */
+  workflow_run_id: string;
 }
 
 // --- Release ---
