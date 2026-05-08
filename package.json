@@ -39,7 +39,8 @@
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "prepare": "node scripts/install-git-hooks.mjs"
   },
   "repository": {
     "type": "git",
