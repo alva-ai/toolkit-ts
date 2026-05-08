@@ -264,6 +264,8 @@ Subcommands:
   delete     Delete a cronjob
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
+  trigger    Fire the cronjob once, immediately, bypassing the schedule
+             (returns workflow_run_id; poll 'runs' to verify completion)
   runs       List runs for a cronjob (cursor-paginated)
   run-logs   Get stdout/stderr logs for a single cronjob run
 
@@ -279,7 +281,7 @@ List flags:
   --limit <n>            Max results per page (default: 20)
   --cursor <cursor>      Pagination cursor from previous response
 
-Get/Update/Delete/Pause/Resume flags:
+Get/Update/Delete/Pause/Resume/Trigger flags:
   --id <id>              Cronjob ID (required)
 
 Runs flags:
@@ -313,7 +315,17 @@ Examples:
   alva deploy delete --id 42
   alva deploy runs --id 42
   alva deploy runs --id 42 --first 10
-  alva deploy run-logs --id 42 --run-id 123`,
+  alva deploy run-logs --id 42 --run-id 123
+
+Build-time verify (fire once, then poll until your run completes):
+  WF=$(alva deploy trigger --id 42 | jq -r .workflow_run_id)
+  while ! ROW=$(alva deploy runs --id 42 --first 5 \\
+                 | jq -e ".runs[] | select(.workflow_run_id==\\"$WF\\")"); do
+    sleep 5
+  done
+  STATUS=$(echo "$ROW" | jq -r .status)
+  [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
+                                  --run-id "$(echo "$ROW" | jq -r .id)"`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -1033,6 +1045,10 @@ export async function dispatch(
         case 'resume':
           return client.deploy.resume({
             id: requireNumericFlag(flags, 'id', 'deploy resume'),
+          });
+        case 'trigger':
+          return client.deploy.trigger({
+            id: requireNumericFlag(flags, 'id', 'deploy trigger'),
           });
         case 'runs':
           return client.deploy.listRuns({

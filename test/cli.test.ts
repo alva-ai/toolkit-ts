@@ -44,6 +44,9 @@ function makeClient(): AlvaClient {
   client.deploy.delete = vi.fn().mockResolvedValue(undefined);
   client.deploy.pause = vi.fn().mockResolvedValue(undefined);
   client.deploy.resume = vi.fn().mockResolvedValue(undefined);
+  client.deploy.trigger = vi
+    .fn()
+    .mockResolvedValue({ workflow_run_id: 'wf-test' });
   client.deploy.listRuns = vi.fn().mockResolvedValue({ runs: [] });
   client.deploy.getRunLogs = vi.fn().mockResolvedValue({ logs: '' });
   client.secrets.create = vi.fn().mockResolvedValue(undefined);
@@ -127,6 +130,13 @@ describe('CLI dispatch', () => {
     expect(client.deploy.listRuns).toHaveBeenCalledWith(
       expect.objectContaining({ cronjob_id: 42 })
     );
+  });
+
+  it('dispatches deploy trigger with --id and returns workflow_run_id', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, ['deploy', 'trigger', '--id', '42']);
+    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 42 });
+    expect(result).toEqual({ workflow_run_id: 'wf-test' });
   });
 
   it('dispatches deploy run-logs with --id and --run-id', async () => {

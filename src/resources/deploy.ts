@@ -8,6 +8,7 @@ import type {
   CronjobRunsListParams,
   CronjobRunsListResponse,
   CronjobRunLogsResponse,
+  CronjobTriggerResponse,
 } from '../types.js';
 
 export class DeployResource {
@@ -68,6 +69,26 @@ export class DeployResource {
       'POST',
       `/api/v1/deploy/cronjob/${params.id}/resume`
     );
+  }
+
+  /**
+   * Fire the cronjob workflow once, immediately, bypassing the schedule.
+   * Async — returns the Hatchet workflow run id at enqueue. The
+   * `cronjob_runs` row appears only after the worker finishes the run;
+   * callers verify completion by polling `listRuns({cronjob_id})` and
+   * matching `runs[].workflow_run_id` against the returned id.
+   *
+   * Surfaces backend status as HTTP errors (handled by AlvaClient):
+   * - 404 not found / cross-user
+   * - 412 cronjob is paused (resume before triggering)
+   * - 503 worker workflow handle not yet connected (startup race)
+   */
+  async trigger(params: { id: number }): Promise<CronjobTriggerResponse> {
+    this.client._requireAuth();
+    return this.client._request(
+      'POST',
+      `/api/v1/deploy/cronjob/${params.id}/trigger`
+    ) as Promise<CronjobTriggerResponse>;
   }
 
   async listRuns(
