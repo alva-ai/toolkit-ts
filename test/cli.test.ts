@@ -1360,6 +1360,87 @@ describe('skills dispatch', () => {
     );
   });
 
+  it('skills list returns readable string by default', async () => {
+    const client = makeClient();
+    client.skills.list = vi.fn().mockResolvedValue({
+      skills: [
+        {
+          name: 'alpha',
+          description: 'alpha desc',
+          metadata: {
+            endpoint_count: 2,
+            endpoint_tier_counts: { public: 2 },
+          },
+        },
+      ],
+    });
+    const result = await dispatch(client, ['skills', 'list']);
+    expect(typeof result).toBe('string');
+    expect(result as string).toContain('alpha');
+    expect(result as string).toContain('alpha desc');
+    expect(result as string).toContain('2 endpoints');
+  });
+
+  it('skills list --json returns raw object', async () => {
+    const client = makeClient();
+    client.skills.list = vi
+      .fn()
+      .mockResolvedValue({ skills: [{ name: 'a', description: 'd' }] });
+    const result = await dispatch(client, ['skills', 'list', '--json']);
+    expect(result).toEqual({ skills: [{ name: 'a', description: 'd' }] });
+  });
+
+  it('skills summary returns markdown content directly by default', async () => {
+    const client = makeClient();
+    client.skills.summary = vi.fn().mockResolvedValue({
+      name: 'sk',
+      description: 'desc',
+      content: '# Header\n\nbody line',
+    });
+    const result = await dispatch(client, ['skills', 'summary', '--name', 'sk']);
+    expect(typeof result).toBe('string');
+    const text = result as string;
+    expect(text).toContain('# sk');
+    expect(text).toContain('desc');
+    expect(text).toContain('# Header');
+    expect(text).toContain('body line');
+    expect(text).not.toContain('\\n');
+  });
+
+  it('skills summary --json returns raw object', async () => {
+    const client = makeClient();
+    client.skills.summary = vi
+      .fn()
+      .mockResolvedValue({ name: 'sk', description: 'd', content: 'c' });
+    const result = await dispatch(client, [
+      'skills',
+      'summary',
+      '--name',
+      'sk',
+      '--json',
+    ]);
+    expect(result).toEqual({ name: 'sk', description: 'd', content: 'c' });
+  });
+
+  it('skills endpoint returns markdown content directly by default', async () => {
+    const client = makeClient();
+    client.skills.endpoint = vi.fn().mockResolvedValue({
+      name: 'sk',
+      description: 'desc',
+      content: 'endpoint body',
+    });
+    const result = await dispatch(client, [
+      'skills',
+      'endpoint',
+      '--name',
+      'sk',
+      '--file',
+      'f',
+    ]);
+    expect(typeof result).toBe('string');
+    expect(result as string).toContain('endpoint body');
+  });
+
   it('skills --help returns help text', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['skills', '--help'])) as {
