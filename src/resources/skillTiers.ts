@@ -803,6 +803,16 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     pro_required: true,
   },
   {
+    skill: 'arrays-data-api-equity-ownership-and-flow',
+    file: 'senate-trade',
+    method: 'GET',
+    path: '/api/v1/stocks/company/senate-trade',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
+  {
     skill: 'arrays-data-api-stock-metrics',
     file: 'darkpool',
     method: 'GET',
@@ -1063,5 +1073,5 @@ export function countSkillEndpointMetadata(): Record<
   SkillEndpointTier,
   number
 > {
-  return { public: 56, alternative: 45, unstructured: 2 };
+  return { public: 56, alternative: 46, unstructured: 2 };
 }

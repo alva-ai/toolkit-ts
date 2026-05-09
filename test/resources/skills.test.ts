@@ -215,6 +215,30 @@ describe('SkillsResource', () => {
     );
   });
 
+  it('endpoint() attaches metadata for senate-trade fallback endpoint', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      success: true,
+      data: [{ name: 'senate-trade', description: 'D', content: 'C' }],
+    });
+    const skills = new SkillsResource(client);
+    const result = await skills.endpoint({
+      name: 'arrays-data-api-equity-ownership-and-flow',
+      file: 'senate-trade',
+    });
+    expect(result.metadata).toEqual(
+      expect.objectContaining({
+        file: 'senate-trade',
+        method: 'GET',
+        path: '/api/v1/stocks/company/senate-trade',
+        tier: 'alternative',
+        required_subscription_tier: 'pro',
+        access: 'pro_only',
+        pro_required: true,
+      })
+    );
+  });
+
   it('endpoint() throws on empty data', async () => {
     const client = makeClient();
     client._request.mockResolvedValue({ success: true, data: [] });
