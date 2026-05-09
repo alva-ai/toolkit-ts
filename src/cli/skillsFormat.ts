@@ -29,13 +29,14 @@ export function formatSkillsList(payload: { skills: SkillSummary[] }): string {
   const lines: string[] = [`${skills.length} skill(s):`, ''];
   for (const s of skills) {
     const meta = s.metadata;
-    const tag = meta
-      ? `[${meta.endpoint_count} endpoints${
-          formatTierCounts(meta.endpoint_tier_counts)
-            ? `; ${formatTierCounts(meta.endpoint_tier_counts)}`
-            : ''
-        }]`
-      : '';
+    let tag = '';
+    if (meta) {
+      const parts = [`${meta.endpoint_count} endpoints`];
+      const tiers = formatTierCounts(meta.endpoint_tier_counts);
+      if (tiers) parts.push(tiers);
+      if (meta.pro_count > 0) parts.push(`${meta.pro_count} pro`);
+      tag = `[${parts.join('; ')}]`;
+    }
     lines.push(`• ${s.name}${tag ? ` ${tag}` : ''}`);
     if (s.description) lines.push(`    ${s.description}`);
     lines.push('');
@@ -97,10 +98,11 @@ export function formatSkillSummary(doc: SkillDoc): string {
   if (doc.description) sections.push(doc.description);
   if (doc.metadata && !isEndpointMetadata(doc.metadata)) {
     const m = doc.metadata;
+    const parts = [`${m.endpoint_count} endpoints`];
     const counts = formatTierCounts(m.endpoint_tier_counts);
-    sections.push(
-      `(${m.endpoint_count} endpoints${counts ? `; ${counts}` : ''})`
-    );
+    if (counts) parts.push(counts);
+    if (m.pro_count > 0) parts.push(`${m.pro_count} pro`);
+    sections.push(`(${parts.join('; ')})`);
   }
   sections.push('---');
   sections.push((doc.content ?? '').trimEnd());

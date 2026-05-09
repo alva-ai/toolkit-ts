@@ -1369,16 +1369,30 @@ describe('skills dispatch', () => {
           description: 'alpha desc',
           metadata: {
             endpoint_count: 2,
-            endpoint_tier_counts: { public: 2 },
+            endpoint_tier_counts: { public: 1, unstructured: 1 },
+            pro_count: 1,
+          },
+        },
+        {
+          name: 'beta',
+          description: 'beta desc',
+          metadata: {
+            endpoint_count: 3,
+            endpoint_tier_counts: { public: 3 },
+            pro_count: 0,
           },
         },
       ],
     });
     const result = await dispatch(client, ['skills', 'list']);
     expect(typeof result).toBe('string');
-    expect(result as string).toContain('alpha');
-    expect(result as string).toContain('alpha desc');
-    expect(result as string).toContain('2 endpoints');
+    const text = result as string;
+    expect(text).toContain('alpha');
+    expect(text).toContain('alpha desc');
+    expect(text).toContain('2 endpoints');
+    expect(text).toContain('1 pro');
+    // beta has zero pro endpoints — pro tag must be omitted, not "0 pro"
+    expect(text).not.toContain('0 pro');
   });
 
   it('skills list --json returns raw object', async () => {
