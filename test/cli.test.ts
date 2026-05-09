@@ -347,6 +347,51 @@ describe('CLI dispatch', () => {
     ).rejects.toThrow(/changelog/);
   });
 
+  it('release playbook (publish) requires --readme-url', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'release',
+        'playbook',
+        '--name',
+        'btc-dashboard',
+        '--version',
+        'v1.0.0',
+        '--feeds',
+        '[{"feed_id":100}]',
+        '--changelog',
+        'Initial release',
+      ])
+    ).rejects.toThrow(/readme-url/);
+  });
+
+  it('dispatches release playbook with --readme-url', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'release',
+      'playbook',
+      '--name',
+      'btc-dashboard',
+      '--version',
+      'v1.0.0',
+      '--feeds',
+      '[{"feed_id":100}]',
+      '--changelog',
+      'Initial release',
+      '--readme-url',
+      'btc-dashboard/README.md',
+    ]);
+    expect(client.release.playbook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'btc-dashboard',
+        version: 'v1.0.0',
+        feeds: [{ feed_id: 100 }],
+        changelog: 'Initial release',
+        readme_url: 'btc-dashboard/README.md',
+      })
+    );
+  });
+
   it('dispatches sdk partitions', async () => {
     const client = makeClient();
     await dispatch(client, ['sdk', 'partitions']);
