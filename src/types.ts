@@ -10,7 +10,7 @@ export interface AlvaClientConfig {
 // --- User ---
 
 export interface UserProfile {
-  id: number;
+  id: string;
   username: string;
   subscription_tier: 'free' | 'pro';
   telegram_username: string | null;

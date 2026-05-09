@@ -21,9 +21,11 @@ import * as fs from 'fs';
 function makeClient(): AlvaClient {
   const client = new AlvaClient({ apiKey: 'test-key' });
   // Mock all resource methods
-  client.user.me = vi
-    .fn()
-    .mockResolvedValue({ id: 1, username: 'alice', subscription_tier: 'free' });
+  client.user.me = vi.fn().mockResolvedValue({
+    id: '9007199254740993',
+    username: 'alice',
+    subscription_tier: 'free',
+  });
   client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
   client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
   client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
@@ -120,7 +122,7 @@ describe('CLI dispatch', () => {
     const result = await dispatch(client, ['user', 'me']);
     expect(client.user.me).toHaveBeenCalled();
     expect(result).toEqual({
-      id: 1,
+      id: '9007199254740993',
       username: 'alice',
       subscription_tier: 'free',
     });
@@ -1668,7 +1670,7 @@ describe('whoami version check', () => {
   it('sets _warning when CLI is older than min version', async () => {
     const client = makeClient();
     client.user.me = vi.fn().mockResolvedValue({
-      id: 1,
+      id: '9007199254740993',
       username: 'alice',
       subscription_tier: 'free',
       toolkit_min_version: '99.0.0',
@@ -1683,7 +1685,7 @@ describe('whoami version check', () => {
   it('no _warning when CLI version >= min version', async () => {
     const client = makeClient();
     client.user.me = vi.fn().mockResolvedValue({
-      id: 1,
+      id: '9007199254740993',
       username: 'alice',
       subscription_tier: 'free',
       toolkit_min_version: '0.1.0',
@@ -1697,7 +1699,7 @@ describe('whoami version check', () => {
   it('no _warning when server omits toolkit_min_version', async () => {
     const client = makeClient();
     client.user.me = vi.fn().mockResolvedValue({
-      id: 1,
+      id: '9007199254740993',
       username: 'alice',
       subscription_tier: 'free',
     });
@@ -1710,7 +1712,7 @@ describe('whoami version check', () => {
   it('no _warning when server returns malformed version', async () => {
     const client = makeClient();
     client.user.me = vi.fn().mockResolvedValue({
-      id: 1,
+      id: '9007199254740993',
       username: 'alice',
       subscription_tier: 'free',
       toolkit_min_version: 'bad',
