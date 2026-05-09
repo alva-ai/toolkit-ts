@@ -1411,7 +1411,12 @@ describe('skills dispatch', () => {
       description: 'desc',
       content: '# Header\n\nbody line',
     });
-    const result = await dispatch(client, ['skills', 'summary', '--name', 'sk']);
+    const result = await dispatch(client, [
+      'skills',
+      'summary',
+      '--name',
+      'sk',
+    ]);
     expect(typeof result).toBe('string');
     const text = result as string;
     expect(text).toContain('# sk');

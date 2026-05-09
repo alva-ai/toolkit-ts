@@ -57,10 +57,13 @@ function formatEndpointMetadataTable(
   }));
   const headers = ['METHOD', 'PATH', 'FILE', 'TIER', 'ACCESS'];
   const widths = headers.map((h, i) => {
-    const key = ['method', 'path', 'file', 'tier', 'access'][i] as keyof (typeof rows)[number];
+    const key = ['method', 'path', 'file', 'tier', 'access'][
+      i
+    ] as keyof (typeof rows)[number];
     return Math.max(h.length, ...rows.map((r) => String(r[key]).length));
   });
-  const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
+  const pad = (s: string, w: number) =>
+    s + ' '.repeat(Math.max(0, w - s.length));
   const lines = [
     headers.map((h, i) => pad(h, widths[i])).join('  '),
     widths.map((w) => '-'.repeat(w)).join('  '),
