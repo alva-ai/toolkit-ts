@@ -14,6 +14,7 @@ export type { SkillEndpointMetadata, SkillEndpointTier };
 export interface SkillMetadata {
   endpoint_count: number;
   endpoint_tier_counts: SkillTierCounts;
+  pro_count: number;
 }
 
 export interface SkillSummary {
@@ -105,14 +106,17 @@ function metadataSummaryForSkill(skill: string): {
     return {};
   }
   const counts: SkillTierCounts = {};
+  let proCount = 0;
   for (const endpoint of endpointMetadata) {
     counts[endpoint.tier] = (counts[endpoint.tier] ?? 0) + 1;
+    if (endpoint.pro_required) proCount += 1;
   }
   return {
     endpoint_tier_counts: counts,
     metadata: {
       endpoint_count: endpointMetadata.length,
       endpoint_tier_counts: counts,
+      pro_count: proCount,
     },
   };
 }

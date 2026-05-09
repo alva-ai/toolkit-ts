@@ -3,6 +3,11 @@ import { AlvaError, CliUsageError } from '../error.js';
 import { loadConfig, writeConfig } from './config.js';
 import { handleAuthLogin } from './auth.js';
 import { runPostConfigureHooks } from './postConfigureHooks.js';
+import {
+  formatSkillsList,
+  formatSkillSummary,
+  formatSkillEndpoint,
+} from './skillsFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -478,6 +483,11 @@ Subcommands:
 Flags:
   --name <name>      Skill name (required for summary and endpoint)
   --file <file>      Endpoint file name from the "File" column of 'skills summary' (required for endpoint)
+  --json             Emit raw JSON instead of the readable rendering (for scripting / jq)
+
+Output: by default, summary/endpoint print the skill's markdown content directly,
+and list prints a name → description summary. Pass --json to get the raw JSON
+shape (same as before this CLI version) for piping into jq or other tools.
 
 Global override:
   --arrays-endpoint <url>   Arrays backend URL (or ARRAYS_ENDPOINT env)
@@ -485,8 +495,10 @@ Global override:
 
 Examples:
   alva skills list
+  alva skills list --json
   alva skills summary --name <skill>
-  alva skills endpoint --name <skill> --file <endpoint-file>`,
+  alva skills endpoint --name <skill> --file <endpoint-file>
+  alva skills summary --name <skill> --json | jq '.content'`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -755,6 +767,7 @@ const BOOLEAN_FLAGS = new Set([
   'help',
   'execute-latest',
   'dry-run',
+  'json',
 ]);
 
 function parseFlags(argv: string[]): Record<string, string> {
@@ -1213,18 +1226,25 @@ export async function dispatch(
     case 'skills': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for skills', 'skills');
+      const asJson = boolFlag(flags['json']) ?? false;
       switch (subcommand) {
-        case 'list':
-          return client.skills.list();
-        case 'summary':
-          return client.skills.summary({
+        case 'list': {
+          const result = await client.skills.list();
+          return asJson ? result : formatSkillsList(result);
+        }
+        case 'summary': {
+          const result = await client.skills.summary({
             name: requireFlag(flags, 'name', 'skills summary'),
           });
-        case 'endpoint':
-          return client.skills.endpoint({
+          return asJson ? result : formatSkillSummary(result);
+        }
+        case 'endpoint': {
+          const result = await client.skills.endpoint({
             name: requireFlag(flags, 'name', 'skills endpoint'),
             file: requireFlag(flags, 'file', 'skills endpoint'),
           });
+          return asJson ? result : formatSkillEndpoint(result);
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: skills ${subcommand}`,

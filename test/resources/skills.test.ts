@@ -122,6 +122,7 @@ describe('SkillsResource', () => {
         metadata: {
           endpoint_count: 18,
           endpoint_tier_counts: { alternative: 18 },
+          pro_count: 18,
         },
         endpoint_tier_counts: { alternative: 18 },
       })
@@ -168,6 +169,7 @@ describe('SkillsResource', () => {
     expect(result.metadata).toEqual({
       endpoint_count: 6,
       endpoint_tier_counts: { public: 6 },
+      pro_count: 0,
     });
   });
 
