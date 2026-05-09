@@ -50,6 +50,7 @@ export class ReleaseResource {
         version: params.version,
         feeds: params.feeds,
         changelog: params.changelog,
+        readme_url: params.readme_url,
       },
     }) as Promise<PlaybookReleaseResponse>;
   }

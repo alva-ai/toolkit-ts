@@ -281,6 +281,14 @@ export interface PlaybookReleaseRequest {
   version: string;
   feeds: Array<{ feed_id: number; feed_major?: number }>;
   changelog: string;
+  /**
+   * Owner-attested README location. Server validates the value is one of:
+   *   - relative: `<name>/README.md`
+   *   - absolute: `/alva/home/<username>/playbooks/<name>/README.md`
+   * The owner is responsible for placing the README at that path on ALFS
+   * before publish; the server does not write the file.
+   */
+  readme_url: string;
 }
 
 export interface PlaybookReleaseResponse {
