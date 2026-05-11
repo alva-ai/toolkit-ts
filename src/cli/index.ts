@@ -362,6 +362,8 @@ Playbook-draft flags:
   --feeds <json>             JSON array of {feed_id, feed_major?} (required)
   --description <text>       Playbook description
   --trading-symbols <json>   JSON array of tickers, e.g. '["BTC","ETH"]' (max 50)
+  --template-id <id>         Source-template reference "username/name", e.g.
+                             "alva/screener". Persisted set-once on first draft.
 
 Playbook flags:
   --name <name>          Playbook name, must already exist as draft (required)
@@ -384,6 +386,7 @@ Examples:
   alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --template-id alva/screener
   alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release" --readme-url "btc-dashboard/README.md"`,
 
   secrets: `Usage: alva secrets <subcommand> [options]
@@ -1154,6 +1157,7 @@ export async function dispatch(
             trading_symbols: flags['trading-symbols']
               ? (jsonParse(flags['trading-symbols']) as string[])
               : undefined,
+            template_id: flags['template-id'],
           });
         case 'playbook':
           return client.release.playbook({
