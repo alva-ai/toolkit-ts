@@ -382,6 +382,9 @@ export interface ScreenshotParams {
   url: string;
   selector?: string;
   xpath?: string;
+  compress?: boolean;
+  compressQuality?: number;
+  compressMaxWidth?: number;
 }
 
 // Trading

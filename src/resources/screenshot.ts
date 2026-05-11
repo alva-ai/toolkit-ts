@@ -11,6 +11,9 @@ export class ScreenshotResource {
         url: params.url,
         selector: params.selector,
         xpath: params.xpath,
+        compress: params.compress,
+        compress_quality: params.compressQuality,
+        compress_max_width: params.compressMaxWidth,
       },
     }) as Promise<ArrayBuffer>;
   }
