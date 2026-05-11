@@ -260,7 +260,7 @@ Examples:
   deploy: `Usage: alva deploy <subcommand> [options]
 
 Manage scheduled cronjobs that run your scripts on a cron schedule.
-Max 20 cronjobs per user. Min interval: 1 minute.
+Min interval: 1 minute.
 
 Subcommands:
   create     Create a new cronjob
