@@ -267,6 +267,12 @@ export interface PlaybookDraftRequest {
   description?: string;
   feeds: Array<{ feed_id: number; feed_major?: number }>;
   trading_symbols?: string[];
+  /**
+   * Optional source-template reference in "username/name" form (matches
+   * playbook_templates PK, e.g. "alva/screener"). Persisted set-once on
+   * the playbook's first draft; subsequent drafts ignore the field.
+   */
+  template_id?: string;
 }
 
 export interface PlaybookDraftResponse {

@@ -331,6 +331,28 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches release playbook-draft with --template-id', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'release',
+      'playbook-draft',
+      '--name',
+      'btc-dashboard',
+      '--display-name',
+      'BTC Trend Dashboard',
+      '--feeds',
+      '[{"feed_id":100}]',
+      '--template-id',
+      'alva/screener',
+    ]);
+    expect(client.release.playbookDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'btc-dashboard',
+        template_id: 'alva/screener',
+      })
+    );
+  });
+
   it('release playbook (publish) still requires --changelog', async () => {
     const client = makeClient();
     await expect(
