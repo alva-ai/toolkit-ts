@@ -602,22 +602,26 @@ Required:
 Examples:
   alva remix --child-username bob --child-name my-btc --parents '[{"username":"alice","name":"btc-signals"}]'`,
 
-  screenshot: `Usage: alva screenshot --url <url> --out <file> [--selector <css>] [--xpath <xpath>]
+  screenshot: `Usage: alva screenshot --url <url> --out <file> [--selector <css>] [--xpath <xpath>] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
 
 Capture a screenshot of an Alva page and save it as PNG. Useful for verifying
 playbook rendering before release.
 
 Required:
-  --url <url>          URL or path to capture (e.g. /playbook/alice/dashboard)
-  --out <file>         Local file path to write the PNG output
+  --url <url>                URL or path to capture (e.g. /playbook/alice/dashboard)
+  --out <file>               Local file path to write the PNG output
 
 Optional:
-  --selector <css>     CSS selector to capture a specific element
-  --xpath <xpath>      XPath selector to capture a specific element
+  --selector <css>           CSS selector to capture a specific element
+  --xpath <xpath>            XPath selector to capture a specific element
+  --compress                 Re-encode the PNG to reduce file size
+  --compress-quality <n>     Compression quality 1-100 (gateway default applies if omitted)
+  --compress-max-width <px>  Downscale to at most this width in pixels
 
 Examples:
   alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
-  alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"`,
+  alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"
+  alva screenshot --url /playbook/alice/btc-dashboard --out small.png --compress --compress-quality 70 --compress-max-width 1280`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
@@ -777,6 +781,7 @@ const BOOLEAN_FLAGS = new Set([
   'execute-latest',
   'dry-run',
   'json',
+  'compress',
 ]);
 
 function parseFlags(argv: string[]): Record<string, string> {
@@ -1512,10 +1517,17 @@ export async function dispatch(
 
     case 'screenshot': {
       const outFile = requireFlag(flags, 'out', 'screenshot');
+      const compressQuality = flags['compress-quality'];
+      const compressMaxWidth = flags['compress-max-width'];
       const result = await client.screenshot.capture({
         url: requireFlag(flags, 'url', 'screenshot'),
         selector: flags['selector'],
         xpath: flags['xpath'],
+        compress: boolFlag(flags['compress']),
+        compressQuality:
+          compressQuality !== undefined ? Number(compressQuality) : undefined,
+        compressMaxWidth:
+          compressMaxWidth !== undefined ? Number(compressMaxWidth) : undefined,
       });
       const buf = Buffer.from(result as ArrayBuffer);
       if (buf.length === 0) {
