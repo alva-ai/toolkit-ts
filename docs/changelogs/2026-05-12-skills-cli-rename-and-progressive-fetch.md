@@ -514,8 +514,213 @@ last-mile defense — covered in the error path table.
 
 ## 7. Outcome
 
-*To be filled in review phase.*
+### Changes made
+
+#### alva-gateway (`feat/skills-per-file`, commit `9d9f5b0`)
+
+Source (+234 lines):
+
+- `pkg/handler/playbook_skill.go` (+85): added `GetFile(c *gin.Context)`
+  method on `PlaybookSkillHandler`. Registers
+  `GET /:username/:name/files/*path` inside `RegisterRoutes`. Trims
+  leading `/` from gin catch-all, applies the same path-validation
+  regex/segment rules as backend `validatePath` (with a code comment
+  citing `alva-backend internal/services/templates/templates_grpc.go:96`
+  for sync), calls existing `GetPlaybookTemplateFiles` gRPC, filters
+  in-handler to the requested path. Returns `{success, data:[{username,
+  name, path, content, updated_at}]}` on 200; flat
+  `{success:false, error}` on 400 (path validation) and 404 (path
+  missing from skill); `grpcToHTTPError` for upstream failures.
+- `pkg/handler/playbook_skill_test.go` (+149): 6 new subtests under
+  `TestPlaybookSkill_GetFile` covering happy path, path validation
+  reject, gRPC NotFound, path-not-in-skill, and nested `references/api/*`
+  catch-all path.
+
+Docs:
+
+- `docs/changelogs/2026-05-12-playbook-skill-per-file-endpoint.md` (+90):
+  gateway-side cross-reference changelog.
+
+#### toolkit-ts (`feat/skills-cli-rename`, 4 commits)
+
+Net +439 lines (1243 insertions / 804 deletions). Sequence:
+
+1. **`8554a30` — `refactor(cli): remove broken templates command and TemplatesResource`**
+   - Deleted `src/resources/templates.ts` (101 lines) — endpoint
+     `/api/v1/templates` already 404 since gateway PR #348.
+   - Deleted `test/resources/templates.test.ts` (199 lines).
+   - `src/client.ts`: removed import, `_templates` field, `templates`
+     getter.
+   - `src/cli/index.ts`: removed `case 'templates'` (~30 lines),
+     `COMMAND_HELP.templates` block, top-level help row.
+   - `test/cli.test.ts`: removed mock setups, `DISPATCHABLE_SUBCOMMANDS`
+     entry, full `templates dispatch` describe block (~119 lines at
+     L1552–1670).
+
+2. **`f7973bc` — `refactor(cli): rename skills → data-skills, positional args`**
+   - `git mv src/resources/skills.ts → src/resources/dataSkills.ts`
+     (class `SkillsResource` → `DataSkillsResource`).
+   - `git mv src/cli/skillsFormat.ts → src/cli/dataSkillsFormat.ts`
+     (function export names unchanged — they format the data-SDK shape).
+   - Deleted `test/resources/skills.test.ts` (252 lines).
+   - `src/client.ts`: `_skills` → `_dataSkills`; `skills` getter → `dataSkills`.
+   - `src/index.ts`: updated stale type re-export path (build-break fix,
+     noted in implementer report).
+   - `src/cli/index.ts`: `case 'skills':` → `case 'data-skills':`;
+     `--name` / `--file` flags → positional `args[2]` / `args[3]`;
+     `--`-prefix guard on positionals; updated `COMMAND_HELP`
+     key + body; top-level help row.
+   - `test/cli.test.ts`: mocks → `client.dataSkills.*`;
+     `DISPATCHABLE_SUBCOMMANDS` row; full dispatch describe rewritten
+     for positional args.
+
+3. **`c9f14be` — `feat(cli): add playbook skills (alva skills list/tags/get/file)`**
+   - NEW `src/resources/playbookSkills.ts` (+117): `PlaybookSkillsResource`
+     class with `list({tag?, username?})`, `tags()`, `get(id)`, `file(id, path)`.
+     Helper `parsePlaybookSkillId` splits `<user>/<name>` and throws
+     `AlvaError('INVALID_ARGUMENT', …, 0)` on malformed input (3-arg
+     `AlvaError` constructor per existing repo convention). `file(id, path)`
+     encodes per-segment to preserve nested slashes. **No `noAuth: true`**
+     anywhere — gateway routes are inside `middleware.Authorization()`.
+     **No `files()` bulk method** — progressive loading is enforced at
+     the SDK layer.
+   - NEW `src/cli/playbookSkillsFormat.ts` (+71):
+     `formatPlaybookSkillsList`, `formatPlaybookSkillsTags`,
+     `formatPlaybookSkillGet`, `formatPlaybookSkillFile`. Latter returns
+     raw file content (redirectable). Empty states handled.
+   - `src/client.ts`: added `_playbookSkills` field + `playbookSkills`
+     getter.
+   - `src/cli/index.ts`: new `case 'skills':` block dispatching to all 4
+     subcommands; `--tag`, `--username`, `--json` flags; positional
+     `<user>/<name>` and `<path>`; `--`-prefix guard mirroring
+     data-skills; `CliUsageError` on missing positional. New
+     `COMMAND_HELP.skills` entry with positional examples + auth note +
+     progressive-loading note. New top-level help row, placed before
+     `data-skills` so the existing help-drift test guards uniquely
+     match each row.
+   - `test/cli.test.ts`: mocks for `client.playbookSkills.{list,tags,get,file}`;
+     `DISPATCHABLE_SUBCOMMANDS` entry `skills: ['list','tags','get','file']`;
+     new `'skills dispatch'` describe block (~64 lines) covering all
+     subcommands' happy paths, `--tag` filter forwarding, missing
+     positional cases for `get`/`file`, and the `--`-guard case
+     `['skills','get','--json']`.
+
+4. **`7603cf9` — `docs(README): document playbook skills + data-skills rename; bump 0.6.0`**
+   - `README.md`: rewrote "Data Skills" section (positional args, new
+     command name); inserted new "Playbook Skills" section above with
+     command syntax + progressive-loading + auth note + example
+     invocations; split L173 CLI one-liner into two lines for the two
+     namespaces; net +37/-30 across the file.
+   - `package.json`: `0.5.0` → `0.6.0` (pre-1.0 minor = breaking-change
+     signal for `client.skills` → `client.dataSkills` rename and CLI
+     namespace flip).
+
+#### code/public/skills (`feat/skills-cli-rename`, commit `20b4f37`)
+
+- `skills/alva/SKILL.md` (8 inserts / 8 deletes): 7 occurrences of
+  `alva skills` (data-SDK CLI references) replaced with
+  `alva data-skills`; lines that had `--name <skill>` / `--file <file>`
+  flags rewritten to positional form. Phrase "(public, no auth)" kept
+  — accurate for the data-skills CLI which hits the arrays backend.
+  Frontmatter `metadata.version` bumped `v1.7.0` → `v1.8.0` so
+  `scripts/version_check.sh` surfaces the update message on agents
+  running an older cached copy.
+
+### Tests added
+
+User opted out of TDD. Test changes were limited to:
+
+| Where | What |
+|---|---|
+| `alva-gateway/pkg/handler/playbook_skill_test.go` | 6 new subtests under `TestPlaybookSkill_GetFile`: happy path, validation reject (`..` segment), gRPC NotFound, path-not-in-skill 404 + descriptive message, nested catch-all path (`references/api/x.md`). Existing handler tests (List, Tags, GetMeta, GetFiles bulk) untouched. |
+| `toolkit-ts/test/cli.test.ts` | Wiring-level coverage only. Two new dispatch describe blocks (`'data-skills dispatch'` rewritten for positional args; `'skills dispatch'` new). Old `'templates dispatch'` and `'skills dispatch'` blocks removed. |
+| `toolkit-ts/test/resources/{templates,skills}.test.ts` | Both deleted — no resource-level tests for the new `playbookSkills` or renamed `dataSkills` resources per user no-TDD direction. |
+
+Section 5 verification matrix was build + lint + manual smoke (not a
+TDD coverage diagram). Build/lint/test runs PASS on all three
+worktrees per the final verifier (agent `a6d4`).
+
+### Migration
+
+None. No DB schema changes. Backend `templatespb` proto and
+`playbook_templates` table untouched.
+
+### Cross-reference (§4 vs §7)
+
+| §4 module | §7 evidence |
+|---|---|
+| alva-gateway: `pkg/handler/playbook_skill.go` GetFile method | commit `9d9f5b0` |
+| toolkit-ts: delete templates resource/tests | commit `8554a30` |
+| toolkit-ts: rename skills → dataSkills (files + class + getter + CLI) | commit `f7973bc` |
+| toolkit-ts: new playbookSkills resource + format + CLI + wiring tests | commit `c9f14be` |
+| toolkit-ts: README + package.json bump | commit `7603cf9` |
+| public/skills: SKILL.md 7-line rename + version bump | commit `20b4f37` |
+| alva-backend: untouched | verified by empty `git log` against the alva-backend submodule |
+| Frontend / other backends: untouched | no other submodules modified |
+
+Undocumented change: one — `src/index.ts` type re-export path update
+in commit `f7973bc`. Not in original §4 file list. Justified: the
+rename of `src/resources/skills.ts` broke the existing
+`export type { … } from './resources/skills.js'` re-export; the path
+had to be updated or `pnpm run build` fails. Implementer caught it;
+spec reviewer (agent `aef7`) verified type names themselves are
+unchanged — pure path fix.
 
 ## 8. Remaining Tasks
 
-*To be filled in review phase.*
+### Follow-up work
+
+- **Toolkit-ts npm publish.** After the toolkit-ts PR merges, the
+  `@alva-ai/toolkit` package at `0.6.0` must be published so agents
+  picking up the new SKILL.md can run `alva data-skills` /
+  `alva skills` against the renamed surface. Until publish, the public
+  skill manual at `v1.8.0` references commands that don't exist in any
+  installed CLI version.
+
+- **SKILL.md PR ordering.** The `code/public/skills` PR must merge
+  *after* the toolkit-ts release is published — otherwise
+  `version_check.sh` will tell agents to upgrade to a toolkit-ts
+  version that doesn't exist on npm yet. Push step will sequence this.
+
+### Known limitations
+
+- **Bulk `/files` endpoint reachable outside the SDK.** SDK/CLI
+  deliberately exclude it; raw HTTP callers can still fetch all file
+  content in one call. Acceptable: frontend / debug clients
+  legitimately want it. Not a security regression — both endpoints are
+  auth-gated.
+
+- **Per-file endpoint reads the whole JSONB row.** Gateway filters
+  in-handler. Documented in §3 as accepted; no efficiency win from a
+  per-file RPC because backend reads the whole column either way.
+  Revisit only if a skill grows large enough that full-row
+  deserialization is measurable.
+
+- **Path validation duplicated** between gateway `GetFile` and backend
+  `validatePath`. Mitigated by a code comment on the gateway side
+  pointing at `alva-backend internal/services/templates/templates_grpc.go:96`.
+  Long-term, a shared validator package would be cleaner; out of scope.
+
+### Tech debt introduced
+
+- **`pnpm-lock.yaml`** is generated when running `pnpm install` in the
+  toolkit-ts worktree but the repo tracks `package-lock.json`. The
+  worktree's `pnpm-lock.yaml` is left untracked. If the repo's package
+  manager is ever standardized on pnpm, the lock-file story should be
+  revisited.
+
+### Deferred edge cases
+
+None. All error paths in §4 are covered by handler code; CLI
+positional parsing handles missing args and `--`-prefix shortcuts;
+gateway path validation matches backend rules.
+
+### Coordination with other services
+
+- **alva-backend**: no changes required. Gateway calls the existing
+  `GetPlaybookTemplateFiles` RPC with no new fields.
+- **frontend**: `rg "v1/skills|v1/templates" code/frontend/` → 0 hits.
+  No coordination needed.
+- **forge**: `code/forge/forge/internal/gateway/skill_handler.go` is a
+  separate upload handler unrelated to this read path. No
+  coordination.
