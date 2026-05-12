@@ -401,7 +401,7 @@ describe('CLI dispatch', () => {
       '--changelog',
       'Initial release',
       '--readme-url',
-      'btc-dashboard/README.md',
+      '/alva/home/alice/playbooks/btc-dashboard/README.md',
     ]);
     expect(client.release.playbook).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -409,7 +409,7 @@ describe('CLI dispatch', () => {
         version: 'v1.0.0',
         feeds: [{ feed_id: 100 }],
         changelog: 'Initial release',
-        readme_url: 'btc-dashboard/README.md',
+        readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
       })
     );
   });

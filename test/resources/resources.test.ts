@@ -138,7 +138,7 @@ describe('ReleaseResource', () => {
       version: 'v1.0.0',
       feeds: [{ feed_id: 1 }],
       changelog: 'Initial release',
-      readme_url: 'btc-dashboard/README.md',
+      readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
     });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
@@ -149,7 +149,7 @@ describe('ReleaseResource', () => {
           version: 'v1.0.0',
           feeds: [{ feed_id: 1 }],
           changelog: 'Initial release',
-          readme_url: 'btc-dashboard/README.md',
+          readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
         },
       }
     );

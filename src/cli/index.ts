@@ -347,7 +347,7 @@ Publish feeds and playbooks to the Alva platform. The typical workflow:
   3. Create playbook draft (alva release playbook-draft)
   4. Write HTML to ALFS (alva fs write --path ~/playbooks/{name}/index.html)
   5. Write README to ALFS (alva fs write --path ~/playbooks/{name}/README.md)
-  6. Release playbook (alva release playbook --readme-url "{name}/README.md")
+  6. Release playbook (alva release playbook --readme-url "/alva/home/<username>/playbooks/{name}/README.md")
 
 Subcommands:
   feed              Register a feed after deploying its cronjob
@@ -377,10 +377,10 @@ Playbook flags:
   --feeds <json>         JSON array of {feed_id, feed_major?} (required)
   --changelog <text>     Release changelog (required)
   --readme-url <url>     Owner-attested README location (required). Must be
-                         either "<name>/README.md" (relative) or
-                         "/alva/home/<username>/playbooks/<name>/README.md"
-                         (absolute). The README must already be written to
-                         ALFS at that path before publish.
+                         the absolute ALFS path
+                         "/alva/home/<username>/playbooks/<name>/README.md".
+                         The README must already be written to ALFS at that
+                         path before publish.
 
 Display name conventions:
   Format: [subject/theme] [analysis angle/strategy logic]
@@ -393,7 +393,7 @@ Examples:
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --template-id alva/screener
-  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release" --readme-url "btc-dashboard/README.md"`,
+  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release" --readme-url "/alva/home/<username>/playbooks/btc-dashboard/README.md"`,
 
   secrets: `Usage: alva secrets <subcommand> [options]
 
