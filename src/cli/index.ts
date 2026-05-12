@@ -7,7 +7,7 @@ import {
   formatSkillsList,
   formatSkillSummary,
   formatSkillEndpoint,
-} from './skillsFormat.js';
+} from './dataSkillsFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -50,7 +50,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
-  skills      Data-skill documentation from the Arrays backend (list, summary, endpoint)
+  data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
@@ -446,19 +446,17 @@ Examples:
   alva sdk doc --name "@arrays/data/widget-scrap/twitter:v1.0.0"
   alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"`,
 
-  skills: `Usage: alva skills <subcommand> [options]
+  'data-skills': `Usage: alva data-skills <subcommand> [args]
 
 Browse the Arrays backend's data-skill documentation. These endpoints are
 public — no Alva credentials required.
 
 Subcommands:
-  list       List all available data skills
-  summary    Get the endpoints table for a skill, plus local tier metadata (requires --name)
-  endpoint   Get full documentation and local tier metadata for a specific endpoint (requires --name and --file)
+  list                            List all available data skills
+  summary <skill>                 Get the endpoints table for a skill, plus local tier metadata
+  endpoint <skill> <file>         Get full documentation and local tier metadata for a specific endpoint
 
 Flags:
-  --name <name>      Skill name (required for summary and endpoint)
-  --file <file>      Endpoint file name from the "File" column of 'skills summary' (required for endpoint)
   --json             Emit raw JSON instead of the readable rendering (for scripting / jq)
 
 Output: by default, summary/endpoint print the skill's markdown content directly,
@@ -470,11 +468,11 @@ Global override:
                             Default: https://data-tools.prd.space.id
 
 Examples:
-  alva skills list
-  alva skills list --json
-  alva skills summary --name <skill>
-  alva skills endpoint --name <skill> --file <endpoint-file>
-  alva skills summary --name <skill> --json | jq '.content'`,
+  alva data-skills list
+  alva data-skills list --json
+  alva data-skills summary <skill>
+  alva data-skills endpoint <skill> <endpoint-file>
+  alva data-skills summary <skill> --json | jq '.content'`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -1206,32 +1204,51 @@ export async function dispatch(
       }
     }
 
-    case 'skills': {
+    case 'data-skills': {
       if (!subcommand)
-        throw new CliUsageError('Missing subcommand for skills', 'skills');
+        throw new CliUsageError(
+          'Missing subcommand for data-skills',
+          'data-skills'
+        );
       const asJson = boolFlag(flags['json']) ?? false;
       switch (subcommand) {
         case 'list': {
-          const result = await client.skills.list();
+          const result = await client.dataSkills.list();
           return asJson ? result : formatSkillsList(result);
         }
         case 'summary': {
-          const result = await client.skills.summary({
-            name: requireFlag(flags, 'name', 'skills summary'),
-          });
+          const name = args[2];
+          if (!name || name.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing skill name for data-skills summary',
+              'data-skills'
+            );
+          }
+          const result = await client.dataSkills.summary({ name });
           return asJson ? result : formatSkillSummary(result);
         }
         case 'endpoint': {
-          const result = await client.skills.endpoint({
-            name: requireFlag(flags, 'name', 'skills endpoint'),
-            file: requireFlag(flags, 'file', 'skills endpoint'),
-          });
+          const name = args[2];
+          if (!name || name.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing skill name for data-skills endpoint',
+              'data-skills'
+            );
+          }
+          const file = args[3];
+          if (!file || file.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing endpoint file for data-skills endpoint',
+              'data-skills'
+            );
+          }
+          const result = await client.dataSkills.endpoint({ name, file });
           return asJson ? result : formatSkillEndpoint(result);
         }
         default:
           throw new CliUsageError(
-            `Unknown subcommand: skills ${subcommand}`,
-            'skills'
+            `Unknown subcommand: data-skills ${subcommand}`,
+            'data-skills'
           );
       }
     }

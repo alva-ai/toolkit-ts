@@ -42,4 +42,4 @@ export type {
   SkillEndpointTier,
   SkillMetadata,
   SkillSummary,
-} from './resources/skills.js';
+} from './resources/dataSkills.js';

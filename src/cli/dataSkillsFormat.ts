@@ -3,7 +3,7 @@ import type {
   SkillDoc,
   SkillEndpointMetadata,
   SkillEndpointTier,
-} from '../resources/skills.js';
+} from '../resources/dataSkills.js';
 
 const TIER_ORDER: SkillEndpointTier[] = [
   'public',
