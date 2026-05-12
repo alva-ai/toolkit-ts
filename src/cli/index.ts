@@ -8,6 +8,12 @@ import {
   formatSkillSummary,
   formatSkillEndpoint,
 } from './dataSkillsFormat.js';
+import {
+  formatPlaybookSkillsList,
+  formatPlaybookSkillsTags,
+  formatPlaybookSkillGet,
+  formatPlaybookSkillFile,
+} from './playbookSkillsFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -50,6 +56,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
+  skills      Playbook skills (list, tags, get, file)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
@@ -473,6 +480,33 @@ Examples:
   alva data-skills summary <skill>
   alva data-skills endpoint <skill> <endpoint-file>
   alva data-skills summary <skill> --json | jq '.content'`,
+
+  skills: `Usage: alva skills <subcommand> [options]
+
+Browse playbook skills (system templates + user-created) from the
+alva-gateway public API. Skills are namespaced as "<username>/<name>".
+The "get" subcommand returns metadata + file listing; use "file" to
+fetch individual file contents (progressive loading).
+
+Subcommands:
+  list       List skill summaries (filter by --tag and/or --username)
+  tags       Distinct tag set used across all skills
+  get        Get one skill's metadata + file listing (path + size_bytes only)
+  file       Get one file's content from a skill
+
+Flags:
+  --tag <tag>           (list) filter by tag
+  --username <user>     (list) filter by owner username
+  --json                Return raw envelope instead of pretty output
+
+Examples:
+  alva skills list
+  alva skills list --tag research
+  alva skills list --username alva
+  alva skills tags
+  alva skills get alva/ai-digest
+  alva skills file alva/ai-digest README.md
+  alva skills file alva/ai-digest references/api/example.md > out.md`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -1249,6 +1283,59 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: data-skills ${subcommand}`,
             'data-skills'
+          );
+      }
+    }
+
+    case 'skills': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for skills', 'skills');
+      const asJson = boolFlag(flags['json']) ?? false;
+      switch (subcommand) {
+        case 'list': {
+          const result = await client.playbookSkills.list({
+            tag: flags['tag'],
+            username: flags['username'],
+          });
+          return asJson ? result : formatPlaybookSkillsList(result);
+        }
+        case 'tags': {
+          const result = await client.playbookSkills.tags();
+          return asJson ? result : formatPlaybookSkillsTags(result);
+        }
+        case 'get': {
+          const id = args[2];
+          if (!id || id.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing playbook skill identifier for skills get',
+              'skills'
+            );
+          }
+          const result = await client.playbookSkills.get(id);
+          return asJson ? result : formatPlaybookSkillGet(result);
+        }
+        case 'file': {
+          const id = args[2];
+          if (!id || id.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing playbook skill identifier for skills file',
+              'skills'
+            );
+          }
+          const path = args[3];
+          if (!path || path.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing file path for skills file',
+              'skills'
+            );
+          }
+          const result = await client.playbookSkills.file(id, path);
+          return asJson ? result : formatPlaybookSkillFile(result);
+        }
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: skills ${subcommand}`,
+            'skills'
           );
       }
     }

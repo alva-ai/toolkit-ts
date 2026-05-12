@@ -72,6 +72,24 @@ function makeClient(): AlvaClient {
   client.dataSkills.endpoint = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
+  client.playbookSkills.list = vi.fn().mockResolvedValue({ skills: [] });
+  client.playbookSkills.tags = vi.fn().mockResolvedValue({ tags: [] });
+  client.playbookSkills.get = vi.fn().mockResolvedValue({
+    username: 'alva',
+    name: 'ai-digest',
+    description: '',
+    tags: [],
+    creator_uid: 1,
+    updated_at: '',
+    files: [],
+  });
+  client.playbookSkills.file = vi.fn().mockResolvedValue({
+    username: 'alva',
+    name: 'ai-digest',
+    path: 'README.md',
+    content: '',
+    updated_at: '',
+  });
   client.arraysJwt.status = vi.fn().mockResolvedValue({
     exists: true,
     expires_at: 1800000000,
@@ -1296,6 +1314,7 @@ describe('help-text drift guard', () => {
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
     'data-skills': ['list', 'summary', 'endpoint'],
+    skills: ['list', 'tags', 'get', 'file'],
     comments: ['create', 'pin', 'unpin'],
     trading: [
       'accounts',
@@ -1519,6 +1538,72 @@ describe('data-skills dispatch', () => {
       text: string;
     };
     expect(result.text).toContain('data-skills');
+  });
+});
+
+describe('skills dispatch', () => {
+  it('dispatches skills list', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'list']);
+    expect(client.playbookSkills.list).toHaveBeenCalled();
+  });
+
+  it('dispatches skills list with --tag filter', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'list', '--tag', 'research']);
+    expect(client.playbookSkills.list).toHaveBeenCalledWith({
+      tag: 'research',
+      username: undefined,
+    });
+  });
+
+  it('dispatches skills tags', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'tags']);
+    expect(client.playbookSkills.tags).toHaveBeenCalled();
+  });
+
+  it('dispatches skills get with positional id', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'get', 'alva/ai-digest']);
+    expect(client.playbookSkills.get).toHaveBeenCalledWith('alva/ai-digest');
+  });
+
+  it('dispatches skills file with positional id and path', async () => {
+    const client = makeClient();
+    await dispatch(client, ['skills', 'file', 'alva/ai-digest', 'README.md']);
+    expect(client.playbookSkills.file).toHaveBeenCalledWith(
+      'alva/ai-digest',
+      'README.md'
+    );
+  });
+
+  it('throws when skills get missing positional id', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['skills', 'get'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('throws when skills file missing positional path', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['skills', 'file', 'alva/ai-digest'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('treats --json as missing positional for skills get (--guard)', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['skills', 'get', '--json'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'skills'
+    );
   });
 });
 

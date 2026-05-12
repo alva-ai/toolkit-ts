@@ -7,6 +7,7 @@ import { ReleaseResource } from './resources/release.js';
 import { SecretsResource } from './resources/secrets.js';
 import { SdkDocsResource } from './resources/sdkDocs.js';
 import { DataSkillsResource } from './resources/dataSkills.js';
+import { PlaybookSkillsResource } from './resources/playbookSkills.js';
 import { CommentsResource } from './resources/comments.js';
 import { RemixResource } from './resources/remix.js';
 import { ScreenshotResource } from './resources/screenshot.js';
@@ -46,6 +47,7 @@ export class AlvaClient {
   private _secrets?: SecretsResource;
   private _sdk?: SdkDocsResource;
   private _dataSkills?: DataSkillsResource;
+  private _playbookSkills?: PlaybookSkillsResource;
   private _comments?: CommentsResource;
   private _remix?: RemixResource;
   private _screenshot?: ScreenshotResource;
@@ -83,6 +85,9 @@ export class AlvaClient {
   }
   get dataSkills(): DataSkillsResource {
     return (this._dataSkills ??= new DataSkillsResource(this));
+  }
+  get playbookSkills(): PlaybookSkillsResource {
+    return (this._playbookSkills ??= new PlaybookSkillsResource(this));
   }
   get comments(): CommentsResource {
     return (this._comments ??= new CommentsResource(this));
