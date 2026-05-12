@@ -12,6 +12,7 @@
 **Files:** `pkg/handler/playbook_skill.go`, `pkg/handler/playbook_skill_test.go`
 
 **What to do:**
+
 - Inside `PlaybookSkillHandler.RegisterRoutes`, add
   `rg.GET("/:username/:name/files/*path", h.GetFile)`.
 - Implement `GetFile(c *gin.Context)`:
@@ -40,6 +41,7 @@ not found (gRPC NotFound), path not in skill, nested path
 the `TemplatesClient`; reuse that mock.
 
 **Steps:**
+
 - [ ] Add route + handler method
 - [ ] Add tests
 - [ ] `make lint-fix && make lint`
@@ -54,6 +56,7 @@ the `TemplatesClient`; reuse that mock.
 **Dependencies:** none (independent of Task 1)
 **Repo:** `code/public/toolkit-ts`
 **Files:**
+
 - DELETE `src/resources/templates.ts`
 - DELETE `test/resources/templates.test.ts`
 - Modify `src/client.ts` (drop import + getter)
@@ -64,6 +67,7 @@ the `TemplatesClient`; reuse that mock.
 `pnpm run test` must still pass (the templates-related tests are gone).
 
 **Steps:**
+
 - [ ] Delete the two files
 - [ ] Remove imports + getter from `client.ts`
 - [ ] Remove CLI case + help entries
@@ -79,6 +83,7 @@ the `TemplatesClient`; reuse that mock.
 **Dependencies:** Task 2 (cleanest done after templates is gone, so
 the namespace is free for the playbook-skills work in Task 4)
 **Files:**
+
 - RENAME `src/resources/skills.ts` → `src/resources/dataSkills.ts`
 - RENAME `src/cli/skillsFormat.ts` → `src/cli/dataSkillsFormat.ts`
 - RENAME `test/resources/skills.test.ts` → **DELETE** (per plan; no
@@ -101,6 +106,7 @@ the namespace is free for the playbook-skills work in Task 4)
 domain types, not module names.
 
 **Steps:**
+
 - [ ] Rename files (use `git mv`)
 - [ ] Rename class + update all internal references via `rg`
 - [ ] Update `client.ts` getter
@@ -116,6 +122,7 @@ domain types, not module names.
 **Complexity:** normal
 **Dependencies:** Task 3 (the `skills` CLI namespace is free now)
 **Files:**
+
 - NEW `src/resources/playbookSkills.ts`
 - NEW `src/cli/playbookSkillsFormat.ts`
 - Modify `src/client.ts` (add `playbookSkills` getter)
@@ -129,10 +136,13 @@ domain types, not module names.
 ```ts
 export class PlaybookSkillsResource {
   constructor(private client: AlvaClient) {}
-  list(params?: { tag?: string; username?: string }): Promise<{ skills: PlaybookSkillSummary[] }>
-  tags(): Promise<{ tags: TagEntry[] }>
-  get(usernameSlashName: string): Promise<PlaybookSkillMeta>
-  file(usernameSlashName: string, path: string): Promise<PlaybookSkillFile>
+  list(params?: {
+    tag?: string;
+    username?: string;
+  }): Promise<{ skills: PlaybookSkillSummary[] }>;
+  tags(): Promise<{ tags: TagEntry[] }>;
+  get(usernameSlashName: string): Promise<PlaybookSkillMeta>;
+  file(usernameSlashName: string, path: string): Promise<PlaybookSkillFile>;
 }
 ```
 
@@ -149,14 +159,15 @@ export class PlaybookSkillsResource {
 
 **CLI subcommands (positional):**
 
-| Subcommand | Positional args | Flags |
-|---|---|---|
-| `list` | — | `--tag`, `--username`, `--json` |
-| `tags` | — | `--json` |
-| `get` | `args[2]` = `<user>/<name>` | `--json` |
-| `file` | `args[2]` = `<user>/<name>`, `args[3]` = `<path>` | `--json` |
+| Subcommand | Positional args                                   | Flags                           |
+| ---------- | ------------------------------------------------- | ------------------------------- |
+| `list`     | —                                                 | `--tag`, `--username`, `--json` |
+| `tags`     | —                                                 | `--json`                        |
+| `get`      | `args[2]` = `<user>/<name>`                       | `--json`                        |
+| `file`     | `args[2]` = `<user>/<name>`, `args[3]` = `<path>` | `--json`                        |
 
 Default output formats:
+
 - `list`: text table from `formatPlaybookSkillsList`
 - `tags`: text bullet list
 - `get`: multi-line block
@@ -164,6 +175,7 @@ Default output formats:
 - With `--json`: emit raw envelope as-is
 
 **Steps:**
+
 - [ ] Write `playbookSkills.ts` (resource + parser)
 - [ ] Write `playbookSkillsFormat.ts` (4 formatters)
 - [ ] Wire into `client.ts`
@@ -182,6 +194,7 @@ Default output formats:
 **Files:** `README.md`, `package.json`
 
 **What to do:**
+
 - Rewrite the existing "Data Skills" section (~L69-77 — verify with
   `rg "## Data Skills" README.md` before editing) and its CLI
   one-liner at L173 with `alva data-skills` commands.
@@ -196,6 +209,7 @@ Default output formats:
   `client.dataSkills` rename and CLI semantic flip).
 
 **Steps:**
+
 - [ ] Edit README
 - [ ] Bump `package.json` version
 - [ ] `pnpm run lint` (markdownlint if configured) / spot-check
@@ -213,6 +227,7 @@ documenting it)
 **Files:** `skills/alva/SKILL.md`
 
 **What to do:**
+
 - Replace exactly 7 occurrences of `alva skills` (data-skills context)
   on lines 446, 448, 451, 453, 469, 477, 483 with `alva data-skills`.
 - Convert `--name <skill>` and `--file <file>` flags in those lines to
@@ -224,6 +239,7 @@ documenting it)
   filesystem, not via CLI.
 
 **Steps:**
+
 - [ ] Edit SKILL.md (search-and-replace on the 7 lines)
 - [ ] Bump version
 - [ ] Run `bash scripts/version_check.sh` to confirm shape
@@ -241,6 +257,7 @@ documenting it)
 **What to do:** run the verification suite from §5 of the changelog
 against alva-local-dev. Confirm all happy + error commands listed
 there behave as documented. Specifically verify:
+
 - `alva skills file alva/<some-skill> <path>` returns raw content
   redirectable to a file
 - `alva skills file alva/<some-skill> ../etc/passwd` returns 400 from
@@ -250,6 +267,7 @@ there behave as documented. Specifically verify:
   `alva skills summary --name <name>`
 
 **Steps:**
+
 - [ ] Bring up alva-local-dev (gateway + alva-backend)
 - [ ] Link the local toolkit-ts build (`pnpm link --global` or run via
       `node dist/cli.js`)

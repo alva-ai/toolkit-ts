@@ -31,9 +31,7 @@ export function formatPlaybookSkillsList(result: {
   const lines = [
     headers.map((h, i) => pad(h, widths[i])).join('  '),
     widths.map((w) => '-'.repeat(w)).join('  '),
-    ...rows.map((r) =>
-      keys.map((k, i) => pad(r[k], widths[i])).join('  ')
-    ),
+    ...rows.map((r) => keys.map((k, i) => pad(r[k], widths[i])).join('  ')),
   ];
   return lines.join('\n') + '\n';
 }

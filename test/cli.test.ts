@@ -1581,8 +1581,7 @@ describe('skills dispatch', () => {
   it('throws when skills get missing positional id', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['skills', 'get'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
     );
   });
 
@@ -1591,8 +1590,7 @@ describe('skills dispatch', () => {
     await expect(
       dispatch(client, ['skills', 'file', 'alva/ai-digest'])
     ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
     );
   });
 
@@ -1601,8 +1599,7 @@ describe('skills dispatch', () => {
     await expect(
       dispatch(client, ['skills', 'get', '--json'])
     ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
     );
   });
 });

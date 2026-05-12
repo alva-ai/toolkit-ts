@@ -131,7 +131,7 @@ alva data-skills endpoint <skill> <file> [--json]
 - **gin catch-all for path params.** Gin supports `*name` segments
   (greedy match including `/`). Used elsewhere in the gateway for
   file-style routes. New endpoint will use `GET
-  /api/v1/skills/:username/:name/files/*path` and `c.Param("path")`
+/api/v1/skills/:username/:name/files/*path` and `c.Param("path")`
   returns a leading slash that must be trimmed.
 - **CLI pretty-format pattern.** `src/cli/skillsFormat.ts` already
   formats data-skills `list`/`summary`/`endpoint` outputs. The new
@@ -170,12 +170,12 @@ alva data-skills endpoint <skill> <file> [--json]
 - **No backend changes.** `TemplatesService` keeps its name. Term swap
   happens at the gateway/CLI/docs layer only. Blast radius minimized.
 - **One new gateway endpoint** (`GET
-  /api/v1/skills/:username/:name/files/*path`). Bulk `/files`
+/api/v1/skills/:username/:name/files/*path`). Bulk `/files`
   retained for frontend / future consumers but invisible to agent
   surface.
 - **Hard CLI rename.** `alva templates` deleted (already broken),
   `alva skills` → playbook skills, old `alva skills` → `alva
-  data-skills`. No deprecation aliases.
+data-skills`. No deprecation aliases.
 - **CLI pretty default**, `--json` for raw envelopes. Matches the
   pattern data-skills already establishes; readability lives in the
   CLI layer, gateway envelope unchanged.
@@ -230,6 +230,7 @@ repo (doc-only changes). `alva-backend` untouched.
 ### Affected modules and services
 
 #### alva-gateway (primary deployment artifact)
+
 - **Code:**
   - `pkg/handler/playbook_skill.go` — add `GetFile(c *gin.Context)`
     method and register `GET /:username/:name/files/*path` inside
@@ -240,6 +241,7 @@ repo (doc-only changes). `alva-backend` untouched.
   call in `cmd/gateway/main.go`.
 
 #### toolkit-ts (primary, most LOC)
+
 - **Code:**
   - `src/resources/templates.ts` — **delete**.
   - `src/resources/skills.ts` — **rename to** `src/resources/dataSkills.ts`;
@@ -313,6 +315,7 @@ repo (doc-only changes). `alva-backend` untouched.
   same. `rg "skillsFormat"` covers formatter rename.
 
 #### code/public/skills (agent-facing skill manual)
+
 - **Code:**
   - `skills/alva/SKILL.md` — replace 7 occurrences of `alva skills` on
     L446, L448, L451, L453, L469, L477, L483 with `alva data-skills`.
@@ -329,6 +332,7 @@ repo (doc-only changes). `alva-backend` untouched.
   hits.
 
 #### alva-backend
+
 - **Code:** none.
 - **Deployment:** none.
 - **Verified:** Gateway calls existing `GetPlaybookTemplateFiles` gRPC
@@ -336,6 +340,7 @@ repo (doc-only changes). `alva-backend` untouched.
   zero modifications required.
 
 #### Other services
+
 - Verified by `rg "v1/templates|v1/skills" code/` across the monorepo:
   - frontend repos: `rg "v1/skills|v1/templates" code/frontend/` → 0
     hits (frontend uses GraphQL); zero impact.
@@ -368,12 +373,15 @@ gateway #348 already.)
 `alva skills` becomes `alva data-skills`.
 
 ### Database impact
+
 None.
 
 ### Config impact
+
 None.
 
 ### Backward compatibility
+
 - `alva templates` and `client.templates`: **hard break**. Already
   broken since gateway #348 (404); removing dead client code.
 - `alva skills` CLI semantics flip from data-SDK docs → playbook skills.
@@ -392,14 +400,14 @@ None.
 
 ### Error path analysis
 
-| Method/codepath | What can go wrong | Handling | User sees |
-|---|---|---|---|
-| `PlaybookSkillHandler.GetFile` — gRPC upstream | `GetPlaybookTemplateFiles` fails (DB, network) | `grpcToHTTPError(c, err, "")` | matched HTTP status, error JSON |
-| `PlaybookSkillHandler.GetFile` — skill row missing | gRPC returns NotFound | `grpcToHTTPError` maps to 404 | 404 with gRPC msg |
-| `PlaybookSkillHandler.GetFile` — path validation | malformed path (regex fail / `..` segment / leading `/`) | return 400 via `c.JSON` before gRPC call | 400 + descriptive msg |
-| `PlaybookSkillHandler.GetFile` — path not in skill | gRPC succeeds but no matching file | return 404 via `c.JSON` with `"file path %q not found in skill %q/%q"` | 404 + descriptive msg |
-| `parsePositionalUserName` (CLI) | positional arg missing `/`, empty, or extra slashes | throw `CliUsageError` with subcommand name | usage hint, exit 2 |
-| `client.playbookSkills.file()` | fetch network error / non-2xx | `_request` already wraps with `AlvaError`; CLI prints message and exits non-zero | stderr error |
+| Method/codepath                                    | What can go wrong                                        | Handling                                                                         | User sees                       |
+| -------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------- |
+| `PlaybookSkillHandler.GetFile` — gRPC upstream     | `GetPlaybookTemplateFiles` fails (DB, network)           | `grpcToHTTPError(c, err, "")`                                                    | matched HTTP status, error JSON |
+| `PlaybookSkillHandler.GetFile` — skill row missing | gRPC returns NotFound                                    | `grpcToHTTPError` maps to 404                                                    | 404 with gRPC msg               |
+| `PlaybookSkillHandler.GetFile` — path validation   | malformed path (regex fail / `..` segment / leading `/`) | return 400 via `c.JSON` before gRPC call                                         | 400 + descriptive msg           |
+| `PlaybookSkillHandler.GetFile` — path not in skill | gRPC succeeds but no matching file                       | return 404 via `c.JSON` with `"file path %q not found in skill %q/%q"`           | 404 + descriptive msg           |
+| `parsePositionalUserName` (CLI)                    | positional arg missing `/`, empty, or extra slashes      | throw `CliUsageError` with subcommand name                                       | usage hint, exit 2              |
+| `client.playbookSkills.file()`                     | fetch network error / non-2xx                            | `_request` already wraps with `AlvaError`; CLI prints message and exits non-zero | stderr error                    |
 
 No critical gaps: every error has a handler and a visible user
 outcome.
@@ -409,6 +417,7 @@ outcome.
 User explicitly opted out of TDD. The verification plan is:
 
 ### Build + lint gate (both submodules)
+
 - `alva-gateway`: `make lint && make build` must pass.
 - `toolkit-ts`: `pnpm install && pnpm run lint && pnpm run build`
   must pass. `pnpm run test` is **not** required to pass for new code
@@ -417,6 +426,7 @@ User explicitly opted out of TDD. The verification plan is:
   ghost imports).
 
 ### Manual smoke (after toolkit-ts is linked locally)
+
 Run against local alva-local-dev (or staging gateway). Requires
 `alva auth login` first (routes are auth-gated).
 
@@ -449,6 +459,7 @@ alva templates list                       # → CliUsageError unknown group
 ```
 
 **Minimum-viable subset that must pass before push:**
+
 - Build + lint green (mandatory, both repos)
 - `alva skills list`
 - `alva skills get <real-user>/<real-name>`
@@ -459,6 +470,7 @@ alva templates list                       # → CliUsageError unknown group
   regress behavior)
 
 ### Doc-render check (skills repo)
+
 - After SKILL.md edits, `rg "alva skills" code/public/skills/skills/alva/SKILL.md`
   should return only references to the new playbook-skills CLI if any
   are intentionally added (we are not adding any, so this should be
@@ -467,6 +479,7 @@ alva templates list                       # → CliUsageError unknown group
 - `version_check.sh` output: confirm it flags pre-`v1.8.0` versions.
 
 ### CLI test scope
+
 - `test/cli.test.ts` already tests dispatch wiring (which subcommand
   goes to which client method). Update to reflect new wiring; new
   positional-parsing logic gets one happy-path + one
@@ -474,13 +487,16 @@ alva templates list                       # → CliUsageError unknown group
   tests are added (per user no-TDD).
 
 ### Test files deleted (must compile after deletion)
+
 - `test/resources/templates.test.ts` — removed alongside the resource.
 - `test/resources/skills.test.ts` — removed (the new
   `DataSkillsResource` is intentionally untested at the resource
   layer; data-skills behavior is identical, only naming changed).
 
 ### E2E
+
 **E2E Required: no.** The change is:
+
 - one new public gateway endpoint that is a thin filter over an
   existing gRPC,
 - a CLI rename with no behavior change on the underlying data,
@@ -490,6 +506,7 @@ No new cross-service flow, no auth surface, no schema. Skipping
 `make e2e-go`. Manual smoke above is the gate.
 
 ### Security boundary
+
 Gateway `/api/v1/skills/*` is inside `middleware.Authorization()`:
 any authenticated user (any role) can read; no admin/owner gating on
 reads. The CLI must hold a valid token (`alva auth login`) for all
@@ -528,7 +545,7 @@ Source (+234 lines):
   citing `alva-backend internal/services/templates/templates_grpc.go:96`
   for sync), calls existing `GetPlaybookTemplateFiles` gRPC, filters
   in-handler to the requested path. Returns `{success, data:[{username,
-  name, path, content, updated_at}]}` on 200; flat
+name, path, content, updated_at}]}` on 200; flat
   `{success:false, error}` on 400 (path validation) and 404 (path
   missing from skill); `grpcToHTTPError` for upstream failures.
 - `pkg/handler/playbook_skill_test.go` (+149): 6 new subtests under
@@ -630,11 +647,11 @@ Net +439 lines (1243 insertions / 804 deletions). Sequence:
 
 User opted out of TDD. Test changes were limited to:
 
-| Where | What |
-|---|---|
-| `alva-gateway/pkg/handler/playbook_skill_test.go` | 6 new subtests under `TestPlaybookSkill_GetFile`: happy path, validation reject (`..` segment), gRPC NotFound, path-not-in-skill 404 + descriptive message, nested catch-all path (`references/api/x.md`). Existing handler tests (List, Tags, GetMeta, GetFiles bulk) untouched. |
-| `toolkit-ts/test/cli.test.ts` | Wiring-level coverage only. Two new dispatch describe blocks (`'data-skills dispatch'` rewritten for positional args; `'skills dispatch'` new). Old `'templates dispatch'` and `'skills dispatch'` blocks removed. |
-| `toolkit-ts/test/resources/{templates,skills}.test.ts` | Both deleted — no resource-level tests for the new `playbookSkills` or renamed `dataSkills` resources per user no-TDD direction. |
+| Where                                                  | What                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `alva-gateway/pkg/handler/playbook_skill_test.go`      | 6 new subtests under `TestPlaybookSkill_GetFile`: happy path, validation reject (`..` segment), gRPC NotFound, path-not-in-skill 404 + descriptive message, nested catch-all path (`references/api/x.md`). Existing handler tests (List, Tags, GetMeta, GetFiles bulk) untouched. |
+| `toolkit-ts/test/cli.test.ts`                          | Wiring-level coverage only. Two new dispatch describe blocks (`'data-skills dispatch'` rewritten for positional args; `'skills dispatch'` new). Old `'templates dispatch'` and `'skills dispatch'` blocks removed.                                                                |
+| `toolkit-ts/test/resources/{templates,skills}.test.ts` | Both deleted — no resource-level tests for the new `playbookSkills` or renamed `dataSkills` resources per user no-TDD direction.                                                                                                                                                  |
 
 Section 5 verification matrix was build + lint + manual smoke (not a
 TDD coverage diagram). Build/lint/test runs PASS on all three
@@ -647,16 +664,16 @@ None. No DB schema changes. Backend `templatespb` proto and
 
 ### Cross-reference (§4 vs §7)
 
-| §4 module | §7 evidence |
-|---|---|
-| alva-gateway: `pkg/handler/playbook_skill.go` GetFile method | commit `9d9f5b0` |
-| toolkit-ts: delete templates resource/tests | commit `8554a30` |
-| toolkit-ts: rename skills → dataSkills (files + class + getter + CLI) | commit `f7973bc` |
-| toolkit-ts: new playbookSkills resource + format + CLI + wiring tests | commit `c9f14be` |
-| toolkit-ts: README + package.json bump | commit `7603cf9` |
-| public/skills: SKILL.md 7-line rename + version bump | commit `20b4f37` |
-| alva-backend: untouched | verified by empty `git log` against the alva-backend submodule |
-| Frontend / other backends: untouched | no other submodules modified |
+| §4 module                                                             | §7 evidence                                                    |
+| --------------------------------------------------------------------- | -------------------------------------------------------------- |
+| alva-gateway: `pkg/handler/playbook_skill.go` GetFile method          | commit `9d9f5b0`                                               |
+| toolkit-ts: delete templates resource/tests                           | commit `8554a30`                                               |
+| toolkit-ts: rename skills → dataSkills (files + class + getter + CLI) | commit `f7973bc`                                               |
+| toolkit-ts: new playbookSkills resource + format + CLI + wiring tests | commit `c9f14be`                                               |
+| toolkit-ts: README + package.json bump                                | commit `7603cf9`                                               |
+| public/skills: SKILL.md 7-line rename + version bump                  | commit `20b4f37`                                               |
+| alva-backend: untouched                                               | verified by empty `git log` against the alva-backend submodule |
+| Frontend / other backends: untouched                                  | no other submodules modified                                   |
 
 Undocumented change: one — `src/index.ts` type re-export path update
 in commit `f7973bc`. Not in original §4 file list. Justified: the
@@ -678,7 +695,7 @@ unchanged — pure path fix.
   installed CLI version.
 
 - **SKILL.md PR ordering.** The `code/public/skills` PR must merge
-  *after* the toolkit-ts release is published — otherwise
+  _after_ the toolkit-ts release is published — otherwise
   `version_check.sh` will tell agents to upgrade to a toolkit-ts
   version that doesn't exist on npm yet. Push step will sequence this.
 
