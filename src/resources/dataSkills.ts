@@ -33,7 +33,7 @@ export interface SkillDoc {
   endpoint_tier_counts?: SkillTierCounts;
 }
 
-export class SkillsResource {
+export class DataSkillsResource {
   constructor(private client: AlvaClient) {}
 
   async list(): Promise<{ skills: SkillSummary[] }> {

@@ -7,7 +7,13 @@ import {
   formatSkillsList,
   formatSkillSummary,
   formatSkillEndpoint,
-} from './skillsFormat.js';
+} from './dataSkillsFormat.js';
+import {
+  formatPlaybookSkillsList,
+  formatPlaybookSkillsTags,
+  formatPlaybookSkillGet,
+  formatPlaybookSkillFile,
+} from './playbookSkillsFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -50,8 +56,8 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
-  skills      Data-skill documentation from the Arrays backend (list, summary, endpoint)
-  templates   Playbook templates discovery (list, categories, get, files)
+  skills      Playbook skills (list, tags, get, file)
+  data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
@@ -447,51 +453,17 @@ Examples:
   alva sdk doc --name "@arrays/data/widget-scrap/twitter:v1.0.0"
   alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"`,
 
-  templates: `Usage: alva templates <subcommand> [options]
-
-Discover playbook templates registered in the Alva backend. Templates
-are namespaced by (username, name): system-seeded templates use
-username='alva' (e.g. alva/ai-digest), user-created templates use the
-creator's username. All four routes are public read-only proxies of
-the backend TemplatesService.
-
-Subcommands:
-  list         List template summaries (filter by category and/or username)
-  categories   Distinct sorted set of categories used across all templates
-  get          Get one template's metadata + file listing (path + size_bytes, no content)
-  files        Get one template's full file content (for materialization)
-
-Flags:
-  --category <name>      (list) Filter by category, e.g. "research"
-  --username <user>      (list) Filter by owner username, e.g. "alva"
-  --username <user>      (get/files) Required: template owner username
-  --name <name>          (get/files) Required: template name
-
-Output: JSON to stdout. No filesystem side effects — pipe through jq or
-your own materializer if you need files on disk.
-
-Examples:
-  alva templates list
-  alva templates list --category research
-  alva templates list --username alva
-  alva templates list --category push --username alva
-  alva templates categories
-  alva templates get --username alva --name ai-digest
-  alva templates files --username alva --name ai-digest`,
-
-  skills: `Usage: alva skills <subcommand> [options]
+  'data-skills': `Usage: alva data-skills <subcommand> [args]
 
 Browse the Arrays backend's data-skill documentation. These endpoints are
 public — no Alva credentials required.
 
 Subcommands:
-  list       List all available data skills
-  summary    Get the endpoints table for a skill, plus local tier metadata (requires --name)
-  endpoint   Get full documentation and local tier metadata for a specific endpoint (requires --name and --file)
+  list                            List all available data skills
+  summary <skill>                 Get the endpoints table for a skill, plus local tier metadata
+  endpoint <skill> <file>         Get full documentation and local tier metadata for a specific endpoint
 
 Flags:
-  --name <name>      Skill name (required for summary and endpoint)
-  --file <file>      Endpoint file name from the "File" column of 'skills summary' (required for endpoint)
   --json             Emit raw JSON instead of the readable rendering (for scripting / jq)
 
 Output: by default, summary/endpoint print the skill's markdown content directly,
@@ -503,11 +475,38 @@ Global override:
                             Default: https://data-tools.prd.space.id
 
 Examples:
+  alva data-skills list
+  alva data-skills list --json
+  alva data-skills summary <skill>
+  alva data-skills endpoint <skill> <endpoint-file>
+  alva data-skills summary <skill> --json | jq '.content'`,
+
+  skills: `Usage: alva skills <subcommand> [options]
+
+Browse playbook skills (system templates + user-created) from the
+alva-gateway public API. Skills are namespaced as "<username>/<name>".
+The "get" subcommand returns metadata + file listing; use "file" to
+fetch individual file contents (progressive loading).
+
+Subcommands:
+  list       List skill summaries (filter by --tag and/or --username)
+  tags       Distinct tag set used across all skills
+  get        Get one skill's metadata + file listing (path + size_bytes only)
+  file       Get one file's content from a skill
+
+Flags:
+  --tag <tag>           (list) filter by tag
+  --username <user>     (list) filter by owner username
+  --json                Return raw envelope instead of pretty output
+
+Examples:
   alva skills list
-  alva skills list --json
-  alva skills summary --name <skill>
-  alva skills endpoint --name <skill> --file <endpoint-file>
-  alva skills summary --name <skill> --json | jq '.content'`,
+  alva skills list --tag research
+  alva skills list --username alva
+  alva skills tags
+  alva skills get alva/ai-digest
+  alva skills file alva/ai-digest README.md
+  alva skills file alva/ai-digest references/api/example.md > out.md`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -1239,64 +1238,104 @@ export async function dispatch(
       }
     }
 
+    case 'data-skills': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for data-skills',
+          'data-skills'
+        );
+      const asJson = boolFlag(flags['json']) ?? false;
+      switch (subcommand) {
+        case 'list': {
+          const result = await client.dataSkills.list();
+          return asJson ? result : formatSkillsList(result);
+        }
+        case 'summary': {
+          const name = args[2];
+          if (!name || name.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing skill name for data-skills summary',
+              'data-skills'
+            );
+          }
+          const result = await client.dataSkills.summary({ name });
+          return asJson ? result : formatSkillSummary(result);
+        }
+        case 'endpoint': {
+          const name = args[2];
+          if (!name || name.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing skill name for data-skills endpoint',
+              'data-skills'
+            );
+          }
+          const file = args[3];
+          if (!file || file.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing endpoint file for data-skills endpoint',
+              'data-skills'
+            );
+          }
+          const result = await client.dataSkills.endpoint({ name, file });
+          return asJson ? result : formatSkillEndpoint(result);
+        }
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: data-skills ${subcommand}`,
+            'data-skills'
+          );
+      }
+    }
+
     case 'skills': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for skills', 'skills');
       const asJson = boolFlag(flags['json']) ?? false;
       switch (subcommand) {
         case 'list': {
-          const result = await client.skills.list();
-          return asJson ? result : formatSkillsList(result);
-        }
-        case 'summary': {
-          const result = await client.skills.summary({
-            name: requireFlag(flags, 'name', 'skills summary'),
+          const result = await client.playbookSkills.list({
+            tag: flags['tag'],
+            username: flags['username'],
           });
-          return asJson ? result : formatSkillSummary(result);
+          return asJson ? result : formatPlaybookSkillsList(result);
         }
-        case 'endpoint': {
-          const result = await client.skills.endpoint({
-            name: requireFlag(flags, 'name', 'skills endpoint'),
-            file: requireFlag(flags, 'file', 'skills endpoint'),
-          });
-          return asJson ? result : formatSkillEndpoint(result);
+        case 'tags': {
+          const result = await client.playbookSkills.tags();
+          return asJson ? result : formatPlaybookSkillsTags(result);
+        }
+        case 'get': {
+          const id = args[2];
+          if (!id || id.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing playbook skill identifier for skills get',
+              'skills'
+            );
+          }
+          const result = await client.playbookSkills.get(id);
+          return asJson ? result : formatPlaybookSkillGet(result);
+        }
+        case 'file': {
+          const id = args[2];
+          if (!id || id.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing playbook skill identifier for skills file',
+              'skills'
+            );
+          }
+          const path = args[3];
+          if (!path || path.startsWith('--')) {
+            throw new CliUsageError(
+              'Missing file path for skills file',
+              'skills'
+            );
+          }
+          const result = await client.playbookSkills.file(id, path);
+          return asJson ? result : formatPlaybookSkillFile(result);
         }
         default:
           throw new CliUsageError(
             `Unknown subcommand: skills ${subcommand}`,
             'skills'
-          );
-      }
-    }
-
-    case 'templates': {
-      if (!subcommand)
-        throw new CliUsageError(
-          'Missing subcommand for templates',
-          'templates'
-        );
-      switch (subcommand) {
-        case 'list':
-          return client.templates.list({
-            category: flags['category'],
-            username: flags['username'],
-          });
-        case 'categories':
-          return client.templates.categories();
-        case 'get':
-          return client.templates.get({
-            username: requireFlag(flags, 'username', 'templates get'),
-            name: requireFlag(flags, 'name', 'templates get'),
-          });
-        case 'files':
-          return client.templates.files({
-            username: requireFlag(flags, 'username', 'templates files'),
-            name: requireFlag(flags, 'name', 'templates files'),
-          });
-        default:
-          throw new CliUsageError(
-            `Unknown subcommand: templates ${subcommand}`,
-            'templates'
           );
       }
     }

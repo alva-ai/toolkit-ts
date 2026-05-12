@@ -65,30 +65,30 @@ function makeClient(): AlvaClient {
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
   client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
   client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
-  client.skills.list = vi.fn().mockResolvedValue({ skills: [] });
-  client.skills.summary = vi
+  client.dataSkills.list = vi.fn().mockResolvedValue({ skills: [] });
+  client.dataSkills.summary = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
-  client.skills.endpoint = vi
+  client.dataSkills.endpoint = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
-  client.templates.list = vi.fn().mockResolvedValue({ templates: [] });
-  client.templates.categories = vi.fn().mockResolvedValue({ categories: [] });
-  client.templates.get = vi.fn().mockResolvedValue({
+  client.playbookSkills.list = vi.fn().mockResolvedValue({ skills: [] });
+  client.playbookSkills.tags = vi.fn().mockResolvedValue({ tags: [] });
+  client.playbookSkills.get = vi.fn().mockResolvedValue({
     username: 'alva',
     name: 'ai-digest',
     description: '',
-    categories: [],
-    creator_uid: 0,
+    tags: [],
+    creator_uid: 1,
     updated_at: '',
     files: [],
   });
-  client.templates.files = vi.fn().mockResolvedValue({
+  client.playbookSkills.file = vi.fn().mockResolvedValue({
     username: 'alva',
     name: 'ai-digest',
-    creator_uid: 0,
+    path: 'README.md',
+    content: '',
     updated_at: '',
-    files: [],
   });
   client.arraysJwt.status = vi.fn().mockResolvedValue({
     exists: true,
@@ -1313,8 +1313,8 @@ describe('help-text drift guard', () => {
     release: ['feed', 'playbook-draft', 'playbook'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
-    skills: ['list', 'summary', 'endpoint'],
-    templates: ['list', 'categories', 'get', 'files'],
+    'data-skills': ['list', 'summary', 'endpoint'],
+    skills: ['list', 'tags', 'get', 'file'],
     comments: ['create', 'pin', 'unpin'],
     trading: [
       'accounts',
@@ -1361,77 +1361,77 @@ describe('help-text drift guard', () => {
   });
 });
 
-describe('skills dispatch', () => {
-  it('throws CliUsageError when skills has no subcommand', async () => {
+describe('data-skills dispatch', () => {
+  it('throws CliUsageError when data-skills has no subcommand', async () => {
     const client = makeClient();
-    await expect(dispatch(client, ['skills'])).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    await expect(dispatch(client, ['data-skills'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'data-skills'
     );
   });
 
-  it('dispatches skills list', async () => {
+  it('dispatches data-skills list', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'list']);
-    expect(client.skills.list).toHaveBeenCalled();
+    await dispatch(client, ['data-skills', 'list']);
+    expect(client.dataSkills.list).toHaveBeenCalled();
   });
 
-  it('dispatches skills summary with --name', async () => {
+  it('dispatches data-skills summary with positional name', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'summary', '--name', 'x']);
-    expect(client.skills.summary).toHaveBeenCalledWith({ name: 'x' });
+    await dispatch(client, ['data-skills', 'summary', 'x']);
+    expect(client.dataSkills.summary).toHaveBeenCalledWith({ name: 'x' });
   });
 
-  it('throws when skills summary missing --name', async () => {
+  it('throws when data-skills summary missing positional name', async () => {
     const client = makeClient();
-    await expect(dispatch(client, ['skills', 'summary'])).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    await expect(
+      dispatch(client, ['data-skills', 'summary'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'data-skills'
     );
   });
 
-  it('dispatches skills endpoint with --name and --file', async () => {
+  it('dispatches data-skills endpoint with positional skill and file', async () => {
     const client = makeClient();
-    await dispatch(client, [
-      'skills',
-      'endpoint',
-      '--name',
-      'x',
-      '--file',
-      'p',
-    ]);
-    expect(client.skills.endpoint).toHaveBeenCalledWith({
+    await dispatch(client, ['data-skills', 'endpoint', 'x', 'p']);
+    expect(client.dataSkills.endpoint).toHaveBeenCalledWith({
       name: 'x',
       file: 'p',
     });
   });
 
-  it('throws when skills endpoint missing --file', async () => {
+  it('throws when data-skills endpoint missing positional file', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['skills', 'endpoint', '--name', 'x'])
+      dispatch(client, ['data-skills', 'endpoint', 'x'])
     ).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'data-skills'
     );
   });
 
-  it('throws when skills endpoint missing --name', async () => {
+  it('throws when data-skills endpoint missing positional name', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['skills', 'endpoint', '--file', 'p'])
+      dispatch(client, ['data-skills', 'endpoint'])
     ).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'data-skills'
     );
   });
 
-  it('throws on unknown skills subcommand', async () => {
+  it('throws on unknown data-skills subcommand', async () => {
     const client = makeClient();
-    await expect(dispatch(client, ['skills', 'bogus'])).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    await expect(dispatch(client, ['data-skills', 'bogus'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'data-skills'
     );
   });
 
-  it('skills list returns readable string by default', async () => {
+  it('data-skills list returns readable string by default', async () => {
     const client = makeClient();
-    client.skills.list = vi.fn().mockResolvedValue({
+    client.dataSkills.list = vi.fn().mockResolvedValue({
       skills: [
         {
           name: 'alpha',
@@ -1453,7 +1453,7 @@ describe('skills dispatch', () => {
         },
       ],
     });
-    const result = await dispatch(client, ['skills', 'list']);
+    const result = await dispatch(client, ['data-skills', 'list']);
     expect(typeof result).toBe('string');
     const text = result as string;
     expect(text).toContain('alpha');
@@ -1464,28 +1464,23 @@ describe('skills dispatch', () => {
     expect(text).not.toContain('0 pro');
   });
 
-  it('skills list --json returns raw object', async () => {
+  it('data-skills list --json returns raw object', async () => {
     const client = makeClient();
-    client.skills.list = vi
+    client.dataSkills.list = vi
       .fn()
       .mockResolvedValue({ skills: [{ name: 'a', description: 'd' }] });
-    const result = await dispatch(client, ['skills', 'list', '--json']);
+    const result = await dispatch(client, ['data-skills', 'list', '--json']);
     expect(result).toEqual({ skills: [{ name: 'a', description: 'd' }] });
   });
 
-  it('skills summary returns markdown content directly by default', async () => {
+  it('data-skills summary returns markdown content directly by default', async () => {
     const client = makeClient();
-    client.skills.summary = vi.fn().mockResolvedValue({
+    client.dataSkills.summary = vi.fn().mockResolvedValue({
       name: 'sk',
       description: 'desc',
       content: '# Header\n\nbody line',
     });
-    const result = await dispatch(client, [
-      'skills',
-      'summary',
-      '--name',
-      'sk',
-    ]);
+    const result = await dispatch(client, ['data-skills', 'summary', 'sk']);
     expect(typeof result).toBe('string');
     const text = result as string;
     expect(text).toContain('# sk');
@@ -1495,43 +1490,40 @@ describe('skills dispatch', () => {
     expect(text).not.toContain('\\n');
   });
 
-  it('skills summary --json returns raw object', async () => {
+  it('data-skills summary --json returns raw object', async () => {
     const client = makeClient();
-    client.skills.summary = vi
+    client.dataSkills.summary = vi
       .fn()
       .mockResolvedValue({ name: 'sk', description: 'd', content: 'c' });
     const result = await dispatch(client, [
-      'skills',
+      'data-skills',
       'summary',
-      '--name',
       'sk',
       '--json',
     ]);
     expect(result).toEqual({ name: 'sk', description: 'd', content: 'c' });
   });
 
-  it('skills endpoint returns markdown content directly by default', async () => {
+  it('data-skills endpoint returns markdown content directly by default', async () => {
     const client = makeClient();
-    client.skills.endpoint = vi.fn().mockResolvedValue({
+    client.dataSkills.endpoint = vi.fn().mockResolvedValue({
       name: 'sk',
       description: 'desc',
       content: 'endpoint body',
     });
     const result = await dispatch(client, [
-      'skills',
+      'data-skills',
       'endpoint',
-      '--name',
       'sk',
-      '--file',
       'f',
     ]);
     expect(typeof result).toBe('string');
     expect(result as string).toContain('endpoint body');
   });
 
-  it('skills --help returns help text', async () => {
+  it('data-skills --help returns help text', async () => {
     const client = makeClient();
-    const result = (await dispatch(client, ['skills', '--help'])) as {
+    const result = (await dispatch(client, ['data-skills', '--help'])) as {
       _help: boolean;
       text: string;
     };
@@ -1539,133 +1531,76 @@ describe('skills dispatch', () => {
     expect(result.text).toContain('Browse the Arrays backend');
   });
 
-  it('top-level --help lists skills', async () => {
+  it('top-level --help lists data-skills', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['--help'])) as {
       _help: boolean;
       text: string;
     };
-    expect(result.text).toContain('skills');
+    expect(result.text).toContain('data-skills');
   });
 });
 
-describe('templates dispatch', () => {
-  it('throws CliUsageError when templates has no subcommand', async () => {
+describe('skills dispatch', () => {
+  it('dispatches skills list', async () => {
     const client = makeClient();
-    await expect(dispatch(client, ['templates'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'templates'
-    );
+    await dispatch(client, ['skills', 'list']);
+    expect(client.playbookSkills.list).toHaveBeenCalled();
   });
 
-  it('dispatches templates list with no filters', async () => {
+  it('dispatches skills list with --tag filter', async () => {
     const client = makeClient();
-    await dispatch(client, ['templates', 'list']);
-    expect(client.templates.list).toHaveBeenCalledWith({
-      category: undefined,
+    await dispatch(client, ['skills', 'list', '--tag', 'research']);
+    expect(client.playbookSkills.list).toHaveBeenCalledWith({
+      tag: 'research',
       username: undefined,
     });
   });
 
-  it('forwards --category and --username on list', async () => {
+  it('dispatches skills tags', async () => {
     const client = makeClient();
-    await dispatch(client, [
-      'templates',
-      'list',
-      '--category',
-      'research',
-      '--username',
-      'alva',
-    ]);
-    expect(client.templates.list).toHaveBeenCalledWith({
-      category: 'research',
-      username: 'alva',
-    });
+    await dispatch(client, ['skills', 'tags']);
+    expect(client.playbookSkills.tags).toHaveBeenCalled();
   });
 
-  it('dispatches templates categories', async () => {
+  it('dispatches skills get with positional id', async () => {
     const client = makeClient();
-    await dispatch(client, ['templates', 'categories']);
-    expect(client.templates.categories).toHaveBeenCalled();
+    await dispatch(client, ['skills', 'get', 'alva/ai-digest']);
+    expect(client.playbookSkills.get).toHaveBeenCalledWith('alva/ai-digest');
   });
 
-  it('dispatches templates get with --username and --name', async () => {
+  it('dispatches skills file with positional id and path', async () => {
     const client = makeClient();
-    await dispatch(client, [
-      'templates',
-      'get',
-      '--username',
-      'alva',
-      '--name',
-      'ai-digest',
-    ]);
-    expect(client.templates.get).toHaveBeenCalledWith({
-      username: 'alva',
-      name: 'ai-digest',
-    });
+    await dispatch(client, ['skills', 'file', 'alva/ai-digest', 'README.md']);
+    expect(client.playbookSkills.file).toHaveBeenCalledWith(
+      'alva/ai-digest',
+      'README.md'
+    );
   });
 
-  it('throws when templates get missing --username', async () => {
+  it('throws when skills get missing positional id', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['skills', 'get'])).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    );
+  });
+
+  it('throws when skills file missing positional path', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['templates', 'get', '--name', 'ai-digest'])
+      dispatch(client, ['skills', 'file', 'alva/ai-digest'])
     ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'templates'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
     );
   });
 
-  it('throws when templates get missing --name', async () => {
+  it('treats --json as missing positional for skills get (--guard)', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['templates', 'get', '--username', 'alva'])
+      dispatch(client, ['skills', 'get', '--json'])
     ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'templates'
+      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
     );
-  });
-
-  it('dispatches templates files with --username and --name', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'templates',
-      'files',
-      '--username',
-      'alva',
-      '--name',
-      'ai-digest',
-    ]);
-    expect(client.templates.files).toHaveBeenCalledWith({
-      username: 'alva',
-      name: 'ai-digest',
-    });
-  });
-
-  it('throws on unknown templates subcommand', async () => {
-    const client = makeClient();
-    await expect(dispatch(client, ['templates', 'bogus'])).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'templates'
-    );
-  });
-
-  it('templates --help returns help text', async () => {
-    const client = makeClient();
-    const result = (await dispatch(client, ['templates', '--help'])) as {
-      _help: boolean;
-      text: string;
-    };
-    expect(result._help).toBe(true);
-    expect(result.text).toContain('Discover playbook templates');
-  });
-
-  it('top-level --help lists templates', async () => {
-    const client = makeClient();
-    const result = (await dispatch(client, ['--help'])) as {
-      _help: boolean;
-      text: string;
-    };
-    expect(result.text).toContain('templates');
   });
 });
 
