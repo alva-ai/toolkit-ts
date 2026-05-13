@@ -40,6 +40,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "release": "bash scripts/release.sh",
+    "release:stg": "bash scripts/release-stg.sh",
     "prepare": "node scripts/install-git-hooks.mjs"
   },
   "repository": {
