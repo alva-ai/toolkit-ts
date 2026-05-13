@@ -56,7 +56,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
-  skills      Playbook skills (list, tags, get, file)
+  skillhub    Playbook skills (list, tags, get, file)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
@@ -481,7 +481,7 @@ Examples:
   alva data-skills endpoint <skill> <endpoint-file>
   alva data-skills summary <skill> --json | jq '.content'`,
 
-  skills: `Usage: alva skills <subcommand> [options]
+  skillhub: `Usage: alva skillhub <subcommand> [options]
 
 Browse playbook skills (system templates + user-created) from the
 alva-gateway public API. Skills are namespaced as "<username>/<name>".
@@ -500,13 +500,13 @@ Flags:
   --json                Return raw envelope instead of pretty output
 
 Examples:
-  alva skills list
-  alva skills list --tag research
-  alva skills list --username alva
-  alva skills tags
-  alva skills get alva/ai-digest
-  alva skills file alva/ai-digest README.md
-  alva skills file alva/ai-digest references/api/example.md > out.md`,
+  alva skillhub list
+  alva skillhub list --tag research
+  alva skillhub list --username alva
+  alva skillhub tags
+  alva skillhub get alva/ai-digest
+  alva skillhub file alva/ai-digest README.md
+  alva skillhub file alva/ai-digest references/api/example.md > out.md`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
@@ -1287,9 +1287,9 @@ export async function dispatch(
       }
     }
 
-    case 'skills': {
+    case 'skillhub': {
       if (!subcommand)
-        throw new CliUsageError('Missing subcommand for skills', 'skills');
+        throw new CliUsageError('Missing subcommand for skillhub', 'skillhub');
       const asJson = boolFlag(flags['json']) ?? false;
       switch (subcommand) {
         case 'list': {
@@ -1307,8 +1307,8 @@ export async function dispatch(
           const id = args[2];
           if (!id || id.startsWith('--')) {
             throw new CliUsageError(
-              'Missing playbook skill identifier for skills get',
-              'skills'
+              'Missing playbook skill identifier for skillhub get',
+              'skillhub'
             );
           }
           const result = await client.playbookSkills.get(id);
@@ -1318,15 +1318,15 @@ export async function dispatch(
           const id = args[2];
           if (!id || id.startsWith('--')) {
             throw new CliUsageError(
-              'Missing playbook skill identifier for skills file',
-              'skills'
+              'Missing playbook skill identifier for skillhub file',
+              'skillhub'
             );
           }
           const path = args[3];
           if (!path || path.startsWith('--')) {
             throw new CliUsageError(
-              'Missing file path for skills file',
-              'skills'
+              'Missing file path for skillhub file',
+              'skillhub'
             );
           }
           const result = await client.playbookSkills.file(id, path);
@@ -1334,8 +1334,8 @@ export async function dispatch(
         }
         default:
           throw new CliUsageError(
-            `Unknown subcommand: skills ${subcommand}`,
-            'skills'
+            `Unknown subcommand: skillhub ${subcommand}`,
+            'skillhub'
           );
       }
     }

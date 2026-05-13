@@ -82,13 +82,13 @@ Bulk content is intentionally **not** exposed at the CLI/SDK layer; agents
 should fetch the file listing first, then pull only the files they need.
 
 ```bash
-alva skills list                                            # all skills
-alva skills list --tag research                             # filter by tag
-alva skills list --username alva                            # filter by author
-alva skills tags                                            # all tags in use
-alva skills get alva/ai-digest                              # metadata + file listing
-alva skills file alva/ai-digest README.md                   # one file's content
-alva skills file alva/ai-digest references/api/example.md > out.md
+alva skillhub list                                          # all skills
+alva skillhub list --tag research                           # filter by tag
+alva skillhub list --username alva                          # filter by author
+alva skillhub tags                                          # all tags in use
+alva skillhub get alva/ai-digest                            # metadata + file listing
+alva skillhub file alva/ai-digest README.md                 # one file's content
+alva skillhub file alva/ai-digest references/api/example.md > out.md
 ```
 
 By default output is pretty-printed for humans. Pass `--json` to get the
@@ -198,7 +198,7 @@ alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
-alva skills <list|tags|get|file> [<user>/<name>] [<file>] [--tag <t>] [--username <u>] [--json]
+alva skillhub <list|tags|get|file> [<user>/<name>] [<file>] [--tag <t>] [--username <u>] [--json]
 alva data-skills <list|summary|endpoint> [<skill>] [<file>] [--json]
 alva comments <create|pin|unpin>
 alva remix --child-username <u> --child-name <n> --parents <json>
