@@ -1314,7 +1314,7 @@ describe('help-text drift guard', () => {
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
     'data-skills': ['list', 'summary', 'endpoint'],
-    skills: ['list', 'tags', 'get', 'file'],
+    skillhub: ['list', 'tags', 'get', 'file'],
     comments: ['create', 'pin', 'unpin'],
     trading: [
       'accounts',
@@ -1541,65 +1541,68 @@ describe('data-skills dispatch', () => {
   });
 });
 
-describe('skills dispatch', () => {
-  it('dispatches skills list', async () => {
+describe('skillhub dispatch', () => {
+  it('dispatches skillhub list', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'list']);
+    await dispatch(client, ['skillhub', 'list']);
     expect(client.playbookSkills.list).toHaveBeenCalled();
   });
 
-  it('dispatches skills list with --tag filter', async () => {
+  it('dispatches skillhub list with --tag filter', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'list', '--tag', 'research']);
+    await dispatch(client, ['skillhub', 'list', '--tag', 'research']);
     expect(client.playbookSkills.list).toHaveBeenCalledWith({
       tag: 'research',
       username: undefined,
     });
   });
 
-  it('dispatches skills tags', async () => {
+  it('dispatches skillhub tags', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'tags']);
+    await dispatch(client, ['skillhub', 'tags']);
     expect(client.playbookSkills.tags).toHaveBeenCalled();
   });
 
-  it('dispatches skills get with positional id', async () => {
+  it('dispatches skillhub get with positional id', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'get', 'alva/ai-digest']);
+    await dispatch(client, ['skillhub', 'get', 'alva/ai-digest']);
     expect(client.playbookSkills.get).toHaveBeenCalledWith('alva/ai-digest');
   });
 
-  it('dispatches skills file with positional id and path', async () => {
+  it('dispatches skillhub file with positional id and path', async () => {
     const client = makeClient();
-    await dispatch(client, ['skills', 'file', 'alva/ai-digest', 'README.md']);
+    await dispatch(client, ['skillhub', 'file', 'alva/ai-digest', 'README.md']);
     expect(client.playbookSkills.file).toHaveBeenCalledWith(
       'alva/ai-digest',
       'README.md'
     );
   });
 
-  it('throws when skills get missing positional id', async () => {
+  it('throws when skillhub get missing positional id', async () => {
     const client = makeClient();
-    await expect(dispatch(client, ['skills', 'get'])).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+    await expect(dispatch(client, ['skillhub', 'get'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'skillhub'
     );
   });
 
-  it('throws when skills file missing positional path', async () => {
+  it('throws when skillhub file missing positional path', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['skills', 'file', 'alva/ai-digest'])
+      dispatch(client, ['skillhub', 'file', 'alva/ai-digest'])
     ).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'skillhub'
     );
   });
 
-  it('treats --json as missing positional for skills get (--guard)', async () => {
+  it('treats --json as missing positional for skillhub get (--guard)', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['skills', 'get', '--json'])
+      dispatch(client, ['skillhub', 'get', '--json'])
     ).rejects.toSatisfy(
-      (err: unknown) => err instanceof CliUsageError && err.command === 'skills'
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'skillhub'
     );
   });
 });
@@ -1607,24 +1610,27 @@ describe('skills dispatch', () => {
 describe('stripGlobalFlags', () => {
   it('removes --arrays-endpoint <v>', () => {
     expect(
-      stripGlobalFlags(['--arrays-endpoint', 'https://x', 'skills', 'list'])
-    ).toEqual(['skills', 'list']);
+      stripGlobalFlags(['--arrays-endpoint', 'https://x', 'skillhub', 'list'])
+    ).toEqual(['skillhub', 'list']);
   });
 
   it('removes --arrays-endpoint=<v>', () => {
     expect(
-      stripGlobalFlags(['--arrays-endpoint=https://x', 'skills', 'list'])
-    ).toEqual(['skills', 'list']);
+      stripGlobalFlags(['--arrays-endpoint=https://x', 'skillhub', 'list'])
+    ).toEqual(['skillhub', 'list']);
   });
 
   it('preserves non-global args', () => {
     expect(
-      stripGlobalFlags(['--api-key', 'k', 'skills', 'summary', '--name', 'x'])
-    ).toEqual(['skills', 'summary', '--name', 'x']);
+      stripGlobalFlags(['--api-key', 'k', 'skillhub', 'summary', '--name', 'x'])
+    ).toEqual(['skillhub', 'summary', '--name', 'x']);
   });
 
   it('is idempotent on already-clean argv', () => {
-    expect(stripGlobalFlags(['skills', 'list'])).toEqual(['skills', 'list']);
+    expect(stripGlobalFlags(['skillhub', 'list'])).toEqual([
+      'skillhub',
+      'list',
+    ]);
   });
 });
 
