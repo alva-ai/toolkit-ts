@@ -558,15 +558,26 @@ export interface PushTarget {
 
 export interface PushSubscription {
   target: PushTarget;
-  /**
-   * `true` when the row is currently active. `false` means the user
-   * previously subscribed and then unsubscribed; the row is preserved
-   * so re-subscribe restores seniority via UPSERT-revive. Only present
-   * when `include_history=true` is passed to `list`.
-   */
-  subscribed: boolean;
   created_at_ms: number;
   updated_at_ms: number;
+  /** Present on list responses. */
+  cursor?: string;
+  /** Feed metadata is present for FEED targets when available. */
+  feed_name?: string;
+  feed_status?: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | string;
+  /** Unix milliseconds of the latest successful delivery for this user+target. */
+  last_pushed_at_ms?: number;
+  /** Playbooks whose latest release currently references this feed. */
+  used_by?: PushSubscriptionUsedBy[];
+  used_by_total?: number;
+}
+
+export interface PushSubscriptionUsedBy {
+  playbook_id: string;
+  owner_username: string;
+  playbook_name: string;
+  display_name: string;
+  owner_avatar_url: string;
 }
 
 export interface PushSubscriptionPlaybookParams {
@@ -580,12 +591,16 @@ export interface PushSubscriptionFeedParams {
 }
 
 export interface PushSubscriptionListParams {
-  /** Default `false`. When `true`, include rows with `subscribed=false`. */
-  include_history?: boolean;
+  /** Page size, default 50, max 200 server-side. */
+  first?: number;
+  /** Opaque cursor token from previous page's `next_cursor`. */
+  cursor?: string;
 }
 
 export interface PushSubscriptionListResponse {
   items: PushSubscription[];
+  /** Empty when there is no next page. */
+  next_cursor?: string;
 }
 
 export interface SubscribePushTargetResponse {

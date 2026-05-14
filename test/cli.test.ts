@@ -99,6 +99,12 @@ function makeClient(): AlvaClient {
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
+  client.notifications.listPlaybook = vi
+    .fn()
+    .mockResolvedValue({ items: [], next_cursor: '', playbook_path: '~/p' });
+  client.notifications.listFeed = vi
+    .fn()
+    .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
   client.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
@@ -447,6 +453,58 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches notification-history list-playbook', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'notification-history',
+      'list-playbook',
+      '--username',
+      'alice',
+      '--name',
+      'btc-dashboard',
+      '--channel',
+      'telegram',
+      '--status',
+      'sent',
+      '--since',
+      '1777355703',
+      '--first',
+      '5',
+      '--cursor',
+      'abc',
+    ]);
+    expect(client.notifications.listPlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+      channel: 'telegram',
+      status: 'sent',
+      since_time: 1777355703,
+      first: 5,
+      cursor: 'abc',
+    });
+  });
+
+  it('dispatches notification-history list-feed', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'notification-history',
+      'list-feed',
+      '--username',
+      'alice',
+      '--name',
+      'btc-ema',
+    ]);
+    expect(client.notifications.listFeed).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+      channel: undefined,
+      status: undefined,
+      since_time: undefined,
+      first: undefined,
+      cursor: undefined,
+    });
+  });
+
   it('dispatches channel group-subscriptions context', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -634,6 +692,14 @@ describe('CLI dispatch', () => {
     await expect(dispatch(client, ['secrets'])).rejects.toSatisfy(
       (err: unknown) =>
         err instanceof CliUsageError && err.command === 'secrets'
+    );
+  });
+
+  it('throws CliUsageError with command="notification-history" for missing notification-history subcommand', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['notification-history'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'notification-history'
     );
   });
 
@@ -1083,6 +1149,20 @@ describe('help text', () => {
     expect(result.text).toContain('group-subscriptions');
     expect(result.text).toContain('--session-id');
     expect(result.text).toContain('--target-type');
+  });
+
+  it('returns per-command help for notification-history --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, [
+      'notification-history',
+      '--help',
+    ])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('audit/history');
+    expect(result.text).toContain('list-playbook');
+    expect(result.text).toContain('list-feed');
   });
 
   it('returns per-command help for release --help with workflow', async () => {
