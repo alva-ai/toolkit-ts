@@ -7,6 +7,7 @@ import { CommentsResource } from '../../src/resources/comments.js';
 import { RemixResource } from '../../src/resources/remix.js';
 import { ScreenshotResource } from '../../src/resources/screenshot.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
+import { NotificationsResource } from '../../src/resources/notifications.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 
@@ -229,6 +230,49 @@ describe('CommentsResource', () => {
       'POST',
       '/api/v1/playbook/comment/unpin',
       { body: { comment_id: 1 } }
+    );
+  });
+});
+
+describe('NotificationsResource', () => {
+  it('listPlaybook() sends GET /api/v1/playbook/:username/:name/notifications', async () => {
+    const client = makeClient();
+    const notifications = new NotificationsResource(client);
+    await notifications.listPlaybook({
+      username: 'alice',
+      name: 'btc-dashboard',
+      channel: 'telegram',
+      status: 'sent',
+      since_time: 1777355703,
+      first: 5,
+      cursor: 'abc',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/playbook/alice/btc-dashboard/notifications',
+      {
+        query: {
+          channel: 'telegram',
+          status: 'sent',
+          since_time: '1777355703',
+          first: '5',
+          cursor: 'abc',
+        },
+      }
+    );
+  });
+
+  it('listFeed() sends GET /api/v1/feed/:username/:name/notifications', async () => {
+    const client = makeClient();
+    const notifications = new NotificationsResource(client);
+    await notifications.listFeed({
+      username: 'alice',
+      name: 'btc-ema',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/feed/alice/btc-ema/notifications',
+      { query: {} }
     );
   });
 });

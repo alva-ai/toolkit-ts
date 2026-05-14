@@ -15,7 +15,8 @@ import type {
  *
  *   - `subscribePlaybook` / `subscribeFeed` do not start following.
  *   - `unsubscribePlaybook` / `unsubscribeFeed` do not unfollow.
- *   - Following a playbook elsewhere will compound-subscribe automatically.
+ *   - Following a playbook elsewhere does not create or revive a push
+ *     subscription.
  *
  * Backed by alva-gateway REST (mirrors the GraphQL surface in
  * `pkg/schema/push_subscription.graphql`).
@@ -88,18 +89,18 @@ export class PushSubscriptionsResource {
   }
 
   /**
-   * List the caller's personal push subscriptions across all targets
-   * (playbook + feed). Defaults to currently-active rows only; pass
-   * `include_history=true` to also return previously-unsubscribed rows.
+   * List the caller's currently active personal push subscriptions.
+   * Results are cursor-paginated.
    */
   async list(
     params: PushSubscriptionListParams = {}
   ): Promise<PushSubscriptionListResponse> {
     this.client._requireAuth();
     const query: Record<string, string> = {};
-    if (params.include_history !== undefined) {
-      query.include_history = String(params.include_history);
+    if (params.first !== undefined && params.first > 0) {
+      query.first = String(params.first);
     }
+    if (params.cursor) query.cursor = params.cursor;
     return this.client._request('GET', '/api/v1/me/push-subscriptions', {
       query,
     }) as Promise<PushSubscriptionListResponse>;

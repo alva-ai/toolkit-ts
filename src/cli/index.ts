@@ -59,6 +59,7 @@ Commands:
   skillhub    Playbook skills (list, tags, get, file)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
+  notification-history  Notification delivery history (list-playbook, list-feed)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
@@ -534,12 +535,34 @@ Examples:
   alva comments pin --comment-id 12
   alva comments unpin --comment-id 12`,
 
+  'notification-history': `Usage: alva notification-history <subcommand> [options]
+
+Read the caller's delivered notification history scoped to a playbook or feed.
+This is an audit/history surface, not a subscription toggle.
+
+Subcommands:
+  list-playbook      List notification history for a playbook
+  list-feed          List notification history for a feed
+
+Common flags:
+  --username <user>  Owner's username (required)
+  --name <name>      URL-safe playbook or feed name (required)
+  --channel <name>   Optional delivery channel filter (telegram, web, ...)
+  --status <status>  Optional status filter (sent, failed, filtered)
+  --since <seconds>  Optional Unix seconds lower bound
+  --first <n>        Optional page size (default 50, max 200 server-side)
+  --cursor <token>   Optional cursor from the previous page
+
+Examples:
+  alva notification-history list-playbook --username alice --name btc-dashboard --first 5
+  alva notification-history list-feed --username alice --name btc-ema --status sent`,
+
   'push-subscriptions': `Usage: alva push-subscriptions <subcommand> [options]
 
 Personal opt-in for DM/web push notifications. Independent of social
 follow: subscribing does not start following, unsubscribing does not
-unfollow. Following a playbook elsewhere will compound-subscribe
-automatically.
+unfollow. Following a playbook elsewhere does not create or revive a
+push subscription.
 
 Subcommands:
   subscribe-playbook     Opt into push for a playbook (any of its feeds)
@@ -553,13 +576,14 @@ Subscribe/unsubscribe flags (playbook + feed):
   --name <name>          URL-safe playbook or feed name (required)
 
 List flags:
-  --include-history      Also return rows previously unsubscribed (default: false)
+  --first <n>            Optional page size
+  --cursor <token>       Optional cursor from the previous page
 
 Examples:
   alva push-subscriptions subscribe-playbook --username alice --name btc-dashboard
   alva push-subscriptions subscribe-feed     --username alice --name btc-ema-cross
   alva push-subscriptions unsubscribe-feed   --username alice --name btc-ema-cross
-  alva push-subscriptions list --include-history`,
+  alva push-subscriptions list --first 20`,
 
   channel: `Usage: alva channel group-subscriptions <subcommand> [options]
 
@@ -1371,6 +1395,38 @@ export async function dispatch(
       }
     }
 
+    case 'notification-history': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for notification-history',
+          'notification-history'
+        );
+      const params = {
+        username: requireFlag(
+          flags,
+          'username',
+          `notification-history ${subcommand}`
+        ),
+        name: requireFlag(flags, 'name', `notification-history ${subcommand}`),
+        channel: flags['channel'],
+        status: flags['status'],
+        since_time: num(flags['since']),
+        first: num(flags['first']),
+        cursor: flags['cursor'],
+      };
+      switch (subcommand) {
+        case 'list-playbook':
+          return client.notifications.listPlaybook(params);
+        case 'list-feed':
+          return client.notifications.listFeed(params);
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: notification-history ${subcommand}`,
+            'notification-history'
+          );
+      }
+    }
+
     case 'push-subscriptions': {
       if (!subcommand)
         throw new CliUsageError(
@@ -1432,7 +1488,8 @@ export async function dispatch(
           });
         case 'list':
           return client.pushSubscriptions.list({
-            include_history: flags['include-history'] !== undefined,
+            first: num(flags['first']),
+            cursor: flags['cursor'],
           });
         default:
           throw new CliUsageError(
