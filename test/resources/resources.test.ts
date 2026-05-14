@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { UserResource } from '../../src/resources/user.js';
 import { RunResource } from '../../src/resources/run.js';
 import { ReleaseResource } from '../../src/resources/release.js';
+import { FeedResource } from '../../src/resources/feed.js';
 import { SdkDocsResource } from '../../src/resources/sdkDocs.js';
 import { CommentsResource } from '../../src/resources/comments.js';
 import { RemixResource } from '../../src/resources/remix.js';
@@ -154,6 +155,30 @@ describe('ReleaseResource', () => {
         },
       }
     );
+  });
+});
+
+describe('FeedResource', () => {
+  it('delete() sends DELETE /api/v1/feed/:id', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.delete({ id: 42 });
+    expect(client._request).toHaveBeenCalledWith('DELETE', '/api/v1/feed/42');
+  });
+
+  it('delete() rejects non-positive id without calling _request', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await expect(feed.delete({ id: 0 })).rejects.toThrow(
+      'feed id must be a positive integer'
+    );
+    await expect(feed.delete({ id: -1 })).rejects.toThrow(
+      'feed id must be a positive integer'
+    );
+    await expect(feed.delete({ id: 1.5 })).rejects.toThrow(
+      'feed id must be a positive integer'
+    );
+    expect(client._request).not.toHaveBeenCalled();
   });
 });
 

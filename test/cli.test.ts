@@ -60,6 +60,7 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
   client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
@@ -297,6 +298,26 @@ describe('CLI dispatch', () => {
       dispatch(client, ['run', '--local-file', '/tmp/nope.js'])
     ).rejects.toThrow('ENOENT');
     mock.mockReset();
+  });
+
+  it('dispatches feed delete', async () => {
+    const client = makeClient();
+    await dispatch(client, ['feed', 'delete', '--id', '42']);
+    expect(client.feed.delete).toHaveBeenCalledWith({ id: 42 });
+  });
+
+  it('feed delete requires --id', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['feed', 'delete'])).rejects.toThrow(
+      "--id is required for 'feed delete'"
+    );
+  });
+
+  it('feed delete rejects non-numeric --id', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['feed', 'delete', '--id', 'abc'])
+    ).rejects.toThrow("--id must be a number for 'feed delete', got 'abc'");
   });
 
   it('dispatches release feed', async () => {

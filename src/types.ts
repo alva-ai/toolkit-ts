@@ -261,6 +261,16 @@ export interface FeedReleaseResponse {
   feed_path: string;
 }
 
+export interface FeedDeleteRequest {
+  /** Numeric feed id to delete. */
+  id: number;
+}
+
+export interface FeedDeleteResponse {
+  /** Echoed feed id (string form, matching gateway response). */
+  id: string;
+}
+
 export interface PlaybookDraftRequest {
   name: string;
   display_name: string;

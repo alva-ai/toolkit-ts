@@ -35,6 +35,8 @@ export type {
   ChannelGroupSubscriptionContextResponse,
   ChannelGroupSubscriptionListResponse,
   ChannelGroupSubscriptionMutationResponse,
+  FeedDeleteRequest,
+  FeedDeleteResponse,
 } from './types.js';
 export type {
   SkillDoc,
