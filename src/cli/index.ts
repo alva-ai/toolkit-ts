@@ -54,6 +54,7 @@ Commands:
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
+  feed        Feed lifecycle management (delete)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -339,6 +340,25 @@ Build-time verify (fire once, then poll until your run completes):
   STATUS=$(echo "$ROW" | jq -r .status)
   [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
                                   --run-id "$(echo "$ROW" | jq -r .id)"`,
+
+  feed: `Usage: alva feed <subcommand> [options]
+
+Feed lifecycle management. Currently exposes a single subcommand:
+
+Subcommands:
+  delete    Soft-delete a feed and all its active majors
+
+Delete flags:
+  --id <feed_id>   Numeric feed id (required, positive integer)
+
+Notes:
+  - Cascades to all active feed_majors in the same DB transaction.
+  - Producer cronjobs are removed best-effort; the cronjob scavenger
+    reconciles any leftover rows on its next sweep.
+  - Auth: caller must own the feed (uid match), enforced by the backend.
+
+Examples:
+  alva feed delete --id 42`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -1148,6 +1168,22 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: deploy ${subcommand}`,
             'deploy'
+          );
+      }
+    }
+
+    case 'feed': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for feed', 'feed');
+      switch (subcommand) {
+        case 'delete':
+          return client.feed.delete({
+            id: requireNumericFlag(flags, 'id', 'feed delete'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: feed ${subcommand}`,
+            'feed'
           );
       }
     }
