@@ -37,6 +37,7 @@ export class ReleaseResource {
         feeds: params.feeds,
         trading_symbols: params.trading_symbols,
         template_id: params.template_id,
+        tags: params.tags,
       },
     }) as Promise<PlaybookDraftResponse>;
   }
