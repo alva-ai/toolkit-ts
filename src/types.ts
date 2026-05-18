@@ -283,6 +283,13 @@ export interface PlaybookDraftRequest {
    * the playbook's first draft; subsequent drafts ignore the field.
    */
   template_id?: string;
+  /**
+   * Optional discovery tags (max 10, each up to 32 characters). On a
+   * playbook's first draft these merge with any template-inherited tags;
+   * on a re-draft of an existing playbook they replace the current tag
+   * set. Omitted/empty leaves tags unchanged.
+   */
+  tags?: string[];
 }
 
 export interface PlaybookDraftResponse {
