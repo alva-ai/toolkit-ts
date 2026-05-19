@@ -18,6 +18,7 @@ import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { PushSubscriptionsResource } from './resources/pushSubscriptions.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
+import { PlaybookResource } from './resources/playbook.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -59,6 +60,7 @@ export class AlvaClient {
   private _notifications?: NotificationsResource;
   private _pushSubscriptions?: PushSubscriptionsResource;
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
+  private _playbook?: PlaybookResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -121,6 +123,9 @@ export class AlvaClient {
   get channelGroupSubscriptions(): ChannelGroupSubscriptionsResource {
     return (this._channelGroupSubscriptions ??=
       new ChannelGroupSubscriptionsResource(this));
+  }
+  get playbook(): PlaybookResource {
+    return (this._playbook ??= new PlaybookResource(this));
   }
 
   _requireAuth(): void {

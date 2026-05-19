@@ -54,7 +54,8 @@ Commands:
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
-  feed        Feed lifecycle management (delete)
+  playbook    Playbook lifecycle management (list, delete)
+  feed        Feed lifecycle management (list, delete)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -341,23 +342,63 @@ Build-time verify (fire once, then poll until your run completes):
   [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
                                   --run-id "$(echo "$ROW" | jq -r .id)"`,
 
-  feed: `Usage: alva feed <subcommand> [options]
+  playbook: `Usage: alva playbook <subcommand> [options]
 
-Feed lifecycle management. Currently exposes a single subcommand:
+Playbook lifecycle management.
 
 Subcommands:
+  list      List playbooks owned by the authenticated user
+  delete    Soft-delete a playbook and free the free-tier quota slot
+
+List flags:
+  --limit <n>      Page size (default 50, max 100)
+  --cursor <c>     Opaque cursor from a previous page
+  --filter <f>     Filter by status: draft, running, paused
+
+Delete flags:
+  --name <name>    URL-safe playbook name (required)
+
+Notes:
+  - Soft-delete sets deleted_at on the DB row and removes the ALFS dbview
+    mount + public-read ACL. The free-tier playbook quota is freed
+    immediately on success.
+  - 'alva fs remove --path ~/playbooks/<name>' only clears ALFS files —
+    the DB row stays, quota stays consumed, and the platform still
+    treats the playbook as live. Use 'alva playbook delete' for a real delete.
+  - Auth: caller must own the playbook (uid match), enforced by the backend.
+  - Cascading feed/cronjob cleanup is best-effort and runs after the
+    DB commit; failures are logged non-fatally.
+
+Examples:
+  alva playbook list
+  alva playbook list --filter draft --limit 20
+  alva playbook delete --name btc-dashboard`,
+
+  feed: `Usage: alva feed <subcommand> [options]
+
+Feed lifecycle management.
+
+Subcommands:
+  list      List feeds owned by the authenticated user
   delete    Soft-delete a feed and all its active majors
+
+List flags:
+  --limit <n>      Page size (default 50, max 100)
+  --cursor <c>     Opaque cursor from a previous page
+  --status <s>     Filter by status: active (default), paused, all
 
 Delete flags:
   --id <feed_id>   Numeric feed id (required, positive integer)
 
 Notes:
-  - Cascades to all active feed_majors in the same DB transaction.
+  - Delete cascades to all active feed_majors in the same DB transaction.
   - Producer cronjobs are removed best-effort; the cronjob scavenger
     reconciles any leftover rows on its next sweep.
   - Auth: caller must own the feed (uid match), enforced by the backend.
 
 Examples:
+  alva feed list
+  alva feed list --status all --limit 20
   alva feed delete --id 42`,
 
   release: `Usage: alva release <subcommand> [options]
@@ -1180,6 +1221,27 @@ export async function dispatch(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for feed', 'feed');
       switch (subcommand) {
+        case 'list': {
+          const status = flags['status'];
+          if (
+            status !== undefined &&
+            status !== 'active' &&
+            status !== 'paused' &&
+            status !== 'all'
+          ) {
+            throw new CliUsageError(
+              'feed list --status must be one of: active, paused, all',
+              'feed'
+            );
+          }
+          return client.feed.list({
+            cursor: flags['cursor'],
+            limit: flags['limit']
+              ? requireNumericFlag(flags, 'limit', 'feed list')
+              : undefined,
+            status: status as 'active' | 'paused' | 'all' | undefined,
+          });
+        }
         case 'delete':
           return client.feed.delete({
             id: requireNumericFlag(flags, 'id', 'feed delete'),
@@ -1188,6 +1250,43 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: feed ${subcommand}`,
             'feed'
+          );
+      }
+    }
+
+    case 'playbook': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for playbook', 'playbook');
+      switch (subcommand) {
+        case 'list': {
+          const filter = flags['filter'];
+          if (
+            filter !== undefined &&
+            filter !== 'draft' &&
+            filter !== 'running' &&
+            filter !== 'paused'
+          ) {
+            throw new CliUsageError(
+              'playbook list --filter must be one of: draft, running, paused',
+              'playbook'
+            );
+          }
+          return client.playbook.list({
+            cursor: flags['cursor'],
+            limit: flags['limit']
+              ? requireNumericFlag(flags, 'limit', 'playbook list')
+              : undefined,
+            filter: filter as 'draft' | 'running' | 'paused' | undefined,
+          });
+        }
+        case 'delete':
+          return client.playbook.delete({
+            name: requireFlag(flags, 'name', 'playbook delete'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: playbook ${subcommand}`,
+            'playbook'
           );
       }
     }
