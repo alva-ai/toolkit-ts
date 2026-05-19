@@ -475,7 +475,7 @@ Key partitions:
 Examples:
   alva sdk partitions
   alva sdk partition-summary --partition feed_widgets
-  alva sdk doc --name "@arrays/data/widget-scrap/twitter:v1.0.0"
+  alva sdk doc --name "@arrays/data/widget-scrap/news:v1.0.0"
   alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"`,
 
   'data-skills': `Usage: alva data-skills <subcommand> [args]
