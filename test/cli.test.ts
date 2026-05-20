@@ -1910,3 +1910,37 @@ describe('arrays token dispatch', () => {
     );
   });
 });
+
+describe('alva lint playbook', () => {
+  it('returns non-zero when HTML violates a rule', async () => {
+    const nodeFs = await import('fs');
+    const nodePath = await import('path');
+    const nodeOs = await import('os');
+    const { handleLintPlaybook } = await import('../src/cli/lint.js');
+    const tmp = nodePath.join(
+      nodeOs.tmpdir(),
+      'bad-' + Date.now() + '.html'
+    );
+    nodeFs.writeFileSync(
+      tmp,
+      '<html><body><p>no container</p></body></html>'
+    );
+    const result = await handleLintPlaybook({
+      file: tmp,
+      format: 'json',
+      contractYaml: `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('required-container');
+    nodeFs.unlinkSync(tmp);
+  });
+});
+

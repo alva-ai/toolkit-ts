@@ -54,6 +54,7 @@ Commands:
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
+  lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
@@ -419,6 +420,26 @@ Examples:
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --template-id alva/screener
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --tags '["btc","macro"]'
   alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release" --readme-url "/alva/home/<username>/playbooks/btc-dashboard/README.md"`,
+
+  lint: `Usage: alva lint <subcommand> [options]
+
+Run the design-system linter against a playbook artifact. The active design
+contract is fetched from the CDN (with a bundled fallback) so the linter
+always runs the same rule set the platform enforces at release time.
+
+Subcommands:
+  playbook <file>    Lint a local HTML file
+
+Playbook flags:
+  --format <fmt>     Output format: "human" (default) or "json"
+
+Exit status:
+  0   No errors (warnings/info may still be present)
+  1   One or more error-severity findings
+
+Examples:
+  alva lint playbook ./dist/index.html
+  alva lint playbook ./dist/index.html --format json`,
 
   secrets: `Usage: alva secrets <subcommand> [options]
 
@@ -1249,6 +1270,39 @@ export async function dispatch(
             'release'
           );
       }
+    }
+
+    case 'lint': {
+      if (subcommand !== 'playbook') {
+        throw new CliUsageError(
+          'Usage: alva lint playbook <file> [--format json|human]',
+          'lint'
+        );
+      }
+      const file = args[2];
+      if (!file || file.startsWith('--')) {
+        throw new CliUsageError(
+          'Missing file argument for lint playbook',
+          'lint'
+        );
+      }
+      const formatFlag = flags['format'];
+      if (
+        formatFlag !== undefined &&
+        formatFlag !== 'human' &&
+        formatFlag !== 'json'
+      ) {
+        throw new CliUsageError(
+          `Invalid --format value: ${formatFlag} (expected 'human' or 'json')`,
+          'lint'
+        );
+      }
+      const format = (formatFlag as 'human' | 'json' | undefined) ?? 'human';
+      const { handleLintPlaybook } = await import('./lint.js');
+      const { exitCode, output } = await handleLintPlaybook({ file, format });
+      process.stdout.write(output + (output.endsWith('\n') ? '' : '\n'));
+      if (exitCode !== 0) process.exit(exitCode);
+      return undefined;
     }
 
     case 'secrets': {
