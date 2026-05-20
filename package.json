@@ -31,7 +31,7 @@
   },
   "scripts": {
     "vendor-contract": "tsx scripts/vendor-contract.ts",
-    "prebuild": "pnpm run vendor-contract",
+    "prebuild": "npm run vendor-contract",
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
