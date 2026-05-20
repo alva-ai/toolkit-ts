@@ -101,20 +101,20 @@ describe('ReleaseResource', () => {
           description: undefined,
           feeds: [{ feed_id: 1 }],
           trading_symbols: undefined,
-          template_id: undefined,
+          skill_id: undefined,
         },
       }
     );
   });
 
-  it('playbookDraft() forwards template_id when provided', async () => {
+  it('playbookDraft() forwards skill_id when provided', async () => {
     const client = makeClient();
     const release = new ReleaseResource(client);
     await release.playbookDraft({
       name: 'btc-dashboard',
       display_name: 'BTC Dashboard',
       feeds: [{ feed_id: 1 }],
-      template_id: 'alva/screener',
+      skill_id: 'alva/screener',
     });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
@@ -126,7 +126,7 @@ describe('ReleaseResource', () => {
           description: undefined,
           feeds: [{ feed_id: 1 }],
           trading_symbols: undefined,
-          template_id: 'alva/screener',
+          skill_id: 'alva/screener',
         },
       }
     );
