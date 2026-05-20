@@ -1,10 +1,6 @@
 // src/lint/model.ts
 import { walkTree } from './parser.js';
-import type {
-  Contract,
-  DomModel,
-  ResolvedModel,
-} from './types.js';
+import type { Contract, DomModel, ResolvedModel } from './types.js';
 
 /**
  * Build the ResolvedModel: walk the DOM in identical document order to

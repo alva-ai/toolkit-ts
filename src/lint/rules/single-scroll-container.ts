@@ -1,5 +1,10 @@
 // src/lint/rules/single-scroll-container.ts
-import type { Contract, Finding, ResolvedModel, RuleDescriptor } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+} from '../types.js';
 
 const SCROLL_VALUES = new Set(['auto', 'scroll']);
 

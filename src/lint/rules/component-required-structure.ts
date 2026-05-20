@@ -1,5 +1,10 @@
 // src/lint/rules/component-required-structure.ts
-import type { Contract, Finding, ResolvedModel, RuleDescriptor } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+} from '../types.js';
 
 export function componentRequiredStructure(
   model: ResolvedModel,

@@ -36,7 +36,10 @@ describe('loadContract', () => {
     const btn = c.components[0]!;
     expect(btn.name).toBe('button');
     expect(btn.root).toBe('btn');
-    expect(btn.bindings?.[0]).toEqual({ selector: 'button', requireClass: 'btn' });
+    expect(btn.bindings?.[0]).toEqual({
+      selector: 'button',
+      requireClass: 'btn',
+    });
   });
 
   it('throws on missing version', () => {

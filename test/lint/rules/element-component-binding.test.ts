@@ -9,7 +9,10 @@ const CONTRACT: Contract = {
   global: {
     requiredContainer: { selector: '.playbook-container', mustExist: true },
     scroll: { soleScrollContainer: ['body'] },
-    typography: { fontFamilyRootMustInclude: 'Delight', fontWeightAllowed: [400, 500] },
+    typography: {
+      fontFamilyRootMustInclude: 'Delight',
+      fontWeightAllowed: [400, 500],
+    },
     links: { anchorRequiredAttrs: ['target', 'rel'] },
   },
   components: [
@@ -24,7 +27,10 @@ const CONTRACT: Contract = {
 
 describe('element-component-binding', () => {
   it('passes when <button> carries .btn', () => {
-    const m = buildModel(parseHtml('<button class="btn btn-primary">X</button>'), CONTRACT);
+    const m = buildModel(
+      parseHtml('<button class="btn btn-primary">X</button>'),
+      CONTRACT
+    );
     expect(elementComponentBinding(m, CONTRACT)).toEqual([]);
   });
 

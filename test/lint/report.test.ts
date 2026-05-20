@@ -5,8 +5,17 @@ import type { Report } from '../../src/lint/types.js';
 
 const REPORT: Report = {
   findings: [
-    { rule: 'required-container', severity: 'error', message: 'missing .playbook-container' },
-    { rule: 'anchor-attrs', severity: 'warning', message: 'a tag missing rel', selector: '<a>' },
+    {
+      rule: 'required-container',
+      severity: 'error',
+      message: 'missing .playbook-container',
+    },
+    {
+      rule: 'anchor-attrs',
+      severity: 'warning',
+      message: 'a tag missing rel',
+      selector: '<a>',
+    },
   ],
   summary: { errors: 1, warnings: 1, info: 0 },
 };

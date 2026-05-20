@@ -1,5 +1,10 @@
 // src/lint/rules/font-weight-range.ts
-import type { Contract, Finding, ResolvedModel, RuleDescriptor } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+} from '../types.js';
 
 const WEIGHT_KEYWORDS: Record<string, number> = {
   normal: 400,

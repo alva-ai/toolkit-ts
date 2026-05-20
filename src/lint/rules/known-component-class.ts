@@ -1,5 +1,11 @@
 // src/lint/rules/known-component-class.ts
-import type { Contract, Finding, ResolvedModel, RuleDescriptor, ComponentSpec } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+  ComponentSpec,
+} from '../types.js';
 
 function registeredSet(c: ComponentSpec): Set<string> {
   const s = new Set<string>([c.root]);

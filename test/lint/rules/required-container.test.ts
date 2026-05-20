@@ -9,7 +9,10 @@ const CONTRACT: Contract = {
   global: {
     requiredContainer: { selector: '.playbook-container', mustExist: true },
     scroll: { soleScrollContainer: ['body'] },
-    typography: { fontFamilyRootMustInclude: 'Delight', fontWeightAllowed: [400, 500] },
+    typography: {
+      fontFamilyRootMustInclude: 'Delight',
+      fontWeightAllowed: [400, 500],
+    },
     links: { anchorRequiredAttrs: ['target', 'rel'] },
   },
   components: [],
@@ -17,7 +20,10 @@ const CONTRACT: Contract = {
 
 describe('required-container rule', () => {
   it('passes when .playbook-container exists', () => {
-    const m = buildModel(parseHtml('<div class="playbook-container"></div>'), CONTRACT);
+    const m = buildModel(
+      parseHtml('<div class="playbook-container"></div>'),
+      CONTRACT
+    );
     expect(requiredContainer(m, CONTRACT)).toEqual([]);
   });
 

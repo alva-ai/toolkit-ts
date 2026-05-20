@@ -9,7 +9,10 @@ const CONTRACT: Contract = {
   global: {
     requiredContainer: { selector: '.playbook-container', mustExist: true },
     scroll: { soleScrollContainer: ['body'] },
-    typography: { fontFamilyRootMustInclude: 'Delight', fontWeightAllowed: [400, 500] },
+    typography: {
+      fontFamilyRootMustInclude: 'Delight',
+      fontWeightAllowed: [400, 500],
+    },
     links: { anchorRequiredAttrs: ['target', 'rel'] },
   },
   components: [],
@@ -18,7 +21,9 @@ const CONTRACT: Contract = {
 describe('font-weight-range', () => {
   it('passes for 400/500', () => {
     const m = buildModel(
-      parseHtml('<style>h1 { font-weight: 500; } p { font-weight: 400; }</style>'),
+      parseHtml(
+        '<style>h1 { font-weight: 500; } p { font-weight: 400; }</style>'
+      ),
       CONTRACT
     );
     expect(fontWeightRange(m, CONTRACT)).toEqual([]);

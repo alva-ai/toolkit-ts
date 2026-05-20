@@ -1257,11 +1257,7 @@ export async function dispatch(
           const name = requireFlag(flags, 'name', 'release playbook');
           const version = requireFlag(flags, 'version', 'release playbook');
           const feedsRaw = requireFlag(flags, 'feeds', 'release playbook');
-          const changelog = requireFlag(
-            flags,
-            'changelog',
-            'release playbook'
-          );
+          const changelog = requireFlag(flags, 'changelog', 'release playbook');
           const readmeUrl = requireFlag(
             flags,
             'readme-url',

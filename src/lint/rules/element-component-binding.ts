@@ -1,6 +1,11 @@
 // src/lint/rules/element-component-binding.ts
 import { parse as parseHtmlTree, HTMLElement } from 'node-html-parser';
-import type { Contract, Finding, ResolvedModel, RuleDescriptor } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+} from '../types.js';
 
 export function elementComponentBinding(
   model: ResolvedModel,
@@ -19,12 +24,16 @@ export function elementComponentBinding(
     for (const binding of comp.bindings ?? []) {
       const matches = root.querySelectorAll(binding.selector);
       for (const el of matches) {
-        const classes = (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+        const classes = (el.getAttribute('class') ?? '')
+          .split(/\s+/)
+          .filter(Boolean);
         if (classes.includes(binding.requireClass)) continue;
         let exempt = false;
         let cur: HTMLElement | null = el.parentNode as HTMLElement | null;
         while (cur && cur.tagName) {
-          const cc = (cur.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+          const cc = (cur.getAttribute('class') ?? '')
+            .split(/\s+/)
+            .filter(Boolean);
           if (cc.some((c) => rootClasses.has(c))) {
             exempt = true;
             break;

@@ -1944,14 +1944,8 @@ describe('alva lint playbook', () => {
     const nodePath = await import('path');
     const nodeOs = await import('os');
     const { handleLintPlaybook } = await import('../src/cli/lint.js');
-    const tmp = nodePath.join(
-      nodeOs.tmpdir(),
-      'bad-' + Date.now() + '.html'
-    );
-    nodeFs.writeFileSync(
-      tmp,
-      '<html><body><p>no container</p></body></html>'
-    );
+    const tmp = nodePath.join(nodeOs.tmpdir(), 'bad-' + Date.now() + '.html');
+    nodeFs.writeFileSync(tmp, '<html><body><p>no container</p></body></html>');
     const result = await handleLintPlaybook({
       file: tmp,
       format: 'json',
@@ -2015,4 +2009,3 @@ components: {}
     expect(r.summary.errors).toBe(0);
   });
 });
-

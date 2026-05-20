@@ -1,7 +1,18 @@
 // src/lint/rules/font-family-root.ts
-import type { Contract, Finding, ResolvedModel, RuleDescriptor } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+} from '../types.js';
 
-const ROOT_SELECTORS = new Set(['body', 'html', ':root', 'html, body', 'body, html']);
+const ROOT_SELECTORS = new Set([
+  'body',
+  'html',
+  ':root',
+  'html, body',
+  'body, html',
+]);
 
 export function fontFamilyRoot(
   model: ResolvedModel,

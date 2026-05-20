@@ -1,5 +1,10 @@
 // src/lint/rules/required-container.ts
-import type { Contract, Finding, ResolvedModel, RuleDescriptor } from '../types.js';
+import type {
+  Contract,
+  Finding,
+  ResolvedModel,
+  RuleDescriptor,
+} from '../types.js';
 
 export function requiredContainer(
   model: ResolvedModel,

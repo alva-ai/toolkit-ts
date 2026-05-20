@@ -41,7 +41,9 @@ export function loadContract(yamlStr: string): Contract {
   const components: ComponentSpec[] = [];
   for (const [name, c] of Object.entries(raw.components ?? {})) {
     if (!c.root) {
-      throw new Error(`contract: component '${name}' missing required \`root\``);
+      throw new Error(
+        `contract: component '${name}' missing required \`root\``
+      );
     }
     const bindings: BindingRule[] | undefined = c.bindings?.map((b) => ({
       selector: b.selector,

@@ -5,7 +5,11 @@ export function runRules(model: ResolvedModel, contract: Contract): Report {
   const findings: Finding[] = [];
   for (const rule of ALL_RULES) {
     for (const f of rule.run(model, contract)) {
-      findings.push({ ...f, rule: f.rule || rule.name, severity: f.severity || rule.severity });
+      findings.push({
+        ...f,
+        rule: f.rule || rule.name,
+        severity: f.severity || rule.severity,
+      });
     }
   }
   const summary = { errors: 0, warnings: 0, info: 0 };

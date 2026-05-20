@@ -9,7 +9,10 @@ const CONTRACT: Contract = {
   global: {
     requiredContainer: { selector: '.playbook-container', mustExist: true },
     scroll: { soleScrollContainer: ['body'] },
-    typography: { fontFamilyRootMustInclude: 'Delight', fontWeightAllowed: [400, 500] },
+    typography: {
+      fontFamilyRootMustInclude: 'Delight',
+      fontWeightAllowed: [400, 500],
+    },
     links: { anchorRequiredAttrs: ['target', 'rel'] },
   },
   components: [],
@@ -17,17 +20,26 @@ const CONTRACT: Contract = {
 
 describe('anchor-attrs', () => {
   it('passes when <a href> has both target and rel', () => {
-    const m = buildModel(parseHtml('<a href="/x" target="_blank" rel="noopener">x</a>'), CONTRACT);
+    const m = buildModel(
+      parseHtml('<a href="/x" target="_blank" rel="noopener">x</a>'),
+      CONTRACT
+    );
     expect(anchorAttrs(m, CONTRACT)).toEqual([]);
   });
 
   it('errors when missing target', () => {
-    const m = buildModel(parseHtml('<a href="/x" rel="noopener">x</a>'), CONTRACT);
+    const m = buildModel(
+      parseHtml('<a href="/x" rel="noopener">x</a>'),
+      CONTRACT
+    );
     expect(anchorAttrs(m, CONTRACT)).toHaveLength(1);
   });
 
   it('errors when missing rel', () => {
-    const m = buildModel(parseHtml('<a href="/x" target="_blank">x</a>'), CONTRACT);
+    const m = buildModel(
+      parseHtml('<a href="/x" target="_blank">x</a>'),
+      CONTRACT
+    );
     expect(anchorAttrs(m, CONTRACT)).toHaveLength(1);
   });
 

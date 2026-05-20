@@ -18,7 +18,9 @@ describe('loadActiveContract', () => {
       ok: true,
       text: () => Promise.resolve(VALID_YAML),
     });
-    const c = await loadActiveContract({ fetch: fetch as unknown as typeof globalThis.fetch });
+    const c = await loadActiveContract({
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
     expect(c.version).toBe(1);
   });
 

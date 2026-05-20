@@ -10,7 +10,10 @@ const CONTRACT: Contract = {
   global: {
     requiredContainer: { selector: '.playbook-container', mustExist: true },
     scroll: { soleScrollContainer: ['body'] },
-    typography: { fontFamilyRootMustInclude: 'Delight', fontWeightAllowed: [400, 500] },
+    typography: {
+      fontFamilyRootMustInclude: 'Delight',
+      fontWeightAllowed: [400, 500],
+    },
     links: { anchorRequiredAttrs: ['target', 'rel'] },
   },
   components: [],
@@ -18,9 +21,14 @@ const CONTRACT: Contract = {
 
 describe('runRules', () => {
   it('aggregates findings and computes summary', () => {
-    const m = buildModel(parseHtml('<body><p>no container</p></body>'), CONTRACT);
+    const m = buildModel(
+      parseHtml('<body><p>no container</p></body>'),
+      CONTRACT
+    );
     const report = runRules(m, CONTRACT);
     expect(report.summary.errors).toBeGreaterThan(0);
-    expect(report.findings.length).toBe(report.summary.errors + report.summary.warnings + report.summary.info);
+    expect(report.findings.length).toBe(
+      report.summary.errors + report.summary.warnings + report.summary.info
+    );
   });
 });
