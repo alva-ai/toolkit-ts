@@ -86,6 +86,35 @@ components: {}
     );
   });
 
+  it('loads required-scripts on components', () => {
+    const c = loadContract(`
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components:
+  tab:
+    root: "tab"
+    required-scripts:
+      - when-also: ["chart-card"]
+        must-contain:
+          - "[_echarts_instance_]"
+          - "echarts.getInstanceByDom"
+        message: "ECharts resize handler"
+  chart-card:
+    root: "chart-container"
+`);
+    const tab = c.components.find((x) => x.name === 'tab')!;
+    expect(tab.requiredScripts).toHaveLength(1);
+    expect(tab.requiredScripts![0]!.whenAlso).toEqual(['chart-card']);
+    expect(tab.requiredScripts![0]!.mustContain).toContain(
+      '[_echarts_instance_]'
+    );
+    expect(tab.requiredScripts![0]!.message).toBe('ECharts resize handler');
+  });
+
   it('keeps new optional fields undefined when absent', () => {
     const c = loadContract(MIN_YAML);
     expect(c.global.typography.fontWeightRestrictions).toBeUndefined();

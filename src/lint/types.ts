@@ -20,6 +20,17 @@ export interface BindingRule {
   requireClass: string;
 }
 
+export interface ScriptRequirement {
+  /** Optional: only apply when these component names are also present
+   *  in the HTML (by their root class). Empty/undefined = always apply
+   *  when this owner component is present. */
+  whenAlso?: string[];
+  /** Substrings that must each appear in some <script> block. */
+  mustContain: string[];
+  /** Optional human-readable hint for the finding message. */
+  message?: string;
+}
+
 export interface ComponentSpec {
   name: string;
   root: string;
@@ -28,6 +39,8 @@ export interface ComponentSpec {
   states?: string[];
   children?: string[];
   bindings?: BindingRule[];
+  /** Required <script> substrings, conditioned on co-presence. */
+  requiredScripts?: ScriptRequirement[];
 }
 
 export interface FontWeightRestriction {
@@ -83,6 +96,8 @@ export interface DomModel {
   elements: InlineStyle[];
   /** CSS rules extracted from <style> blocks */
   cssRules: CssRule[];
+  /** raw textContent of every <script> block, in document order */
+  scripts: string[];
   /** raw HTML (for line/column reporting) */
   rawHtml: string;
 }

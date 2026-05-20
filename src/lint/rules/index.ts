@@ -9,6 +9,7 @@ import { antiAliasingDeclarationsRule } from './anti-aliasing-declarations.js';
 import { knownComponentClassRule } from './known-component-class.js';
 import { componentRequiredStructureRule } from './component-required-structure.js';
 import { elementComponentBindingRule } from './element-component-binding.js';
+import { requiredScriptFragmentsRule } from './required-script-fragments.js';
 import type { RuleDescriptor } from '../types.js';
 
 export const ALL_RULES: RuleDescriptor[] = [
@@ -23,4 +24,5 @@ export const ALL_RULES: RuleDescriptor[] = [
   knownComponentClassRule,
   componentRequiredStructureRule,
   elementComponentBindingRule,
+  requiredScriptFragmentsRule,
 ];

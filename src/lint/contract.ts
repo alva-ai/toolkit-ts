@@ -1,6 +1,17 @@
 // src/lint/contract.ts
 import YAML from 'yaml';
-import type { Contract, ComponentSpec, BindingRule } from './types.js';
+import type {
+  Contract,
+  ComponentSpec,
+  BindingRule,
+  ScriptRequirement,
+} from './types.js';
+
+interface RawScriptRequirement {
+  'when-also'?: string[];
+  'must-contain': string[];
+  message?: string;
+}
 
 interface RawComponent {
   root?: string;
@@ -9,6 +20,7 @@ interface RawComponent {
   states?: string[];
   children?: string[];
   bindings?: Array<{ selector: string; 'require-class': string }>;
+  'required-scripts'?: RawScriptRequirement[];
 }
 
 interface RawFontWeightRestriction {
@@ -60,6 +72,13 @@ export function loadContract(yamlStr: string): Contract {
       selector: b.selector,
       requireClass: b['require-class'],
     }));
+    const requiredScripts: ScriptRequirement[] | undefined = c[
+      'required-scripts'
+    ]?.map((r) => ({
+      ...(r['when-also'] ? { whenAlso: r['when-also'] } : {}),
+      mustContain: r['must-contain'],
+      ...(r.message ? { message: r.message } : {}),
+    }));
     components.push({
       name,
       root: c.root,
@@ -68,6 +87,7 @@ export function loadContract(yamlStr: string): Contract {
       states: c.states,
       children: c.children,
       bindings,
+      ...(requiredScripts ? { requiredScripts } : {}),
     });
   }
 

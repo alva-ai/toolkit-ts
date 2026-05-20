@@ -114,6 +114,10 @@ export function parseHtml(rawHtml: string): DomModel {
     comment: false,
     blockTextElements: { style: true, script: true },
   });
+  const scripts: string[] = [];
+  for (const scriptEl of root.querySelectorAll('script')) {
+    scripts.push(scriptEl.textContent ?? '');
+  }
   const cssRules: CssRule[] = [];
   for (const styleEl of root.querySelectorAll('style')) {
     // Determine the HTML-absolute line where the style block's content starts.
@@ -131,5 +135,5 @@ export function parseHtml(rawHtml: string): DomModel {
     );
   }
 
-  return { elements, cssRules, rawHtml };
+  return { elements, cssRules, scripts, rawHtml };
 }
