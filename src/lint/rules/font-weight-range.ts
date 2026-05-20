@@ -38,6 +38,9 @@ export function fontWeightRange(
         severity: 'error',
         message: `Selector '${rule.selectorText}' uses font-weight:${fw}; only ${[...allowed].join('/')} allowed.`,
         selector: rule.selectorText,
+        ...(rule.sourceLine !== undefined
+          ? { location: { line: rule.sourceLine, column: 0 } }
+          : {}),
       });
     }
   }
@@ -52,6 +55,9 @@ export function fontWeightRange(
         rule: 'font-weight-range',
         severity: 'error',
         message: `Inline style on <${el.tag}> uses font-weight:${fw}; only ${[...allowed].join('/')} allowed.`,
+        ...(el.line !== undefined
+          ? { location: { line: el.line, column: 0 } }
+          : {}),
       });
     }
   }

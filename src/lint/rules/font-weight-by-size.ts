@@ -61,6 +61,9 @@ export function fontWeightBySize(
           severity: 'error',
           message: `Selector '${rule.selectorText}' uses font-weight:${weight} at font-size:${fs}; for font-size >= ${r.minFontSizePx}px only ${r.allowed.join('/')} is allowed.`,
           selector: rule.selectorText,
+          ...(rule.sourceLine !== undefined
+            ? { location: { line: rule.sourceLine, column: 0 } }
+            : {}),
         });
         break;
       }
@@ -81,6 +84,9 @@ export function fontWeightBySize(
           rule: 'font-weight-by-size',
           severity: 'error',
           message: `Inline style on <${el.tag}> uses font-weight:${weight} at font-size:${fs}; for font-size >= ${r.minFontSizePx}px only ${r.allowed.join('/')} is allowed.`,
+          ...(el.line !== undefined
+            ? { location: { line: el.line, column: 0 } }
+            : {}),
         });
         break;
       }

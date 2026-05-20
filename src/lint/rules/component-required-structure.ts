@@ -22,11 +22,14 @@ export function componentRequiredStructure(
     for (const el of model.dom.elements) {
       if (!el.classes.includes(comp.root)) continue;
 
+      const elLocation =
+        el.line !== undefined ? { location: { line: el.line, column: 0 } } : {};
       if (hasVariants && !el.classes.some((c) => variantSet.has(c))) {
         findings.push({
           rule: 'component-required-structure',
           severity: 'error',
           message: `<${el.tag} class="${comp.root} …"> missing required '${comp.name}' variant (one of: ${[...variantSet].join(', ')}).`,
+          ...elLocation,
         });
       }
       if (hasSizes && !el.classes.some((c) => sizeSet.has(c))) {
@@ -34,6 +37,7 @@ export function componentRequiredStructure(
           rule: 'component-required-structure',
           severity: 'error',
           message: `<${el.tag} class="${comp.root} …"> missing required '${comp.name}' size (one of: ${[...sizeSet].join(', ')}).`,
+          ...elLocation,
         });
       }
     }

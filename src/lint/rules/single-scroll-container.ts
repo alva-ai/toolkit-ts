@@ -26,6 +26,9 @@ export function singleScrollContainer(
       severity: 'error',
       message: `Selector '${rule.selectorText}' sets overflow-y:${val}; only ${[...allowed].join('/')} may be a page-level scroll container.`,
       selector: rule.selectorText,
+      ...(rule.sourceLine !== undefined
+        ? { location: { line: rule.sourceLine, column: 0 } }
+        : {}),
     });
   }
   return findings;

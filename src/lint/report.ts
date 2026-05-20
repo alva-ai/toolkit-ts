@@ -7,8 +7,9 @@ export function formatReport(report: Report, format: ReportFormat): string {
   const lines: string[] = [];
   for (const f of report.findings) {
     const sev = f.severity.toUpperCase();
-    const loc = f.selector ? ` [${f.selector}]` : '';
-    lines.push(`${sev}  ${f.rule}${loc}  ${f.message}`);
+    const sel = f.selector ? ` [${f.selector}]` : '';
+    const loc = f.location ? ` (L${f.location.line})` : '';
+    lines.push(`${sev}  ${f.rule}${sel}${loc}  ${f.message}`);
   }
   lines.push('');
   lines.push(

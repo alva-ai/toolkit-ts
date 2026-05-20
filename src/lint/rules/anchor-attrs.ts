@@ -17,6 +17,9 @@ export function anchorAttrs(
     if (el.tag !== 'a') continue;
     if (el.attrs.href === undefined) continue;
 
+    const elLocation =
+      el.line !== undefined ? { location: { line: el.line, column: 0 } } : {};
+
     // Pass 1: missing required attributes.
     let relMissing = false;
     for (const attr of required) {
@@ -25,6 +28,7 @@ export function anchorAttrs(
           rule: 'anchor-attrs',
           severity: 'error',
           message: `<a href="${el.attrs.href}"> is missing required attribute '${attr}'.`,
+          ...elLocation,
         });
         if (attr === 'rel') relMissing = true;
       }
@@ -45,6 +49,7 @@ export function anchorAttrs(
             rule: 'anchor-attrs',
             severity: 'error',
             message: `<a href="${el.attrs.href}"> rel="${rel}" must contain ${missing.map((m) => `'${m}'`).join(', ')}.`,
+            ...elLocation,
           });
         }
       }

@@ -33,4 +33,35 @@ describe('parseHtml', () => {
     const btnRule = m.cssRules.find((r) => r.selectorText === '.btn-primary')!;
     expect(btnRule.declarations['font-weight']).toBe('700');
   });
+
+  it('sets line on each element from its position in the source', () => {
+    const m = parseHtml(HTML);
+    // <html> is on line 2, <body> is on line 6, <div> is on line 7
+    const html = m.elements.find((e) => e.tag === 'html')!;
+    expect(html.line).toBe(2);
+    const body = m.elements.find((e) => e.tag === 'body')!;
+    expect(body.line).toBe(6);
+    const div = m.elements.find((e) => e.tag === 'div')!;
+    expect(div.line).toBe(7);
+    // <a> is on line 8, <button> is on line 9
+    const a = m.elements.find((e) => e.tag === 'a')!;
+    expect(a.line).toBe(8);
+    const btn = m.elements.find((e) => e.tag === 'button')!;
+    expect(btn.line).toBe(9);
+  });
+
+  it('sets sourceLine on CSS rules as HTML-absolute line numbers', () => {
+    const m = parseHtml(HTML);
+    // The <style> tag is on line 2 (<html><head><style> all on line 2).
+    // styleBlockStartLine = 2 + 1 = 3.
+    // The style element's textContent starts with '\n  body ...' so css-tree
+    // reports body at line 2 and .btn-primary at line 3 (1-based within CSS).
+    // HTML-absolute: styleBlockStartLine + cssLine - 1 → 3 + 2 - 1 = 4, 3 + 3 - 1 = 5.
+    const bodyRule = m.cssRules.find((r) => r.selectorText === 'body')!;
+    expect(bodyRule.sourceLine).toBeDefined();
+    expect(bodyRule.sourceLine).toBe(4);
+    const btnRule = m.cssRules.find((r) => r.selectorText === '.btn-primary')!;
+    expect(btnRule.sourceLine).toBeDefined();
+    expect(btnRule.sourceLine).toBe(5);
+  });
 });

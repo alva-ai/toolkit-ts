@@ -35,6 +35,9 @@ export function knownComponentClass(
             severity: 'error',
             message: `Class '${cls}' looks like a '${comp.name}' modifier but is not registered. Valid: ${[...set].join(', ')}.`,
             selector: `<${el.tag}>`,
+            ...(el.line !== undefined
+              ? { location: { line: el.line, column: 0 } }
+              : {}),
           });
         }
       }

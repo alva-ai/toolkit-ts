@@ -7,6 +7,15 @@ import type {
   RuleDescriptor,
 } from '../types.js';
 
+function offsetToLine(html: string, offset: number): number {
+  let line = 1;
+  const end = Math.min(offset, html.length);
+  for (let i = 0; i < end; i++) {
+    if (html.charCodeAt(i) === 10) line++;
+  }
+  return line;
+}
+
 export function elementComponentBinding(
   model: ResolvedModel,
   contract: Contract
@@ -41,11 +50,19 @@ export function elementComponentBinding(
           cur = cur.parentNode as HTMLElement | null;
         }
         if (exempt) continue;
+        const elRange = (el as unknown as { range?: [number, number] }).range;
+        const elLine =
+          elRange !== undefined
+            ? offsetToLine(model.dom.rawHtml, elRange[0])
+            : undefined;
         findings.push({
           rule: 'element-component-binding',
           severity: 'error',
           message: `<${el.tagName.toLowerCase()}> matched by '${binding.selector}' must carry class '${binding.requireClass}' (unless nested inside a registered component root).`,
           selector: binding.selector,
+          ...(elLine !== undefined
+            ? { location: { line: elLine, column: 0 } }
+            : {}),
         });
       }
     }

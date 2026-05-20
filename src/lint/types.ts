@@ -72,6 +72,8 @@ export interface InlineStyle {
   tag: string;
   attrs: Record<string, string>;
   classes: string[];
+  /** 1-based source line of the element's opening tag, if recoverable */
+  line?: number;
   /** root subtree ownership; computed in model.ts */
   ownerComponentRoot?: string;
 }
