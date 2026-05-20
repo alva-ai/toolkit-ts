@@ -30,6 +30,8 @@
     "node": ">=18"
   },
   "scripts": {
+    "vendor-contract": "tsx scripts/vendor-contract.ts",
+    "prebuild": "pnpm run vendor-contract",
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -73,6 +75,7 @@
     "node-html-parser": "^7.1.0",
     "prettier": "^3.5.3",
     "tsup": "^8.5.0",
+    "tsx": "^4.22.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.33.1",
     "vitest": "^3.2.1",
