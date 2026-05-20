@@ -57,4 +57,24 @@ describe('known-component-class', () => {
     );
     expect(knownComponentClass(m, CONTRACT)).toEqual([]);
   });
+
+  it('catches widget-family ad-hoc class even with no bare-root component', () => {
+    const widgetContract: Contract = {
+      ...CONTRACT,
+      components: [
+        {
+          name: 'chart-card',
+          root: 'chart-container',
+          children: ['chart-body', 'chart-legend'],
+        },
+      ],
+    };
+    const m = buildModel(
+      parseHtml('<div class="chart-foo">x</div>'),
+      widgetContract
+    );
+    const f = knownComponentClass(m, widgetContract);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.message).toMatch(/chart-foo/);
+  });
 });

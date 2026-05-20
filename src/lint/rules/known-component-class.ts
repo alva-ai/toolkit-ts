@@ -7,40 +7,56 @@ import type {
   ComponentSpec,
 } from '../types.js';
 
-function registeredSet(c: ComponentSpec): Set<string> {
-  const s = new Set<string>([c.root]);
-  for (const list of [c.variants, c.sizes, c.states, c.children]) {
-    for (const cls of list ?? []) s.add(cls);
-  }
-  return s;
+function classesFor(c: ComponentSpec): string[] {
+  return [
+    c.root,
+    ...(c.variants ?? []),
+    ...(c.sizes ?? []),
+    ...(c.states ?? []),
+    ...(c.children ?? []),
+    ...(c.bindings ?? []).map((b) => b.requireClass),
+  ];
+}
+
+function prefixOf(cls: string): string {
+  const i = cls.indexOf('-');
+  return i < 0 ? cls : cls.slice(0, i);
 }
 
 export function knownComponentClass(
   model: ResolvedModel,
   contract: Contract
 ): Finding[] {
-  const findings: Finding[] = [];
-  const registeredByComp = contract.components.map((c) => ({
-    comp: c,
-    set: registeredSet(c),
-  }));
+  // Build the global set of registered classes and a prefix → component-name
+  // map. A prefix may belong to multiple components if they share a namespace;
+  // we record the first one for the message.
+  const allRegistered = new Set<string>();
+  const prefixOwner = new Map<string, ComponentSpec>();
+  for (const comp of contract.components) {
+    for (const cls of classesFor(comp)) {
+      allRegistered.add(cls);
+      const p = prefixOf(cls);
+      if (!prefixOwner.has(p)) prefixOwner.set(p, comp);
+    }
+  }
 
+  const findings: Finding[] = [];
   for (const el of model.dom.elements) {
     for (const cls of el.classes) {
-      for (const { comp, set } of registeredByComp) {
-        if (cls === comp.root) continue;
-        if (cls.startsWith(comp.root + '-') && !set.has(cls)) {
-          findings.push({
-            rule: 'known-component-class',
-            severity: 'error',
-            message: `Class '${cls}' looks like a '${comp.name}' modifier but is not registered. Valid: ${[...set].join(', ')}.`,
-            selector: `<${el.tag}>`,
-            ...(el.line !== undefined
-              ? { location: { line: el.line, column: 0 } }
-              : {}),
-          });
-        }
-      }
+      const p = prefixOf(cls);
+      const owner = prefixOwner.get(p);
+      if (!owner) continue; // unknown prefix → not flagged
+      if (allRegistered.has(cls)) continue; // class itself is registered
+      const ownerRegistered = new Set(classesFor(owner));
+      findings.push({
+        rule: 'known-component-class',
+        severity: 'error',
+        message: `Class '${cls}' looks like a '${owner.name}' modifier but is not registered. Valid classes in this family: ${[...ownerRegistered].sort().join(', ')}.`,
+        selector: `<${el.tag}>`,
+        ...(el.line !== undefined
+          ? { location: { line: el.line, column: 0 } }
+          : {}),
+      });
     }
   }
   return findings;
