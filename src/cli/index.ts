@@ -390,7 +390,8 @@ Playbook-draft flags:
   --description <text>       Playbook description
   --trading-symbols <json>   JSON array of tickers, e.g. '["BTC","ETH"]' (max 50)
   --skill-id <id>            Source-skill reference "username/name", e.g.
-                             "alva/screener". Persisted set-once on first draft.
+                             "alva/screener". Discover skills via
+                             "alva skillhub list". Persisted set-once on first draft.
   --tags <json>              JSON array of discovery tags, e.g. '["btc","macro"]'
                              (max 10, each up to 32 chars). First draft merges
                              with skill tags; re-draft replaces the tag set.

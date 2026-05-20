@@ -279,8 +279,10 @@ export interface PlaybookDraftRequest {
   trading_symbols?: string[];
   /**
    * Optional source-skill reference in "username/name" form (e.g.
-   * "alva/screener"). Persisted set-once on the playbook's first draft;
-   * subsequent drafts ignore the field.
+   * "alva/screener"). The value identifies a playbook skill published to
+   * Skillhub; discover available skills via `alva skillhub list`.
+   * Persisted set-once on the playbook's first draft; subsequent drafts
+   * ignore the field.
    */
   skill_id?: string;
   /**
