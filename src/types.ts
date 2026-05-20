@@ -278,11 +278,11 @@ export interface PlaybookDraftRequest {
   feeds: Array<{ feed_id: number; feed_major?: number }>;
   trading_symbols?: string[];
   /**
-   * Optional source-template reference in "username/name" form (matches
-   * playbook_templates PK, e.g. "alva/screener"). Persisted set-once on
-   * the playbook's first draft; subsequent drafts ignore the field.
+   * Optional source-skill reference in "username/name" form (e.g.
+   * "alva/screener"). Persisted set-once on the playbook's first draft;
+   * subsequent drafts ignore the field.
    */
-  template_id?: string;
+  skill_id?: string;
   /**
    * Optional discovery tags (max 10, each up to 32 characters). On a
    * playbook's first draft these merge with any template-inherited tags;

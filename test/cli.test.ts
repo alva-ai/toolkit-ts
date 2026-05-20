@@ -358,7 +358,7 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('dispatches release playbook-draft with --template-id', async () => {
+  it('dispatches release playbook-draft with --skill-id', async () => {
     const client = makeClient();
     await dispatch(client, [
       'release',
@@ -369,13 +369,13 @@ describe('CLI dispatch', () => {
       'BTC Trend Dashboard',
       '--feeds',
       '[{"feed_id":100}]',
-      '--template-id',
+      '--skill-id',
       'alva/screener',
     ]);
     expect(client.release.playbookDraft).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'btc-dashboard',
-        template_id: 'alva/screener',
+        skill_id: 'alva/screener',
       })
     );
   });

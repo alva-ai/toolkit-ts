@@ -5,34 +5,20 @@ import type {
   PlaybookSkillTagEntry,
 } from '../resources/playbookSkills.js';
 
-function pad(s: string, w: number): string {
-  return s + ' '.repeat(Math.max(0, w - s.length));
-}
-
 export function formatPlaybookSkillsList(result: {
   skills: PlaybookSkillSummary[];
 }): string {
   const skills = result.skills ?? [];
   if (skills.length === 0) return 'No playbook skills found.\n';
 
-  const rows = skills.map((s) => ({
-    id: `${s.username}/${s.name}`,
-    description: s.description ?? '',
-    tags: (s.tags ?? []).join(','),
-    updated_at: s.updated_at ?? '',
-  }));
-
-  const headers = ['USERNAME/NAME', 'DESCRIPTION', 'TAGS', 'UPDATED_AT'];
-  const keys = ['id', 'description', 'tags', 'updated_at'] as const;
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => r[keys[i]].length))
-  );
-
-  const lines = [
-    headers.map((h, i) => pad(h, widths[i])).join('  '),
-    widths.map((w) => '-'.repeat(w)).join('  '),
-    ...rows.map((r) => keys.map((k, i) => pad(r[k], widths[i])).join('  ')),
-  ];
+  const lines: string[] = [];
+  for (const s of skills) {
+    lines.push(`• ${s.username}/${s.name}`);
+    if (s.description) lines.push(`  ${s.description}`);
+    const tags = (s.tags ?? []).join(', ');
+    if (tags) lines.push(`  tags: ${tags}`);
+    if (s.updated_at) lines.push(`  updated: ${s.updated_at}`);
+  }
   return lines.join('\n') + '\n';
 }
 
