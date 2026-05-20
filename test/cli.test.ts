@@ -416,6 +416,29 @@ describe('CLI dispatch', () => {
 
   it('dispatches release playbook with --readme-url', async () => {
     const client = makeClient();
+    // The release-playbook code path now hard-gates on the design linter,
+    // which (a) reads ~/playbooks/<name>/index.html via ALFS and
+    // (b) fetches the active design contract from the CDN. Stub both so
+    // the test stays hermetic.
+    client.fs.read = vi
+      .fn()
+      .mockResolvedValue(
+        '<html><head><style>body{font-family:Delight}</style></head>' +
+          '<body><div class="playbook-container"><p>ok</p></div></body></html>'
+      );
+    const TEST_CONTRACT_YAML = `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(TEST_CONTRACT_YAML),
+    } as unknown as Response);
     await dispatch(client, [
       'release',
       'playbook',
@@ -439,6 +462,10 @@ describe('CLI dispatch', () => {
         readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
       })
     );
+    expect(client.fs.read).toHaveBeenCalledWith({
+      path: '~/playbooks/btc-dashboard/index.html',
+    });
+    fetchSpy.mockRestore();
   });
 
   it('dispatches sdk partitions', async () => {
@@ -1941,6 +1968,51 @@ components: {}
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain('required-container');
     nodeFs.unlinkSync(tmp);
+  });
+});
+
+describe('lintBeforeRelease', () => {
+  it('throws when HTML violates a rule', async () => {
+    const { lintBeforeRelease } = await import('../src/cli/lint.js');
+    const contractYaml = `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`;
+    await expect(
+      lintBeforeRelease({
+        client: {} as never,
+        playbookName: 'irrelevant',
+        contractYaml,
+        html: '<html><body><p>no container</p></body></html>',
+      })
+    ).rejects.toThrow(/Release blocked by design lint/);
+  });
+
+  it('returns the report when no errors', async () => {
+    const { lintBeforeRelease } = await import('../src/cli/lint.js');
+    const contractYaml = `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`;
+    const r = await lintBeforeRelease({
+      client: {} as never,
+      playbookName: 'x',
+      contractYaml,
+      html:
+        '<html><head><style>body{font-family:Delight}</style></head>' +
+        '<body><div class="playbook-container"><p>ok</p></div></body></html>',
+    });
+    expect(r.summary.errors).toBe(0);
   });
 });
 

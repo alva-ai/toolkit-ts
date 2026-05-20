@@ -1251,19 +1251,46 @@ export async function dispatch(
               ? (jsonParse(flags['tags']) as string[])
               : undefined,
           });
-        case 'playbook':
+        case 'playbook': {
+          // Validate all required flags up front so usage errors surface
+          // before any network/lint work runs.
+          const name = requireFlag(flags, 'name', 'release playbook');
+          const version = requireFlag(flags, 'version', 'release playbook');
+          const feedsRaw = requireFlag(flags, 'feeds', 'release playbook');
+          const changelog = requireFlag(
+            flags,
+            'changelog',
+            'release playbook'
+          );
+          const readmeUrl = requireFlag(
+            flags,
+            'readme-url',
+            'release playbook'
+          );
+          const { lintBeforeRelease } = await import('./lint.js');
+          const lintReport = await lintBeforeRelease({
+            client,
+            playbookName: name,
+          });
+          if (lintReport.summary.warnings > 0) {
+            const { formatReport } = await import('../lint/report.js');
+            process.stderr.write(
+              'design lint warnings:\n' +
+                formatReport(lintReport, 'human') +
+                '\n'
+            );
+          }
           return client.release.playbook({
-            name: requireFlag(flags, 'name', 'release playbook'),
-            version: requireFlag(flags, 'version', 'release playbook'),
-            feeds: jsonParse(
-              requireFlag(flags, 'feeds', 'release playbook')
-            ) as Array<{
+            name,
+            version,
+            feeds: jsonParse(feedsRaw) as Array<{
               feed_id: number;
               feed_major?: number;
             }>,
-            changelog: requireFlag(flags, 'changelog', 'release playbook'),
-            readme_url: requireFlag(flags, 'readme-url', 'release playbook'),
+            changelog,
+            readme_url: readmeUrl,
           });
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: release ${subcommand}`,
