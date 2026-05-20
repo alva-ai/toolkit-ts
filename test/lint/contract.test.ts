@@ -51,4 +51,46 @@ describe('loadContract', () => {
       loadContract(`version: 1\nglobal: {}\ncomponents:\n  bad: {}`)
     ).toThrow(/root/);
   });
+
+  it('loads new optional global fields', () => {
+    const c = loadContract(`
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography:
+    font-family-root-must-include: "Delight"
+    font-weight-allowed: [400, 500]
+    font-weight-restrictions:
+      - min-font-size-px: 24
+        allowed: [400]
+  links:
+    anchor-required-attrs: ["target", "rel"]
+    rel-must-contain: ["noopener", "noreferrer"]
+  required-stylesheets:
+    - url: "https://example.com/tokens.css"
+  anti-aliasing:
+    required-declarations:
+      - "-webkit-font-smoothing: antialiased"
+components: {}
+`);
+    expect(c.global.typography.fontWeightRestrictions).toEqual([
+      { minFontSizePx: 24, allowed: [400] },
+    ]);
+    expect(c.global.links.relMustContain).toEqual(['noopener', 'noreferrer']);
+    expect(c.global.requiredStylesheets).toEqual([
+      { url: 'https://example.com/tokens.css' },
+    ]);
+    expect(c.global.antiAliasing?.requiredDeclarations).toContain(
+      '-webkit-font-smoothing: antialiased'
+    );
+  });
+
+  it('keeps new optional fields undefined when absent', () => {
+    const c = loadContract(MIN_YAML);
+    expect(c.global.typography.fontWeightRestrictions).toBeUndefined();
+    expect(c.global.links.relMustContain).toBeUndefined();
+    expect(c.global.requiredStylesheets).toBeUndefined();
+    expect(c.global.antiAliasing).toBeUndefined();
+  });
 });

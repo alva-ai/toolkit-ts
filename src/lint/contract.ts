@@ -11,6 +11,11 @@ interface RawComponent {
   bindings?: Array<{ selector: string; 'require-class': string }>;
 }
 
+interface RawFontWeightRestriction {
+  'min-font-size-px': number;
+  allowed: number[];
+}
+
 interface RawYaml {
   version?: number;
   description?: string;
@@ -20,8 +25,14 @@ interface RawYaml {
     typography?: {
       'font-family-root-must-include': string;
       'font-weight-allowed': number[];
+      'font-weight-restrictions'?: RawFontWeightRestriction[];
     };
-    links?: { 'anchor-required-attrs': string[] };
+    links?: {
+      'anchor-required-attrs': string[];
+      'rel-must-contain'?: string[];
+    };
+    'required-stylesheets'?: { url: string }[];
+    'anti-aliasing'?: { 'required-declarations': string[] };
   };
   components?: Record<string, RawComponent>;
 }
@@ -69,6 +80,14 @@ export function loadContract(yamlStr: string): Contract {
   if (!typo) throw new Error('contract: missing global.typography');
   if (!links) throw new Error('contract: missing global.links');
 
+  const fontWeightRestrictions = typo['font-weight-restrictions']?.map((r) => ({
+    minFontSizePx: r['min-font-size-px'],
+    allowed: r.allowed,
+  }));
+
+  const requiredStylesheets = g['required-stylesheets'];
+  const antiAliasingRaw = g['anti-aliasing'];
+
   return {
     version: raw.version,
     description: raw.description,
@@ -81,8 +100,22 @@ export function loadContract(yamlStr: string): Contract {
       typography: {
         fontFamilyRootMustInclude: typo['font-family-root-must-include'],
         fontWeightAllowed: typo['font-weight-allowed'],
+        ...(fontWeightRestrictions ? { fontWeightRestrictions } : {}),
       },
-      links: { anchorRequiredAttrs: links['anchor-required-attrs'] },
+      links: {
+        anchorRequiredAttrs: links['anchor-required-attrs'],
+        ...(links['rel-must-contain']
+          ? { relMustContain: links['rel-must-contain'] }
+          : {}),
+      },
+      ...(requiredStylesheets ? { requiredStylesheets } : {}),
+      ...(antiAliasingRaw
+        ? {
+            antiAliasing: {
+              requiredDeclarations: antiAliasingRaw['required-declarations'],
+            },
+          }
+        : {}),
     },
     components,
   };

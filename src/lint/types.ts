@@ -30,6 +30,11 @@ export interface ComponentSpec {
   bindings?: BindingRule[];
 }
 
+export interface FontWeightRestriction {
+  minFontSizePx: number;
+  allowed: number[];
+}
+
 export interface Contract {
   version: number;
   description?: string;
@@ -39,8 +44,14 @@ export interface Contract {
     typography: {
       fontFamilyRootMustInclude: string;
       fontWeightAllowed: number[];
+      fontWeightRestrictions?: FontWeightRestriction[];
     };
-    links: { anchorRequiredAttrs: string[] };
+    links: {
+      anchorRequiredAttrs: string[];
+      relMustContain?: string[];
+    };
+    requiredStylesheets?: { url: string }[];
+    antiAliasing?: { requiredDeclarations: string[] };
   };
   components: ComponentSpec[];
 }

@@ -14,8 +14,22 @@ version: 1
 global:
   required-container: { selector: ".playbook-container", must-exist: true }
   scroll: { sole-scroll-container: ["body"] }
-  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
-  links: { anchor-required-attrs: ["target", "rel"] }
+  typography:
+    font-family-root-must-include: "Delight"
+    font-weight-allowed: [400, 500]
+    font-weight-restrictions:
+      - min-font-size-px: 24
+        allowed: [400]
+  links:
+    anchor-required-attrs: ["target", "rel"]
+    rel-must-contain: ["noopener", "noreferrer"]
+  required-stylesheets:
+    - url: "https://example.com/tokens.css"
+  anti-aliasing:
+    required-declarations:
+      - "-webkit-font-smoothing: antialiased"
+      - "-moz-osx-font-smoothing: grayscale"
+      - "text-rendering: optimizeLegibility"
 components: {}
 `;
 
@@ -39,5 +53,10 @@ describe('lint() integration', () => {
   it('bad/font-weight-700.html → reports font-weight-range', () => {
     const r = lint(read('bad/font-weight-700.html'), contract);
     expect(r.findings.map((f) => f.rule)).toContain('font-weight-range');
+  });
+
+  it('bad/missing-tokens-link.html → reports required-stylesheet', () => {
+    const r = lint(read('bad/missing-tokens-link.html'), contract);
+    expect(r.findings.map((f) => f.rule)).toContain('required-stylesheet');
   });
 });
