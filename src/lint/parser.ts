@@ -37,40 +37,58 @@ function parseStyleBlock(css: string): CssRule[] {
   return rules;
 }
 
-let keyCounter = 0;
-
-function walkElements(
-  el: HTMLElement,
-  out: InlineStyle[]
+/**
+ * Walk every element node in the parsed HTML tree in document order.
+ * Used by parseHtml() AND model.ts to guarantee identical walk order
+ * (so element-key alignment is preserved across the two passes).
+ *
+ * The optional `exit` callback fires after a node's children have been
+ * visited — useful for stack-based subtree tracking.
+ */
+export function walkTree(
+  rawHtml: string,
+  visit: (el: HTMLElement, depth: number) => void,
+  exit?: (el: HTMLElement, depth: number) => void
 ): void {
-  if (el.tagName) {
+  const root = parseHtmlTree(rawHtml, {
+    lowerCaseTagName: true,
+    comment: false,
+    blockTextElements: { style: true, script: true },
+  });
+  function rec(el: HTMLElement, depth: number): void {
+    if (el.tagName) visit(el, depth);
+    for (const child of el.childNodes) {
+      if (child instanceof HTMLElement) rec(child, depth + 1);
+    }
+    if (el.tagName && exit) exit(el, depth);
+  }
+  rec(root as unknown as HTMLElement, 0);
+}
+
+export function parseHtml(rawHtml: string): DomModel {
+  const elements: InlineStyle[] = [];
+  let keyCounter = 0;
+  walkTree(rawHtml, (el) => {
     const tag = el.tagName.toLowerCase();
     const classAttr = el.getAttribute('class') ?? '';
     const classes = classAttr.split(/\s+/).filter(Boolean);
     const attrs: Record<string, string> = {};
     for (const [k, v] of Object.entries(el.attributes)) attrs[k] = v as string;
-    out.push({
+    elements.push({
       elementKey: `el-${keyCounter++}`,
       tag,
       attrs,
       classes,
       declarations: parseInlineStyle(attrs.style),
     });
-  }
-  for (const child of el.childNodes) {
-    if (child instanceof HTMLElement) walkElements(child, out);
-  }
-}
+  });
 
-export function parseHtml(rawHtml: string): DomModel {
+  // Re-parse for style extraction (separate concern; not in walkTree)
   const root = parseHtmlTree(rawHtml, {
     lowerCaseTagName: true,
     comment: false,
     blockTextElements: { style: true, script: true },
   });
-  const elements: InlineStyle[] = [];
-  walkElements(root as unknown as HTMLElement, elements);
-
   const cssRules: CssRule[] = [];
   for (const styleEl of root.querySelectorAll('style')) {
     cssRules.push(...parseStyleBlock(styleEl.textContent ?? ''));
