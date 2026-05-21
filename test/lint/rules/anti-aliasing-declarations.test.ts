@@ -98,3 +98,29 @@ describe('anti-aliasing-declarations', () => {
     expect(findings[0]!.message).toContain('-webkit-font-smoothing');
   });
 });
+
+describe('anti-aliasing-declarations — canonical CSS auto-pass', () => {
+  const CONTRACT_WITH_CANONICAL: Contract = {
+    ...CONTRACT,
+    global: {
+      ...CONTRACT.global,
+      antiAliasing: {
+        requiredDeclarations: ['-webkit-font-smoothing: antialiased'],
+      },
+      canonicalCssUrls: ['https://x.example/v1/full.css'],
+    },
+  };
+
+  it('passes when canonical CSS is linked, even without the declarations inline', () => {
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
+      CONTRACT_WITH_CANONICAL
+    );
+    expect(antiAliasingDeclarations(m, CONTRACT_WITH_CANONICAL)).toEqual([]);
+  });
+
+  it('still fails when canonical CSS is NOT linked and declarations are missing', () => {
+    const m = buildModel(parseHtml('<body></body>'), CONTRACT_WITH_CANONICAL);
+    expect(antiAliasingDeclarations(m, CONTRACT_WITH_CANONICAL)).toHaveLength(1);
+  });
+});
