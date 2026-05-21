@@ -52,7 +52,9 @@ describe('font-family-root — canonical CSS auto-pass', () => {
 
   it('passes when canonical CSS is linked even without inline root font-family', () => {
     const m = buildModel(
-      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css"><body></body>'),
+      parseHtml(
+        '<link rel="stylesheet" href="https://x.example/v1/full.css"><body></body>'
+      ),
       CONTRACT_WITH_CANONICAL
     );
     expect(fontFamilyRoot(m, CONTRACT_WITH_CANONICAL)).toEqual([]);

@@ -121,6 +121,8 @@ describe('anti-aliasing-declarations — canonical CSS auto-pass', () => {
 
   it('still fails when canonical CSS is NOT linked and declarations are missing', () => {
     const m = buildModel(parseHtml('<body></body>'), CONTRACT_WITH_CANONICAL);
-    expect(antiAliasingDeclarations(m, CONTRACT_WITH_CANONICAL)).toHaveLength(1);
+    expect(antiAliasingDeclarations(m, CONTRACT_WITH_CANONICAL)).toHaveLength(
+      1
+    );
   });
 });
