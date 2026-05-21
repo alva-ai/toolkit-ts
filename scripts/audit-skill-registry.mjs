@@ -33,10 +33,12 @@ const REPORT_PATH =
 const APPLY = process.argv.includes('--apply');
 
 function parseLocalEntries(text) {
-  // Tolerates an optional leading `// ...` comment line (e.g. the
-  // `TODO(audit)` marker that --apply writes into auto-added blocks).
+  // Tolerates an optional leading `// ...` comment line (the `TODO(audit)`
+  // marker that --apply writes into auto-added blocks) and consumes nested
+  // single-quoted string literals atomically so a `}` inside a `path:`
+  // value such as `/api/v1/.../{var}` does not terminate the block early.
   const re =
-    /\{\s*(?:\/\/[^\n]*\n\s*)*skill:\s*'([^']+)',\s*file:\s*'([^']+)',\s*method:\s*'([^']+)',\s*path:\s*'([^']+)',[^}]*\}/g;
+    /\{\s*(?:\/\/[^\n]*\n\s*)*skill:\s*'([^']+)',\s*file:\s*'([^']+)',\s*method:\s*'([^']+)',\s*path:\s*'([^']+)',(?:'[^']*'|[^}])*\}/g;
   const out = [];
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -103,13 +105,22 @@ function extractBackendFiles(content) {
   return files;
 }
 
-// Extract the canonical `METHOD /api/v1/...` for a missing file from its
-// endpoint doc. Falls back to GET + path guessed from the skill summary table.
+// Extract the canonical `METHOD /api/v1/...` for a file from its endpoint
+// doc. Endpoint docs are inconsistent: some open with the absolute path
+// (`GET /api/v1/social-feeds/x/by-handle`), others with a relative path
+// (`GET crypto/detail`). Tries both shapes, then falls back to whatever
+// the caller resolved from the skill's summary table.
+const KNOWN_PREFIXES =
+  /^(crypto|stocks|polymarket|x|news|social-feeds|macro)\b/;
+
 function extractMethodAndPath(endpointContent, fallbackPath) {
-  // Match e.g. ``GET /api/v1/crypto/binance/spot/usdt/kline`` or
-  // ``\nGET /api/v1/...`` near the top of the doc.
-  const m = endpointContent.match(/\b(GET|POST)\s+(\/api\/v1\/[^\s`?\n]+)/);
+  // Absolute form.
+  let m = endpointContent.match(/\b(GET|POST)\s+(\/api\/v1\/[^\s`?\n]+)/);
   if (m) return { method: m[1], path: m[2] };
+  // Relative form anchored on a known top-level segment.
+  m = endpointContent.match(/\b(GET|POST)\s+([a-z][a-z0-9_\-/{}.]*)/);
+  if (m && KNOWN_PREFIXES.test(m[2]))
+    return { method: m[1], path: `/api/v1/${m[2]}` };
   if (fallbackPath) return { method: 'GET', path: fallbackPath };
   return null;
 }
@@ -152,11 +163,27 @@ function buildBlock(entry) {
 function removeStaleBlocks(text, stale) {
   let out = text;
   for (const e of stale) {
+    // (?:'[^']*'|[^}])* consumes nested single-quoted strings atomically so
+    // a `}` inside a path like `/.../{var}` does not terminate the block.
     const re = new RegExp(
-      `\\s*\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${e.skill}',\\s*file:\\s*'${e.file}',[^}]*pro_required:\\s*(?:true|false),?\\s*\\},?`,
+      `\\s*\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${e.skill}',\\s*file:\\s*'${e.file}',(?:'[^']*'|[^}])*pro_required:\\s*(?:true|false),?\\s*\\},?`,
       'g'
     );
     out = out.replace(re, '');
+  }
+  return out;
+}
+
+function applyMethodPathFixes(text, mismatched) {
+  let out = text;
+  for (const m of mismatched) {
+    // Match only the `method: '...',\s*path: '...'` slice of the row so
+    // hand-tuned tier fields are preserved across an auto-fix.
+    const re = new RegExp(
+      `(\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${m.skill}',\\s*file:\\s*'${m.file}',\\s*method:\\s*)'[^']*'(,\\s*path:\\s*)'[^']*'`,
+      'g'
+    );
+    out = out.replace(re, `$1'${m.backend.method}'$2'${m.backend.path}'`);
   }
   return out;
 }
@@ -182,11 +209,46 @@ async function main() {
   console.error(`parsed ${entries.length} local entries`);
 
   const stale = [];
+  const mismatched = []; // { ...entry, backend: { method, path } }
   const errs = [];
   for (const e of entries) {
     const status = await endpointExists(e.skill, e.file);
-    if (status === 'NOT_FOUND') stale.push(e);
-    else if (status !== 'OK') errs.push({ ...e, status });
+    if (status === 'NOT_FOUND') {
+      stale.push(e);
+      continue;
+    }
+    if (status !== 'OK') {
+      errs.push({ ...e, status });
+      continue;
+    }
+    // Verify method/path against the endpoint doc — without this an
+    // existing row can drift to a bogus path silently while still
+    // "existing" on the backend.
+    //
+    // Skip rows whose local path is a templated wrapper like
+    // `/api/v1/stocks/screener/basic-info/{sub}` — those intentionally
+    // alias multiple real endpoints (country/exchange/sector/industry),
+    // and the backend doc lists the concrete ones, so a strict compare
+    // would always misfire.
+    if (e.path.includes('{')) continue;
+    const doc = await endpointDocContent(e.skill, e.file);
+    // Collect every method/path declared in the doc — both absolute
+    // (`GET /api/v1/...`) and relative (`GET crypto/detail`) forms.
+    const backendPairs = [
+      ...doc.matchAll(/\b(GET|POST)\s+(\/api\/v1\/[^\s`?\n]+)/g),
+    ].map((m) => ({ method: m[1], path: m[2] }));
+    for (const rel of doc.matchAll(/\b(GET|POST)\s+([a-z][a-z0-9_\-/{}.]*)/g)) {
+      if (KNOWN_PREFIXES.test(rel[2])) {
+        backendPairs.push({ method: rel[1], path: `/api/v1/${rel[2]}` });
+      }
+    }
+    if (backendPairs.length === 0) continue;
+    const match = backendPairs.find(
+      (p) => p.method === e.method && p.path === e.path
+    );
+    if (!match) {
+      mismatched.push({ ...e, backend: backendPairs[0] });
+    }
   }
 
   // Enumerate the backend universe, not just skills that already appear
@@ -231,7 +293,10 @@ async function main() {
   }
 
   const ok =
-    stale.length === 0 && resolvedMissing.length === 0 && errs.length === 0;
+    stale.length === 0 &&
+    mismatched.length === 0 &&
+    resolvedMissing.length === 0 &&
+    errs.length === 0;
   const lines = [];
   lines.push(`# Skill registry audit — ${new Date().toISOString()}`);
   lines.push('');
@@ -251,6 +316,19 @@ async function main() {
     lines.push('|---|---|---|');
     for (const e of stale)
       lines.push(`| \`${e.skill}\` | \`${e.file}\` | \`${e.path}\` |`);
+    lines.push('');
+  }
+  if (mismatched.length > 0) {
+    lines.push(
+      `## Mismatched (${mismatched.length}) — local method/path differs from backend`
+    );
+    lines.push('');
+    lines.push('| skill | file | local | backend |');
+    lines.push('|---|---|---|---|');
+    for (const e of mismatched)
+      lines.push(
+        `| \`${e.skill}\` | \`${e.file}\` | ${e.method} \`${e.path}\` | ${e.backend.method} \`${e.backend.path}\` |`
+      );
     lines.push('');
   }
   if (resolvedMissing.length > 0) {
@@ -301,10 +379,11 @@ async function main() {
 
   if (!ok && APPLY) {
     let patched = removeStaleBlocks(text, stale);
+    patched = applyMethodPathFixes(patched, mismatched);
     patched = appendNewBlocks(patched, resolvedMissing);
     writeFileSync(SRC, patched);
     console.error(
-      `applied: removed ${stale.length} stale, appended ${resolvedMissing.length} missing`
+      `applied: removed ${stale.length} stale, rewrote ${mismatched.length} mismatched, appended ${resolvedMissing.length} missing`
     );
   }
   if (!ok) process.exit(1);

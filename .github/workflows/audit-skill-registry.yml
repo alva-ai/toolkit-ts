@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # needed to dispatch ci.yml on the fix branch
 
 concurrency:
   group: audit-skill-registry
@@ -83,6 +84,12 @@ jobs:
             gh pr create --title "$TITLE" --body-file audit-report.md \
               --head "$BRANCH" --base main
           fi
+
+          # GITHUB_TOKEN-driven pushes do NOT trigger pull_request / push
+          # workflows on the fix branch, so required checks would never run.
+          # workflow_dispatch IS the documented exception that fires even
+          # when caused by GITHUB_TOKEN, so explicitly dispatch CI here.
+          gh workflow run ci.yml --ref "$BRANCH"
 
       - name: Fail if drift
         if: steps.audit.outputs.exit_code != '0'
