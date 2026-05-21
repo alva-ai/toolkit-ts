@@ -142,9 +142,13 @@ global:
 components: {}
 `);
     expect(c.global.requiredStylesheets).toEqual([
-      { urls: ['https://x.example/legacy.css', 'https://x.example/v1/full.css'] },
+      {
+        urls: ['https://x.example/legacy.css', 'https://x.example/v1/full.css'],
+      },
     ]);
-    expect(c.global.canonicalCssUrls).toEqual(['https://x.example/v1/full.css']);
+    expect(c.global.canonicalCssUrls).toEqual([
+      'https://x.example/v1/full.css',
+    ]);
   });
 
   it('loads legacy single-url shape as a one-element any-of', () => {

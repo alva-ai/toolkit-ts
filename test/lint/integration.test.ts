@@ -24,7 +24,11 @@ global:
     anchor-required-attrs: ["target", "rel"]
     rel-must-contain: ["noopener", "noreferrer"]
   required-stylesheets:
-    - url: "https://example.com/tokens.css"
+    - any-of:
+        - url: "https://example.com/tokens.css"
+        - url: "https://example.com/v1/full.css"
+  canonical-css-urls:
+    - "https://example.com/v1/full.css"
   anti-aliasing:
     required-declarations:
       - "-webkit-font-smoothing: antialiased"
