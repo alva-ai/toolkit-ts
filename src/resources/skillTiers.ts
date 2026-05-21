@@ -1052,6 +1052,50 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     access: 'pro_only',
     pro_required: true,
   },
+  {
+    // TODO(audit): verify tier — auto-defaulted to pro
+    skill: 'arrays-data-api-social-feeds',
+    file: 'x-by-handle',
+    method: 'GET',
+    path: '/api/v1/social-feeds/x/by-handle',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
+  {
+    // TODO(audit): verify tier — auto-defaulted to pro
+    skill: 'arrays-data-api-social-feeds',
+    file: 'x-by-url',
+    method: 'GET',
+    path: '/api/v1/social-feeds/x/by-url',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
+  {
+    // TODO(audit): verify tier — auto-defaulted to pro
+    skill: 'arrays-data-api-social-feeds',
+    file: 'x-entities-handle',
+    method: 'GET',
+    path: '/api/v1/social-feeds/x/entities/handle/{twitter_handle}',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
+  {
+    // TODO(audit): verify tier — auto-defaulted to pro
+    skill: 'arrays-data-api-social-feeds',
+    file: 'x-entities-handles',
+    method: 'GET',
+    path: '/api/v1/social-feeds/x/entities/handles',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
 ];
 
 export function getSkillEndpointMetadata(
