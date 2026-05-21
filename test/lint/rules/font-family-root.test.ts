@@ -40,3 +40,26 @@ describe('font-family-root', () => {
     expect(fontFamilyRoot(m, CONTRACT)).toHaveLength(1);
   });
 });
+
+describe('font-family-root — canonical CSS auto-pass', () => {
+  const CONTRACT_WITH_CANONICAL: Contract = {
+    ...CONTRACT,
+    global: {
+      ...CONTRACT.global,
+      canonicalCssUrls: ['https://x.example/v1/full.css'],
+    },
+  };
+
+  it('passes when canonical CSS is linked even without inline root font-family', () => {
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css"><body></body>'),
+      CONTRACT_WITH_CANONICAL
+    );
+    expect(fontFamilyRoot(m, CONTRACT_WITH_CANONICAL)).toEqual([]);
+  });
+
+  it('still fails when canonical CSS is NOT linked and inline is missing', () => {
+    const m = buildModel(parseHtml('<body></body>'), CONTRACT_WITH_CANONICAL);
+    expect(fontFamilyRoot(m, CONTRACT_WITH_CANONICAL)).toHaveLength(1);
+  });
+});
