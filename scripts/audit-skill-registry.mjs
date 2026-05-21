@@ -33,8 +33,10 @@ const REPORT_PATH =
 const APPLY = process.argv.includes('--apply');
 
 function parseLocalEntries(text) {
+  // Tolerates an optional leading `// ...` comment line (e.g. the
+  // `TODO(audit)` marker that --apply writes into auto-added blocks).
   const re =
-    /\{\s*skill:\s*'([^']+)',\s*file:\s*'([^']+)',\s*method:\s*'([^']+)',\s*path:\s*'([^']+)',[^}]*\}/g;
+    /\{\s*(?:\/\/[^\n]*\n\s*)*skill:\s*'([^']+)',\s*file:\s*'([^']+)',\s*method:\s*'([^']+)',\s*path:\s*'([^']+)',[^}]*\}/g;
   const out = [];
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -82,6 +84,13 @@ async function endpointDocContent(skill, file) {
   const { json } = await getJson(url);
   const doc = Array.isArray(json?.data) ? json.data[0] : null;
   return doc?.content ?? '';
+}
+
+async function listAllSkills() {
+  const url = `${BASE}/api/v1/skills`;
+  const { json } = await getJson(url);
+  const arr = Array.isArray(json?.data) ? json.data : [];
+  return arr.map((s) => s.name).filter(Boolean);
 }
 
 function extractBackendFiles(content) {
@@ -144,7 +153,7 @@ function removeStaleBlocks(text, stale) {
   let out = text;
   for (const e of stale) {
     const re = new RegExp(
-      `\\s*\\{\\s*skill:\\s*'${e.skill}',\\s*file:\\s*'${e.file}',[^}]*pro_required:\\s*(?:true|false),?\\s*\\},?`,
+      `\\s*\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${e.skill}',\\s*file:\\s*'${e.file}',[^}]*pro_required:\\s*(?:true|false),?\\s*\\},?`,
       'g'
     );
     out = out.replace(re, '');
@@ -180,7 +189,12 @@ async function main() {
     else if (status !== 'OK') errs.push({ ...e, status });
   }
 
-  const skills = [...new Set(entries.map((e) => e.skill))];
+  // Enumerate the backend universe, not just skills that already appear
+  // locally — a skill with zero local rows would otherwise be invisible.
+  const backendSkills = await listAllSkills();
+  const skills = [
+    ...new Set([...backendSkills, ...entries.map((e) => e.skill)]),
+  ];
   const missing = []; // { skill, file }
   const summaryBySkill = new Map();
   for (const skill of skills) {
