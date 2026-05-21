@@ -13,6 +13,7 @@ export default defineConfig([
     clean: true,
     target: 'node18',
     define,
+    external: ['css-tree', 'yaml'],
   },
   {
     entry: { cli: 'src/cli/index.ts' },
@@ -22,6 +23,7 @@ export default defineConfig([
     target: 'node18',
     banner: { js: '#!/usr/bin/env node' },
     define,
+    external: ['css-tree', 'yaml'],
   },
   {
     entry: { browser: 'src/browser.ts' },

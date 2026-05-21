@@ -19,6 +19,7 @@ export function fontFamilyRoot(
   contract: Contract
 ): Finding[] {
   const required = contract.global.typography.fontFamilyRootMustInclude;
+  if (!required) return [];
   for (const rule of model.dom.cssRules) {
     const sel = rule.selectorText.trim().toLowerCase();
     if (!ROOT_SELECTORS.has(sel)) continue;
