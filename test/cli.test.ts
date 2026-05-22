@@ -61,6 +61,9 @@ function makeClient(): AlvaClient {
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
   client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+  client.playbooks.trending = vi
+    .fn()
+    .mockResolvedValue({ playbooks: [], has_next: false });
   client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
@@ -318,6 +321,32 @@ describe('CLI dispatch', () => {
     await expect(
       dispatch(client, ['feed', 'delete', '--id', 'abc'])
     ).rejects.toThrow("--id must be a number for 'feed delete', got 'abc'");
+  });
+
+  it('dispatches playbooks trending with agent-friendly filters', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'playbooks',
+      'trending',
+      '--keyword',
+      'scanner',
+      '--tags',
+      'macro,ai',
+      '--sort',
+      'recent',
+      '--limit',
+      '5',
+      '--cursor',
+      'abc',
+    ]);
+    expect(client.playbooks.trending).toHaveBeenCalledWith({
+      keyword: 'scanner',
+      tags: ['macro', 'ai'],
+      sort: 'RECENT',
+      limit: 5,
+      cursor: 'abc',
+      current: undefined,
+    });
   });
 
   it('dispatches release feed', async () => {
@@ -1439,6 +1468,7 @@ describe('help-text drift guard', () => {
       'run-logs',
     ],
     release: ['feed', 'playbook-draft', 'playbook'],
+    playbooks: ['trending'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
     'data-skills': ['list', 'summary', 'endpoint'],

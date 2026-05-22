@@ -94,6 +94,17 @@ alva skillhub file alva/ai-digest references/api/example.md > out.md
 By default output is pretty-printed for humans. Pass `--json` to get the
 raw `{success, data}` envelope (e.g. for piping into `jq`).
 
+### Playbook Discovery
+
+Discover public playbooks with a compact, agent-friendly result shape. The
+trending endpoint returns identifiers and ranking context, omitting
+frontend-only preview fields.
+
+```bash
+alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
+alva playbooks trending --tag btc --cursor <cursor>
+```
+
 ### Data Skills
 
 Browse the Arrays backend's data-skill documentation. These endpoints are
@@ -163,6 +174,7 @@ Add the browser bundle via a CDN:
 | `client.run`        | `execute()`                                                                                                                                                        |
 | `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
 | `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
+| `client.playbooks`  | `trending()`                                                                                                                                                       |
 | `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
 | `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
 | `client.comments`   | `create()`, `pin()`, `unpin()`                                                                                                                                     |
@@ -196,6 +208,7 @@ alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json>]
 alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
+alva playbooks <trending>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
 alva skillhub <list|tags|get|file> [<user>/<name>] [<file>] [--tag <t>] [--username <u>] [--json]

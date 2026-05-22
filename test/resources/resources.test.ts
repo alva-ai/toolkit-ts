@@ -3,6 +3,7 @@ import { UserResource } from '../../src/resources/user.js';
 import { RunResource } from '../../src/resources/run.js';
 import { ReleaseResource } from '../../src/resources/release.js';
 import { FeedResource } from '../../src/resources/feed.js';
+import { PlaybooksResource } from '../../src/resources/playbooks.js';
 import { SdkDocsResource } from '../../src/resources/sdkDocs.js';
 import { CommentsResource } from '../../src/resources/comments.js';
 import { RemixResource } from '../../src/resources/remix.js';
@@ -179,6 +180,76 @@ describe('FeedResource', () => {
       'feed id must be a positive integer'
     );
     expect(client._request).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlaybooksResource', () => {
+  it('trending() sends query params and returns slim agent-friendly items', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      playbooks: [
+        {
+          id: '42',
+          name: 'scanner',
+          display_name: 'Scanner',
+          description: 'Finds setups',
+          creator: { name: 'alice' },
+          tags: ['macro', 'ai'],
+          visibility: 'public',
+          follow_count: 7,
+          price_cents: 0,
+          currency: 'usd',
+          pricing_mode: 'ONE_TIME',
+          readme: '/alva/home/alice/playbooks/scanner/README.md',
+          cursor: 'cur42',
+          trading_symbols: ['BTC'],
+          uv: 100,
+          pv: 200,
+        },
+      ],
+      has_next: true,
+    });
+    const playbooks = new PlaybooksResource(client);
+
+    const result = await playbooks.trending({
+      keyword: 'scanner',
+      tags: ['macro', 'ai'],
+      sort: 'RECENT',
+      limit: 5,
+      cursor: 'abc',
+    });
+
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/playbooks/trending',
+      {
+        query: {
+          keyword: 'scanner',
+          tags: 'macro,ai',
+          sort: 'RECENT',
+          limit: 5,
+          cursor: 'abc',
+        },
+      }
+    );
+    expect(result).toEqual({
+      playbooks: [
+        {
+          id: '42',
+          ref: 'alice/scanner',
+          username: 'alice',
+          name: 'scanner',
+          display_name: 'Scanner',
+          description: 'Finds setups',
+          tags: ['macro', 'ai'],
+          follow_count: 7,
+          url_path: '/alice/playbooks/scanner',
+          readme: '/alva/home/alice/playbooks/scanner/README.md',
+          cursor: 'cur42',
+        },
+      ],
+      has_next: true,
+    });
   });
 });
 

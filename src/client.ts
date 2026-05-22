@@ -5,6 +5,7 @@ import { RunResource } from './resources/run.js';
 import { DeployResource } from './resources/deploy.js';
 import { ReleaseResource } from './resources/release.js';
 import { FeedResource } from './resources/feed.js';
+import { PlaybooksResource } from './resources/playbooks.js';
 import { SecretsResource } from './resources/secrets.js';
 import { SdkDocsResource } from './resources/sdkDocs.js';
 import { DataSkillsResource } from './resources/dataSkills.js';
@@ -46,6 +47,7 @@ export class AlvaClient {
   private _deploy?: DeployResource;
   private _release?: ReleaseResource;
   private _feed?: FeedResource;
+  private _playbooks?: PlaybooksResource;
   private _secrets?: SecretsResource;
   private _sdk?: SdkDocsResource;
   private _dataSkills?: DataSkillsResource;
@@ -81,6 +83,9 @@ export class AlvaClient {
   }
   get feed(): FeedResource {
     return (this._feed ??= new FeedResource(this));
+  }
+  get playbooks(): PlaybooksResource {
+    return (this._playbooks ??= new PlaybooksResource(this));
   }
   get secrets(): SecretsResource {
     return (this._secrets ??= new SecretsResource(this));
