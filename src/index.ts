@@ -45,3 +45,10 @@ export type {
   SkillMetadata,
   SkillSummary,
 } from './resources/dataSkills.js';
+export type {
+  TrendingPlaybookItem,
+  TrendingPlaybooksDir,
+  TrendingPlaybooksParams,
+  TrendingPlaybooksResponse,
+  TrendingPlaybooksSort,
+} from './resources/playbooks.js';

@@ -56,6 +56,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
+  playbooks   Playbook discovery (trending)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -360,6 +361,35 @@ Notes:
 
 Examples:
   alva feed delete --id 42`,
+
+  playbooks: `Usage: alva playbooks <subcommand> [options]
+
+Find public playbooks with an agent-friendly response shape.
+
+Subcommands:
+  trending    List trending playbooks
+
+Trending flags:
+  --keyword <text>       Search text
+  --tags <a,b>           Comma-separated tags
+  --tag <tag>            Single tag convenience alias
+  --sort <sort>          FOLLOWS or RECENT (case-insensitive)
+  --limit <n>            Max results per page
+  --cursor <cursor>      Pagination cursor from previous response
+  --current <cursor>     Backward-compatible cursor alias
+
+Response fields:
+  playbooks[].ref          "username/name" identifier for agents
+  playbooks[].url_path     Web path: /username/playbooks/name
+  playbooks[].description  Short summary
+  playbooks[].tags         Discovery tags
+  playbooks[].follow_count Social proof signal
+  playbooks[].cursor       Cursor for pagination
+  has_next                 Whether another page exists
+
+Examples:
+  alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
+  alva playbooks trending --tag btc --cursor abc`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -944,6 +974,27 @@ function num(val: string | undefined): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
+function csvList(val: string | undefined): string[] | undefined {
+  if (val === undefined) return undefined;
+  const values = val
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
+function trendingPlaybooksSort(
+  val: string | undefined
+): 'FOLLOWS' | 'RECENT' | undefined {
+  if (val === undefined) return undefined;
+  const normalized = val.trim().toUpperCase();
+  if (normalized === 'FOLLOWS' || normalized === 'RECENT') return normalized;
+  throw new CliUsageError(
+    `--sort must be FOLLOWS or RECENT for 'playbooks trending', got '${val}'`,
+    'playbooks'
+  );
+}
+
 function jsonParse(val: string | undefined): unknown {
   if (val === undefined) return undefined;
   try {
@@ -1210,6 +1261,30 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: feed ${subcommand}`,
             'feed'
+          );
+      }
+    }
+
+    case 'playbooks': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for playbooks',
+          'playbooks'
+        );
+      switch (subcommand) {
+        case 'trending':
+          return client.playbooks.trending({
+            keyword: flags['keyword'],
+            tags: csvList(flags['tags'] ?? flags['tag']),
+            sort: trendingPlaybooksSort(flags['sort']),
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+            current: flags['current'],
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: playbooks ${subcommand}`,
+            'playbooks'
           );
       }
     }
