@@ -2009,7 +2009,7 @@ components: {}
     expect(r.summary.errors).toBe(0);
   });
 
-  it('with force=true: does NOT throw, returns report, prints to stderr', async () => {
+  it('with bypassLint=true: does NOT throw, returns report, prints to stderr', async () => {
     const { lintBeforeRelease } = await import('../src/cli/lint.js');
     const contractYaml = `
 version: 1
@@ -2032,12 +2032,12 @@ components: {}
         client: {} as never,
         playbookName: 'irrelevant',
         contractYaml,
-        force: true,
+        bypassLint: true,
         html: '<html><body><p>no container</p></body></html>',
       });
       expect(r.summary.errors).toBeGreaterThan(0);
       const stderr = stderrChunks.join('');
-      expect(stderr).toMatch(/--force bypassing/);
+      expect(stderr).toMatch(/--bypass-lint bypassing/);
       expect(stderr).toMatch(/required-container/);
     } finally {
       process.stderr.write = origWrite;
