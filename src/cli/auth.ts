@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import { exec } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
+import * as readline from 'node:readline';
 import { writeConfig } from './config.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
 
@@ -50,6 +51,28 @@ export interface AuthLoginDeps {
   timeout?: number;
   log: (msg: string) => void;
   fetch: FetchLike;
+}
+
+/**
+ * Deps for the no-browser (Mode B) login flow. Reuses most of
+ * `AuthLoginDeps` for the shared pieces (state/verifier generation,
+ * writeConfigDeps, log, fetch) and adds:
+ *
+ * - `readline`: returns a single line of user input (already stripped
+ *   of the trailing newline). Injected so tests can drive the flow
+ *   without touching stdin.
+ * - `oobRedirectUrl`: the static "out-of-band" callback page where the
+ *   frontend displays the `code` for the user to copy. Used both in
+ *   the printed authorize URL and in the `/oauth/token` redirect_uri.
+ */
+export interface AuthLoginNoBrowserDeps {
+  generateState: () => string;
+  generateCodeVerifier: () => string;
+  writeConfigDeps: WriteConfigDeps;
+  log: (msg: string) => void;
+  fetch: FetchLike;
+  readline: (prompt?: string) => Promise<string>;
+  oobRedirectUrl: string;
 }
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
@@ -320,4 +343,128 @@ export async function handleAuthLogin(
       settle(() => reject(new Error('Login timed out waiting for callback')));
     }, timeout);
   });
+}
+
+const DEFAULT_OOB_REDIRECT_URL = 'https://alva.ai/oauth/code/callback';
+const MAX_PASTE_ATTEMPTS = 3;
+
+function defaultReadline(prompt?: string): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stderr,
+      terminal: false,
+    });
+    if (prompt) {
+      process.stderr.write(prompt);
+    }
+    rl.once('line', (line: string) => {
+      rl.close();
+      resolve(line);
+    });
+  });
+}
+
+function defaultNoBrowserDeps(): AuthLoginNoBrowserDeps {
+  return {
+    generateState,
+    generateCodeVerifier,
+    writeConfigDeps: {
+      env: process.env as Record<string, string | undefined>,
+      homedir: () => os.homedir(),
+      mkdir: (path: string, options: { recursive: boolean }) =>
+        fsPromises.mkdir(path, options).then(() => undefined),
+      writeFile: (path: string, data: string, options: { mode: number }) =>
+        fsPromises.writeFile(path, data, options).then(() => undefined),
+      readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
+    },
+    log: (msg: string) => process.stderr.write(msg),
+    fetch: ((url: string, init?: RequestInit) =>
+      (globalThis.fetch as unknown as FetchLike)(
+        url,
+        init as Parameters<FetchLike>[1]
+      )) as FetchLike,
+    readline: defaultReadline,
+    oobRedirectUrl: DEFAULT_OOB_REDIRECT_URL,
+  };
+}
+
+/**
+ * Mode B (`--no-browser`) login flow. Prints the authorize URL to stderr,
+ * asks the user to paste the `code` shown on the out-of-band callback
+ * page, then exchanges it for an API key via `/oauth/token`.
+ *
+ * Up to 3 paste attempts are allowed: on `invalid_grant` (most likely a
+ * mistyped/expired code) the user is re-prompted. Any non-invalid_grant
+ * error (network failure, 5xx, missing api_key, etc.) is surfaced
+ * immediately without retry.
+ */
+export async function handleAuthLoginNoBrowser(
+  args: string[],
+  deps?: Partial<AuthLoginNoBrowserDeps>
+): Promise<AuthLoginResult> {
+  const d = { ...defaultNoBrowserDeps(), ...deps };
+  const flags = parseFlags(args.slice(1));
+  const profileName = flags.profile || 'default';
+  const authUrl = flags['auth-url'] || DEFAULT_AUTH_URL;
+  const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
+  const oobRedirectUrl = d.oobRedirectUrl;
+
+  const state = d.generateState();
+  const codeVerifier = d.generateCodeVerifier();
+  const codeChallenge = deriveChallenge(codeVerifier);
+
+  const loginUrl = buildAuthorizeUrl({
+    authUrl,
+    redirectUri: oobRedirectUrl,
+    state,
+    codeChallenge,
+  });
+
+  d.log(
+    `Open this URL in any browser to log in:\n\n  ${loginUrl}\n\nAfter approving, paste the code shown on the page:\n`
+  );
+
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= MAX_PASTE_ATTEMPTS; attempt++) {
+    const raw = await d.readline();
+    // Strip whitespace and dashes (the OOB page may show ABCD-EFGH).
+    const code = raw.replace(/[\s-]+/g, '');
+
+    if (!code) {
+      lastErr = new Error('No code entered');
+      if (attempt < MAX_PASTE_ATTEMPTS) {
+        d.log("That code didn't work. Try again.\n");
+      }
+      continue;
+    }
+
+    try {
+      const apiKey = await exchangeCodeForApiKey({
+        baseUrl,
+        code,
+        codeVerifier,
+        redirectUri: oobRedirectUrl,
+        fetch: d.fetch,
+      });
+      await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+      return { status: 'logged_in', apiKey, profile: profileName };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Only retry on invalid_grant — other failures (network, 5xx, etc.)
+      // surface immediately so the user isn't stuck retyping a code that
+      // can never succeed.
+      if (!/invalid_grant/i.test(msg)) {
+        throw err instanceof Error ? err : new Error(msg);
+      }
+      lastErr = err instanceof Error ? err : new Error(msg);
+      if (attempt < MAX_PASTE_ATTEMPTS) {
+        d.log("That code didn't work. Try again.\n");
+      }
+    }
+  }
+
+  throw new Error(
+    `Login failed after ${MAX_PASTE_ATTEMPTS} attempts (${lastErr?.message ?? 'unknown error'}). Run \`alva auth login\` to start over.`
+  );
 }
