@@ -10,6 +10,7 @@ import { RemixResource } from '../../src/resources/remix.js';
 import { ScreenshotResource } from '../../src/resources/screenshot.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
 import { NotificationsResource } from '../../src/resources/notifications.js';
+import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 
@@ -369,6 +370,31 @@ describe('NotificationsResource', () => {
       'GET',
       '/api/v1/feed/alice/btc-ema/notifications',
       { query: {} }
+    );
+  });
+});
+
+describe('NotificationPreferencesResource', () => {
+  it('list() sends GET /api/v1/me/notifications/preferences', async () => {
+    const client = makeClient();
+    const preferences = new NotificationPreferencesResource(client);
+    await preferences.list();
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/me/notifications/preferences'
+    );
+  });
+
+  it('update() sends PATCH /api/v1/me/notifications/preferences/:key', async () => {
+    const client = makeClient();
+    const preferences = new NotificationPreferencesResource(client);
+    await preferences.update({ key: 'session_completed', enabled: false });
+    expect(client._request).toHaveBeenCalledWith(
+      'PATCH',
+      '/api/v1/me/notifications/preferences/session_completed',
+      {
+        body: { enabled: false },
+      }
     );
   });
 });

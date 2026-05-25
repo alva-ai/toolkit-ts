@@ -17,6 +17,7 @@ import { UserResource } from './resources/user.js';
 import { TradingResource } from './resources/trading.js';
 import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
+import { NotificationPreferencesResource } from './resources/notificationPreferences.js';
 import { PushSubscriptionsResource } from './resources/pushSubscriptions.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 
@@ -59,6 +60,7 @@ export class AlvaClient {
   private _trading?: TradingResource;
   private _arraysJwt?: ArraysJwtResource;
   private _notifications?: NotificationsResource;
+  private _notificationPreferences?: NotificationPreferencesResource;
   private _pushSubscriptions?: PushSubscriptionsResource;
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
 
@@ -119,6 +121,10 @@ export class AlvaClient {
   }
   get notifications(): NotificationsResource {
     return (this._notifications ??= new NotificationsResource(this));
+  }
+  get notificationPreferences(): NotificationPreferencesResource {
+    return (this._notificationPreferences ??=
+      new NotificationPreferencesResource(this));
   }
   get pushSubscriptions(): PushSubscriptionsResource {
     return (this._pushSubscriptions ??= new PushSubscriptionsResource(this));

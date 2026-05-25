@@ -559,6 +559,28 @@ export interface FeedNotificationListResponse {
   feed_path: string;
 }
 
+// --- Notification Preferences ---
+
+export type NotificationPreferenceKey = 'session_completed';
+
+export interface NotificationPreference {
+  key: NotificationPreferenceKey;
+  enabled: boolean;
+}
+
+export interface NotificationPreferencesResponse {
+  settings: NotificationPreference[];
+}
+
+export interface NotificationPreferenceUpdateParams {
+  key: NotificationPreferenceKey;
+  enabled: boolean;
+}
+
+export interface NotificationPreferenceUpdateResponse {
+  setting: NotificationPreference;
+}
+
 // --- Push Subscriptions ---
 
 /**

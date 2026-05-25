@@ -214,6 +214,7 @@ alva sdk <doc|partitions|partition-summary>
 alva skillhub <list|tags|get|file> [<user>/<name>] [<file>] [--tag <t>] [--username <u>] [--json]
 alva data-skills <list|summary|endpoint> [<skill>] [<file>] [--json]
 alva comments <create|pin|unpin>
+alva notification-preferences <list|enable-session-completed|disable-session-completed>
 alva remix --child-username <u> --child-name <n> --parents <json>
 alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
 alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
