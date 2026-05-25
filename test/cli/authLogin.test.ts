@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateState, handleAuthLogin } from '../src/cli/auth.js';
+import { generateState, handleAuthLogin } from '../../src/cli/auth.js';
+import { deriveChallenge } from '../../src/cli/pkce.js';
 import * as http from 'node:http';
 
 describe('generateState', () => {
@@ -19,22 +20,65 @@ function makeWriteConfigDeps() {
   };
 }
 
+interface FetchCall {
+  url: string;
+  init?: { method?: string; headers?: Record<string, string>; body?: string };
+}
+
+function makeFetchMock(
+  response: {
+    ok: boolean;
+    status?: number;
+    json?: () => Promise<unknown>;
+    text?: () => Promise<string>;
+  } = {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      api_key: 'alva_test123',
+      token_type: 'ApiKey',
+      scope: 'cli',
+    }),
+  }
+) {
+  const calls: FetchCall[] = [];
+  const fn = vi.fn(async (url: string, init?: FetchCall['init']) => {
+    calls.push({ url, init });
+    return {
+      ok: response.ok,
+      status: response.status ?? (response.ok ? 200 : 400),
+      json: response.json ?? (async () => ({})),
+      text: response.text ?? (async () => ''),
+    } as unknown as Response;
+  });
+  return { fn, calls };
+}
+
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const fixedState = 'a'.repeat(64);
+  // 43-char base64url verifier
+  const fixedVerifier = 'v'.repeat(43);
+  const fixedChallenge = deriveChallenge(fixedVerifier);
   const writeConfigDeps = makeWriteConfigDeps();
+  const fetchMock = makeFetchMock();
   let capturedUrl = '';
   return {
     fixedState,
+    fixedVerifier,
+    fixedChallenge,
     writeConfigDeps,
+    fetchMock,
     getCapturedUrl: () => capturedUrl,
     deps: {
       generateState: () => fixedState,
+      generateCodeVerifier: () => fixedVerifier,
       openBrowser: vi.fn().mockImplementation(async (url: string) => {
         capturedUrl = url;
       }),
       writeConfigDeps,
       timeout: 500,
       log: () => {},
+      fetch: fetchMock.fn,
       ...overrides,
     },
   };
@@ -67,20 +111,41 @@ function httpGet(url: string): Promise<{ statusCode: number; body: string }> {
 
 function extractPort(openedUrl: string): string {
   const url = new URL(openedUrl);
-  const callbackUrl = url.searchParams.get('callback_url') ?? '';
-  return new URL(callbackUrl).port;
+  const redirectUri = url.searchParams.get('redirect_uri') ?? '';
+  return new URL(redirectUri).port;
 }
 
-describe('handleAuthLogin', () => {
-  it('happy path: resolves with logged_in status when callback has valid api_key and state', async () => {
-    const { fixedState, writeConfigDeps, getCapturedUrl, deps } = makeDeps();
+describe('handleAuthLogin (PKCE Mode A)', () => {
+  it('happy path: receives code on callback, exchanges for api_key, writes config', async () => {
+    const {
+      fixedState,
+      fixedVerifier,
+      fixedChallenge,
+      writeConfigDeps,
+      fetchMock,
+      getCapturedUrl,
+      deps,
+    } = makeDeps();
 
     const loginPromise = handleAuthLogin(['auth', 'login'], deps);
     const openedUrl = await waitForServer(getCapturedUrl);
     const port = extractPort(openedUrl);
 
+    // Verify the authorize URL carries the PKCE + OAuth params
+    const parsed = new URL(openedUrl);
+    expect(parsed.pathname).toBe('/authorize');
+    expect(parsed.searchParams.get('response_type')).toBe('code');
+    expect(parsed.searchParams.get('client_id')).toBe('alva-cli');
+    expect(parsed.searchParams.get('redirect_uri')).toBe(
+      `http://127.0.0.1:${port}/callback`
+    );
+    expect(parsed.searchParams.get('code_challenge')).toBe(fixedChallenge);
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(parsed.searchParams.get('state')).toBe(fixedState);
+    expect(parsed.searchParams.get('scope')).toBe('cli');
+
     const res = await httpGet(
-      `http://127.0.0.1:${port}/callback?api_key=alva_abc&state=${fixedState}`
+      `http://127.0.0.1:${port}/callback?code=XYZ&state=${fixedState}`
     );
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('all set for Alva');
@@ -88,40 +153,56 @@ describe('handleAuthLogin', () => {
     const result = await loginPromise;
     expect(result).toEqual({
       status: 'logged_in',
-      apiKey: 'alva_abc',
+      apiKey: 'alva_test123',
       profile: 'default',
     });
     expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+
+    // Verify token exchange POST
+    expect(fetchMock.calls).toHaveLength(1);
+    const call = fetchMock.calls[0];
+    expect(call.url).toBe('https://api-llm.prd.alva.ai/oauth/token');
+    expect(call.init?.method).toBe('POST');
+    expect(call.init?.headers?.['Content-Type']).toBe('application/json');
+    const body = JSON.parse(call.init?.body ?? '{}');
+    expect(body).toEqual({
+      grant_type: 'authorization_code',
+      code: 'XYZ',
+      code_verifier: fixedVerifier,
+      redirect_uri: `http://127.0.0.1:${port}/callback`,
+      client_id: 'alva-cli',
+    });
   });
 
   it('state mismatch: responds 400 and promise stays pending', async () => {
-    const { getCapturedUrl, deps } = makeDeps({ timeout: 300 });
+    const { getCapturedUrl, fetchMock, deps } = makeDeps({ timeout: 300 });
 
     const loginPromise = handleAuthLogin(['auth', 'login'], deps);
     const openedUrl = await waitForServer(getCapturedUrl);
     const port = extractPort(openedUrl);
 
     const res = await httpGet(
-      `http://127.0.0.1:${port}/callback?api_key=alva_abc&state=wrong`
+      `http://127.0.0.1:${port}/callback?code=XYZ&state=wrong`
     );
     expect(res.statusCode).toBe(400);
     expect(res.body).toContain('State mismatch');
+    expect(fetchMock.calls).toHaveLength(0);
 
-    // Promise should not have resolved — race with a short timeout
     const raceResult = await Promise.race([
       loginPromise.then(() => 'resolved'),
       new Promise<string>((r) => setTimeout(() => r('pending'), 100)),
     ]);
     expect(raceResult).toBe('pending');
 
-    // Clean up: wait for the timeout rejection
     await loginPromise.catch(() => {
-      // Expected timeout
+      // expected timeout
     });
   });
 
-  it('missing api_key: responds 400 and promise stays pending', async () => {
-    const { fixedState, getCapturedUrl, deps } = makeDeps({ timeout: 300 });
+  it('missing code: responds 400 and promise stays pending', async () => {
+    const { fixedState, getCapturedUrl, fetchMock, deps } = makeDeps({
+      timeout: 300,
+    });
 
     const loginPromise = handleAuthLogin(['auth', 'login'], deps);
     const openedUrl = await waitForServer(getCapturedUrl);
@@ -131,7 +212,8 @@ describe('handleAuthLogin', () => {
       `http://127.0.0.1:${port}/callback?state=${fixedState}`
     );
     expect(res.statusCode).toBe(400);
-    expect(res.body).toContain('Missing API key');
+    expect(res.body).toContain('Missing');
+    expect(fetchMock.calls).toHaveLength(0);
 
     const raceResult = await Promise.race([
       loginPromise.then(() => 'resolved'),
@@ -140,8 +222,72 @@ describe('handleAuthLogin', () => {
     expect(raceResult).toBe('pending');
 
     await loginPromise.catch(() => {
-      // Expected timeout
+      // expected timeout
     });
+  });
+
+  it('error= on callback: rejects with the OAuth error', async () => {
+    const { fixedState, getCapturedUrl, fetchMock, deps } = makeDeps();
+
+    const loginPromise = handleAuthLogin(['auth', 'login'], deps);
+    // Attach a handler eagerly so the rejection isn't briefly "unhandled"
+    // between the synchronous reject inside the request callback and the
+    // later `expect(...).rejects` assertion.
+    const settled = loginPromise.then(
+      (v) => ({ ok: true, v }) as const,
+      (e) => ({ ok: false, e: e as Error }) as const
+    );
+    const openedUrl = await waitForServer(getCapturedUrl);
+    const port = extractPort(openedUrl);
+
+    await httpGet(
+      `http://127.0.0.1:${port}/callback?error=access_denied&state=${fixedState}`
+    );
+
+    const outcome = await settled;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.e.message).toMatch(/access_denied/);
+    }
+    expect(fetchMock.calls).toHaveLength(0);
+  });
+
+  it('token exchange returns invalid_grant: rejects, no config written', async () => {
+    const fetchMock = makeFetchMock({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: 'invalid_grant',
+        error_description: 'code expired',
+      }),
+      text: async () =>
+        JSON.stringify({
+          error: 'invalid_grant',
+          error_description: 'code expired',
+        }),
+    });
+    const { fixedState, writeConfigDeps, getCapturedUrl, deps } = makeDeps({
+      fetch: fetchMock.fn,
+    });
+
+    const loginPromise = handleAuthLogin(['auth', 'login'], deps);
+    const settled = loginPromise.then(
+      (v) => ({ ok: true, v }) as const,
+      (e) => ({ ok: false, e: e as Error }) as const
+    );
+    const openedUrl = await waitForServer(getCapturedUrl);
+    const port = extractPort(openedUrl);
+
+    await httpGet(
+      `http://127.0.0.1:${port}/callback?code=XYZ&state=${fixedState}`
+    );
+
+    const outcome = await settled;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.e.message).toMatch(/invalid_grant/);
+    }
+    expect(writeConfigDeps.writeFile).not.toHaveBeenCalled();
   });
 
   it('timeout: rejects with timeout error when no callback received', async () => {
@@ -163,7 +309,7 @@ describe('handleAuthLogin', () => {
     const port = extractPort(openedUrl);
 
     await httpGet(
-      `http://127.0.0.1:${port}/callback?api_key=alva_abc&state=${fixedState}`
+      `http://127.0.0.1:${port}/callback?code=XYZ&state=${fixedState}`
     );
 
     const result = await loginPromise;
@@ -186,38 +332,43 @@ describe('handleAuthLogin', () => {
     expect(openedUrl).toContain('http://localhost:3000/authorize?');
 
     await loginPromise.catch(() => {
-      // Timeout cleanup
+      // timeout cleanup
     });
   });
 
-  it('openBrowser success: exec called with URL', async () => {
-    const { getCapturedUrl, deps } = makeDeps({ timeout: 300 });
+  it('--base-url flag: posts token exchange to custom base URL', async () => {
+    const { fixedState, fetchMock, getCapturedUrl, deps } = makeDeps();
 
-    const loginPromise = handleAuthLogin(['auth', 'login'], deps);
-    await waitForServer(getCapturedUrl);
+    const loginPromise = handleAuthLogin(
+      ['auth', 'login', '--base-url', 'http://localhost:8080'],
+      deps
+    );
+    const openedUrl = await waitForServer(getCapturedUrl);
+    const port = extractPort(openedUrl);
 
-    expect(deps.openBrowser).toHaveBeenCalledTimes(1);
-    const url = deps.openBrowser.mock.calls[0][0] as string;
-    expect(url).toContain('/authorize?');
-    expect(url).toContain('callback_url=');
-    expect(url).toContain('state=');
+    await httpGet(
+      `http://127.0.0.1:${port}/callback?code=XYZ&state=${fixedState}`
+    );
+    await loginPromise;
 
-    await loginPromise.catch(() => {
-      // Timeout cleanup
-    });
+    expect(fetchMock.calls[0].url).toBe('http://localhost:8080/oauth/token');
   });
 
   it('openBrowser failure with successful callback still works', async () => {
     let capturedPort = 0;
     const fixedState = 'a'.repeat(64);
+    const fixedVerifier = 'v'.repeat(43);
     const writeConfigDeps = makeWriteConfigDeps();
+    const fetchMock = makeFetchMock();
 
     const deps = {
       generateState: () => fixedState,
+      generateCodeVerifier: () => fixedVerifier,
       openBrowser: vi.fn().mockRejectedValue(new Error('no browser')),
       writeConfigDeps,
       timeout: 2000,
       log: () => {},
+      fetch: fetchMock.fn,
       createServer: (handler: http.RequestListener) => {
         const server = http.createServer(handler);
         const origListen = server.listen.bind(server);
@@ -236,19 +387,17 @@ describe('handleAuthLogin', () => {
     const loginPromise = handleAuthLogin(['auth', 'login'], deps);
     await new Promise((r) => setTimeout(r, 100));
 
-    // Server started despite browser error
     expect(capturedPort).toBeGreaterThan(0);
 
-    // Callback still works
     const res = await httpGet(
-      `http://127.0.0.1:${capturedPort}/callback?api_key=alva_key&state=${fixedState}`
+      `http://127.0.0.1:${capturedPort}/callback?code=XYZ&state=${fixedState}`
     );
     expect(res.statusCode).toBe(200);
 
     const result = await loginPromise;
     expect(result).toEqual({
       status: 'logged_in',
-      apiKey: 'alva_key',
+      apiKey: 'alva_test123',
       profile: 'default',
     });
   });

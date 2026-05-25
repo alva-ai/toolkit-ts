@@ -4,6 +4,7 @@ import { exec } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import { writeConfig } from './config.js';
+import { generateCodeVerifier, deriveChallenge } from './pkce.js';
 
 export function generateState(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -21,14 +22,40 @@ interface WriteConfigDeps {
   readFile: (path: string) => Promise<string>;
 }
 
+/**
+ * Minimal fetch-like surface used by the auth flow so tests can inject a mock
+ * without touching the network. Mirrors the subset of `globalThis.fetch` we
+ * actually call.
+ */
+export type FetchLike = (
+  url: string,
+  init?: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }
+) => Promise<{
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+  text: () => Promise<string>;
+}>;
+
 export interface AuthLoginDeps {
   generateState: () => string;
+  generateCodeVerifier: () => string;
   openBrowser: (url: string) => Promise<void>;
   writeConfigDeps: WriteConfigDeps;
   createServer: (handler: http.RequestListener) => http.Server;
   timeout?: number;
   log: (msg: string) => void;
+  fetch: FetchLike;
 }
+
+const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
+const DEFAULT_AUTH_URL = 'https://alva.ai';
+const CLIENT_ID = 'alva-cli';
+const SCOPE = 'cli';
 
 function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
@@ -67,6 +94,7 @@ function defaultOpenBrowser(url: string): Promise<void> {
 function defaultDeps(): AuthLoginDeps {
   return {
     generateState,
+    generateCodeVerifier,
     openBrowser: defaultOpenBrowser,
     writeConfigDeps: {
       env: process.env as Record<string, string | undefined>,
@@ -80,6 +108,13 @@ function defaultDeps(): AuthLoginDeps {
     createServer: (handler: http.RequestListener) => http.createServer(handler),
     timeout: 120_000,
     log: (msg: string) => process.stderr.write(msg),
+    fetch: ((url: string, init?: RequestInit) =>
+      // Node 18+ provides a global fetch; cast through unknown for the
+      // narrowed FetchLike surface.
+      (globalThis.fetch as unknown as FetchLike)(
+        url,
+        init as Parameters<FetchLike>[1]
+      )) as FetchLike,
   };
 }
 
@@ -89,6 +124,89 @@ export interface AuthLoginResult {
   profile: string;
 }
 
+/**
+ * Build the `${authUrl}/authorize?...` URL the user is sent to (Mode A and
+ * Mode B share this builder; only the `redirect_uri` differs).
+ *
+ * Exported so T14 (no-browser mode) can reuse without duplicating the
+ * encoding logic.
+ */
+export function buildAuthorizeUrl(params: {
+  authUrl: string;
+  redirectUri: string;
+  state: string;
+  codeChallenge: string;
+}): string {
+  const u = new URL(`${params.authUrl.replace(/\/$/, '')}/authorize`);
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('client_id', CLIENT_ID);
+  u.searchParams.set('redirect_uri', params.redirectUri);
+  u.searchParams.set('code_challenge', params.codeChallenge);
+  u.searchParams.set('code_challenge_method', 'S256');
+  u.searchParams.set('state', params.state);
+  u.searchParams.set('scope', SCOPE);
+  return u.toString();
+}
+
+/**
+ * Exchange a short-lived OAuth `code` for a real API key by POSTing to
+ * `${baseUrl}/oauth/token` with PKCE verifier.
+ *
+ * Exported so T14 (no-browser mode) can reuse without duplicating the
+ * request/response shape and error handling.
+ *
+ * Throws on non-2xx or on missing `api_key` in the response.
+ */
+export async function exchangeCodeForApiKey(params: {
+  baseUrl: string;
+  code: string;
+  codeVerifier: string;
+  redirectUri: string;
+  fetch: FetchLike;
+}): Promise<string> {
+  const tokenUrl = `${params.baseUrl.replace(/\/$/, '')}/oauth/token`;
+  const res = await params.fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      code: params.code,
+      code_verifier: params.codeVerifier,
+      redirect_uri: params.redirectUri,
+      client_id: CLIENT_ID,
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as {
+        error?: string;
+        error_description?: string;
+      };
+      detail = body?.error_description
+        ? `${body.error ?? 'error'}: ${body.error_description}`
+        : (body?.error ?? `HTTP ${res.status}`);
+    } catch {
+      try {
+        detail = await res.text();
+      } catch {
+        detail = `HTTP ${res.status}`;
+      }
+    }
+    throw new Error(`Token exchange failed: ${detail}`);
+  }
+
+  const body = (await res.json()) as { api_key?: string };
+  if (!body.api_key) {
+    throw new Error('Token exchange response missing api_key');
+  }
+  return body.api_key;
+}
+
+const SUCCESS_HTML =
+  '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:rgba(246,246,246,1);font-family:system-ui,sans-serif"><div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:40px"><h1 style="font-size:45px;font-weight:400;line-height:120%;margin:0">Turn Ideas into Live<br>Investing Playbooks in Minutes</h1><p style="font-size:24px;font-weight:400;margin:0">You\'re all set for Alva.</p></div></body></html>';
+
 export async function handleAuthLogin(
   args: string[],
   deps?: Partial<AuthLoginDeps>
@@ -96,12 +214,23 @@ export async function handleAuthLogin(
   const d = { ...defaultDeps(), ...deps };
   const flags = parseFlags(args.slice(1));
   const profileName = flags.profile || 'default';
-  const authUrl = flags['auth-url'] || 'https://alva.ai';
+  const authUrl = flags['auth-url'] || DEFAULT_AUTH_URL;
+  const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const timeout = d.timeout ?? 120_000;
 
   const state = d.generateState();
+  const codeVerifier = d.generateCodeVerifier();
+  const codeChallenge = deriveChallenge(codeVerifier);
 
   return new Promise<AuthLoginResult>((resolve, reject) => {
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
     const server = d.createServer((req, res) => {
       const reqUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
       if (reqUrl.pathname !== '/callback') {
@@ -111,7 +240,8 @@ export async function handleAuthLogin(
       }
 
       const callbackState = reqUrl.searchParams.get('state');
-      const apiKey = reqUrl.searchParams.get('api_key');
+      const code = reqUrl.searchParams.get('code');
+      const errorParam = reqUrl.searchParams.get('error');
 
       if (callbackState !== state) {
         res.writeHead(400);
@@ -121,36 +251,62 @@ export async function handleAuthLogin(
         return;
       }
 
-      if (!apiKey) {
+      if (errorParam) {
         res.writeHead(400);
         res.end(
-          '<html><body><h1>Error</h1><p>Missing API key. Please try again.</p></body></html>'
+          `<html><body><h1>Login declined</h1><p>${errorParam}</p></body></html>`
+        );
+        server.close();
+        settle(() => reject(new Error(`OAuth error: ${errorParam}`)));
+        return;
+      }
+
+      if (!code) {
+        res.writeHead(400);
+        res.end(
+          '<html><body><h1>Error</h1><p>Missing authorization code. Please try again.</p></body></html>'
         );
         return;
       }
 
+      const redirectUri = `http://127.0.0.1:${(server.address() as { port: number }).port}/callback`;
+
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(
-        '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:rgba(246,246,246,1);font-family:system-ui,sans-serif"><div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:40px"><h1 style="font-size:45px;font-weight:400;line-height:120%;margin:0">Turn Ideas into Live<br>Investing Playbooks in Minutes</h1><p style="font-size:24px;font-weight:400;margin:0">You\'re all set for Alva.</p></div></body></html>'
-      );
+      res.end(SUCCESS_HTML);
 
       server.close();
-      clearTimeout(timer);
 
-      writeConfig({ apiKey }, d.writeConfigDeps, profileName).then(() => {
-        resolve({ status: 'logged_in', apiKey, profile: profileName });
-      }, reject);
+      exchangeCodeForApiKey({
+        baseUrl,
+        code,
+        codeVerifier,
+        redirectUri,
+        fetch: d.fetch,
+      })
+        .then(async (apiKey) => {
+          await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+          settle(() =>
+            resolve({ status: 'logged_in', apiKey, profile: profileName })
+          );
+        })
+        .catch((err) => {
+          settle(() => reject(err));
+        });
     });
 
     server.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
+      settle(() => reject(err));
     });
 
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as { port: number };
-      const callbackUrl = `http://127.0.0.1:${addr.port}/callback`;
-      const loginUrl = `${authUrl}/authorize?callback_url=${encodeURIComponent(callbackUrl)}&state=${state}`;
+      const redirectUri = `http://127.0.0.1:${addr.port}/callback`;
+      const loginUrl = buildAuthorizeUrl({
+        authUrl,
+        redirectUri,
+        state,
+        codeChallenge,
+      });
       d.log(
         `Opening browser...\nIf it doesn't open, visit:\n${loginUrl}\n\nWaiting for login callback...\n`
       );
@@ -161,7 +317,7 @@ export async function handleAuthLogin(
 
     const timer = setTimeout(() => {
       server.close();
-      reject(new Error('Login timed out waiting for callback'));
+      settle(() => reject(new Error('Login timed out waiting for callback')));
     }, timeout);
   });
 }
