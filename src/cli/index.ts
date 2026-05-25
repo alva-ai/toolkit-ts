@@ -1,7 +1,8 @@
 import { AlvaClient } from '../client.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import { loadConfig, writeConfig } from './config.js';
-import { handleAuthLogin } from './auth.js';
+import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
+import { selectMode } from './modeSelect.js';
 import { runPostConfigureHooks } from './postConfigureHooks.js';
 import {
   formatSkillsList,
@@ -118,13 +119,28 @@ Examples:
   alva configure --profile staging --api-key alva_stg_key --base-url https://api-llm.stg.alva.ai
   alva --profile staging whoami`,
 
-  auth: `Usage: alva auth <subcommand>
+  auth: `Usage: alva auth login [--browser | --no-browser] [--profile <name>]
+
+By default, opens a browser locally and listens for the OAuth callback. Use
+--no-browser for SSH / container / headless environments — alva will print
+a URL to open on any device, then prompt you to paste the code shown.
+
+Auto-detect picks --no-browser when DISPLAY is missing on Linux, when
+SSH_CONNECTION is set without DISPLAY forwarding, or when CONTAINER /
+DEVCONTAINER is set.
 
 Subcommands:
-  login       Open browser to authenticate and save credentials
+  login       Authenticate and save credentials (browser or no-browser)
+
+Flags:
+  --browser           Force the local browser + 127.0.0.1 callback flow
+  --no-browser        Force the paste-code flow (no local listener)
+  --profile <name>    Profile name to save credentials under (default: "default")
 
 Examples:
-  alva auth login
+  alva auth login                       # auto-detect
+  alva auth login --no-browser          # force paste-code flow
+  alva auth login --browser             # force browser flow
   alva auth login --profile staging`,
 
   whoami: `Usage: alva whoami [--profile <name>]
@@ -903,6 +919,8 @@ const BOOLEAN_FLAGS = new Set([
   'json',
   'compress',
   'bypass-lint',
+  'no-browser',
+  'browser',
 ]);
 
 function parseFlags(argv: string[]): Record<string, string> {
@@ -2107,7 +2125,19 @@ async function main() {
         return;
       }
       if (authSub === 'login') {
-        const result = await handleAuthLogin(rawArgs);
+        const loginFlags = parseFlags(rawArgs.slice(1));
+        const mode = selectMode(
+          process.env as Record<string, string | undefined>,
+          {
+            noBrowser: boolFlag(loginFlags['no-browser']) === true,
+            browser: boolFlag(loginFlags['browser']) === true,
+          },
+          process.platform
+        );
+        const result =
+          mode === 'no-browser'
+            ? await handleAuthLoginNoBrowser(rawArgs)
+            : await handleAuthLogin(rawArgs);
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
       }
