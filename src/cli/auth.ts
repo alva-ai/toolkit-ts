@@ -428,8 +428,10 @@ export async function handleAuthLoginNoBrowser(
   let lastErr: Error | null = null;
   for (let attempt = 1; attempt <= MAX_PASTE_ATTEMPTS; attempt++) {
     const raw = await d.readline();
-    // Strip whitespace and dashes (the OOB page may show ABCD-EFGH).
-    const code = raw.replace(/[\s-]+/g, '');
+    // Strip whitespace only. Dashes are valid base64url characters and
+    // appear in real codes (~30% of 22-char codes contain `-`), so we
+    // must preserve them verbatim — stripping would cause invalid_grant.
+    const code = raw.replace(/\s+/g, '');
 
     if (!code) {
       lastErr = new Error('No code entered');

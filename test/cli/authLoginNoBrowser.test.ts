@@ -138,7 +138,7 @@ function makeBaseDeps(
 }
 
 describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
-  it('happy path: prompts for code, exchanges, writes config; strips dashes', async () => {
+  it('happy path: prompts for code, exchanges, writes config; preserves dashes', async () => {
     const {
       fixedState,
       fixedVerifier,
@@ -158,7 +158,8 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     });
     expect(writeConfigDeps.writeFile).toHaveBeenCalledTimes(1);
 
-    // fetch called once with stripped code
+    // fetch called once with the code verbatim (dash preserved — it's a
+    // valid base64url character).
     expect(fetchMock.calls).toHaveLength(1);
     const call = fetchMock.calls[0];
     expect(call.url).toBe('https://api-llm.prd.alva.ai/oauth/token');
@@ -166,7 +167,7 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     const body = JSON.parse(call.init?.body ?? '{}');
     expect(body).toEqual({
       grant_type: 'authorization_code',
-      code: 'ABCDEFGH',
+      code: 'ABCD-EFGH',
       code_verifier: fixedVerifier,
       redirect_uri: 'https://alva.ai/oauth/code/callback',
       client_id: 'alva-cli',
@@ -186,6 +187,22 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     expect(printedUrl.searchParams.get('redirect_uri')).toBe(
       'https://alva.ai/oauth/code/callback'
     );
+  });
+
+  it('preserves dashes and underscores in code (base64url-valid chars)', async () => {
+    // Real codes from base64.RawURLEncoding contain `-` and `_`. Earlier
+    // versions stripped dashes and caused invalid_grant ~30% of the time.
+    const code = 'abc-DEF_xyz';
+    const { fetchMock, deps } = makeBaseDeps({
+      readlineLines: [code],
+    });
+
+    const result = await handleAuthLoginNoBrowser(['auth', 'login'], deps);
+
+    expect(result.status).toBe('logged_in');
+    expect(fetchMock.calls).toHaveLength(1);
+    const body = JSON.parse(fetchMock.calls[0].init?.body ?? '{}');
+    expect(body.code).toBe(code);
   });
 
   it('paste retry: empty line then valid code; invalid_grant then success', async () => {
