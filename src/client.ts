@@ -40,6 +40,7 @@ export class AlvaClient {
   readonly baseUrl: string;
   readonly arraysBaseUrl: string;
   readonly viewer_token?: string;
+  readonly pbsvToken?: string;
   readonly apiKey?: string;
 
   private _fs?: FsResource;
@@ -66,6 +67,7 @@ export class AlvaClient {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
     this.arraysBaseUrl = config.arraysBaseUrl ?? DEFAULT_ARRAYS_BASE_URL;
     this.viewer_token = config.viewer_token;
+    this.pbsvToken = config.pbsvToken;
     this.apiKey = config.apiKey;
   }
 
@@ -129,10 +131,10 @@ export class AlvaClient {
   }
 
   _requireAuth(): void {
-    if (!this.viewer_token && !this.apiKey) {
+    if (!this.pbsvToken && !this.viewer_token && !this.apiKey) {
       throw new AlvaError(
         'UNAUTHENTICATED',
-        'Authentication is required. Pass viewer_token or apiKey in the constructor.',
+        'Authentication is required. Pass pbsvToken, viewer_token, or apiKey in the constructor.',
         401
       );
     }
@@ -161,7 +163,10 @@ export class AlvaClient {
 
     const headers: Record<string, string> = {};
     if (!options?.noAuth) {
-      if (this.viewer_token) {
+      if (this.pbsvToken) {
+        headers.Authorization = `Bearer ${this.pbsvToken}`;
+        headers['X-Pbsv'] = '1';
+      } else if (this.viewer_token) {
         headers['x-Playbook-Viewer'] = this.viewer_token;
       } else if (this.apiKey) {
         headers['X-Alva-Api-Key'] = this.apiKey;

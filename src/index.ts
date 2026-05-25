@@ -6,6 +6,7 @@ export const VERSION: string =
 
 export { AlvaClient } from './client.js';
 export { AlvaError } from './error.js';
+export * from './playbookRuntime.js';
 export type {
   AlvaClientConfig,
   FsReadParams,

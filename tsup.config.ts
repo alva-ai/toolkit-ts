@@ -31,6 +31,7 @@ export default defineConfig([
     globalName: 'AlvaToolkit',
     platform: 'browser',
     minify: true,
+    keepNames: true,
     sourcemap: true,
     dts: false,
     define,

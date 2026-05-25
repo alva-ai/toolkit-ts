@@ -163,6 +163,52 @@ Add the browser bundle via a CDN:
 
 > **Note:** The Alva API must have CORS headers configured for browser requests to work from your origin.
 
+### Playbook Runtime UDFs
+
+When the browser bundle is loaded inside an Alva playbook iframe, it also
+installs `window.alva.udf`. The runtime reads the playbook-scoped viewer
+token (`_pbsv`) from the iframe URL, removes only that sensitive query
+parameter, accepts parent-pushed token refreshes, and uses PBSV headers for
+UDF calls.
+
+```html
+<script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
+<script>
+  (async () => {
+    const result = await window.alva.udf.call('analyze', { ticker: 'AAPL' });
+    const functions = await window.alva.udf.list();
+  })();
+</script>
+```
+
+For quick interactive controls, mount a runtime-managed UDF button. The button
+is disabled until a PBSV token is present and emits DOM events for loading,
+result, and error states.
+
+```html
+<div id="analyze"></div>
+<script>
+  const button = window.alva.udf.renderButton('#analyze', {
+    functionName: 'analyze',
+    params: { ticker: 'AAPL' },
+    label: 'Run analysis',
+  });
+
+  button.addEventListener('alva:udf-button:result', (event) => {
+    console.log(event.detail.result);
+  });
+</script>
+```
+
+For module users, the same runtime is available from the package root:
+
+```typescript
+import { installPlaybookRuntime, udf } from '@alva-ai/toolkit';
+
+installPlaybookRuntime();
+const result = await udf.call('analyze', { ticker: 'AAPL' });
+```
+
 ## API Reference
 
 ### Resources
