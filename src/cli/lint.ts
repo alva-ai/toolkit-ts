@@ -31,6 +31,10 @@ export async function handleLintPlaybook(
 export interface LintBeforeReleaseOptions {
   client: AlvaClient;
   playbookName: string;
+  /** When true: errors are surfaced on stderr but the release proceeds.
+   *  Use sparingly — exists for emergency hotfixes and legacy playbook
+   *  re-releases that can't realistically be fully refitted. */
+  force?: boolean;
   /** Override for tests — supply a YAML string directly. */
   contractYaml?: string;
   /** Override for tests — supply HTML directly instead of reading via ALFS. */
@@ -71,8 +75,17 @@ export async function lintBeforeRelease(
 
   const report = lint(html, contract);
   if (report.summary.errors > 0) {
+    if (opts.force) {
+      // --force in effect: surface findings prominently but don't block.
+      process.stderr.write(
+        `WARNING: --force bypassing ${report.summary.errors} design lint error(s):\n`
+      );
+      process.stderr.write(formatReport(report, 'human') + '\n');
+      return report;
+    }
     const err = new Error(
-      `Release blocked by design lint:\n${formatReport(report, 'human')}`
+      `Release blocked by design lint:\n${formatReport(report, 'human')}\n` +
+        `(Use --force to bypass — findings will still be printed to stderr.)`
     );
     (err as Error & { exitCode?: number }).exitCode = 1;
     throw err;
