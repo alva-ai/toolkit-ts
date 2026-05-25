@@ -79,7 +79,7 @@ components: {}
     ]);
     expect(c.global.links.relMustContain).toEqual(['noopener', 'noreferrer']);
     expect(c.global.requiredStylesheets).toEqual([
-      { url: 'https://example.com/tokens.css' },
+      { urls: ['https://example.com/tokens.css'] },
     ]);
     expect(c.global.antiAliasing?.requiredDeclarations).toContain(
       '-webkit-font-smoothing: antialiased'
@@ -121,5 +121,51 @@ components:
     expect(c.global.links.relMustContain).toBeUndefined();
     expect(c.global.requiredStylesheets).toBeUndefined();
     expect(c.global.antiAliasing).toBeUndefined();
+  });
+});
+
+describe('loadContract — any-of stylesheets', () => {
+  it('loads new any-of shape', () => {
+    const c = loadContract(`
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+  required-stylesheets:
+    - any-of:
+        - url: "https://x.example/legacy.css"
+        - url: "https://x.example/v1/full.css"
+  canonical-css-urls:
+    - "https://x.example/v1/full.css"
+components: {}
+`);
+    expect(c.global.requiredStylesheets).toEqual([
+      {
+        urls: ['https://x.example/legacy.css', 'https://x.example/v1/full.css'],
+      },
+    ]);
+    expect(c.global.canonicalCssUrls).toEqual([
+      'https://x.example/v1/full.css',
+    ]);
+  });
+
+  it('loads legacy single-url shape as a one-element any-of', () => {
+    const c = loadContract(`
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+  required-stylesheets:
+    - url: "https://x.example/legacy.css"
+components: {}
+`);
+    expect(c.global.requiredStylesheets).toEqual([
+      { urls: ['https://x.example/legacy.css'] },
+    ]);
+    expect(c.global.canonicalCssUrls).toBeUndefined();
   });
 });

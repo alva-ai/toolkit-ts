@@ -17,7 +17,7 @@ const CONTRACT: Contract = {
       fontWeightAllowed: [400, 500],
     },
     links: { anchorRequiredAttrs: ['target', 'rel'] },
-    requiredStylesheets: [{ url: CDN_URL }],
+    requiredStylesheets: [{ urls: [CDN_URL] }],
   },
   components: [],
 };
@@ -74,5 +74,65 @@ describe('required-stylesheet', () => {
       CONTRACT_NO_RULE
     );
     expect(requiredStylesheet(m, CONTRACT_NO_RULE)).toEqual([]);
+  });
+});
+
+const ANY_OF_CONTRACT: Contract = {
+  version: 1,
+  global: {
+    requiredContainer: { selector: '.playbook-container', mustExist: true },
+    scroll: { soleScrollContainer: ['body'] },
+    typography: {
+      fontFamilyRootMustInclude: 'Delight',
+      fontWeightAllowed: [400, 500],
+    },
+    links: { anchorRequiredAttrs: ['target', 'rel'] },
+    requiredStylesheets: [
+      {
+        urls: ['https://x.example/legacy.css', 'https://x.example/v1/full.css'],
+      },
+    ],
+  },
+  components: [],
+};
+
+describe('required-stylesheet — any-of semantics', () => {
+  it('passes when legacy URL linked', () => {
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/legacy.css">'),
+      ANY_OF_CONTRACT
+    );
+    expect(requiredStylesheet(m, ANY_OF_CONTRACT)).toEqual([]);
+  });
+
+  it('passes when v1 URL linked', () => {
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
+      ANY_OF_CONTRACT
+    );
+    expect(requiredStylesheet(m, ANY_OF_CONTRACT)).toEqual([]);
+  });
+
+  it('passes when BOTH are linked', () => {
+    const m = buildModel(
+      parseHtml(
+        '<link rel="stylesheet" href="https://x.example/legacy.css">' +
+          '<link rel="stylesheet" href="https://x.example/v1/full.css">'
+      ),
+      ANY_OF_CONTRACT
+    );
+    expect(requiredStylesheet(m, ANY_OF_CONTRACT)).toEqual([]);
+  });
+
+  it('fails when neither group member is linked', () => {
+    const m = buildModel(
+      parseHtml(
+        '<link rel="stylesheet" href="https://other.example/other.css">'
+      ),
+      ANY_OF_CONTRACT
+    );
+    const f = requiredStylesheet(m, ANY_OF_CONTRACT);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.message).toMatch(/https:\/\/x\.example\/legacy\.css/);
   });
 });

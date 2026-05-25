@@ -24,13 +24,22 @@ global:
     anchor-required-attrs: ["target", "rel"]
     rel-must-contain: ["noopener", "noreferrer"]
   required-stylesheets:
-    - url: "https://example.com/tokens.css"
+    - any-of:
+        - url: "https://example.com/tokens.css"
+        - url: "https://x.example/legacy.css"
+        - url: "https://x.example/v1/full.css"
+  canonical-css-urls:
+    - "https://x.example/v1/full.css"
   anti-aliasing:
     required-declarations:
       - "-webkit-font-smoothing: antialiased"
       - "-moz-osx-font-smoothing: grayscale"
       - "text-rendering: optimizeLegibility"
-components: {}
+components:
+  button:
+    root: "btn"
+    variants: ["btn-primary"]
+    sizes: ["btn-large"]
 `;
 
 function read(p: string): string {
@@ -58,5 +67,25 @@ describe('lint() integration', () => {
   it('bad/missing-tokens-link.html → reports required-stylesheet', () => {
     const r = lint(read('bad/missing-tokens-link.html'), contract);
     expect(r.findings.map((f) => f.rule)).toContain('required-stylesheet');
+  });
+
+  it('good/v1-bundle-only.html → 0 errors, 0 warnings', () => {
+    const r = lint(read('good/v1-bundle-only.html'), contract);
+    expect(r.summary.errors).toBe(0);
+    expect(r.summary.warnings).toBe(0);
+  });
+
+  it('good/legacy-with-inline.html → 0 errors', () => {
+    const r = lint(read('good/legacy-with-inline.html'), contract);
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it('warn/canonical-override.html → 0 errors, ≥1 warning (forbid-core-selector-override)', () => {
+    const r = lint(read('warn/canonical-override.html'), contract);
+    expect(r.summary.errors).toBe(0);
+    expect(r.summary.warnings).toBeGreaterThan(0);
+    expect(
+      r.findings.some((f) => f.rule === 'forbid-core-selector-override')
+    ).toBe(true);
   });
 });

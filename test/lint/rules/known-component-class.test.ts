@@ -58,7 +58,12 @@ describe('known-component-class', () => {
     expect(knownComponentClass(m, CONTRACT)).toEqual([]);
   });
 
-  it('catches widget-family ad-hoc class even with no bare-root component', () => {
+  // Documented limitation: when a component's root is NOT a bare prefix
+  // (e.g. chart-card has root 'chart-container', not 'chart'), we do NOT
+  // flag ad-hoc classes that share only the family prefix. This trades a
+  // bit of recall for zero false positives — see the alva-watermark vs
+  // alva-checkbox-label case in the design-css-cdn brainstorm.
+  it('does NOT flag ad-hoc family classes when root is not a bare prefix', () => {
     const widgetContract: Contract = {
       ...CONTRACT,
       components: [
@@ -73,8 +78,65 @@ describe('known-component-class', () => {
       parseHtml('<div class="chart-foo">x</div>'),
       widgetContract
     );
-    const f = knownComponentClass(m, widgetContract);
+    expect(knownComponentClass(m, widgetContract)).toEqual([]);
+  });
+
+  it('does NOT flag standalone tab-prefixed wrappers (no .tab on element)', () => {
+    // Common pattern: <div class="tab-wrapper">…</div> with the actual
+    // <div class="tab tab-underline tab-l"> nested inside.
+    const tabContract: Contract = {
+      ...CONTRACT,
+      components: [
+        {
+          name: 'tab',
+          root: 'tab',
+          variants: ['tab-underline', 'tab-segmented', 'tab-pill'],
+          sizes: ['tab-l', 'tab-s'],
+        },
+      ],
+    };
+    const m = buildModel(
+      parseHtml(
+        '<div class="tab-wrapper">' +
+          '<div class="tab tab-underline tab-l">…</div>' +
+          '</div>'
+      ),
+      tabContract
+    );
+    expect(knownComponentClass(m, tabContract)).toEqual([]);
+  });
+
+  it('still flags modifier invention on the actual component element', () => {
+    const tabContract: Contract = {
+      ...CONTRACT,
+      components: [
+        {
+          name: 'tab',
+          root: 'tab',
+          variants: ['tab-underline'],
+          sizes: ['tab-l'],
+        },
+      ],
+    };
+    const m = buildModel(
+      parseHtml('<div class="tab tab-fancy">x</div>'),
+      tabContract
+    );
+    const f = knownComponentClass(m, tabContract);
     expect(f).toHaveLength(1);
-    expect(f[0]!.message).toMatch(/chart-foo/);
+    expect(f[0]!.message).toMatch(/tab-fancy/);
+  });
+
+  // Counter-test for the false-positive case the change prevents.
+  it('does NOT flag single-class-family neighbors (alva-watermark vs alva-checkbox-label)', () => {
+    const singletonContract: Contract = {
+      ...CONTRACT,
+      components: [{ name: 'alva-watermark', root: 'alva-watermark' }],
+    };
+    const m = buildModel(
+      parseHtml('<span class="alva-checkbox-label">x</span>'),
+      singletonContract
+    );
+    expect(knownComponentClass(m, singletonContract)).toEqual([]);
   });
 });

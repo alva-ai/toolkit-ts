@@ -438,6 +438,9 @@ Playbook flags:
                          "/alva/home/<username>/playbooks/<name>/README.md".
                          The README must already be written to ALFS at that
                          path before publish.
+  --bypass-lint          Bypass the design-lint gate. Errors are still
+                         printed on stderr — use for emergency hotfixes or
+                         legacy playbook re-releases.
 
 Display name conventions:
   Format: [subject/theme] [analysis angle/strategy logic]
@@ -897,6 +900,7 @@ const BOOLEAN_FLAGS = new Set([
   'dry-run',
   'json',
   'compress',
+  'bypass-lint',
 ]);
 
 function parseFlags(argv: string[]): Record<string, string> {
@@ -1355,10 +1359,12 @@ export async function dispatch(
             'readme-url',
             'release playbook'
           );
+          const bypassLint = boolFlag(flags['bypass-lint']) ?? false;
           const { lintBeforeRelease } = await import('./lint.js');
           const lintReport = await lintBeforeRelease({
             client,
             playbookName: name,
+            bypassLint,
           });
           if (lintReport.summary.warnings > 0) {
             const { formatReport } = await import('../lint/report.js');

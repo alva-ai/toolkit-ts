@@ -2098,4 +2098,39 @@ components: {}
     });
     expect(r.summary.errors).toBe(0);
   });
+
+  it('with bypassLint=true: does NOT throw, returns report, prints to stderr', async () => {
+    const { lintBeforeRelease } = await import('../src/cli/lint.js');
+    const contractYaml = `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`;
+    const stderrChunks: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrChunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const r = await lintBeforeRelease({
+        client: {} as never,
+        playbookName: 'irrelevant',
+        contractYaml,
+        bypassLint: true,
+        html: '<html><body><p>no container</p></body></html>',
+      });
+      expect(r.summary.errors).toBeGreaterThan(0);
+      const stderr = stderrChunks.join('');
+      expect(stderr).toMatch(/--bypass-lint bypassing/);
+      expect(stderr).toMatch(/required-container/);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
 });

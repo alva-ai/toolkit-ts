@@ -13,6 +13,19 @@ export function antiAliasingDeclarations(
   const aa = contract.global.antiAliasing;
   if (!aa || aa.requiredDeclarations.length === 0) return [];
 
+  // Auto-pass when a canonical CSS bundle is <link>ed — the bundle declares font-family.
+  const canonical = contract.global.canonicalCssUrls ?? [];
+  if (canonical.length > 0) {
+    const linked = new Set<string>();
+    for (const el of model.dom.elements) {
+      if (el.tag !== 'link') continue;
+      const rel = (el.attrs.rel ?? '').toLowerCase();
+      if (!rel.split(/\s+/).includes('stylesheet')) continue;
+      if (el.attrs.href) linked.add(el.attrs.href);
+    }
+    if (canonical.some((u) => linked.has(u))) return [];
+  }
+
   const findings: Finding[] = [];
   for (const requirement of aa.requiredDeclarations) {
     // Each requirement is "<property>: <value>" — split on the first ':' so

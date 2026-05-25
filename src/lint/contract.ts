@@ -5,6 +5,7 @@ import type {
   ComponentSpec,
   BindingRule,
   ScriptRequirement,
+  RequiredStylesheetGroup,
 } from './types.js';
 
 interface RawScriptRequirement {
@@ -43,7 +44,11 @@ interface RawYaml {
       'anchor-required-attrs': string[];
       'rel-must-contain'?: string[];
     };
-    'required-stylesheets'?: { url: string }[];
+    'required-stylesheets'?: Array<{
+      url?: string;
+      'any-of'?: { url: string }[];
+    }>;
+    'canonical-css-urls'?: string[];
     'anti-aliasing'?: { 'required-declarations': string[] };
   };
   components?: Record<string, RawComponent>;
@@ -105,7 +110,21 @@ export function loadContract(yamlStr: string): Contract {
     allowed: r.allowed,
   }));
 
-  const requiredStylesheets = g['required-stylesheets'];
+  const rsRaw = g['required-stylesheets'];
+  const requiredStylesheets: RequiredStylesheetGroup[] | undefined = rsRaw
+    ? rsRaw.map((entry) => {
+        if (entry['any-of']) {
+          return { urls: entry['any-of'].map((e) => e.url) };
+        }
+        if (entry.url) {
+          return { urls: [entry.url] };
+        }
+        throw new Error(
+          'contract: required-stylesheets entry must have either "url" or "any-of"'
+        );
+      })
+    : undefined;
+  const canonicalCssUrls = g['canonical-css-urls'];
   const antiAliasingRaw = g['anti-aliasing'];
 
   return {
@@ -129,6 +148,7 @@ export function loadContract(yamlStr: string): Contract {
           : {}),
       },
       ...(requiredStylesheets ? { requiredStylesheets } : {}),
+      ...(canonicalCssUrls ? { canonicalCssUrls } : {}),
       ...(antiAliasingRaw
         ? {
             antiAliasing: {

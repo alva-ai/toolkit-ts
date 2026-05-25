@@ -48,6 +48,11 @@ export interface FontWeightRestriction {
   allowed: number[];
 }
 
+/** any-of group; playbook must <link> at least one URL from each group */
+export interface RequiredStylesheetGroup {
+  urls: string[];
+}
+
 export interface Contract {
   version: number;
   description?: string;
@@ -63,7 +68,11 @@ export interface Contract {
       anchorRequiredAttrs: string[];
       relMustContain?: string[];
     };
-    requiredStylesheets?: { url: string }[];
+    requiredStylesheets?: RequiredStylesheetGroup[];
+    /** URLs that, when linked, signal the playbook has full canonical CSS.
+     *  When any of these is linked, font-family-root and anti-aliasing
+     *  rules auto-pass; forbid-core-selector-override becomes active. */
+    canonicalCssUrls?: string[];
     antiAliasing?: { requiredDeclarations: string[] };
   };
   components: ComponentSpec[];

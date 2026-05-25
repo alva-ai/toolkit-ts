@@ -6,29 +6,35 @@ import type {
   RuleDescriptor,
 } from '../types.js';
 
-export function requiredStylesheet(
-  model: ResolvedModel,
-  contract: Contract
-): Finding[] {
-  const required = contract.global.requiredStylesheets ?? [];
-  if (required.length === 0) return [];
-
-  const linkedHrefs = new Set<string>();
+function collectLinkedStylesheets(model: ResolvedModel): Set<string> {
+  const set = new Set<string>();
   for (const el of model.dom.elements) {
     if (el.tag !== 'link') continue;
     const rel = (el.attrs.rel ?? '').toLowerCase();
     if (!rel.split(/\s+/).includes('stylesheet')) continue;
     const href = el.attrs.href;
-    if (href) linkedHrefs.add(href);
+    if (href) set.add(href);
   }
+  return set;
+}
 
+export function requiredStylesheet(
+  model: ResolvedModel,
+  contract: Contract
+): Finding[] {
+  const groups = contract.global.requiredStylesheets ?? [];
+  if (groups.length === 0) return [];
+
+  const linked = collectLinkedStylesheets(model);
   const findings: Finding[] = [];
-  for (const { url } of required) {
-    if (!linkedHrefs.has(url)) {
+
+  for (const group of groups) {
+    const satisfied = group.urls.some((u) => linked.has(u));
+    if (!satisfied) {
       findings.push({
         rule: 'required-stylesheet',
         severity: 'error',
-        message: `Required stylesheet '${url}' is not linked from the playbook (need <link rel="stylesheet" href="...">).`,
+        message: `Playbook must <link rel="stylesheet"> to one of: ${group.urls.map((u) => `'${u}'`).join(' OR ')}.`,
       });
     }
   }
