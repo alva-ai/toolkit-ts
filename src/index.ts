@@ -35,6 +35,11 @@ export type {
   ChannelGroupSubscriptionContextResponse,
   ChannelGroupSubscriptionListResponse,
   ChannelGroupSubscriptionMutationResponse,
+  NotificationPreferenceKey,
+  NotificationPreference,
+  NotificationPreferencesResponse,
+  NotificationPreferenceUpdateParams,
+  NotificationPreferenceUpdateResponse,
   FeedDeleteRequest,
   FeedDeleteResponse,
 } from './types.js';

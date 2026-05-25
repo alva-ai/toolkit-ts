@@ -63,6 +63,7 @@ Commands:
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   notification-history  Notification delivery history (list-playbook, list-feed)
+  notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
@@ -632,6 +633,21 @@ Common flags:
 Examples:
   alva notification-history list-playbook --username alice --name btc-dashboard --first 5
   alva notification-history list-feed --username alice --name btc-ema --status sent`,
+
+  'notification-preferences': `Usage: alva notification-preferences <subcommand>
+
+Manage personal notification preferences. Session completed notifications are
+enabled by default unless explicitly disabled.
+
+Subcommands:
+  list                         List notification preferences
+  enable-session-completed     Turn on session completed notifications
+  disable-session-completed    Turn off session completed notifications
+
+Examples:
+  alva notification-preferences list
+  alva notification-preferences disable-session-completed
+  alva notification-preferences enable-session-completed`,
 
   'push-subscriptions': `Usage: alva push-subscriptions <subcommand> [options]
 
@@ -1619,6 +1635,33 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: notification-history ${subcommand}`,
             'notification-history'
+          );
+      }
+    }
+
+    case 'notification-preferences': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for notification-preferences',
+          'notification-preferences'
+        );
+      switch (subcommand) {
+        case 'list':
+          return client.notificationPreferences.list();
+        case 'enable-session-completed':
+          return client.notificationPreferences.update({
+            key: 'session_completed',
+            enabled: true,
+          });
+        case 'disable-session-completed':
+          return client.notificationPreferences.update({
+            key: 'session_completed',
+            enabled: false,
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: notification-preferences ${subcommand}`,
+            'notification-preferences'
           );
       }
     }

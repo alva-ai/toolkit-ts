@@ -109,6 +109,12 @@ function makeClient(): AlvaClient {
   client.notifications.listFeed = vi
     .fn()
     .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
+  client.notificationPreferences.list = vi
+    .fn()
+    .mockResolvedValue({ settings: [] });
+  client.notificationPreferences.update = vi.fn().mockResolvedValue({
+    setting: { key: 'session_completed', enabled: false },
+  });
   client.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
@@ -582,6 +588,36 @@ components: {}
     });
   });
 
+  it('dispatches notification-preferences list', async () => {
+    const client = makeClient();
+    await dispatch(client, ['notification-preferences', 'list']);
+    expect(client.notificationPreferences.list).toHaveBeenCalled();
+  });
+
+  it('dispatches notification-preferences disable-session-completed', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'notification-preferences',
+      'disable-session-completed',
+    ]);
+    expect(client.notificationPreferences.update).toHaveBeenCalledWith({
+      key: 'session_completed',
+      enabled: false,
+    });
+  });
+
+  it('dispatches notification-preferences enable-session-completed', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'notification-preferences',
+      'enable-session-completed',
+    ]);
+    expect(client.notificationPreferences.update).toHaveBeenCalledWith({
+      key: 'session_completed',
+      enabled: true,
+    });
+  });
+
   it('dispatches channel group-subscriptions context', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -777,6 +813,17 @@ components: {}
     await expect(dispatch(client, ['notification-history'])).rejects.toSatisfy(
       (err: unknown) =>
         err instanceof CliUsageError && err.command === 'notification-history'
+    );
+  });
+
+  it('throws CliUsageError with command="notification-preferences" for missing notification-preferences subcommand', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['notification-preferences'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError &&
+        err.command === 'notification-preferences'
     );
   });
 
@@ -1240,6 +1287,19 @@ describe('help text', () => {
     expect(result.text).toContain('audit/history');
     expect(result.text).toContain('list-playbook');
     expect(result.text).toContain('list-feed');
+  });
+
+  it('returns per-command help for notification-preferences --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, [
+      'notification-preferences',
+      '--help',
+    ])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('disable-session-completed');
+    expect(result.text).toContain('enabled by default');
   });
 
   it('returns per-command help for release --help with workflow', async () => {
