@@ -28,7 +28,7 @@ on the gateway, differing only in `redirect_uri`:
   PKCE challenge, callback receives `?code=...`, CLI POSTs to
   `/oauth/token` with the verifier and gets back an API key.
 - **Mode B (no-browser)**: prints the authorize URL with `redirect_uri =
-  https://alva.ai/oauth/code/callback` to stderr, prompts the user
+https://alva.ai/oauth/code/callback` to stderr, prompts the user
   to paste the code shown on that page, then exchanges via the same
   `/oauth/token`. Up to 3 paste retries on `invalid_grant`; network
   errors fail fast.
@@ -48,6 +48,7 @@ DEVCONTAINER → Mode B; else Mode A).
 See primary changelog section 4.
 
 This repo's files:
+
 - `src/cli/pkce.ts` (new) — `generateCodeVerifier` + `deriveChallenge`.
 - `src/cli/modeSelect.ts` (new) — pure `selectMode(env, flags, platform)`.
 - `src/cli/auth.ts` (modified) — refactored Mode A; added Mode B; exported shared helpers.
@@ -57,12 +58,14 @@ This repo's files:
 ## 7. Outcome
 
 **Commits on `feat/cli-auth-no-browser-pkce`:**
+
 - `fffb693` — `feat(cli): add PKCE + mode-select helpers`
 - `bb5c440` — `refactor(cli): handleAuthLogin uses PKCE + /oauth/token exchange (Mode A)`
 - `c45c341` — `feat(cli): add handleAuthLoginNoBrowser (Mode B)`
 - `ab695a3` — `feat(cli): wire --no-browser/--browser flags for auth login`
 
 **Tests** (all PASS): **401/401** across 33 files. New additions:
+
 - 4 PKCE cases (incl. RFC 7636 Appendix B reference vector)
 - 9 mode-select cases (Linux no-DISPLAY, SSH_CONNECTION, DEVCONTAINER, CONTAINER, WAYLAND_DISPLAY, macOS default, explicit flag overrides, verifier-uniqueness)
 - 12 Mode A handleAuthLogin (rewritten contract)

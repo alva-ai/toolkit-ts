@@ -79,16 +79,15 @@ function happyResponse(apiKey = 'alva_test123'): MockFetchResponse {
   };
 }
 
-function makeBaseDeps(overrides: {
-  readlineLines?: string[];
-  fetchResponses?: MockFetchResponse[];
-  fetchFn?: (
-    url: string,
-    init?: FetchCall['init']
-  ) => Promise<unknown>;
-  oobRedirectUrl?: string;
-  log?: (msg: string) => void;
-} = {}) {
+function makeBaseDeps(
+  overrides: {
+    readlineLines?: string[];
+    fetchResponses?: MockFetchResponse[];
+    fetchFn?: (url: string, init?: FetchCall['init']) => Promise<unknown>;
+    oobRedirectUrl?: string;
+    log?: (msg: string) => void;
+  } = {}
+) {
   const fixedState = 'a'.repeat(64);
   const fixedVerifier = 'v'.repeat(43);
   const fixedChallenge = deriveChallenge(fixedVerifier);
