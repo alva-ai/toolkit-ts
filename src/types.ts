@@ -2,6 +2,7 @@
 
 export interface AlvaClientConfig {
   viewer_token?: string;
+  pbsvToken?: string;
   apiKey?: string;
   baseUrl?: string;
   arraysBaseUrl?: string;

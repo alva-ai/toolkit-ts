@@ -156,6 +156,36 @@ describe('AlvaClient', () => {
       expect(init.headers['X-Alva-Api-Key']).toBe('my-key');
     });
 
+    it('adds pbsv Authorization headers when pbsvToken is set', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ pbsvToken: 'pbsv.jwt' });
+
+      await client._request('GET', '/api/v1/playbook/42');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers.Authorization).toBe('Bearer pbsv.jwt');
+      expect(init.headers['X-Pbsv']).toBe('1');
+      expect(init.headers['x-Playbook-Viewer']).toBeUndefined();
+      expect(init.headers['X-Alva-Api-Key']).toBeUndefined();
+    });
+
+    it('prefers pbsvToken over apiKey when both are set', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({
+        apiKey: 'my-key',
+        pbsvToken: 'pbsv.jwt',
+      });
+
+      await client._request('GET', '/api/v1/playbook/42/feed');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers.Authorization).toBe('Bearer pbsv.jwt');
+      expect(init.headers['X-Pbsv']).toBe('1');
+      expect(init.headers['X-Alva-Api-Key']).toBeUndefined();
+    });
+
     it('omits auth header when apiKey is absent', async () => {
       const fetch = mockFetch({ body: {} });
       globalThis.fetch = fetch;
