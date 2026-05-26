@@ -2097,6 +2097,9 @@ async function main() {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       arraysBaseUrl: config.arraysBaseUrl,
+      gaClientId: config.gaClientId,
+      gaSessionId: config.gaSessionId,
+      utmParams: config.utmParams,
     });
 
     const cleanArgs = stripGlobalFlags(rawArgs);

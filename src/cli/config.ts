@@ -5,6 +5,9 @@ export interface CliConfig {
   baseUrl?: string;
   arraysBaseUrl: string;
   profile?: string;
+  gaClientId?: string;
+  gaSessionId?: string;
+  utmParams?: string;
 }
 
 interface ProfileData {
@@ -165,6 +168,11 @@ export function loadConfig(deps: ConfigDeps): CliConfig {
   const apiKeyFlag = parseFlag(argv, '--api-key');
   const apiKeyEnv = env.ALVA_API_KEY;
 
+  // GA / UTM attribution (env-only; sandbox sets these at provisioning time)
+  const gaClientIdEnv = env.ALVA_GA_CLIENT_ID;
+  const gaSessionIdEnv = env.ALVA_GA_SESSION_ID;
+  const utmParamsEnv = env.ALVA_UTM_PARAMS;
+
   // Read config file
   let fileProfile: ProfileData = {};
   const path = configPath({ env, homedir });
@@ -190,5 +198,8 @@ export function loadConfig(deps: ConfigDeps): CliConfig {
     arraysBaseUrl:
       arraysBaseUrlFlag ?? arraysBaseUrlEnv ?? DEFAULT_ARRAYS_BASE_URL,
     profile: profileName,
+    gaClientId: gaClientIdEnv,
+    gaSessionId: gaSessionIdEnv,
+    utmParams: utmParamsEnv,
   };
 }

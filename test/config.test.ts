@@ -275,6 +275,39 @@ describe('loadConfig', () => {
     });
     expect(result.profile).toBe('default');
   });
+
+  it('loadConfig reads ALVA_GA_* env vars into config', () => {
+    const result = loadConfig({
+      argv: [],
+      env: {
+        ALVA_API_KEY: 'ak',
+        ALVA_GA_CLIENT_ID: 'cid',
+        ALVA_GA_SESSION_ID: 'sid',
+        ALVA_UTM_PARAMS: '{"utm_source":"x"}',
+      },
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.gaClientId).toBe('cid');
+    expect(result.gaSessionId).toBe('sid');
+    expect(result.utmParams).toBe('{"utm_source":"x"}');
+  });
+
+  it('loadConfig omits ALVA_GA_* config fields when env unset', () => {
+    const result = loadConfig({
+      argv: [],
+      env: { ALVA_API_KEY: 'ak' },
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.gaClientId).toBeUndefined();
+    expect(result.gaSessionId).toBeUndefined();
+    expect(result.utmParams).toBeUndefined();
+  });
 });
 
 describe('writeConfig', () => {
