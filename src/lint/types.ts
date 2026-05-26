@@ -25,6 +25,14 @@ export interface ScriptRequirement {
    *  in the HTML (by their root class). Empty/undefined = always apply
    *  when this owner component is present. */
   whenAlso?: string[];
+  /** Optional: only apply when EVERY listed substring appears somewhere
+   *  in the concatenated <script> content. Lets requirements key off
+   *  semantic JS signals (e.g. 'echarts.init') instead of class names —
+   *  catches the case where a playbook uses ad-hoc class names but the
+   *  underlying behavior is still in play.
+   *
+   *  AND-conjunctive with whenAlso when both are set. */
+  whenScriptContains?: string[];
   /** Substrings that must each appear in some <script> block. */
   mustContain: string[];
   /** Optional human-readable hint for the finding message. */

@@ -19,16 +19,30 @@ export function requiredScriptFragments(
   for (const comp of contract.components) {
     if (!presentNames.has(comp.name)) continue;
     for (const req of comp.requiredScripts ?? []) {
-      // co-presence gate
+      // co-presence gate (class-based)
       if (req.whenAlso && !req.whenAlso.every((c) => presentNames.has(c))) {
+        continue;
+      }
+      // semantic-script gate (substring-based; bypasses naming)
+      if (
+        req.whenScriptContains &&
+        !req.whenScriptContains.every((s) => allScriptText.includes(s))
+      ) {
         continue;
       }
       // substring checks
       for (const sub of req.mustContain) {
         if (!allScriptText.includes(sub)) {
-          const ctx = req.whenAlso?.length
-            ? ` (when also using: ${req.whenAlso.join(' + ')})`
-            : '';
+          const ctxParts: string[] = [];
+          if (req.whenAlso?.length) {
+            ctxParts.push(`also using: ${req.whenAlso.join(' + ')}`);
+          }
+          if (req.whenScriptContains?.length) {
+            ctxParts.push(
+              `script contains: ${req.whenScriptContains.map((s) => `'${s}'`).join(' + ')}`
+            );
+          }
+          const ctx = ctxParts.length ? ` (when ${ctxParts.join('; ')})` : '';
           const hint = req.message ? ` — ${req.message}` : '';
           findings.push({
             rule: 'required-script-fragments',
