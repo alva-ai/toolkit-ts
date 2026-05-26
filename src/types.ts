@@ -141,6 +141,11 @@ export interface RunRequest {
   entry_path?: string;
   working_dir?: string;
   args?: Record<string, unknown>;
+  /**
+   * Override the server's default V8 heap limit, in MB. Valid range is
+   * 1–2048. Omitted means the server uses its default heap (256 MB).
+   */
+  max_heap_size_mb?: number;
 }
 
 export interface RunResponse {

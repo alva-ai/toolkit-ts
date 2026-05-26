@@ -249,6 +249,64 @@ describe('CLI dispatch', () => {
     mock.mockReset();
   });
 
+  it('dispatches run with --max-heap-size-mb', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'run',
+      '--code',
+      '1+1',
+      '--max-heap-size-mb',
+      '512',
+    ]);
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ code: '1+1', max_heap_size_mb: 512 })
+    );
+  });
+
+  it('omits max_heap_size_mb when --max-heap-size-mb is not provided', async () => {
+    const client = makeClient();
+    await dispatch(client, ['run', '--code', '1+1']);
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ max_heap_size_mb: undefined })
+    );
+  });
+
+  it('throws CliUsageError when --max-heap-size-mb is below range', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--max-heap-size-mb', '0'])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('throws CliUsageError when --max-heap-size-mb is above range', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--max-heap-size-mb', '2049'])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('throws CliUsageError when --max-heap-size-mb is non-integer', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--max-heap-size-mb', '1.5'])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('run --help documents --max-heap-size-mb', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['run', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--max-heap-size-mb');
+  });
+
   it('throws CliUsageError when --code and --local-file are both provided', async () => {
     const client = makeClient();
     await expect(
