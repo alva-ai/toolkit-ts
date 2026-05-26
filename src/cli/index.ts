@@ -236,6 +236,7 @@ Options:
   --entry-path <path>    Path to a script file on ALFS (home-relative)
   --working-dir <dir>    Working directory for require() (inline code only)
   --args <json>          JSON object passed to require("env").args
+  --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
 
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
@@ -259,14 +260,15 @@ Available runtime modules:
 Constraints:
   No top-level await — wrap in (async () => { ... })();
   No Node.js builtins (fs, path, http) — use alfs, net/http instead
-  2 GB heap limit per execution
+  Default V8 heap limit is 256 MB; override with --max-heap-size-mb (1-2048)
 
 Examples:
   alva run --code "1 + 2 + 3;"
   alva run --code "JSON.stringify(require('env').args);" --args '{"symbol":"BTC"}'
   alva run --entry-path "~/feeds/my-feed/v1/src/index.js"
   alva run --entry-path "~/tasks/analyze/src/index.js" --args '{"symbol":"NVDA","limit":50}'
-  alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'`,
+  alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'
+  alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
@@ -976,6 +978,26 @@ function requirePositiveIntegerStringFlag(
   return val;
 }
 
+function optionalBoundedIntegerFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string,
+  min: number,
+  max: number
+): number | undefined {
+  const val = flags[name];
+  if (val === undefined) return undefined;
+  const n = Number(val);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    const group = command.split(' ')[0];
+    throw new CliUsageError(
+      `--${name} must be an integer between ${min} and ${max} for '${command}', got '${val}'`,
+      group
+    );
+  }
+  return n;
+}
+
 function requireGroupSubscriptionTargetType(
   flags: Record<string, string>,
   command: string
@@ -1198,6 +1220,13 @@ export async function dispatch(
         entry_path: flags['entry-path'],
         working_dir: flags['working-dir'],
         args: jsonParse(flags['args']) as Record<string, unknown> | undefined,
+        max_heap_size_mb: optionalBoundedIntegerFlag(
+          flags,
+          'max-heap-size-mb',
+          'run',
+          1,
+          2048
+        ),
       });
     }
 

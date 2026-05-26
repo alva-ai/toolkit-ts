@@ -12,6 +12,7 @@ export class RunResource {
         entry_path: params.entry_path,
         working_dir: params.working_dir,
         args: params.args,
+        max_heap_size_mb: params.max_heap_size_mb,
       },
     }) as Promise<RunResponse>;
   }
