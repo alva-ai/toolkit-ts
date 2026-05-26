@@ -275,6 +275,12 @@ const randomRequestId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+const playbookIdForInvoke = () => {
+  if (!playbookIdFromBoot) return null;
+  const numericId = Number(playbookIdFromBoot);
+  return Number.isSafeInteger(numericId) ? numericId : null;
+};
+
 const requestConsent = async (
   playbookId: string,
   minAllowance: number
@@ -312,6 +318,12 @@ const call = async <TResult>(
       code: 'PBSV_PID_MISMATCH',
     });
   }
+  const playbookId = playbookIdForInvoke();
+  if (!playbookId) {
+    throw new UdfPidMismatchError('Invalid playbook id.', {
+      code: 'PBSV_PID_MISMATCH',
+    });
+  }
 
   let response: Response;
   try {
@@ -323,7 +335,7 @@ const call = async <TResult>(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        playbook_id: playbookIdFromBoot,
+        playbook_id: playbookId,
         function_name: functionName,
         parameters_json: JSON.stringify(params),
       }),

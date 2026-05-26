@@ -132,7 +132,7 @@ describe('playbook runtime SDK', () => {
     expect(init.headers.Authorization).toBe(`Bearer ${token}`);
     expect(init.headers['X-Pbsv']).toBe('1');
     expect(JSON.parse(init.body)).toEqual({
-      playbook_id: '42',
+      playbook_id: 42,
       function_name: 'analyze',
       parameters_json: JSON.stringify({ ticker: 'AAPL' }),
     });
@@ -293,7 +293,7 @@ describe('playbook runtime SDK', () => {
       'https://api.test/api/v1/service/invoke',
       expect.objectContaining({
         body: JSON.stringify({
-          playbook_id: '42',
+          playbook_id: 42,
           function_name: 'analyze',
           parameters_json: JSON.stringify({ ticker: 'MSFT' }),
         }),
