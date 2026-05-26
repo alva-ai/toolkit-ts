@@ -10,6 +10,7 @@ import type {
 
 interface RawScriptRequirement {
   'when-also'?: string[];
+  'when-script-contains'?: string[];
   'must-contain': string[];
   message?: string;
 }
@@ -81,6 +82,9 @@ export function loadContract(yamlStr: string): Contract {
       'required-scripts'
     ]?.map((r) => ({
       ...(r['when-also'] ? { whenAlso: r['when-also'] } : {}),
+      ...(r['when-script-contains']
+        ? { whenScriptContains: r['when-script-contains'] }
+        : {}),
       mustContain: r['must-contain'],
       ...(r.message ? { message: r.message } : {}),
     }));
