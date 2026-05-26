@@ -6,6 +6,9 @@ export interface AlvaClientConfig {
   apiKey?: string;
   baseUrl?: string;
   arraysBaseUrl?: string;
+  gaClientId?: string;
+  gaSessionId?: string;
+  utmParams?: string;
 }
 
 // --- User ---

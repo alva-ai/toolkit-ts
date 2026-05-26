@@ -383,6 +383,55 @@ describe('AlvaClient', () => {
       expect(init.headers['x-Playbook-Viewer']).toBeUndefined();
     });
 
+    it('attaches X-Alva-GA-Client-ID when config.gaClientId set', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'ak', gaClientId: 'cid-1.2' });
+
+      await client._request('GET', '/test');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['X-Alva-GA-Client-ID']).toBe('cid-1.2');
+    });
+
+    it('attaches X-Alva-GA-Session-ID when config.gaSessionId set', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'ak', gaSessionId: 'sid-1' });
+
+      await client._request('GET', '/test');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['X-Alva-GA-Session-ID']).toBe('sid-1');
+    });
+
+    it('attaches X-Alva-UTM-Params verbatim when config.utmParams set', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({
+        apiKey: 'ak',
+        utmParams: '{"utm_source":"x"}',
+      });
+
+      await client._request('GET', '/test');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['X-Alva-UTM-Params']).toBe('{"utm_source":"x"}');
+    });
+
+    it('omits all GA headers when config fields absent', async () => {
+      const fetch = mockFetch({ body: {} });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'ak' });
+
+      await client._request('GET', '/test');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.headers['X-Alva-GA-Client-ID']).toBeUndefined();
+      expect(init.headers['X-Alva-GA-Session-ID']).toBeUndefined();
+      expect(init.headers['X-Alva-UTM-Params']).toBeUndefined();
+    });
+
     it('omits undefined query params', async () => {
       const fetch = mockFetch({ body: {} });
       globalThis.fetch = fetch;
