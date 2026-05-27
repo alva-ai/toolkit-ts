@@ -2175,8 +2175,13 @@ async function main() {
         // so users can correlate the displayed key with their key list
         // without exposing the full secret.
         const keyHint = `${result.apiKey.slice(0, 13)}...`;
+        // Explicit exit. Mode A's listener + paste race may leave a
+        // dangling readline holding stdin open even after settle; auth
+        // login is a terminal command so just unwind hard once we've
+        // written the success line.
         process.stdout.write(
-          `Logged in as profile "${result.profile}" (api key ${keyHint}).\n`
+          `Logged in as profile "${result.profile}" (api key ${keyHint}).\n`,
+          () => process.exit(0)
         );
         return;
       }
