@@ -238,6 +238,45 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     expect(fetchMock.calls.length).toBeLessThanOrEqual(3);
   });
 
+  it('derives oobRedirectUrl from --auth-url when not explicitly provided', async () => {
+    // Drop the oobRedirectUrl override so the handler's derivation path
+    // runs. Pass --auth-url stg; expect the stg-origin OOB URL.
+    const { fetchMock, logged, deps } = makeBaseDeps();
+    // Remove the test-helper's default to exercise the derive code path.
+    delete (deps as { oobRedirectUrl?: string }).oobRedirectUrl;
+
+    await handleAuthLoginNoBrowser(
+      ['auth', 'login', '--auth-url', 'https://stg.alva.xyz'],
+      deps
+    );
+
+    // Both the printed authorize URL and the exchange body should carry
+    // the stg-origin OOB URL.
+    const expected = 'https://stg.alva.xyz/oauth/code/callback';
+    const body = JSON.parse(fetchMock.calls[0].init?.body ?? '{}');
+    expect(body.redirect_uri).toBe(expected);
+
+    const printedUrl = new URL(
+      logged.join('').match(/https?:\/\/\S+\/authorize\?\S+/)![0]
+    );
+    expect(printedUrl.searchParams.get('redirect_uri')).toBe(expected);
+  });
+
+  it('explicit deps.oobRedirectUrl wins over derivation (test escape hatch)', async () => {
+    const explicit = 'http://localhost:3001/oauth/code/callback';
+    const { fetchMock, deps } = makeBaseDeps({
+      oobRedirectUrl: explicit,
+    });
+
+    await handleAuthLoginNoBrowser(
+      ['auth', 'login', '--auth-url', 'https://stg.alva.xyz'],
+      deps
+    );
+
+    const body = JSON.parse(fetchMock.calls[0].init?.body ?? '{}');
+    expect(body.redirect_uri).toBe(explicit);
+  });
+
   it('network error: surfaced verbatim, no retry, no config written', async () => {
     const { writeConfigDeps, fetchMock, readline, deps } = makeBaseDeps({
       readlineLines: ['ABCD'],

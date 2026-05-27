@@ -64,6 +64,10 @@ export interface AuthLoginDeps {
  * - `oobRedirectUrl`: the static "out-of-band" callback page where the
  *   frontend displays the `code` for the user to copy. Used both in
  *   the printed authorize URL and in the `/oauth/token` redirect_uri.
+ *   When undefined (the default), the URL is derived from `--auth-url`
+ *   as `${origin}/oauth/code/callback`, so `--auth-url https://stg.alva.xyz`
+ *   automatically points at the stg OOB page instead of prod. Set
+ *   explicitly only in tests.
  */
 export interface AuthLoginNoBrowserDeps {
   generateState: () => string;
@@ -72,7 +76,7 @@ export interface AuthLoginNoBrowserDeps {
   log: (msg: string) => void;
   fetch: FetchLike;
   readline: (prompt?: string) => Promise<string>;
-  oobRedirectUrl: string;
+  oobRedirectUrl?: string;
 }
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
@@ -350,8 +354,24 @@ export async function handleAuthLogin(
   });
 }
 
-const DEFAULT_OOB_REDIRECT_URL = 'https://alva.ai/oauth/code/callback';
+const OOB_CALLBACK_PATH = '/oauth/code/callback';
 const MAX_PASTE_ATTEMPTS = 3;
+
+/**
+ * Derive the OOB display page URL from the authorize URL. The frontend
+ * validates redirect_uri against `${window.location.origin}/oauth/code/callback`,
+ * and the gateway's allowlist is per-env, so the OOB URL MUST share its
+ * origin with the authorize URL. Falls back gracefully on malformed input.
+ */
+function deriveOobRedirectUrl(authUrl: string): string {
+  try {
+    return new URL(authUrl).origin + OOB_CALLBACK_PATH;
+  } catch {
+    // authUrl is malformed; let the downstream fetch fail with a real
+    // error rather than synthesizing a fake one here.
+    return authUrl.replace(/\/+$/, '') + OOB_CALLBACK_PATH;
+  }
+}
 
 function defaultReadline(prompt?: string): Promise<string> {
   return new Promise<string>((resolve) => {
@@ -390,7 +410,8 @@ function defaultNoBrowserDeps(): AuthLoginNoBrowserDeps {
         init as Parameters<FetchLike>[1]
       )) as FetchLike,
     readline: defaultReadline,
-    oobRedirectUrl: DEFAULT_OOB_REDIRECT_URL,
+    // oobRedirectUrl deliberately left undefined — derived from --auth-url
+    // at call time so it tracks prd / stg / local-dev automatically.
   };
 }
 
@@ -413,7 +434,9 @@ export async function handleAuthLoginNoBrowser(
   const profileName = flags.profile || 'default';
   const authUrl = flags['auth-url'] || DEFAULT_AUTH_URL;
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
-  const oobRedirectUrl = d.oobRedirectUrl;
+  // Explicit dep wins (tests); otherwise derive from the resolved authUrl
+  // so --auth-url stg/local-dev points at the matching OOB page.
+  const oobRedirectUrl = d.oobRedirectUrl || deriveOobRedirectUrl(authUrl);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
