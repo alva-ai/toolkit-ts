@@ -2154,7 +2154,14 @@ async function main() {
           mode === 'no-browser'
             ? await handleAuthLoginNoBrowser(rawArgs)
             : await handleAuthLogin(rawArgs);
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        // Human-readable one-liner. The 13-char prefix mirrors the
+        // backend's key_prefix convention (alva_ + first 8 hex chars)
+        // so users can correlate the displayed key with their key list
+        // without exposing the full secret.
+        const keyHint = `${result.apiKey.slice(0, 13)}...`;
+        process.stdout.write(
+          `Logged in as profile "${result.profile}" (api key ${keyHint}).\n`
+        );
         return;
       }
       process.stdout.write(`${COMMAND_HELP.auth}\n`);
