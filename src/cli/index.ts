@@ -1,7 +1,8 @@
 import { AlvaClient } from '../client.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import { loadConfig, writeConfig } from './config.js';
-import { handleAuthLogin } from './auth.js';
+import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
+import { selectMode } from './modeSelect.js';
 import { runPostConfigureHooks } from './postConfigureHooks.js';
 import {
   formatSkillsList,
@@ -118,13 +119,28 @@ Examples:
   alva configure --profile staging --api-key alva_stg_key --base-url https://api-llm.stg.alva.ai
   alva --profile staging whoami`,
 
-  auth: `Usage: alva auth <subcommand>
+  auth: `Usage: alva auth login [--browser | --no-browser] [--profile <name>]
+
+By default, opens a browser locally and listens for the OAuth callback. Use
+--no-browser for SSH / container / headless environments — alva will print
+a URL to open on any device, then prompt you to paste the code shown.
+
+Auto-detect picks --no-browser when DISPLAY is missing on Linux, when
+SSH_CONNECTION is set without DISPLAY forwarding, or when CONTAINER /
+DEVCONTAINER is set.
 
 Subcommands:
-  login       Open browser to authenticate and save credentials
+  login       Authenticate and save credentials (browser or no-browser)
+
+Flags:
+  --browser           Force the local browser + 127.0.0.1 callback flow
+  --no-browser        Force the paste-code flow (no local listener)
+  --profile <name>    Profile name to save credentials under (default: "default")
 
 Examples:
-  alva auth login
+  alva auth login                       # auto-detect
+  alva auth login --no-browser          # force paste-code flow
+  alva auth login --browser             # force browser flow
   alva auth login --profile staging`,
 
   whoami: `Usage: alva whoami [--profile <name>]
@@ -903,25 +919,59 @@ const BOOLEAN_FLAGS = new Set([
   'json',
   'compress',
   'bypass-lint',
+  'no-browser',
+  'browser',
 ]);
 
-function parseFlags(argv: string[]): Record<string, string> {
+export function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg.startsWith('--no-') && BOOLEAN_FLAGS.has(arg.slice(5))) {
-      flags[arg.slice(5)] = 'false';
-    } else if (arg.startsWith('--')) {
-      const eqIdx = arg.indexOf('=');
-      if (eqIdx !== -1) {
-        flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
-      } else if (BOOLEAN_FLAGS.has(arg.slice(2))) {
-        flags[arg.slice(2)] = 'true';
-      } else if (i + 1 < argv.length) {
-        flags[arg.slice(2)] = argv[i + 1];
-        i++;
-      }
+    if (!arg.startsWith('--')) continue;
+
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx !== -1) {
+      flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+      continue;
     }
+
+    const name = arg.slice(2);
+
+    // Literal boolean flag wins over the --no-X shortcut. This matters
+    // for flags whose own name starts with "no-" (e.g. --no-browser is
+    // itself a boolean opt-in, NOT the negation of --browser).
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags[name] = 'true';
+      continue;
+    }
+
+    // --no-X shortcut: only when X is a known boolean flag AND there is
+    // no literal --no-X flag registered (handled above).
+    if (name.startsWith('no-') && BOOLEAN_FLAGS.has(name.slice(3))) {
+      flags[name.slice(3)] = 'false';
+      continue;
+    }
+
+    // Non-boolean flag: requires a value. Two failure modes both
+    // silently fell back to defaults before, which masked footguns
+    // like `--base-url` at end-of-line (multi-line shell command with
+    // a stray newline) or `--api-key --profile staging`:
+    //   1. no next arg at all
+    //   2. next arg looks like another flag (`--something`)
+    // Treat both as a usage error — the user almost certainly meant to
+    // pass a value.
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith('--')) {
+      throw new CliUsageError(
+        `--${name} requires a value`,
+        // Group is best-effort: first non-flag arg of the original
+        // argv. parseFlags doesn't track group, so just use the flag
+        // name as a fallback hint.
+        name
+      );
+    }
+    flags[name] = next;
+    i++;
   }
   return flags;
 }
@@ -2107,8 +2157,32 @@ async function main() {
         return;
       }
       if (authSub === 'login') {
-        const result = await handleAuthLogin(rawArgs);
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        const loginFlags = parseFlags(rawArgs.slice(1));
+        const mode = selectMode(
+          process.env as Record<string, string | undefined>,
+          {
+            noBrowser: boolFlag(loginFlags['no-browser']) === true,
+            browser: boolFlag(loginFlags['browser']) === true,
+          },
+          process.platform
+        );
+        const result =
+          mode === 'no-browser'
+            ? await handleAuthLoginNoBrowser(rawArgs)
+            : await handleAuthLogin(rawArgs);
+        // Human-readable one-liner. The 13-char prefix mirrors the
+        // backend's key_prefix convention (alva_ + first 8 hex chars)
+        // so users can correlate the displayed key with their key list
+        // without exposing the full secret.
+        const keyHint = `${result.apiKey.slice(0, 13)}...`;
+        // Explicit exit. Mode A's listener + paste race may leave a
+        // dangling readline holding stdin open even after settle; auth
+        // login is a terminal command so just unwind hard once we've
+        // written the success line.
+        process.stdout.write(
+          `Logged in as profile "${result.profile}" (api key ${keyHint}).\n`,
+          () => process.exit(0)
+        );
         return;
       }
       process.stdout.write(`${COMMAND_HELP.auth}\n`);
