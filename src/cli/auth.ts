@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import * as http from 'node:http';
 import { spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
@@ -46,11 +47,17 @@ export interface AuthLoginDeps {
   generateCodeVerifier: () => string;
   openBrowser: (url: string) => Promise<void>;
   writeConfigDeps: WriteConfigDeps;
+  // Listener for the localhost callback path. The auto-opened browser
+  // is sent to a `redirect_uri=http://127.0.0.1:<port>/callback` URL,
+  // so when the user logs in locally the listener catches the code
+  // and finishes without any manual step.
+  createServer: (handler: http.RequestListener) => http.Server;
+  timeout?: number;
   log: (msg: string) => void;
   fetch: FetchLike;
-  // Readline used to accept the pasted code shown on the OOB display
-  // page. Mode A delegates the paste loop to handleAuthLoginNoBrowser
-  // after firing openBrowser, so this is required there too.
+  // Readline for the OOB paste path. The terminal also prints an
+  // OOB-redirect authorize URL so a user on a different device can
+  // open it, see the code on the display page, and paste it back here.
   readline?: (prompt?: string) => Promise<string>;
 }
 
@@ -152,6 +159,8 @@ function defaultDeps(): AuthLoginDeps {
         fsPromises.writeFile(path, data, options).then(() => undefined),
       readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
     },
+    createServer: (handler: http.RequestListener) => http.createServer(handler),
+    timeout: 120_000,
     log: (msg: string) => process.stderr.write(msg),
     fetch: ((url: string, init?: RequestInit) =>
       // Node 18+ provides a global fetch; cast through unknown for the
@@ -253,24 +262,28 @@ export async function exchangeCodeForApiKey(params: {
   return body.api_key;
 }
 
+const SUCCESS_HTML =
+  '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:rgba(246,246,246,1);font-family:system-ui,sans-serif"><div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:40px"><h1 style="font-size:45px;font-weight:400;line-height:120%;margin:0">Turn Ideas into Live<br>Investing Playbooks in Minutes</h1><p style="font-size:24px;font-weight:400;margin:0">You\'re all set for Alva.</p></div></body></html>';
+
 /**
- * Mode A: OOB paste flow + best-effort browser auto-open.
+ * Mode A: dual-URL race between a localhost listener (auto-complete
+ * when the user logs in on this machine's default browser) and an
+ * out-of-band paste flow (when the user opens the URL on a different
+ * device).
  *
- * Mirrors Claude's `claude` CLI design: print an authorize URL whose
- * redirect_uri is the public alva.ai/oauth/code/callback display page,
- * so following the link in ANY browser (local or remote) ends at a
- * page that shows the code in big monospace. User copies, pastes into
- * the CLI, exchange + writeConfig + return.
+ * Two authorize URLs are issued from the same PKCE challenge:
+ *   - local:  redirect_uri = http://127.0.0.1:<port>/callback. Fired
+ *             into openBrowser as a convenience. If consent completes
+ *             here, the listener catches the callback and exchanges
+ *             with the localhost redirect_uri.
+ *   - oob:    redirect_uri = ${authUrl-origin}/oauth/code/callback.
+ *             Printed to stderr. If the user opens it on another
+ *             device, the frontend redirects to the OOB display page
+ *             which shows the code; user pastes it back here. The
+ *             paste path exchanges with the OOB redirect_uri.
  *
- * The localhost listener was removed in favor of OOB because the two
- * paths require different redirect_uri values and a single code can
- * only be bound to one. OOB gives a consistent "URL ends at code"
- * experience regardless of where the user opens the URL — at the cost
- * of one extra paste step in the local-browser case.
- *
- * The only thing that distinguishes Mode A from Mode B is that
- * Mode A also fires `openBrowser` as a convenience. The flow itself
- * is delegated to `handleAuthLoginNoBrowser`.
+ * Two codes are minted at consent time (one per redirect_uri); the
+ * other one expires unused. Whichever path resolves first wins.
  */
 export async function handleAuthLogin(
   args: string[],
@@ -278,37 +291,202 @@ export async function handleAuthLogin(
 ): Promise<AuthLoginResult> {
   const d = { ...defaultDeps(), ...deps };
   const flags = parseFlags(args.slice(1));
+  const profileName = flags.profile || 'default';
   const authUrl = flags['auth-url'] || DEFAULT_AUTH_URL;
+  const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const oobRedirectUrl = deriveOobRedirectUrl(authUrl);
+  const timeout = d.timeout ?? 120_000;
 
-  // Best-effort browser open. We build the URL identically to Mode B
-  // (same authUrl, same OOB redirect_uri) so opening it locally takes
-  // the user to the same consent flow that ends at the OOB display
-  // page. We pre-compute PKCE params here purely for openBrowser; the
-  // delegated Mode B call generates its own set, but openBrowser only
-  // needs *some* URL to open — the eventual exchange uses Mode B's
-  // verifier. To keep both halves consistent we share state +
-  // verifier via deps overrides.
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
   const codeChallenge = deriveChallenge(codeVerifier);
-  const loginUrl = buildAuthorizeUrl({
-    authUrl,
-    redirectUri: oobRedirectUrl,
-    state,
-    codeChallenge,
-  });
-  d.openBrowser(loginUrl).catch(() => {
-    // Swallow open errors — the URL is also printed for the user.
-  });
 
-  // Delegate to the OOB paste flow. Pass our pre-built state/verifier
-  // through dep overrides so the printed authorize URL in the inner
-  // call matches the one we just handed to openBrowser.
-  return handleAuthLoginNoBrowser(args, {
-    ...deps,
-    generateState: () => state,
-    generateCodeVerifier: () => codeVerifier,
+  return new Promise<AuthLoginResult>((resolve, reject) => {
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
+    // Listener path: localhost callback. The redirect_uri here is
+    // bound to the *local* code at issue time, so the exchange uses
+    // localhost too.
+    const server = d.createServer((req, res) => {
+      const reqUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+      if (reqUrl.pathname !== '/callback') {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+
+      const callbackState = reqUrl.searchParams.get('state');
+      const code = reqUrl.searchParams.get('code');
+      const errorParam = reqUrl.searchParams.get('error');
+
+      if (callbackState !== state) {
+        res.writeHead(400);
+        res.end(
+          '<html><body><h1>Error</h1><p>State mismatch. Please try again.</p></body></html>'
+        );
+        return;
+      }
+
+      if (errorParam) {
+        const desc = reqUrl.searchParams.get('error_description') ?? '';
+        const friendly =
+          errorParam === 'access_denied'
+            ? 'You declined the authorization request. Run `alva auth login` again to retry.'
+            : desc || `OAuth error: ${errorParam}`;
+        res.writeHead(400);
+        res.end(
+          `<html><body><h1>Login declined</h1><p>${friendly}</p><p>You can close this window and return to your terminal.</p></body></html>`
+        );
+        settle(() => {
+          server.close();
+          reject(new Error(friendly));
+        });
+        return;
+      }
+
+      if (!code) {
+        res.writeHead(400);
+        res.end(
+          '<html><body><h1>Error</h1><p>Missing authorization code. Please try again.</p></body></html>'
+        );
+        return;
+      }
+
+      const localRedirectUri = `http://127.0.0.1:${(server.address() as { port: number }).port}/callback`;
+
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(SUCCESS_HTML);
+
+      exchangeCodeForApiKey({
+        baseUrl,
+        code,
+        codeVerifier,
+        redirectUri: localRedirectUri,
+        fetch: d.fetch,
+      })
+        .then(async (apiKey) => {
+          if (settled) return;
+          await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+          settle(() => {
+            server.close();
+            resolve({ status: 'logged_in', apiKey, profile: profileName });
+          });
+        })
+        .catch((err) => {
+          settle(() => {
+            server.close();
+            reject(err);
+          });
+        });
+    });
+
+    server.on('error', (err) => {
+      settle(() => reject(err));
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as { port: number }).port;
+      const localRedirectUri = `http://127.0.0.1:${port}/callback`;
+      const localUrl = buildAuthorizeUrl({
+        authUrl,
+        redirectUri: localRedirectUri,
+        state,
+        codeChallenge,
+      });
+      const oobUrl = buildAuthorizeUrl({
+        authUrl,
+        redirectUri: oobRedirectUrl,
+        state,
+        codeChallenge,
+      });
+
+      // Only the OOB URL is shown to the user — that's the link they
+      // can copy to another device and end up at a code-display page.
+      // The local URL is silently fed to openBrowser; if consent
+      // completes there, the listener auto-completes without the
+      // user touching the terminal again.
+      d.log(
+        [
+          '',
+          'Open this URL in any browser to log in:',
+          '',
+          `  ${oobUrl}`,
+          '',
+          'After approving, paste the code shown on the page (a local',
+          'browser, if available, will complete the login automatically):',
+          '',
+        ].join('\n')
+      );
+      d.openBrowser(localUrl).catch(() => {
+        // Swallow open errors — the printed URL is the explicit path.
+      });
+
+      // Paste path: exchange uses the OOB redirect_uri because that's
+      // the URL the user followed.
+      const tryPasteLoop = d.readline;
+      if (tryPasteLoop) {
+        (async () => {
+          for (let attempt = 0; attempt < MAX_PASTE_ATTEMPTS; attempt++) {
+            if (settled) return;
+            let raw: string;
+            try {
+              raw = await tryPasteLoop('> ');
+            } catch {
+              return;
+            }
+            if (settled) return;
+            const code = extractCodeFromInput(raw);
+            if (!code) {
+              if (attempt < MAX_PASTE_ATTEMPTS - 1) {
+                d.log("Couldn't find a code in that input. Try again.\n");
+              }
+              continue;
+            }
+            try {
+              const apiKey = await exchangeCodeForApiKey({
+                baseUrl,
+                code,
+                codeVerifier,
+                redirectUri: oobRedirectUrl,
+                fetch: d.fetch,
+              });
+              if (settled) return;
+              await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+              settle(() => {
+                server.close();
+                resolve({ status: 'logged_in', apiKey, profile: profileName });
+              });
+              return;
+            } catch (err) {
+              if (settled) return;
+              const msg = err instanceof Error ? err.message : String(err);
+              if (!/invalid_grant/i.test(msg)) {
+                settle(() => {
+                  server.close();
+                  reject(err instanceof Error ? err : new Error(msg));
+                });
+                return;
+              }
+              if (attempt < MAX_PASTE_ATTEMPTS - 1) {
+                d.log("That code didn't work. Try again.\n");
+              }
+            }
+          }
+          // Paste attempts exhausted; listener path still active.
+        })();
+      }
+    });
+
+    const timer = setTimeout(() => {
+      server.close();
+      settle(() => reject(new Error('Login timed out waiting for callback')));
+    }, timeout);
   });
 }
 
