@@ -276,6 +276,38 @@ npm test
 npm run build
 ```
 
+## Release
+
+Production releases publish `@alva-ai/toolkit@latest` and must come from a clean,
+auditable release source.
+
+Normal releases run from `main` after the release change has been merged:
+
+```bash
+git checkout main
+git pull origin main
+npm run release -- patch   # or minor / major
+```
+
+Hotfix releases are for patch-only fixes when `main` contains changes that should
+not ship yet. Create the hotfix branch from the current npm `latest` git tag,
+publish the patch, then merge the hotfix branch back to `main`.
+
+```bash
+LATEST=$(npm view @alva-ai/toolkit@latest version)
+git fetch origin --tags
+git checkout -b hotfix/<name> "v${LATEST}"
+# apply and commit the fix
+npm run release -- patch
+# after publish, open a PR from hotfix/<name> back to main
+```
+
+Staging releases can run from any clean branch and publish to the `next` dist-tag:
+
+```bash
+npm run release:stg -- prepatch
+```
+
 ## License
 
 [MIT](LICENSE)
