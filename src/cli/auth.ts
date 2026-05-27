@@ -191,7 +191,10 @@ export async function exchangeCodeForApiKey(params: {
   redirectUri: string;
   fetch: FetchLike;
 }): Promise<string> {
-  const tokenUrl = `${params.baseUrl.replace(/\/$/, '')}/oauth/token`;
+  // Gateway mounts the OAuth-CLI handler on the `/api/v1` router group
+  // (sibling to /api/v1/discord). The full path is /api/v1/oauth/token —
+  // matching the discord OAuth callback's mount.
+  const tokenUrl = `${params.baseUrl.replace(/\/$/, '')}/api/v1/oauth/token`;
   const res = await params.fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

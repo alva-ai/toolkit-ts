@@ -162,7 +162,7 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     // valid base64url character).
     expect(fetchMock.calls).toHaveLength(1);
     const call = fetchMock.calls[0];
-    expect(call.url).toBe('https://api-llm.prd.alva.ai/oauth/token');
+    expect(call.url).toBe('https://api-llm.prd.alva.ai/api/v1/oauth/token');
     expect(call.init?.method).toBe('POST');
     const body = JSON.parse(call.init?.body ?? '{}');
     expect(body).toEqual({

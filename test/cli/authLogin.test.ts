@@ -161,7 +161,7 @@ describe('handleAuthLogin (PKCE Mode A)', () => {
     // Verify token exchange POST
     expect(fetchMock.calls).toHaveLength(1);
     const call = fetchMock.calls[0];
-    expect(call.url).toBe('https://api-llm.prd.alva.ai/oauth/token');
+    expect(call.url).toBe('https://api-llm.prd.alva.ai/api/v1/oauth/token');
     expect(call.init?.method).toBe('POST');
     expect(call.init?.headers?.['Content-Type']).toBe('application/json');
     const body = JSON.parse(call.init?.body ?? '{}');
@@ -377,7 +377,9 @@ describe('handleAuthLogin (PKCE Mode A)', () => {
     );
     await loginPromise;
 
-    expect(fetchMock.calls[0].url).toBe('http://localhost:8080/oauth/token');
+    expect(fetchMock.calls[0].url).toBe(
+      'http://localhost:8080/api/v1/oauth/token'
+    );
   });
 
   it('openBrowser failure with successful callback still works', async () => {
