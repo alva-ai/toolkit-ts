@@ -51,8 +51,22 @@ interface RawYaml {
     }>;
     'canonical-css-urls'?: string[];
     'anti-aliasing'?: { 'required-declarations': string[] };
+    'required-scripts'?: RawScriptRequirement[];
   };
   components?: Record<string, RawComponent>;
+}
+
+function mapRequiredScripts(
+  raw: RawScriptRequirement[] | undefined
+): ScriptRequirement[] | undefined {
+  return raw?.map((r) => ({
+    ...(r['when-also'] ? { whenAlso: r['when-also'] } : {}),
+    ...(r['when-script-contains']
+      ? { whenScriptContains: r['when-script-contains'] }
+      : {}),
+    mustContain: r['must-contain'],
+    ...(r.message ? { message: r.message } : {}),
+  }));
 }
 
 export function loadContract(yamlStr: string): Contract {
@@ -78,16 +92,7 @@ export function loadContract(yamlStr: string): Contract {
       selector: b.selector,
       requireClass: b['require-class'],
     }));
-    const requiredScripts: ScriptRequirement[] | undefined = c[
-      'required-scripts'
-    ]?.map((r) => ({
-      ...(r['when-also'] ? { whenAlso: r['when-also'] } : {}),
-      ...(r['when-script-contains']
-        ? { whenScriptContains: r['when-script-contains'] }
-        : {}),
-      mustContain: r['must-contain'],
-      ...(r.message ? { message: r.message } : {}),
-    }));
+    const requiredScripts = mapRequiredScripts(c['required-scripts']);
     components.push({
       name,
       root: c.root,
@@ -130,6 +135,7 @@ export function loadContract(yamlStr: string): Contract {
     : undefined;
   const canonicalCssUrls = g['canonical-css-urls'];
   const antiAliasingRaw = g['anti-aliasing'];
+  const globalRequiredScripts = mapRequiredScripts(g['required-scripts']);
 
   return {
     version: raw.version,
@@ -159,6 +165,9 @@ export function loadContract(yamlStr: string): Contract {
               requiredDeclarations: antiAliasingRaw['required-declarations'],
             },
           }
+        : {}),
+      ...(globalRequiredScripts
+        ? { requiredScripts: globalRequiredScripts }
         : {}),
     },
     components,

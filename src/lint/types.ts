@@ -82,6 +82,15 @@ export interface Contract {
      *  rules auto-pass; forbid-core-selector-override becomes active. */
     canonicalCssUrls?: string[];
     antiAliasing?: { requiredDeclarations: string[] };
+    /**
+     * Required-script rules that are NOT scoped to a component. Same
+     * semantics as `ComponentSpec.requiredScripts`: each entry can gate on
+     * `whenAlso` (class co-presence) and/or `whenScriptContains` (substring
+     * trigger). Use for cross-cutting concerns like "any page using ECharts
+     * must defer init/resize via requestAnimationFrame", which apply
+     * regardless of which components a playbook uses.
+     */
+    requiredScripts?: ScriptRequirement[];
   };
   components: ComponentSpec[];
 }
