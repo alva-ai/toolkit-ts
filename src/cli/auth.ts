@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
@@ -107,19 +107,38 @@ function parseFlags(argv: string[]): Record<string, string> {
 }
 
 function defaultOpenBrowser(url: string): Promise<void> {
+  // Use spawn with an args array — never the shell — so the URL is
+  // passed verbatim regardless of `&`, `?`, `=`, `%`, etc. With
+  // exec(`open "${url}"`) macOS occasionally misinterprets the
+  // argument (e.g. when special characters trip shell quoting) and
+  // falls back to opening Finder. spawn(['open', url]) avoids that.
+  //
+  // On macOS, `-u <url>` forces URL handler resolution explicitly so
+  // there's no chance of `open` treating the argument as a filename.
+  const platform = process.platform;
+  let cmd: string;
+  let args: string[];
+  if (platform === 'darwin') {
+    cmd = 'open';
+    args = ['-u', url];
+  } else if (platform === 'win32') {
+    // cmd.exe's `start` needs an empty title arg before the URL so
+    // the URL isn't interpreted as the window title.
+    cmd = 'cmd.exe';
+    args = ['/c', 'start', '', url];
+  } else {
+    cmd = 'xdg-open';
+    args = [url];
+  }
   return new Promise<void>((resolve) => {
-    const platform = process.platform;
-    let cmd: string;
-    if (platform === 'darwin') {
-      cmd = `open "${url}"`;
-    } else if (platform === 'win32') {
-      cmd = `start "${url}"`;
-    } else {
-      cmd = `xdg-open "${url}"`;
-    }
-    exec(cmd, () => {
+    try {
+      const proc = spawn(cmd, args, { stdio: 'ignore', detached: true });
+      proc.on('error', () => resolve());
+      proc.unref();
       resolve();
-    });
+    } catch {
+      resolve();
+    }
   });
 }
 
