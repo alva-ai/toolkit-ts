@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { lint, loadContract, formatReport } from '../lint/index.js';
-import { loadActiveContract } from '../lint/fetchContract.js';
+import { loadActiveDesignSystem } from '../lint/fetchContract.js';
 import type { AlvaClient } from '../client.js';
 import type { Report } from '../lint/types.js';
 
@@ -22,7 +22,7 @@ export async function handleLintPlaybook(
   const html = fs.readFileSync(opts.file, 'utf8');
   const contract = opts.contractYaml
     ? loadContract(opts.contractYaml)
-    : await loadActiveContract();
+    : await loadActiveDesignSystem();
   const report = lint(html, contract);
   const output = formatReport(report, opts.format ?? 'human');
   return { exitCode: report.summary.errors > 0 ? 1 : 0, output };
@@ -71,7 +71,7 @@ export async function lintBeforeRelease(
 
   const contract = opts.contractYaml
     ? loadContract(opts.contractYaml)
-    : await loadActiveContract();
+    : await loadActiveDesignSystem();
 
   const report = lint(html, contract);
   if (report.summary.errors > 0) {
