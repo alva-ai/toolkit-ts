@@ -20,13 +20,37 @@ npm install -g @alva-ai/toolkit
 
 ## CLI Quick Start
 
-Configure your API key (get one at [alva.ai](https://alva.ai)):
+Sign in with your Alva account (opens a browser, falls back to a paste-code
+flow for SSH / containers / headless machines):
+
+```bash
+alva auth login
+```
+
+`auth login` runs an OAuth 2.0 Authorization Code + PKCE flow. The CLI prints
+a URL you can open on any device; if a local default browser opens
+automatically the listener finishes the login with no extra step, otherwise
+copy the URL to another device, log in, and paste the code shown on the page
+back into the terminal.
+
+Headless / no-browser environments (SSH, containers, devcontainers, etc.)
+are auto-detected; pass `--no-browser` to force the paste-code flow or
+`--browser` to force the listener flow.
+
+```bash
+alva auth login --no-browser            # force paste-code flow
+alva auth login --profile staging       # save under a named profile
+alva auth login --auth-url https://stg.alva.xyz --base-url https://api-llm.stg.alva.ai  # point at stg
+```
+
+Or, if you already have an API key from [alva.ai/apikey](https://alva.ai/apikey),
+skip the OAuth flow and store the key directly:
 
 ```bash
 alva configure --api-key alva_your_key_here
 ```
 
-This writes your credentials to `~/.config/alva/config.json`.
+Either path writes your credentials to `~/.config/alva/config.json`.
 
 Now use any command:
 
@@ -248,7 +272,7 @@ try {
 ```text
 alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 alva whoami [--profile <name>]
-alva auth login [--profile <name>]
+alva auth login [--browser | --no-browser] [--profile <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json>]
