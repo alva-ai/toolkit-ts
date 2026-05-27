@@ -43,6 +43,9 @@ export class AlvaClient {
   readonly viewer_token?: string;
   readonly pbsvToken?: string;
   readonly apiKey?: string;
+  readonly gaClientId?: string;
+  readonly gaSessionId?: string;
+  readonly utmParams?: string;
 
   private _fs?: FsResource;
   private _run?: RunResource;
@@ -71,6 +74,9 @@ export class AlvaClient {
     this.viewer_token = config.viewer_token;
     this.pbsvToken = config.pbsvToken;
     this.apiKey = config.apiKey;
+    this.gaClientId = config.gaClientId;
+    this.gaSessionId = config.gaSessionId;
+    this.utmParams = config.utmParams;
   }
 
   get fs(): FsResource {
@@ -177,6 +183,16 @@ export class AlvaClient {
       } else if (this.apiKey) {
         headers['X-Alva-Api-Key'] = this.apiKey;
       }
+    }
+
+    if (this.gaClientId) {
+      headers['X-Alva-GA-Client-ID'] = this.gaClientId;
+    }
+    if (this.gaSessionId) {
+      headers['X-Alva-GA-Session-ID'] = this.gaSessionId;
+    }
+    if (this.utmParams) {
+      headers['X-Alva-UTM-Params'] = this.utmParams;
     }
 
     let fetchBody: BodyInit | undefined;
