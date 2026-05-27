@@ -15,6 +15,7 @@ import { RemixResource } from './resources/remix.js';
 import { ScreenshotResource } from './resources/screenshot.js';
 import { UserResource } from './resources/user.js';
 import { TradingResource } from './resources/trading.js';
+import { PortfolioResource } from './resources/portfolio.js';
 import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { NotificationPreferencesResource } from './resources/notificationPreferences.js';
@@ -62,6 +63,7 @@ export class AlvaClient {
   private _screenshot?: ScreenshotResource;
   private _user?: UserResource;
   private _trading?: TradingResource;
+  private _portfolio?: PortfolioResource;
   private _arraysJwt?: ArraysJwtResource;
   private _notifications?: NotificationsResource;
   private _notificationPreferences?: NotificationPreferencesResource;
@@ -123,6 +125,9 @@ export class AlvaClient {
   }
   get trading(): TradingResource {
     return (this._trading ??= new TradingResource(this));
+  }
+  get portfolio(): PortfolioResource {
+    return (this._portfolio ??= new PortfolioResource(this));
   }
   get arraysJwt(): ArraysJwtResource {
     return (this._arraysJwt ??= new ArraysJwtResource(this));

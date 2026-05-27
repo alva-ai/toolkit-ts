@@ -520,6 +520,85 @@ export interface ExecuteSignalResult {
   error?: string;
 }
 
+// --- Portfolio (connected accounts across TREX + SnapTrade) ---
+
+export interface PortfolioAccount {
+  id: string;
+  provider: 'TREX' | 'SNAPTRADE';
+  name: string;
+  institution: string;
+  identifier?: string;
+  readOnly: boolean;
+  paper: boolean;
+  exchange?: string;
+  createdAtMs?: number;
+  subscriptions: PortfolioAccountSubscription[];
+  status?: string;
+  statusReason?: string;
+  lastSyncedAtMs?: number;
+  connectionId?: string;
+}
+
+export interface PortfolioAccountSubscription {
+  id: string;
+  sourceUsername: string;
+  sourceFeed: string;
+  playbookId: string;
+  playbookName: string;
+  playbookVersion: string;
+  active: boolean;
+  deactivateReason?: string;
+  createdAt: number;
+  watermark: number;
+}
+
+export interface PortfolioMoney {
+  amount: number;
+  currency: string;
+  currencySymbol: string;
+}
+
+export interface PortfolioHolding {
+  symbol: string;
+  side?: string;
+  quantity: number;
+  avgCost?: PortfolioMoney;
+  currentPrice?: PortfolioMoney;
+  marketValue?: PortfolioMoney;
+  unrealizedPnl?: PortfolioMoney;
+  allocation?: number;
+}
+
+export interface PortfolioSummary {
+  totalValue?: PortfolioMoney;
+  cash?: PortfolioMoney;
+  unrealizedPnl?: PortfolioMoney;
+  holdings: PortfolioHolding[];
+  asOfMs?: number;
+}
+
+export interface PortfolioActivity {
+  id: string;
+  kind: string;
+  type: string;
+  occurredAtMs?: number;
+  symbol?: string;
+  side?: string;
+  quantity?: number;
+  price?: PortfolioMoney;
+  amount?: PortfolioMoney;
+  fee?: PortfolioMoney;
+  status?: string;
+  sourceLabel?: string;
+  description?: string;
+  externalReferenceId?: string;
+}
+
+export interface PortfolioActivityConnection {
+  activities: PortfolioActivity[];
+  nextPageToken?: string;
+}
+
 // --- Notifications ---
 
 export interface NotificationListParams {
