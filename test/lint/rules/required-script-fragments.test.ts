@@ -192,4 +192,114 @@ describe('required-script-fragments', () => {
       expect(requiredScriptFragments(m2, ANDED).length).toBeGreaterThan(0);
     });
   });
+
+  describe('global.requiredScripts — cross-cutting rules (not tied to any component)', () => {
+    // Real-world target: ECharts compresses to wrong dimensions when its
+    // container is hidden / 0-width at init. Tab-resize requirement only
+    // fires on pages with a tab; no-tab playbooks went silently broken.
+    const GLOBAL_CONTRACT: Contract = {
+      ...CONTRACT,
+      components: [],
+      global: {
+        ...CONTRACT.global,
+        requiredScripts: [
+          {
+            whenScriptContains: ['echarts.init'],
+            mustContain: ['requestAnimationFrame'],
+            message:
+              'Pages using ECharts must defer init/resize via requestAnimationFrame.',
+          },
+        ],
+      },
+    };
+
+    it('does not fire when echarts.init is absent (no false positives)', () => {
+      const m = buildModel(
+        parseHtml('<div><script>console.log("no charts");</script></div>'),
+        GLOBAL_CONTRACT
+      );
+      expect(requiredScriptFragments(m, GLOBAL_CONTRACT)).toEqual([]);
+    });
+
+    it('fires when echarts.init is present but requestAnimationFrame is not — no tab needed', () => {
+      const html = `
+        <div class="chart-body" id="c"></div>
+        <script>
+          var c = echarts.init(document.getElementById('c'));
+          c.setOption({ /* ... */ });
+        </script>
+      `;
+      const m = buildModel(parseHtml(html), GLOBAL_CONTRACT);
+      const findings = requiredScriptFragments(m, GLOBAL_CONTRACT);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.message).toMatch(/playbook/);
+      expect(findings[0]!.message).toMatch(/requestAnimationFrame/);
+      expect(findings[0]!.message).toMatch(/echarts\.init/);
+    });
+
+    it('passes when echarts.init AND requestAnimationFrame both present', () => {
+      const html = `
+        <div class="chart-body" id="c"></div>
+        <script>
+          requestAnimationFrame(function () {
+            var c = echarts.init(document.getElementById('c'));
+            c.setOption({});
+          });
+        </script>
+      `;
+      const m = buildModel(parseHtml(html), GLOBAL_CONTRACT);
+      expect(requiredScriptFragments(m, GLOBAL_CONTRACT)).toEqual([]);
+    });
+
+    it('runs even when the playbook has zero registered components', () => {
+      // The pre-existing early-return on presentNames.size === 0 would have
+      // bypassed this. Global rules must still run.
+      const html = `<script>echarts.init(x);</script>`;
+      const m = buildModel(parseHtml(html), GLOBAL_CONTRACT);
+      const findings = requiredScriptFragments(m, GLOBAL_CONTRACT);
+      expect(findings).toHaveLength(1);
+    });
+
+    it('processes component-scoped + global rules together', () => {
+      const MIXED: Contract = {
+        ...CONTRACT,
+        components: [
+          {
+            name: 'tab',
+            root: 'tab',
+            requiredScripts: [
+              {
+                whenAlso: ['chart-card'],
+                mustContain: ['inst.resize()'],
+                message: 'tab + chart-card must resize on switch.',
+              },
+            ],
+          },
+          { name: 'chart-card', root: 'chart-container' },
+        ],
+        global: {
+          ...CONTRACT.global,
+          requiredScripts: [
+            {
+              whenScriptContains: ['echarts.init'],
+              mustContain: ['requestAnimationFrame'],
+            },
+          ],
+        },
+      };
+      // tab + chart-card both present AND echarts.init in script → both rules
+      // fire. Missing both mustContains → two findings.
+      const html = `
+        <div class="tab"></div>
+        <div class="chart-container"></div>
+        <script>echarts.init(x); c.setOption({});</script>
+      `;
+      const m = buildModel(parseHtml(html), MIXED);
+      const findings = requiredScriptFragments(m, MIXED);
+      expect(findings.length).toBe(2);
+      const messages = findings.map((f) => f.message).join('\n');
+      expect(messages).toMatch(/'tab'/);
+      expect(messages).toMatch(/playbook/);
+    });
+  });
 });
