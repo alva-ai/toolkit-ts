@@ -449,4 +449,45 @@ describe('handleAuthLogin (PKCE Mode A)', () => {
       'EADDRINUSE'
     );
   });
+
+  it('paste path: bare code pasted before callback wins; listener never fires', async () => {
+    const { fixedVerifier, writeConfigDeps, fetchMock, getCapturedUrl, deps } =
+      makeDeps({
+        // Yield the code as soon as readline is awaited, before the
+        // listener has any chance to fire.
+        readline: vi.fn().mockResolvedValue('XYZ123'),
+      });
+
+    const result = await handleAuthLogin(['auth', 'login'], deps);
+
+    expect(result.apiKey).toBe('alva_test123');
+    expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+
+    // Exchange happened with the pasted code + localhost redirect_uri
+    // derived from the listener's bound port.
+    expect(fetchMock.calls).toHaveLength(1);
+    const body = JSON.parse(fetchMock.calls[0].init?.body ?? '{}');
+    expect(body.code).toBe('XYZ123');
+    expect(body.code_verifier).toBe(fixedVerifier);
+    const port = extractPort(await waitForServer(getCapturedUrl));
+    expect(body.redirect_uri).toBe(`http://127.0.0.1:${port}/callback`);
+  });
+
+  it('paste path: full localhost callback URL is accepted; code extracted', async () => {
+    const { fixedState, getCapturedUrl, fetchMock, deps } = makeDeps({
+      readline: vi.fn().mockImplementation(async () => {
+        // Wait for the listener to come up so we know the port, then
+        // paste the full callback URL the way a real user would.
+        const openedUrl = await waitForServer(getCapturedUrl);
+        const port = extractPort(openedUrl);
+        return `http://127.0.0.1:${port}/callback?code=PASTED-XYZ&state=${fixedState}`;
+      }),
+    });
+
+    const result = await handleAuthLogin(['auth', 'login'], deps);
+
+    expect(result.apiKey).toBe('alva_test123');
+    const body = JSON.parse(fetchMock.calls[0].init?.body ?? '{}');
+    expect(body.code).toBe('PASTED-XYZ');
+  });
 });

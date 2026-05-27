@@ -51,6 +51,11 @@ export interface AuthLoginDeps {
   timeout?: number;
   log: (msg: string) => void;
   fetch: FetchLike;
+  // Optional readline used to accept manual code paste in parallel with
+  // the localhost callback listener. Resolves with a single line of user
+  // input. When undefined (default in tests), Mode A operates
+  // listener-only.
+  readline?: (prompt?: string) => Promise<string>;
 }
 
 /**
@@ -142,6 +147,7 @@ function defaultDeps(): AuthLoginDeps {
         url,
         init as Parameters<FetchLike>[1]
       )) as FetchLike,
+    readline: defaultReadline,
   };
 }
 
@@ -343,11 +349,89 @@ export async function handleAuthLogin(
         codeChallenge,
       });
       d.log(
-        `Opening browser...\nIf it doesn't open, visit:\n${loginUrl}\n\nWaiting for login callback...\n`
+        [
+          '',
+          'Open this URL in any browser to log in:',
+          '',
+          `  ${loginUrl}`,
+          '',
+          'A local browser, if available, will complete the login automatically.',
+          'If you logged in from a different device, paste the `code` from the',
+          'browser URL bar below (the whole URL is also fine).',
+          '',
+        ].join('\n')
       );
       d.openBrowser(loginUrl).catch(() => {
         // Swallow browser open errors
       });
+
+      // Optional parallel paste-code path. Resolves the same outer
+      // Promise via `settle`; whichever wins (listener vs paste vs
+      // timeout) shuts the other paths down. `redirectUri` is the
+      // same localhost URL for both — the code was issued bound to
+      // it, so the exchange's redirect_uri match check works regardless
+      // of how the user delivered the code.
+      const tryPasteLoop = d.readline;
+      if (tryPasteLoop) {
+        (async () => {
+          for (let attempt = 0; attempt < MAX_PASTE_ATTEMPTS; attempt++) {
+            if (settled) return;
+            let raw: string;
+            try {
+              raw = await tryPasteLoop('> ');
+            } catch {
+              return; // readline closed / stdin gone — listener path remains
+            }
+            if (settled) return;
+            const code = extractCodeFromInput(raw);
+            if (!code) {
+              if (attempt < MAX_PASTE_ATTEMPTS - 1) {
+                d.log("Couldn't find a code in that input. Try again.\n");
+              }
+              continue;
+            }
+            try {
+              const apiKey = await exchangeCodeForApiKey({
+                baseUrl,
+                code,
+                codeVerifier,
+                redirectUri,
+                fetch: d.fetch,
+              });
+              if (settled) return;
+              await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+              settle(() => {
+                server.close();
+                resolve({
+                  status: 'logged_in',
+                  apiKey,
+                  profile: profileName,
+                });
+              });
+              return;
+            } catch (err) {
+              if (settled) return;
+              const msg = err instanceof Error ? err.message : String(err);
+              // Non-invalid_grant failures (network, 5xx, etc.) fail
+              // fast — the user pasted *something* but the server
+              // can't talk; sitting in a paste loop won't help.
+              if (!/invalid_grant/i.test(msg)) {
+                settle(() => {
+                  server.close();
+                  reject(err instanceof Error ? err : new Error(msg));
+                });
+                return;
+              }
+              if (attempt < MAX_PASTE_ATTEMPTS - 1) {
+                d.log("That code didn't work. Try again.\n");
+              }
+            }
+          }
+          // Paste attempts exhausted; do NOT settle — the listener path
+          // is still in play (and so is the overall timeout). Just
+          // stop prompting.
+        })();
+      }
     });
 
     const timer = setTimeout(() => {
@@ -359,6 +443,42 @@ export async function handleAuthLogin(
 
 const OOB_CALLBACK_PATH = '/oauth/code/callback';
 const MAX_PASTE_ATTEMPTS = 3;
+
+/**
+ * Extract a usable authorization code from whatever the user pastes.
+ * Accepts:
+ *   - bare code:                   `ABCD-EFGH`
+ *   - full callback URL:           `http://127.0.0.1:54321/callback?code=ABCD&state=...`
+ *   - query string fragment:       `?code=ABCD&state=...`  or  `code=ABCD&state=...`
+ *
+ * Returns null when no code can be extracted (user typed garbage or
+ * pressed enter on an empty line). Preserves `-` and `_` in bare codes
+ * since both are valid base64url chars and appear in real codes
+ * (~50% of 22-char codes contain at least one).
+ */
+function extractCodeFromInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Full URL with ?code=
+  try {
+    const url = new URL(trimmed);
+    const code = url.searchParams.get('code');
+    if (code) return code;
+  } catch {
+    // not a URL, fall through
+  }
+  // Query string only (with or without leading `?`)
+  if (trimmed.includes('=')) {
+    const params = new URLSearchParams(
+      trimmed.startsWith('?') ? trimmed.slice(1) : trimmed
+    );
+    const code = params.get('code');
+    if (code) return code;
+  }
+  // Bare code: strip whitespace only (preserve `-` and `_`).
+  const code = trimmed.replace(/\s+/g, '');
+  return code || null;
+}
 
 /**
  * Derive the OOB display page URL from the authorize URL. The frontend
@@ -453,7 +573,15 @@ export async function handleAuthLoginNoBrowser(
   });
 
   d.log(
-    `Open this URL in any browser to log in:\n\n  ${loginUrl}\n\nAfter approving, paste the code shown on the page:\n`
+    [
+      '',
+      'Open this URL in any browser to log in:',
+      '',
+      `  ${loginUrl}`,
+      '',
+      'After approving, paste the code shown on the page:',
+      '',
+    ].join('\n')
   );
 
   let lastErr: Error | null = null;
