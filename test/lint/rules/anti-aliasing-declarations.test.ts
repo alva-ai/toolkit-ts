@@ -111,7 +111,8 @@ describe('anti-aliasing-declarations — canonical CSS auto-pass', () => {
     },
   };
 
-  it('passes when canonical CSS is linked, even without the declarations inline', () => {
+  it('passes (legacy trust-the-link) when bundleCss is not resolved', () => {
+    // Backwards compat: contract built without orchestrator never has bundleCss.
     const m = buildModel(
       parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
       CONTRACT_WITH_CANONICAL
@@ -124,5 +125,90 @@ describe('anti-aliasing-declarations — canonical CSS auto-pass', () => {
     expect(antiAliasingDeclarations(m, CONTRACT_WITH_CANONICAL)).toHaveLength(
       1
     );
+  });
+});
+
+describe('anti-aliasing-declarations — bundle verification', () => {
+  const ALL_THREE = [
+    '-webkit-font-smoothing: antialiased',
+    '-moz-osx-font-smoothing: grayscale',
+    'text-rendering: optimizeLegibility',
+  ];
+
+  const CONTRACT_WITH_CANONICAL_AND_BUNDLE = (bundleCss: string): Contract => ({
+    ...CONTRACT,
+    global: {
+      ...CONTRACT.global,
+      antiAliasing: { requiredDeclarations: ALL_THREE },
+      canonicalCssUrls: ['https://x.example/v1/full.css'],
+    },
+    bundleCss,
+  });
+
+  it('passes when canonical is linked AND bundle declares all required AA rules', () => {
+    const bundle = `
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+    `;
+    const c = CONTRACT_WITH_CANONICAL_AND_BUNDLE(bundle);
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
+      c
+    );
+    expect(antiAliasingDeclarations(m, c)).toEqual([]);
+  });
+
+  it('errors for each AA declaration the bundle is missing', () => {
+    // Bundle ships only one of the three required declarations
+    const bundle = `body { -webkit-font-smoothing: antialiased; }`;
+    const c = CONTRACT_WITH_CANONICAL_AND_BUNDLE(bundle);
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
+      c
+    );
+    const findings = antiAliasingDeclarations(m, c);
+    expect(findings).toHaveLength(2);
+    for (const f of findings) {
+      expect(f.message).toMatch(/bundle/i);
+      expect(f.message).toMatch(/drifted/i);
+    }
+    const missing = findings.map((f) => f.message);
+    expect(missing.some((m) => m.includes('-moz-osx-font-smoothing'))).toBe(
+      true
+    );
+    expect(missing.some((m) => m.includes('text-rendering'))).toBe(true);
+  });
+
+  it('accepts the declaration on any selector (not only body) — same lenience as inline', () => {
+    const bundle = `
+      .anywhere { -webkit-font-smoothing: antialiased; }
+      html { -moz-osx-font-smoothing: grayscale; }
+      .foo, .bar { text-rendering: optimizeLegibility; }
+    `;
+    const c = CONTRACT_WITH_CANONICAL_AND_BUNDLE(bundle);
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
+      c
+    );
+    expect(antiAliasingDeclarations(m, c)).toEqual([]);
+  });
+
+  it('errors when bundle has the property with the wrong value', () => {
+    const bundle = `body {
+      -webkit-font-smoothing: subpixel-antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }`;
+    const c = CONTRACT_WITH_CANONICAL_AND_BUNDLE(bundle);
+    const m = buildModel(
+      parseHtml('<link rel="stylesheet" href="https://x.example/v1/full.css">'),
+      c
+    );
+    const findings = antiAliasingDeclarations(m, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain('-webkit-font-smoothing');
   });
 });

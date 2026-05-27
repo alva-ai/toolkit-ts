@@ -1,5 +1,5 @@
 // src/lint/rules/font-family-root.ts
-import * as csstree from 'css-tree';
+import { bundleDeliversRootFontFamily } from '../bundle-introspection.js';
 import type {
   Contract,
   Finding,
@@ -14,49 +14,6 @@ const ROOT_SELECTORS = new Set([
   'html, body',
   'body, html',
 ]);
-
-const ROOT_SELECTOR_RE = /^(body|html|:root|html\s*,\s*body|body\s*,\s*html)$/i;
-
-/**
- * Walk parsed bundle CSS and confirm a body/html/:root rule declares
- * font-family containing the required family (case-insensitive).
- * Mirrors `bundleDeliversRootFontFamily` in
- * skills/alva/scripts/design-contract-sync.ts.
- */
-function bundleDeliversRootFontFamily(
-  bundleCss: string,
-  required: string
-): boolean {
-  let ast: csstree.CssNode;
-  try {
-    ast = csstree.parse(bundleCss);
-  } catch {
-    return false;
-  }
-  if (ast.type !== 'StyleSheet') return false;
-
-  let found = false;
-  csstree.walk(ast, {
-    visit: 'Rule',
-    enter(node) {
-      if (found) return;
-      if (node.type !== 'Rule') return;
-      const sel = csstree.generate(node.prelude).trim();
-      if (!ROOT_SELECTOR_RE.test(sel)) return;
-      csstree.walk(node.block, {
-        visit: 'Declaration',
-        enter(d) {
-          if (found) return;
-          if (d.type !== 'Declaration') return;
-          if (d.property !== 'font-family') return;
-          const val = csstree.generate(d.value).toLowerCase();
-          if (val.includes(required.toLowerCase())) found = true;
-        },
-      });
-    },
-  });
-  return found;
-}
 
 export function fontFamilyRoot(
   model: ResolvedModel,

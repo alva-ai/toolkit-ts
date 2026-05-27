@@ -106,9 +106,46 @@ function bundleDeliversRootFontFamily(
   return found;
 }
 
+function bundleMissingDeclarations(
+  bundle: string,
+  requirements: string[]
+): string[] {
+  const wanted = requirements.map((req) => {
+    const [propRaw, ...valParts] = req.split(':');
+    return {
+      raw: req,
+      property: propRaw!.trim(),
+      value: valParts.join(':').trim(),
+    };
+  });
+  let ast: csstree.CssNode;
+  try {
+    ast = csstree.parse(bundle);
+  } catch {
+    return [...requirements];
+  }
+  if (ast.type !== 'StyleSheet') return [...requirements];
+
+  const satisfied = new Set<string>();
+  csstree.walk(ast, {
+    visit: 'Declaration',
+    enter(d) {
+      if (d.type !== 'Declaration') return;
+      for (const w of wanted) {
+        if (satisfied.has(w.raw)) continue;
+        if (d.property !== w.property) continue;
+        const v = csstree.generate(d.value).trim();
+        if (v === w.value) satisfied.add(w.raw);
+      }
+    },
+  });
+  return requirements.filter((r) => !satisfied.has(r));
+}
+
 interface RawContract {
   global?: {
     typography?: { 'font-family-root-must-include'?: string };
+    'anti-aliasing'?: { 'required-declarations'?: string[] };
   };
 }
 
@@ -127,16 +164,49 @@ function verifyVendoredArtifacts(yaml: string, bundle: string): void {
     );
     process.exit(1);
   }
-  const required =
-    parsed!.global?.typography?.['font-family-root-must-include'];
-  if (!required) return; // contract makes no font-family-root claim
 
-  if (!bundleDeliversRootFontFamily(bundle, required)) {
-    console.error(
-      `vendor-contract: vendored bundle does not deliver the root font-family the contract requires.`
-    );
-    console.error(`  contract requires: '${required}' on body/html/:root`);
-    console.error(`  bundle (${BUNDLE_CDN_URL}) has no matching rule`);
+  let ok = true;
+
+  const requiredFamily =
+    parsed!.global?.typography?.['font-family-root-must-include'];
+  if (requiredFamily) {
+    if (!bundleDeliversRootFontFamily(bundle, requiredFamily)) {
+      console.error(
+        `vendor-contract: vendored bundle does not deliver the root font-family the contract requires.`
+      );
+      console.error(
+        `  contract requires: '${requiredFamily}' on body/html/:root`
+      );
+      console.error(`  bundle (${BUNDLE_CDN_URL}) has no matching rule`);
+      ok = false;
+    } else {
+      console.log(
+        `vendor-contract: verified bundle delivers '${requiredFamily}' as root font-family`
+      );
+    }
+  }
+
+  const requiredAA =
+    parsed!.global?.['anti-aliasing']?.['required-declarations'];
+  if (requiredAA && requiredAA.length > 0) {
+    const missing = bundleMissingDeclarations(bundle, requiredAA);
+    if (missing.length > 0) {
+      console.error(
+        `vendor-contract: vendored bundle is missing anti-aliasing declarations the contract requires.`
+      );
+      for (const m of missing) console.error(`  missing: ${m}`);
+      console.error(
+        `  bundle (${BUNDLE_CDN_URL}) has no matching declarations`
+      );
+      ok = false;
+    } else {
+      console.log(
+        `vendor-contract: verified bundle delivers all ${requiredAA.length} anti-aliasing declarations`
+      );
+    }
+  }
+
+  if (!ok) {
     console.error(
       `  → fix the source bundle in the skills repo (design.md Typography),`
     );
@@ -145,9 +215,6 @@ function verifyVendoredArtifacts(yaml: string, bundle: string): void {
     );
     process.exit(1);
   }
-  console.log(
-    `vendor-contract: verified bundle delivers '${required}' as root font-family`
-  );
 }
 
 async function main() {
