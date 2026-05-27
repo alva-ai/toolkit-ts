@@ -226,13 +226,10 @@ describe('handleAuthLogin (PKCE Mode A)', () => {
     });
   });
 
-  it('error= on callback: rejects with the OAuth error', async () => {
+  it('error=access_denied on callback: rejects with a user-friendly decline message', async () => {
     const { fixedState, getCapturedUrl, fetchMock, deps } = makeDeps();
 
     const loginPromise = handleAuthLogin(['auth', 'login'], deps);
-    // Attach a handler eagerly so the rejection isn't briefly "unhandled"
-    // between the synchronous reject inside the request callback and the
-    // later `expect(...).rejects` assertion.
     const settled = loginPromise.then(
       (v) => ({ ok: true, v }) as const,
       (e) => ({ ok: false, e: e as Error }) as const
@@ -241,13 +238,42 @@ describe('handleAuthLogin (PKCE Mode A)', () => {
     const port = extractPort(openedUrl);
 
     await httpGet(
-      `http://127.0.0.1:${port}/callback?error=access_denied&state=${fixedState}`
+      `http://127.0.0.1:${port}/callback?error=access_denied&error_description=user%20declined%20authorization&state=${fixedState}`
     );
 
     const outcome = await settled;
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
-      expect(outcome.e.message).toMatch(/access_denied/);
+      // access_denied is a known OAuth error code; we surface a
+      // friendly message that mentions retrying with `alva auth login`,
+      // not the raw error code which is user-hostile.
+      expect(outcome.e.message).toMatch(/declined.*alva auth login/i);
+    }
+    expect(fetchMock.calls).toHaveLength(0);
+  });
+
+  it('error=server_error on callback: surfaces error_description verbatim', async () => {
+    const { fixedState, getCapturedUrl, fetchMock, deps } = makeDeps();
+
+    const loginPromise = handleAuthLogin(['auth', 'login'], deps);
+    const settled = loginPromise.then(
+      (v) => ({ ok: true, v }) as const,
+      (e) => ({ ok: false, e: e as Error }) as const
+    );
+    const openedUrl = await waitForServer(getCapturedUrl);
+    const port = extractPort(openedUrl);
+
+    const desc = 'authorization server is overloaded, try again later';
+    await httpGet(
+      `http://127.0.0.1:${port}/callback?error=server_error&error_description=${encodeURIComponent(
+        desc
+      )}&state=${fixedState}`
+    );
+
+    const outcome = await settled;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.e.message).toContain(desc);
     }
     expect(fetchMock.calls).toHaveLength(0);
   });

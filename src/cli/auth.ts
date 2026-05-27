@@ -275,12 +275,17 @@ export async function handleAuthLogin(
       }
 
       if (errorParam) {
+        const desc = reqUrl.searchParams.get('error_description') ?? '';
+        const friendly =
+          errorParam === 'access_denied'
+            ? 'You declined the authorization request. Run `alva auth login` again to retry.'
+            : desc || `OAuth error: ${errorParam}`;
         res.writeHead(400);
         res.end(
-          `<html><body><h1>Login declined</h1><p>${errorParam}</p></body></html>`
+          `<html><body><h1>Login declined</h1><p>${friendly}</p><p>You can close this window and return to your terminal.</p></body></html>`
         );
         server.close();
-        settle(() => reject(new Error(`OAuth error: ${errorParam}`)));
+        settle(() => reject(new Error(friendly)));
         return;
       }
 
