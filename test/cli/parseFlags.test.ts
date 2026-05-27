@@ -43,4 +43,25 @@ describe('parseFlags --no-browser / --browser', () => {
     expect(flags['auth-url']).toBe('https://stg.alva.xyz');
     expect(flags['no-browser']).toBe('true');
   });
+
+  it('--flag at end of argv (no value) throws instead of silently falling back', () => {
+    // Reproduces the multi-line shell footgun: when a command split
+    // across lines without a `\` continuation, --base-url ends up with
+    // no value and the URL became a separate shell command. Before
+    // this change parseFlags silently dropped the flag and the CLI
+    // fell back to its default (prd), producing an HTTP 404 against a
+    // stg-issued code.
+    expect(() => parseFlags(['login', '--base-url'])).toThrow(
+      /--base-url requires a value/
+    );
+  });
+
+  it('--flag followed by another --flag throws (no value)', () => {
+    // `--auth-url --profile stg` — auth-url ate `--profile` as its
+    // value before, leaving profile unrecognized later. Force an
+    // error so the typo surfaces.
+    expect(() =>
+      parseFlags(['login', '--auth-url', '--profile', 'stg'])
+    ).toThrow(/--auth-url requires a value/);
+  });
 });

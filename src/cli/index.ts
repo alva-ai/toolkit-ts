@@ -952,10 +952,26 @@ export function parseFlags(argv: string[]): Record<string, string> {
       continue;
     }
 
-    if (i + 1 < argv.length) {
-      flags[name] = argv[i + 1];
-      i++;
+    // Non-boolean flag: requires a value. Two failure modes both
+    // silently fell back to defaults before, which masked footguns
+    // like `--base-url` at end-of-line (multi-line shell command with
+    // a stray newline) or `--api-key --profile staging`:
+    //   1. no next arg at all
+    //   2. next arg looks like another flag (`--something`)
+    // Treat both as a usage error — the user almost certainly meant to
+    // pass a value.
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith('--')) {
+      throw new CliUsageError(
+        `--${name} requires a value`,
+        // Group is best-effort: first non-flag arg of the original
+        // argv. parseFlags doesn't track group, so just use the flag
+        // name as a fallback hint.
+        name
+      );
     }
+    flags[name] = next;
+    i++;
   }
   return flags;
 }
