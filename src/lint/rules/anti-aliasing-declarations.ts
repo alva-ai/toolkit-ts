@@ -1,4 +1,5 @@
 // src/lint/rules/anti-aliasing-declarations.ts
+import { bundleMissingDeclarations } from '../bundle-introspection.js';
 import type {
   Contract,
   Finding,
@@ -13,7 +14,9 @@ export function antiAliasingDeclarations(
   const aa = contract.global.antiAliasing;
   if (!aa || aa.requiredDeclarations.length === 0) return [];
 
-  // Auto-pass when a canonical CSS bundle is <link>ed — the bundle declares font-family.
+  // Canonical-bundle auto-pass: when the playbook <link>s a canonical bundle
+  // URL, the bundle is the cascade source for anti-aliasing. Verify against
+  // the resolved bundle CSS rather than blindly trusting the URL.
   const canonical = contract.global.canonicalCssUrls ?? [];
   if (canonical.length > 0) {
     const linked = new Set<string>();
@@ -23,7 +26,27 @@ export function antiAliasingDeclarations(
       if (!rel.split(/\s+/).includes('stylesheet')) continue;
       if (el.attrs.href) linked.add(el.attrs.href);
     }
-    if (canonical.some((u) => linked.has(u))) return [];
+    if (canonical.some((u) => linked.has(u))) {
+      if (contract.bundleCss) {
+        const missing = bundleMissingDeclarations(
+          contract.bundleCss,
+          aa.requiredDeclarations
+        );
+        if (missing.length === 0) return [];
+        return missing.map((req) => ({
+          rule: 'anti-aliasing-declarations',
+          severity: 'error' as const,
+          message:
+            `Canonical bundle is linked but does not declare '${req}' anywhere. ` +
+            `Contract requires it via anti-aliasing.required-declarations — ` +
+            `bundle on CDN has drifted from the contract. Re-publish the design ` +
+            `system, or declare it inline as a stopgap.`,
+        }));
+      }
+      // No bundle CSS resolved (e.g. caller passed contract without bundleCss).
+      // Preserve the legacy trust-the-link behavior for backwards compatibility.
+      return [];
+    }
   }
 
   const findings: Finding[] = [];

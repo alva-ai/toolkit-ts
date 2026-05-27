@@ -93,6 +93,14 @@ export interface Contract {
     requiredScripts?: ScriptRequirement[];
   };
   components: ComponentSpec[];
+  /**
+   * Canonical bundle CSS attached at lint time by the orchestrator. Rules
+   * that auto-pass when a canonical bundle URL is linked use this to verify
+   * the bundle actually delivers what the contract promises (e.g. body
+   * font-family). Not part of the YAML schema — populated by
+   * `loadActiveDesignSystem()` from CDN or the vendored fallback.
+   */
+  bundleCss?: string;
 }
 
 // Parser output (no dependency types leak across module boundary;
