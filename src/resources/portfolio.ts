@@ -10,10 +10,9 @@ export class PortfolioResource {
 
   async accounts(): Promise<PortfolioAccount[]> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      '/api/v1/portfolio/accounts'
-    ) as Promise<PortfolioAccount[]>;
+    return this.client._request('GET', '/api/v1/portfolio/accounts') as Promise<
+      PortfolioAccount[]
+    >;
   }
 
   async summary(accountId: string): Promise<PortfolioSummary> {

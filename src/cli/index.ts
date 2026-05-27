@@ -1998,11 +1998,7 @@ export async function dispatch(
           );
         case 'activities':
           return client.portfolio.activities({
-            accountId: requireFlag(
-              flags,
-              'account-id',
-              'portfolio activities'
-            ),
+            accountId: requireFlag(flags, 'account-id', 'portfolio activities'),
             limit: num(flags['limit']),
             pageToken: flags['page-token'],
           });
