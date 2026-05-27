@@ -68,6 +68,7 @@ Commands:
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
+  portfolio   Connected-account portfolio (accounts, summary, activities)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   auth        Authentication (login)
   screenshot  Capture a web screenshot as PNG
@@ -758,6 +759,28 @@ Examples:
   alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
   alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"
   alva screenshot --url /playbook/alice/btc-dashboard --out small.png --compress --compress-quality 70 --compress-max-width 1280`,
+
+  portfolio: `Usage: alva portfolio <subcommand> [options]
+
+Read-only view of connected accounts across TREX and SnapTrade.
+For trading actions (subscribe, execute, etc.) use 'alva trading'.
+
+Subcommands:
+  accounts     List all connected accounts (TREX + SnapTrade)
+  summary      Get portfolio summary (holdings + balance) for an account
+  activities   List recent activity for an account
+
+Summary/Activities flags:
+  --account-id <id>    Account ID with provider prefix, e.g. trex:123 or snaptrade:456 (required)
+
+Activities optional flags:
+  --limit <n>          Max results (default 50, max 200)
+  --page-token <tok>   Pagination token from a previous response
+
+Examples:
+  alva portfolio accounts
+  alva portfolio summary --account-id trex:123
+  alva portfolio activities --account-id snaptrade:456 --limit 20`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
@@ -1958,6 +1981,37 @@ export async function dispatch(
       }
       fs.writeFileSync(outFile, buf);
       return { written: outFile, bytes: buf.length };
+    }
+
+    case 'portfolio': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for portfolio',
+          'portfolio'
+        );
+      switch (subcommand) {
+        case 'accounts':
+          return client.portfolio.accounts();
+        case 'summary':
+          return client.portfolio.summary(
+            requireFlag(flags, 'account-id', 'portfolio summary')
+          );
+        case 'activities':
+          return client.portfolio.activities({
+            accountId: requireFlag(
+              flags,
+              'account-id',
+              'portfolio activities'
+            ),
+            limit: num(flags['limit']),
+            pageToken: flags['page-token'],
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: portfolio ${subcommand}`,
+            'portfolio'
+          );
+      }
     }
 
     case 'trading': {
