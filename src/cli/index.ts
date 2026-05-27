@@ -923,22 +923,38 @@ const BOOLEAN_FLAGS = new Set([
   'browser',
 ]);
 
-function parseFlags(argv: string[]): Record<string, string> {
+export function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg.startsWith('--no-') && BOOLEAN_FLAGS.has(arg.slice(5))) {
-      flags[arg.slice(5)] = 'false';
-    } else if (arg.startsWith('--')) {
-      const eqIdx = arg.indexOf('=');
-      if (eqIdx !== -1) {
-        flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
-      } else if (BOOLEAN_FLAGS.has(arg.slice(2))) {
-        flags[arg.slice(2)] = 'true';
-      } else if (i + 1 < argv.length) {
-        flags[arg.slice(2)] = argv[i + 1];
-        i++;
-      }
+    if (!arg.startsWith('--')) continue;
+
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx !== -1) {
+      flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+      continue;
+    }
+
+    const name = arg.slice(2);
+
+    // Literal boolean flag wins over the --no-X shortcut. This matters
+    // for flags whose own name starts with "no-" (e.g. --no-browser is
+    // itself a boolean opt-in, NOT the negation of --browser).
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags[name] = 'true';
+      continue;
+    }
+
+    // --no-X shortcut: only when X is a known boolean flag AND there is
+    // no literal --no-X flag registered (handled above).
+    if (name.startsWith('no-') && BOOLEAN_FLAGS.has(name.slice(3))) {
+      flags[name.slice(3)] = 'false';
+      continue;
+    }
+
+    if (i + 1 < argv.length) {
+      flags[name] = argv[i + 1];
+      i++;
     }
   }
   return flags;
