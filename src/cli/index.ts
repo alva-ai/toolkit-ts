@@ -305,13 +305,14 @@ Subcommands:
   runs       List runs for a cronjob (cursor-paginated)
   run-logs   Get stdout/stderr logs for a single cronjob run
 
-Create flags:
-  --name <name>          Cronjob name (required, 1-63 lowercase alphanumeric/hyphens)
-  --path <path>          Path to script on ALFS (required, must exist)
-  --cron <expression>    Cron expression (required, e.g. "0 */4 * * *")
+Create/Update flags:
+  --name <name>          Cronjob name (required on create, 1-63 lowercase alphanumeric/hyphens)
+  --path <path>          Path to script on ALFS (required on create, must exist)
+  --cron <expression>    Cron expression (required on create, e.g. "0 */4 * * *")
   --args <json>          JSON object passed to require("env").args
   --push-notify          Enable Telegram push notifications on completion
   --no-push-notify       Disable push notifications
+  --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
 
 List flags:
   --limit <n>            Max results per page (default: 20)
@@ -1316,6 +1317,13 @@ export async function dispatch(
               | Record<string, unknown>
               | undefined,
             push_notify: boolFlag(flags['push-notify']),
+            max_heap_size_mb: optionalBoundedIntegerFlag(
+              flags,
+              'max-heap-size-mb',
+              'deploy create',
+              1,
+              2046
+            ),
           });
         case 'list':
           return client.deploy.list({
@@ -1335,6 +1343,13 @@ export async function dispatch(
               | Record<string, unknown>
               | undefined,
             push_notify: boolFlag(flags['push-notify']),
+            max_heap_size_mb: optionalBoundedIntegerFlag(
+              flags,
+              'max-heap-size-mb',
+              'deploy update',
+              1,
+              2046
+            ),
           });
         case 'delete':
           return client.deploy.delete({
