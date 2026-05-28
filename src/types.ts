@@ -167,6 +167,8 @@ export interface CronjobCreateRequest {
   name: string;
   args?: Record<string, unknown>;
   push_notify?: boolean;
+  /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
+  max_heap_size_mb?: number;
 }
 
 export interface Cronjob {
@@ -177,6 +179,8 @@ export interface Cronjob {
   status: string;
   args: Record<string, unknown>;
   push_notify: boolean;
+  /** Per-cronjob V8 heap cap (MB). null when using the server default. */
+  max_heap_size_mb: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +201,8 @@ export interface CronjobUpdateRequest {
   cron_expression?: string;
   args?: Record<string, unknown>;
   push_notify?: boolean;
+  /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
+  max_heap_size_mb?: number;
 }
 
 export interface CronjobRunsListParams {

@@ -23,6 +23,7 @@ export class DeployResource {
         cron_expression: params.cron_expression,
         args: params.args,
         push_notify: params.push_notify,
+        max_heap_size_mb: params.max_heap_size_mb,
       },
     }) as Promise<Cronjob>;
   }
