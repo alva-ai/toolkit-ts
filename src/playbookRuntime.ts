@@ -30,6 +30,14 @@ export type UdfDescriptor = {
   params_schema: unknown | null;
 };
 
+export type UdfInvokeResponse<TResult = unknown> = {
+  result: TResult;
+  logs?: unknown;
+  credits_used_total?: number;
+  credits_charged_owner?: number;
+  credits_charged_consumer?: number;
+};
+
 export type UdfButtonOptions = {
   functionName: string;
   params?: unknown;
@@ -48,9 +56,10 @@ export type UdfApi = {
   call: <TResult = unknown>(
     functionName: string,
     params: unknown
-  ) => Promise<TResult>;
+  ) => Promise<UdfInvokeResponse<TResult>>;
   list: () => Promise<UdfDescriptor[]>;
   getViewerToken: () => string | null;
+  isAuthenticated: () => boolean;
   renderButton: (
     target: HTMLElement | string,
     options: UdfButtonOptions
@@ -131,6 +140,7 @@ export class UdfTransportError extends UdfError {}
 export const PBSV_UPDATE_MESSAGE = 'alva:pbsv:update';
 export const UDF_CONSENT_REQUEST_MESSAGE = 'alva:udf:consent-request';
 export const UDF_CONSENT_RESPONSE_MESSAGE = 'alva:udf:consent-response';
+export const UDF_AUTH_REQUIRED_MESSAGE = 'alva:udf:auth-required';
 
 const DEFAULT_API_ORIGIN = 'https://api-llm.prd.alva.ai';
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -172,6 +182,8 @@ export const playbookIdFromToken = (token: string | null) => {
 
 export const getViewerToken = () => cachedToken;
 
+const isAuthenticated = () => !!getViewerToken();
+
 const stripPbsvFromUrl = (targetWindow: Window) => {
   const url = new URL(targetWindow.location.href);
   url.searchParams.delete('_pbsv');
@@ -200,6 +212,25 @@ const safeJson = async (response: Response): Promise<UdfErrorBody> => {
   } catch {
     return {};
   }
+};
+
+const parseResultPayload = <TResult>(result: unknown): TResult => {
+  if (typeof result !== 'string') return result as TResult;
+  try {
+    return JSON.parse(result) as TResult;
+  } catch {
+    return result as TResult;
+  }
+};
+
+const normalizeInvokeResponse = <TResult>(
+  body: UdfErrorBody
+): UdfInvokeResponse<TResult> => {
+  const envelope = body as UdfInvokeResponse<unknown>;
+  return {
+    ...envelope,
+    result: parseResultPayload<TResult>(envelope.result),
+  };
 };
 
 const errorMetadata = (body: UdfErrorBody) =>
@@ -306,11 +337,22 @@ const requestConsent = async (
   });
 };
 
+const requestAuthentication = (functionName: string) => {
+  if (!runtimeWindow || !expectedParentOrigin) return;
+  runtimeWindow.parent.postMessage(
+    {
+      type: UDF_AUTH_REQUIRED_MESSAGE,
+      function_name: functionName,
+    },
+    expectedParentOrigin
+  );
+};
+
 const call = async <TResult>(
   functionName: string,
   params: unknown,
   retried = false
-): Promise<TResult> => {
+): Promise<UdfInvokeResponse<TResult>> => {
   const token = getViewerToken();
   if (!token) throw new UdfAuthRequiredError();
   if (!playbookIdFromBoot) {
@@ -348,7 +390,7 @@ const call = async <TResult>(
 
   const body = await safeJson(response);
   if (response.ok) {
-    return (body as { result?: TResult }).result as TResult;
+    return normalizeInvokeResponse<TResult>(body);
   }
 
   if (body.error?.code === 'CONSENT_REQUIRED' && !retried) {
@@ -424,12 +466,16 @@ const renderButton = (
 
   button.type = 'button';
   button.className = 'alva-udf-button';
-  button.textContent = getViewerToken() ? label : disabledLabel;
-  button.disabled = !getViewerToken();
+  button.textContent = isAuthenticated() ? label : disabledLabel;
+  button.disabled = false;
   button.setAttribute('data-function-name', options.functionName);
-  if (button.disabled) button.setAttribute('aria-disabled', 'true');
+  if (!isAuthenticated()) button.setAttribute('aria-disabled', 'true');
 
   button.addEventListener('click', async () => {
+    if (!isAuthenticated()) {
+      requestAuthentication(options.functionName);
+      return;
+    }
     if (button.disabled) return;
     button.disabled = true;
     button.textContent = loadingLabel;
@@ -448,8 +494,9 @@ const renderButton = (
         error,
       });
     } finally {
-      button.disabled = !getViewerToken();
-      button.textContent = button.disabled ? disabledLabel : label;
+      button.disabled = false;
+      button.textContent = isAuthenticated() ? label : disabledLabel;
+      if (!isAuthenticated()) button.setAttribute('aria-disabled', 'true');
     }
   });
 
@@ -461,6 +508,7 @@ export const udf: UdfApi = {
   call,
   list,
   getViewerToken,
+  isAuthenticated,
   renderButton,
   UdfError,
   UdfAuthRequiredError,

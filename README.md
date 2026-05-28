@@ -199,7 +199,8 @@ UDF calls.
 <script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
 <script>
   (async () => {
-    const result = await window.alva.udf.call('analyze', { ticker: 'AAPL' });
+    const response = await window.alva.udf.call('analyze', { ticker: 'AAPL' });
+    console.log(response.result, response.credits_charged_consumer);
     const functions = await window.alva.udf.list();
   })();
 </script>
@@ -219,7 +220,7 @@ result, and error states.
   });
 
   button.addEventListener('alva:udf-button:result', (event) => {
-    console.log(event.detail.result);
+    console.log(event.detail.result.result);
   });
 </script>
 ```
@@ -230,7 +231,7 @@ For module users, the same runtime is available from the package root:
 import { installPlaybookRuntime, udf } from '@alva-ai/toolkit';
 
 installPlaybookRuntime();
-const result = await udf.call('analyze', { ticker: 'AAPL' });
+const response = await udf.call('analyze', { ticker: 'AAPL' });
 ```
 
 ## API Reference
