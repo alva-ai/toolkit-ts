@@ -132,7 +132,7 @@ export const PBSV_UPDATE_MESSAGE = 'alva:pbsv:update';
 export const UDF_CONSENT_REQUEST_MESSAGE = 'alva:udf:consent-request';
 export const UDF_CONSENT_RESPONSE_MESSAGE = 'alva:udf:consent-response';
 
-const DEFAULT_API_ORIGIN = 'https://api.alva.ai';
+const DEFAULT_API_ORIGIN = 'https://api-llm.prd.alva.ai';
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
 
 let cachedToken: string | null = null;
