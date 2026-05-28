@@ -14,6 +14,7 @@ type FakeWindow = {
       ) => Promise<TResult>;
       list: () => Promise<Array<{ name: string; params_schema: unknown }>>;
       getViewerToken: () => string | null;
+      isAuthenticated: () => boolean;
       UdfConsentDeniedError: new () => Error;
     };
   };
@@ -117,16 +118,28 @@ describe('playbook runtime SDK', () => {
     installFakeWindow(
       `https://alice.playbook.alva.ai/demo/v1?_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai&api_origin=https%3A%2F%2Fapi.test`
     );
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(mockJsonResponse({ result: { ok: true } }));
+    const fetch = vi.fn().mockResolvedValue(
+      mockJsonResponse({
+        result: JSON.stringify({ ok: true }),
+        logs: 'ran analyze',
+        credits_used_total: 3,
+        credits_charged_owner: 0,
+        credits_charged_consumer: 3,
+      })
+    );
     vi.stubGlobal('fetch', fetch);
     const runtime = await import('../src/playbookRuntime.js');
     runtime.installPlaybookRuntime();
 
     const result = await runtime.udf.call('analyze', { ticker: 'AAPL' });
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({
+      result: { ok: true },
+      logs: 'ran analyze',
+      credits_used_total: 3,
+      credits_charged_owner: 0,
+      credits_charged_consumer: 3,
+    });
     const [url, init] = fetch.mock.calls[0];
     expect(url).toBe('https://api.test/api/v1/service/invoke');
     expect(init.headers.Authorization).toBe(`Bearer ${token}`);
@@ -180,7 +193,15 @@ describe('playbook runtime SDK', () => {
           402
         )
       )
-      .mockResolvedValueOnce(mockJsonResponse({ result: 'done' }));
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: JSON.stringify({ status: 'done' }),
+          logs: 'ok',
+          credits_used_total: 1,
+          credits_charged_owner: 0,
+          credits_charged_consumer: 1,
+        })
+      );
     vi.stubGlobal('fetch', fetch);
     vi.stubGlobal('crypto', { randomUUID: () => 'request-1' });
     const runtime = await import('../src/playbookRuntime.js');
@@ -208,7 +229,13 @@ describe('playbook runtime SDK', () => {
       },
     });
 
-    await expect(pending).resolves.toBe('done');
+    await expect(pending).resolves.toEqual({
+      result: { status: 'done' },
+      logs: 'ok',
+      credits_used_total: 1,
+      credits_charged_owner: 0,
+      credits_charged_consumer: 1,
+    });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -284,9 +311,15 @@ describe('playbook runtime SDK', () => {
         }
       }
     );
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(mockJsonResponse({ result: { ok: true } }));
+    const fetch = vi.fn().mockResolvedValue(
+      mockJsonResponse({
+        result: JSON.stringify({ ok: true }),
+        logs: 'ran',
+        credits_used_total: 5,
+        credits_charged_owner: 0,
+        credits_charged_consumer: 5,
+      })
+    );
     vi.stubGlobal('fetch', fetch);
     const runtime = await import('../src/playbookRuntime.js');
     runtime.installPlaybookRuntime();
@@ -321,7 +354,69 @@ describe('playbook runtime SDK', () => {
       'alva:udf-button:loading',
       'alva:udf-button:result',
     ]);
+    expect(dispatched[1]?.detail).toEqual({
+      functionName: 'analyze',
+      result: {
+        result: { ok: true },
+        logs: 'ran',
+        credits_used_total: 5,
+        credits_charged_owner: 0,
+        credits_charged_consumer: 5,
+      },
+    });
     expect(button.textContent).toBe('Run analysis');
     expect(button.disabled).toBe(false);
+  });
+
+  it('exposes auth state and asks the parent to sign in from an anonymous button', async () => {
+    const fake = installFakeWindow(
+      'https://alice.playbook.alva.ai/demo/v1?parent_origin=https%3A%2F%2Falva.ai'
+    ) as FakeWindow & {
+      document: { createElement: (tagName: string) => HTMLButtonElement };
+    };
+    const clickHandlers: Array<() => Promise<void>> = [];
+    const button = {
+      type: '',
+      className: '',
+      textContent: '',
+      disabled: false,
+      attributes: new Map<string, string>(),
+      setAttribute: vi.fn((name: string, value: string) => {
+        button.attributes.set(name, value);
+      }),
+      addEventListener: vi.fn((type: string, listener: () => Promise<void>) => {
+        if (type === 'click') clickHandlers.push(listener);
+      }),
+      dispatchEvent: vi.fn(),
+    };
+    const container = { appendChild: vi.fn() };
+    fake.document = {
+      createElement: vi.fn(() => button as unknown as HTMLButtonElement),
+    };
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    expect(runtime.udf.isAuthenticated()).toBe(false);
+    expect(fake.alva?.udf?.isAuthenticated()).toBe(false);
+
+    runtime.udf.renderButton(container as unknown as HTMLElement, {
+      functionName: 'analyze',
+      label: 'Run analysis',
+    });
+
+    expect(button.textContent).toBe('Sign in to run');
+    expect(button.disabled).toBe(false);
+    expect(button.attributes.get('aria-disabled')).toBe('true');
+
+    await clickHandlers[0]();
+
+    expect(fake.parent.postMessage).toHaveBeenCalledWith(
+      {
+        type: 'alva:udf:auth-required',
+        function_name: 'analyze',
+      },
+      'https://alva.ai'
+    );
+    expect(button.dispatchEvent).not.toHaveBeenCalled();
   });
 });
