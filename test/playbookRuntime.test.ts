@@ -138,6 +138,24 @@ describe('playbook runtime SDK', () => {
     });
   });
 
+  it('uses the production API origin when api_origin is omitted', async () => {
+    const token = tokenWithPid('42');
+    installFakeWindow(
+      `https://alice.playbook.alva.ai/demo/v1?_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai`
+    );
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(mockJsonResponse({ result: { ok: true } }));
+    vi.stubGlobal('fetch', fetch);
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    await runtime.udf.call('analyze', { ticker: 'AAPL' });
+
+    const [url] = fetch.mock.calls[0];
+    expect(url).toBe('https://api-llm.prd.alva.ai/api/v1/service/invoke');
+  });
+
   it('requests parent consent on CONSENT_REQUIRED and retries once when granted', async () => {
     const token = tokenWithPid('42');
     const fake = installFakeWindow(
