@@ -15,6 +15,10 @@ import {
   formatPlaybookSkillGet,
   formatPlaybookSkillFile,
 } from './playbookSkillsFormat.js';
+import {
+  PLAYBOOK_VISIBILITIES,
+  type PlaybookVisibility,
+} from '../resources/playbooks.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -57,7 +61,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
-  playbooks   Playbook discovery (trending)
+  playbooks   Playbook discovery (trending) and visibility
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -388,7 +392,8 @@ Examples:
 Find public playbooks with an agent-friendly response shape.
 
 Subcommands:
-  trending    List trending playbooks
+  trending        List trending playbooks
+  set-visibility  Set a playbook's visibility (requires auth)
 
 Trending flags:
   --keyword <text>       Search text
@@ -399,6 +404,10 @@ Trending flags:
   --cursor <cursor>      Pagination cursor from previous response
   --current <cursor>     Backward-compatible cursor alias
 
+Set-visibility flags:
+  --name <name>          Playbook name (required; owner derived from auth)
+  --visibility <v>       public, private, or paid (required, case-insensitive)
+
 Response fields:
   playbooks[].ref          "username/name" identifier for agents
   playbooks[].url_path     Web path: /username/playbooks/name
@@ -407,10 +416,17 @@ Response fields:
   playbooks[].follow_count Social proof signal
   playbooks[].cursor       Cursor for pagination
   has_next                 Whether another page exists
+  playbook_path            "<owner>/<name>" echoed by set-visibility
+
+Notes:
+  private and paid are paid-tier features; free-tier accounts get a
+  PERMISSION_DENIED error from the gateway.
 
 Examples:
   alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
-  alva playbooks trending --tag btc --cursor abc`,
+  alva playbooks trending --tag btc --cursor abc
+  alva playbooks set-visibility --name my-scanner --visibility private
+  alva playbooks set-visibility --name my-scanner --visibility public`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -1111,6 +1127,17 @@ function trendingPlaybooksSort(
   );
 }
 
+function playbookVisibility(val: string): PlaybookVisibility {
+  const normalized = val.trim().toLowerCase();
+  if ((PLAYBOOK_VISIBILITIES as readonly string[]).includes(normalized)) {
+    return normalized as PlaybookVisibility;
+  }
+  throw new CliUsageError(
+    `--visibility must be one of ${PLAYBOOK_VISIBILITIES.join(', ')} for 'playbooks set-visibility', got '${val}'`,
+    'playbooks'
+  );
+}
+
 function jsonParse(val: string | undefined): unknown {
   if (val === undefined) return undefined;
   try {
@@ -1417,6 +1444,13 @@ export async function dispatch(
             limit: num(flags['limit']),
             cursor: flags['cursor'],
             current: flags['current'],
+          });
+        case 'set-visibility':
+          return client.playbooks.setVisibility({
+            name: requireFlag(flags, 'name', 'playbooks set-visibility'),
+            visibility: playbookVisibility(
+              requireFlag(flags, 'visibility', 'playbooks set-visibility')
+            ),
           });
         default:
           throw new CliUsageError(

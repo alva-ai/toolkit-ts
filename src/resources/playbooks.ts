@@ -1,4 +1,26 @@
 import type { AlvaClient } from '../client.js';
+import { AlvaError } from '../error.js';
+
+/** Playbook visibility states understood by the gateway. */
+export type PlaybookVisibility = 'public' | 'private' | 'paid';
+
+export const PLAYBOOK_VISIBILITIES: readonly PlaybookVisibility[] = [
+  'public',
+  'private',
+  'paid',
+];
+
+export interface SetVisibilityParams {
+  /** URL-safe playbook name. The owner is derived server-side from auth. */
+  name: string;
+  /** Target visibility: public, private, or paid. */
+  visibility: PlaybookVisibility;
+}
+
+export interface SetVisibilityResponse {
+  /** ALFS-style "<owner>/<name>" path echoed back by the gateway. */
+  playbook_path: string;
+}
 
 export type TrendingPlaybooksSort = 'FOLLOWS' | 'RECENT';
 export type TrendingPlaybooksDir = 'FORWARD' | 'BACKWARD';
@@ -101,6 +123,33 @@ export class PlaybooksResource {
       playbooks: (raw.playbooks ?? []).map(toAgentPlaybook),
       has_next: raw.has_next ?? false,
     };
+  }
+
+  /**
+   * Set a playbook's visibility. Requires authentication; the owner is
+   * resolved server-side from the authenticated user, so only the playbook
+   * `name` is needed.
+   *
+   * Note: `private` and `paid` are paid-tier capabilities. A free-tier user
+   * receives a `PERMISSION_DENIED` error from the gateway, which is surfaced
+   * here unchanged.
+   */
+  async setVisibility(
+    params: SetVisibilityParams
+  ): Promise<SetVisibilityResponse> {
+    if (!PLAYBOOK_VISIBILITIES.includes(params.visibility)) {
+      throw new AlvaError(
+        'INVALID_ARGUMENT',
+        `Invalid visibility "${params.visibility}". Expected one of: ${PLAYBOOK_VISIBILITIES.join(', ')}.`,
+        400
+      );
+    }
+    this.client._requireAuth();
+    return (await this.client._request(
+      'POST',
+      `/api/v1/playbook/${encodeURIComponent(params.name)}/visibility`,
+      { body: { visibility: params.visibility } }
+    )) as SetVisibilityResponse;
   }
 }
 
