@@ -269,6 +269,51 @@ describe('PlaybooksResource', () => {
       has_next: true,
     });
   });
+
+  it('setVisibility() POSTs to the playbook visibility endpoint', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({ playbook_path: 'alice/scanner' });
+    const playbooks = new PlaybooksResource(client);
+
+    const result = await playbooks.setVisibility({
+      name: 'scanner',
+      visibility: 'private',
+    });
+
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/playbook/scanner/visibility',
+      { body: { visibility: 'private' } }
+    );
+    expect(result).toEqual({ playbook_path: 'alice/scanner' });
+  });
+
+  it('setVisibility() url-encodes the playbook name', async () => {
+    const client = makeClient();
+    const playbooks = new PlaybooksResource(client);
+
+    await playbooks.setVisibility({ name: 'a/b c', visibility: 'public' });
+
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/playbook/a%2Fb%20c/visibility',
+      { body: { visibility: 'public' } }
+    );
+  });
+
+  it('setVisibility() rejects an invalid visibility before any request', async () => {
+    const client = makeClient();
+    const playbooks = new PlaybooksResource(client);
+
+    await expect(
+      playbooks.setVisibility({
+        name: 'scanner',
+        // @ts-expect-error testing runtime guard against bad input
+        visibility: 'secret',
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(client._request).not.toHaveBeenCalled();
+  });
 });
 
 describe('SdkDocsResource', () => {
