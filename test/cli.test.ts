@@ -115,6 +115,12 @@ function makeClient(): AlvaClient {
   client.notificationPreferences.update = vi.fn().mockResolvedValue({
     setting: { key: 'session_completed', enabled: false },
   });
+  client.feedback.submit = vi.fn().mockResolvedValue({
+    feedback_id: 123,
+    slack_status: 'sent',
+    dedupe_key: 'session-1/runtime',
+    duplicate: false,
+  });
   client.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
@@ -673,6 +679,44 @@ components: {}
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
       key: 'session_completed',
       enabled: true,
+    });
+  });
+
+  it('dispatches feedback submit', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'feedback',
+      'submit',
+      '--summary',
+      'runtime failed',
+      '--details',
+      'command returned a platform error',
+      '--category',
+      'runtime',
+      '--severity',
+      'high',
+      '--evidence-json',
+      '{"command":"alva run foo.js"}',
+      '--context-json',
+      '{"session_id":"s1"}',
+      '--dedupe-key',
+      'session-1/runtime',
+    ]);
+    expect(client.feedback.submit).toHaveBeenCalledWith({
+      source: undefined,
+      category: 'runtime',
+      severity: 'high',
+      summary: 'runtime failed',
+      details: 'command returned a platform error',
+      evidence: { command: 'alva run foo.js' },
+      context: { session_id: 's1' },
+      dedupe_key: 'session-1/runtime',
+    });
+    expect(result).toEqual({
+      feedback_id: 123,
+      slack_status: 'sent',
+      dedupe_key: 'session-1/runtime',
+      duplicate: false,
     });
   });
 
@@ -1360,6 +1404,17 @@ describe('help text', () => {
     expect(result.text).toContain('enabled by default');
   });
 
+  it('returns per-command help for feedback --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['feedback', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('user-confirmed');
+    expect(result.text).toContain('submit');
+    expect(result.text).toContain('--evidence-json');
+  });
+
   it('returns per-command help for release --help with workflow', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['release', '--help'])) as {
@@ -1592,6 +1647,7 @@ describe('help-text drift guard', () => {
     'data-skills': ['list', 'summary', 'endpoint'],
     skillhub: ['list', 'tags', 'get', 'file'],
     comments: ['create', 'pin', 'unpin'],
+    feedback: ['submit'],
     trading: [
       'accounts',
       'portfolio',

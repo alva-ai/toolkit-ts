@@ -41,6 +41,8 @@ export type {
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateParams,
   NotificationPreferenceUpdateResponse,
+  SubmitFeedbackRequest,
+  SubmitFeedbackResponse,
   FeedDeleteRequest,
   FeedDeleteResponse,
 } from './types.js';

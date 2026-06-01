@@ -69,6 +69,7 @@ Commands:
   comments    Playbook comments (create, pin, unpin)
   notification-history  Notification delivery history (list-playbook, list-feed)
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
+  feedback    Submit user-confirmed Alva platform feedback (submit)
   push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
@@ -688,6 +689,28 @@ Examples:
   alva notification-preferences disable-session-completed
   alva notification-preferences enable-session-completed`,
 
+  feedback: `Usage: alva feedback submit [options]
+
+Submit user-confirmed Alva platform feedback. Agents should only call this
+after the user explicitly agrees to send feedback to Alva.
+
+Subcommands:
+  submit      Send one feedback report to Alva
+
+Submit flags:
+  --summary <text>        Short issue summary (required)
+  --details <text>        Additional context
+  --category <category>   api_error, data_quality, docs, runtime, auth, billing, other
+  --severity <severity>   low, medium, high, critical
+  --source <source>       agent_detected, user_reported, system_detected
+  --evidence-json <json>  JSON evidence object, sanitized server-side
+  --context-json <json>   JSON context object, sanitized server-side
+  --dedupe-key <key>      Optional per-user duplicate suppression key
+
+Examples:
+  alva feedback submit --summary "runtime failed" --category runtime --severity high
+  alva feedback submit --summary "bad quote data" --category data_quality --evidence-json '{"symbol":"BTC"}'`,
+
   'push-subscriptions': `Usage: alva push-subscriptions <subcommand> [options]
 
 Personal opt-in for DM/web push notifications. Independent of social
@@ -1145,6 +1168,31 @@ function jsonParse(val: string | undefined): unknown {
   } catch {
     return val;
   }
+}
+
+function jsonObjectFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): Record<string, unknown> | undefined {
+  const raw = flags[name];
+  if (raw === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new CliUsageError(
+      `--${name} must be valid JSON for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new CliUsageError(
+      `--${name} must be a JSON object for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return parsed as Record<string, unknown>;
 }
 
 export async function dispatch(
@@ -1819,6 +1867,29 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: notification-preferences ${subcommand}`,
             'notification-preferences'
+          );
+      }
+    }
+
+    case 'feedback': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for feedback', 'feedback');
+      switch (subcommand) {
+        case 'submit':
+          return client.feedback.submit({
+            source: flags['source'],
+            category: flags['category'],
+            severity: flags['severity'],
+            summary: requireFlag(flags, 'summary', 'feedback submit'),
+            details: flags['details'],
+            evidence: jsonObjectFlag(flags, 'evidence-json', 'feedback submit'),
+            context: jsonObjectFlag(flags, 'context-json', 'feedback submit'),
+            dedupe_key: flags['dedupe-key'],
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: feedback ${subcommand}`,
+            'feedback'
           );
       }
     }

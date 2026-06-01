@@ -675,6 +675,37 @@ export interface NotificationPreferenceUpdateResponse {
   setting: NotificationPreference;
 }
 
+// --- Feedback ---
+
+export interface SubmitFeedbackRequest {
+  /** Defaults to "agent_detected" on the server. */
+  source?: 'agent_detected' | 'user_reported' | 'system_detected' | string;
+  /** Defaults to "other" on the server. */
+  category?:
+    | 'api_error'
+    | 'data_quality'
+    | 'docs'
+    | 'runtime'
+    | 'auth'
+    | 'billing'
+    | 'other'
+    | string;
+  /** Defaults to "medium" on the server. */
+  severity?: 'low' | 'medium' | 'high' | 'critical' | string;
+  summary: string;
+  details?: string;
+  evidence?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  dedupe_key?: string;
+}
+
+export interface SubmitFeedbackResponse {
+  feedback_id: number;
+  slack_status: 'pending' | 'sent' | 'failed' | 'skipped' | string;
+  dedupe_key: string;
+  duplicate: boolean;
+}
+
 // --- Push Subscriptions ---
 
 /**
