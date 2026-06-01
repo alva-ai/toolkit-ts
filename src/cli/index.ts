@@ -607,7 +607,7 @@ fetch individual file contents (progressive loading).
 
 Subcommands:
   list       List skill summaries (filter by --tag and/or --username)
-  tags       Distinct tag set used across all skills
+  tags       Distinct tag set used across skills
   get        Get one skill's metadata + file listing (path + size_bytes only)
   file       Get one file's content from a skill
 
