@@ -96,8 +96,8 @@ Browse playbook templates (system + user-created) from the alva-gateway
 public API. Skills are namespaced `<username>/<name>`.
 
 Requires user auth — run `alva auth login` first.
-Disabled skills are hidden: `list`/`tags` omit them, while `get`/`file`
-return not found.
+Disabled skills are hidden from discovery: `list`/`tags` omit them, while
+explicit `get <username>/<name>` still returns metadata for a known id.
 
 The flow is progressive:
 
