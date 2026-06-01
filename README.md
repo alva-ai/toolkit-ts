@@ -96,9 +96,6 @@ Browse playbook templates (system + user-created) from the alva-gateway
 public API. Skills are namespaced `<username>/<name>`.
 
 Requires user auth — run `alva auth login` first.
-Disabled skills are hidden from discovery: `list`/`tags` omit them, while
-explicit `get <username>/<name>` and `file <username>/<name> <path>` still
-work for a known id.
 
 The flow is progressive:
 
@@ -109,10 +106,10 @@ Bulk content is intentionally **not** exposed at the CLI/SDK layer; agents
 should fetch the file listing first, then pull only the files they need.
 
 ```bash
-alva skillhub list                                          # visible skills
+alva skillhub list                                          # skill catalog
 alva skillhub list --tag research                           # filter by tag
 alva skillhub list --username alva                          # filter by author
-alva skillhub tags                                          # tags on visible skills
+alva skillhub tags                                          # skill tags
 alva skillhub get alva/ai-digest                            # metadata + file listing
 alva skillhub file alva/ai-digest README.md                 # one file's content
 alva skillhub file alva/ai-digest references/api/example.md > out.md

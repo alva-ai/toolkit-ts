@@ -295,7 +295,7 @@ export interface PlaybookDraftRequest {
   /**
    * Optional source-skill reference in "username/name" form (e.g.
    * "alva/screener"). The value identifies a playbook skill published to
-   * Skillhub; discover visible/enabled skills via `alva skillhub list`.
+   * Skillhub; discover available skills via `alva skillhub list`.
    * Persisted set-once on the playbook's first draft; subsequent drafts
    * ignore the field.
    */

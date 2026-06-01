@@ -349,7 +349,7 @@ describe('SdkDocsResource', () => {
 });
 
 describe('PlaybookSkillsResource', () => {
-  it('list() requests visible skill summaries with filters and preserves visibility fields', async () => {
+  it('list() requests skill summaries with filters and preserves metadata fields', async () => {
     const client = makeClient();
     client._request.mockResolvedValue({
       success: true,
@@ -383,11 +383,6 @@ describe('PlaybookSkillsResource', () => {
         name: 'ai-digest',
         display_name: 'AI Digest',
         description: 'Summarize market news',
-        disabled: false,
-        header: 'Digest',
-        suggest_prompt: 'Make a daily digest',
-        playbook_ids: '1,2',
-        order: 3,
         tags: ['research'],
         creator_uid: 0,
         updated_at: '2026-06-01T00:00:00Z',

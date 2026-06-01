@@ -8,11 +8,6 @@ export interface PlaybookSkillSummary {
   name: string;
   display_name: string;
   description: string;
-  disabled: boolean;
-  header: string;
-  suggest_prompt: string;
-  playbook_ids: string;
-  order: number;
   tags: string[];
   creator_uid: number;
   updated_at: string;
@@ -37,6 +32,31 @@ export interface PlaybookSkillFile {
 
 export interface PlaybookSkillTagEntry {
   name: string;
+}
+
+type PlaybookSkillSummaryWire = PlaybookSkillSummary & {
+  disabled?: boolean;
+  header?: string;
+  suggest_prompt?: string;
+  playbook_ids?: string;
+  order?: number;
+};
+type PlaybookSkillMetaWire = PlaybookSkillSummaryWire & {
+  files?: PlaybookSkillFileMeta[];
+};
+
+function normalizePlaybookSkillSummary(
+  raw: PlaybookSkillSummaryWire
+): PlaybookSkillSummary {
+  return {
+    username: raw.username,
+    name: raw.name,
+    display_name: raw.display_name,
+    description: raw.description,
+    tags: raw.tags,
+    creator_uid: raw.creator_uid,
+    updated_at: raw.updated_at,
+  };
 }
 
 /**
@@ -69,8 +89,8 @@ export class PlaybookSkillsResource {
     if (params?.username) query.username = params.username;
     const res = (await this.client._request('GET', '/api/v1/skills', {
       query,
-    })) as Envelope<PlaybookSkillSummary[]>;
-    return { skills: res.data ?? [] };
+    })) as Envelope<PlaybookSkillSummaryWire[]>;
+    return { skills: (res.data ?? []).map(normalizePlaybookSkillSummary) };
   }
 
   async tags(): Promise<{ tags: PlaybookSkillTagEntry[] }> {
@@ -88,7 +108,7 @@ export class PlaybookSkillsResource {
     const res = (await this.client._request(
       'GET',
       `/api/v1/skills/${u}/${n}`
-    )) as Envelope<PlaybookSkillMeta[]>;
+    )) as Envelope<PlaybookSkillMetaWire[]>;
     const meta = res.data?.[0];
     if (!meta) {
       throw new AlvaError(
@@ -97,7 +117,10 @@ export class PlaybookSkillsResource {
         0
       );
     }
-    return meta;
+    return {
+      ...normalizePlaybookSkillSummary(meta),
+      files: meta.files ?? [],
+    };
   }
 
   async file(id: string, path: string): Promise<PlaybookSkillFile> {
