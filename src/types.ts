@@ -738,19 +738,30 @@ export interface PushSubscriptionListResponse {
   next_cursor?: string;
 }
 
-export interface SubscribePushTargetResponse {
-  subscription: PushSubscription;
+export interface PlaybookFollow {
+  id: string;
+  user_id: string;
+  playbook_id: string;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+export interface SubscribePlaybookResponse {
+  /** The follow row created (or confirmed) by the cascade subscribe. */
+  follow: PlaybookFollow;
+  /** Feed ids whose alert this subscribe enabled (push-enabled automations). */
+  subscribed_feed_ids: string[];
   /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
   playbook_path: string;
 }
 
-export interface SubscribeFeedPushTargetResponse {
+export interface SubscribeFeedResponse {
   subscription: PushSubscription;
   /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
   feed_path: string;
 }
 
-export interface UnsubscribePushTargetResponse {
+export interface UnsubscribeResponse {
   ok: true;
 }
 

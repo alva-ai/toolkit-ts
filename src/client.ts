@@ -19,7 +19,7 @@ import { PortfolioResource } from './resources/portfolio.js';
 import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { NotificationPreferencesResource } from './resources/notificationPreferences.js';
-import { PushSubscriptionsResource } from './resources/pushSubscriptions.js';
+import { SubscriptionsResource } from './resources/subscriptions.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
@@ -67,7 +67,7 @@ export class AlvaClient {
   private _arraysJwt?: ArraysJwtResource;
   private _notifications?: NotificationsResource;
   private _notificationPreferences?: NotificationPreferencesResource;
-  private _pushSubscriptions?: PushSubscriptionsResource;
+  private _subscriptions?: SubscriptionsResource;
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
 
   constructor(config: AlvaClientConfig) {
@@ -139,8 +139,8 @@ export class AlvaClient {
     return (this._notificationPreferences ??=
       new NotificationPreferencesResource(this));
   }
-  get pushSubscriptions(): PushSubscriptionsResource {
-    return (this._pushSubscriptions ??= new PushSubscriptionsResource(this));
+  get subscriptions(): SubscriptionsResource {
+    return (this._subscriptions ??= new SubscriptionsResource(this));
   }
   get channelGroupSubscriptions(): ChannelGroupSubscriptionsResource {
     return (this._channelGroupSubscriptions ??=
