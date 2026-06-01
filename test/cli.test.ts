@@ -81,7 +81,13 @@ function makeClient(): AlvaClient {
   client.playbookSkills.get = vi.fn().mockResolvedValue({
     username: 'alva',
     name: 'ai-digest',
+    display_name: 'AI Digest',
     description: '',
+    disabled: false,
+    header: '',
+    suggest_prompt: '',
+    playbook_ids: '',
+    order: 0,
     tags: [],
     creator_uid: 1,
     updated_at: '',

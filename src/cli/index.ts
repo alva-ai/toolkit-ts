@@ -602,12 +602,13 @@ Examples:
 
 Browse playbook skills (system templates + user-created) from the
 alva-gateway public API. Skills are namespaced as "<username>/<name>".
+Disabled skills are hidden: list/tags omit them, and get/file return not found.
 The "get" subcommand returns metadata + file listing; use "file" to
 fetch individual file contents (progressive loading).
 
 Subcommands:
-  list       List skill summaries (filter by --tag and/or --username)
-  tags       Distinct tag set used across all skills
+  list       List visible skill summaries (filter by --tag and/or --username)
+  tags       Distinct tag set used across visible skills
   get        Get one skill's metadata + file listing (path + size_bytes only)
   file       Get one file's content from a skill
 

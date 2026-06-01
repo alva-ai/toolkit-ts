@@ -6,7 +6,13 @@ type Envelope<T> = { success: boolean; data: T; request_id?: string };
 export interface PlaybookSkillSummary {
   username: string;
   name: string;
+  display_name: string;
   description: string;
+  disabled: boolean;
+  header: string;
+  suggest_prompt: string;
+  playbook_ids: string;
+  order: number;
   tags: string[];
   creator_uid: number;
   updated_at: string;
