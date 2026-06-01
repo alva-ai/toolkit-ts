@@ -97,7 +97,8 @@ public API. Skills are namespaced `<username>/<name>`.
 
 Requires user auth — run `alva auth login` first.
 Disabled skills are hidden from discovery: `list`/`tags` omit them, while
-explicit `get <username>/<name>` still returns metadata for a known id.
+explicit `get <username>/<name>` and `file <username>/<name> <path>` still
+work for a known id.
 
 The flow is progressive:
 

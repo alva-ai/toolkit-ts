@@ -602,7 +602,7 @@ Examples:
 
 Browse playbook skills (system templates + user-created) from the
 alva-gateway public API. Skills are namespaced as "<username>/<name>".
-Disabled skills are hidden from list/tags, but explicit get still returns metadata.
+Disabled skills are hidden from list/tags, but explicit get/file still work for known ids.
 The "get" subcommand returns metadata + file listing; use "file" to
 fetch individual file contents (progressive loading).
 
