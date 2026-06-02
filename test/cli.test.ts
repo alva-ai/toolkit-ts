@@ -116,6 +116,11 @@ function makeClient(): AlvaClient {
   client.notificationPreferences.update = vi.fn().mockResolvedValue({
     setting: { key: 'session_completed', enabled: false },
   });
+  client.feedback.submit = vi.fn().mockResolvedValue({
+    feedback_id: 123,
+    notion_page_id: 'page-123',
+    notion_url: 'https://notion.so/page-123',
+  });
   client.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
@@ -675,6 +680,79 @@ components: {}
       key: 'session_completed',
       enabled: true,
     });
+  });
+
+  it('dispatches feedback submit', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'feedback',
+      'submit',
+      '--summary',
+      'runtime failed',
+      '--details',
+      'command returned a platform error',
+      '--category',
+      'runtime',
+      '--severity',
+      'high',
+      '--evidence-json',
+      '{"command":"alva run foo.js"}',
+      '--context-json',
+      '{"session_id":"s1"}',
+    ]);
+    expect(client.feedback.submit).toHaveBeenCalledWith({
+      source: undefined,
+      category: 'runtime',
+      severity: 'high',
+      summary: 'runtime failed',
+      details: 'command returned a platform error',
+      evidence: { command: 'alva run foo.js' },
+      context: { session_id: 's1' },
+    });
+    expect(result).toEqual({
+      feedback_id: 123,
+      notion_page_id: 'page-123',
+      notion_url: 'https://notion.so/page-123',
+    });
+  });
+
+  it('dispatches feedback submit with optional metadata omitted', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'feedback',
+      'submit',
+      '--summary',
+      'runtime failed',
+    ]);
+    expect(client.feedback.submit).toHaveBeenCalledWith({
+      source: undefined,
+      category: undefined,
+      severity: undefined,
+      summary: 'runtime failed',
+      details: undefined,
+      evidence: undefined,
+      context: undefined,
+    });
+    expect(result).toEqual({
+      feedback_id: 123,
+      notion_page_id: 'page-123',
+      notion_url: 'https://notion.so/page-123',
+    });
+  });
+
+  it('rejects stale feedback dedupe flag', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'feedback',
+        'submit',
+        '--summary',
+        'runtime failed',
+        '--dedupe-key',
+        'session-1/runtime',
+      ])
+    ).rejects.toThrow('--dedupe-key is no longer supported');
+    expect(client.feedback.submit).not.toHaveBeenCalled();
   });
 
   it('dispatches channel group-subscriptions context', async () => {
@@ -1361,6 +1439,18 @@ describe('help text', () => {
     expect(result.text).toContain('enabled by default');
   });
 
+  it('returns per-command help for feedback --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['feedback', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('user-confirmed');
+    expect(result.text).toContain('submit');
+    expect(result.text).toContain('--evidence-json');
+    expect(result.text).toContain('Optional structured diagnostics');
+  });
+
   it('returns per-command help for release --help with workflow', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['release', '--help'])) as {
@@ -1593,6 +1683,7 @@ describe('help-text drift guard', () => {
     'data-skills': ['list', 'summary', 'endpoint'],
     skillhub: ['list', 'tags', 'get', 'file'],
     comments: ['create', 'pin', 'unpin'],
+    feedback: ['submit'],
     trading: [
       'accounts',
       'portfolio',

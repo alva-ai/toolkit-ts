@@ -675,6 +675,37 @@ export interface NotificationPreferenceUpdateResponse {
   setting: NotificationPreference;
 }
 
+// --- Feedback ---
+
+export interface SubmitFeedbackRequest {
+  /** Defaults to "agent_detected" on the server. */
+  source?: 'agent_detected' | 'user_reported' | 'system_detected' | string;
+  /** Defaults to "other" on the server. */
+  category?:
+    | 'api_error'
+    | 'data_quality'
+    | 'docs'
+    | 'runtime'
+    | 'auth'
+    | 'billing'
+    | 'other'
+    | string;
+  /** Defaults to "medium" on the server. */
+  severity?: 'low' | 'medium' | 'high' | 'critical' | string;
+  summary: string;
+  details?: string;
+  /** Optional structured diagnostics; omit unless the agent has useful metadata. */
+  evidence?: Record<string, unknown>;
+  /** Optional structured session metadata; omit unless relevant to triage. */
+  context?: Record<string, unknown>;
+}
+
+export interface SubmitFeedbackResponse {
+  feedback_id: number;
+  notion_page_id: string;
+  notion_url: string;
+}
+
 // --- Push Subscriptions ---
 
 /**
