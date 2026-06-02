@@ -1877,6 +1877,12 @@ export async function dispatch(
         throw new CliUsageError('Missing subcommand for feedback', 'feedback');
       switch (subcommand) {
         case 'submit':
+          if (flags['dedupe-key'] !== undefined) {
+            throw new CliUsageError(
+              "--dedupe-key is no longer supported for 'feedback submit'",
+              'feedback'
+            );
+          }
           return client.feedback.submit({
             source: flags['source'],
             category: flags['category'],

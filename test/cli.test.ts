@@ -716,6 +716,21 @@ components: {}
     });
   });
 
+  it('rejects stale feedback dedupe flag', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'feedback',
+        'submit',
+        '--summary',
+        'runtime failed',
+        '--dedupe-key',
+        'session-1/runtime',
+      ])
+    ).rejects.toThrow('--dedupe-key is no longer supported');
+    expect(client.feedback.submit).not.toHaveBeenCalled();
+  });
+
   it('dispatches channel group-subscriptions context', async () => {
     const client = makeClient();
     await dispatch(client, [
