@@ -81,6 +81,7 @@ function makeClient(): AlvaClient {
   client.playbookSkills.get = vi.fn().mockResolvedValue({
     username: 'alva',
     name: 'ai-digest',
+    display_name: 'AI Digest',
     description: '',
     tags: [],
     creator_uid: 1,
@@ -117,9 +118,8 @@ function makeClient(): AlvaClient {
   });
   client.feedback.submit = vi.fn().mockResolvedValue({
     feedback_id: 123,
-    slack_status: 'sent',
-    dedupe_key: 'session-1/runtime',
-    duplicate: false,
+    notion_page_id: 'page-123',
+    notion_url: 'https://notion.so/page-123',
   });
   client.channelGroupSubscriptions.context = vi
     .fn()
@@ -699,8 +699,6 @@ components: {}
       '{"command":"alva run foo.js"}',
       '--context-json',
       '{"session_id":"s1"}',
-      '--dedupe-key',
-      'session-1/runtime',
     ]);
     expect(client.feedback.submit).toHaveBeenCalledWith({
       source: undefined,
@@ -710,13 +708,11 @@ components: {}
       details: 'command returned a platform error',
       evidence: { command: 'alva run foo.js' },
       context: { session_id: 's1' },
-      dedupe_key: 'session-1/runtime',
     });
     expect(result).toEqual({
       feedback_id: 123,
-      slack_status: 'sent',
-      dedupe_key: 'session-1/runtime',
-      duplicate: false,
+      notion_page_id: 'page-123',
+      notion_url: 'https://notion.so/page-123',
     });
   });
 

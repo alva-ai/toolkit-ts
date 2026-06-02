@@ -60,3 +60,10 @@ export type {
   TrendingPlaybooksResponse,
   TrendingPlaybooksSort,
 } from './resources/playbooks.js';
+export type {
+  PlaybookSkillFile,
+  PlaybookSkillFileMeta,
+  PlaybookSkillMeta,
+  PlaybookSkillSummary,
+  PlaybookSkillTagEntry,
+} from './resources/playbookSkills.js';

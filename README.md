@@ -106,10 +106,10 @@ Bulk content is intentionally **not** exposed at the CLI/SDK layer; agents
 should fetch the file listing first, then pull only the files they need.
 
 ```bash
-alva skillhub list                                          # all skills
+alva skillhub list                                          # skill catalog
 alva skillhub list --tag research                           # filter by tag
 alva skillhub list --username alva                          # filter by author
-alva skillhub tags                                          # all tags in use
+alva skillhub tags                                          # skill tags
 alva skillhub get alva/ai-digest                            # metadata + file listing
 alva skillhub file alva/ai-digest README.md                 # one file's content
 alva skillhub file alva/ai-digest references/api/example.md > out.md

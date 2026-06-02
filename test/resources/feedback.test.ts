@@ -8,9 +8,8 @@ function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   };
   client._request = vi.fn().mockResolvedValue({
     feedback_id: 123,
-    slack_status: 'sent',
-    dedupe_key: 'session-1/runtime',
-    duplicate: false,
+    notion_page_id: 'page-123',
+    notion_url: 'https://notion.so/page-123',
   });
   return client;
 }
@@ -25,7 +24,6 @@ describe('FeedbackResource', () => {
       severity: 'high',
       evidence: { command: 'alva run foo.js' },
       context: { session_id: 's1' },
-      dedupe_key: 'session-1/runtime',
     });
 
     expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/feedback', {
@@ -35,14 +33,12 @@ describe('FeedbackResource', () => {
         severity: 'high',
         evidence: { command: 'alva run foo.js' },
         context: { session_id: 's1' },
-        dedupe_key: 'session-1/runtime',
       },
     });
     expect(result).toEqual({
       feedback_id: 123,
-      slack_status: 'sent',
-      dedupe_key: 'session-1/runtime',
-      duplicate: false,
+      notion_page_id: 'page-123',
+      notion_url: 'https://notion.so/page-123',
     });
   });
 });

@@ -11,6 +11,7 @@ import { ScreenshotResource } from '../../src/resources/screenshot.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
 import { NotificationsResource } from '../../src/resources/notifications.js';
 import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
+import { PlaybookSkillsResource } from '../../src/resources/playbookSkills.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 
@@ -344,6 +345,49 @@ describe('SdkDocsResource', () => {
       'GET',
       '/api/v1/sdk/partitions/spot_market_price_and_volume/summary'
     );
+  });
+});
+
+describe('PlaybookSkillsResource', () => {
+  it('list() requests skill summaries with filters and preserves metadata fields', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          username: 'alva',
+          name: 'ai-digest',
+          display_name: 'AI Digest',
+          description: 'Summarize market news',
+          disabled: false,
+          header: 'Digest',
+          suggest_prompt: 'Make a daily digest',
+          playbook_ids: '1,2',
+          order: 3,
+          tags: ['research'],
+          creator_uid: 0,
+          updated_at: '2026-06-01T00:00:00Z',
+        },
+      ],
+    });
+    const skills = new PlaybookSkillsResource(client);
+
+    const result = await skills.list({ tag: 'research', username: 'alva' });
+
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/skills', {
+      query: { tag: 'research', username: 'alva' },
+    });
+    expect(result.skills).toEqual([
+      {
+        username: 'alva',
+        name: 'ai-digest',
+        display_name: 'AI Digest',
+        description: 'Summarize market news',
+        tags: ['research'],
+        creator_uid: 0,
+        updated_at: '2026-06-01T00:00:00Z',
+      },
+    ]);
   });
 });
 

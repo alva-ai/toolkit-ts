@@ -70,7 +70,7 @@ Commands:
   notification-history  Notification delivery history (list-playbook, list-feed)
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
-  push-subscriptions  Personal push opt-in (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
+  subscriptions       Subscribe to playbooks/feeds (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
@@ -608,7 +608,7 @@ fetch individual file contents (progressive loading).
 
 Subcommands:
   list       List skill summaries (filter by --tag and/or --username)
-  tags       Distinct tag set used across all skills
+  tags       Distinct tag set used across skills
   get        Get one skill's metadata + file listing (path + size_bytes only)
   file       Get one file's content from a skill
 
@@ -705,25 +705,26 @@ Submit flags:
   --source <source>       agent_detected, user_reported, system_detected
   --evidence-json <json>  JSON evidence object, sanitized server-side
   --context-json <json>   JSON context object, sanitized server-side
-  --dedupe-key <key>      Optional per-user duplicate suppression key
 
 Examples:
   alva feedback submit --summary "runtime failed" --category runtime --severity high
   alva feedback submit --summary "bad quote data" --category data_quality --evidence-json '{"symbol":"BTC"}'`,
 
-  'push-subscriptions': `Usage: alva push-subscriptions <subcommand> [options]
+  subscriptions: `Usage: alva subscriptions <subcommand> [options]
 
-Personal opt-in for DM/web push notifications. Independent of social
-follow: subscribing does not start following, unsubscribing does not
-unfollow. Following a playbook elsewhere does not create or revive a
-push subscription.
+Subscribe to playbooks and feeds.
+  - subscribe-playbook is a CASCADE: follows the playbook AND enables alerts
+    on all its push-enabled automations (one call). unsubscribe-playbook
+    reverses both (unfollow + disable all of its alerts).
+  - subscribe-feed / unsubscribe-feed toggle ONE feed's alert (a single
+    automation) without touching the playbook follow.
 
 Subcommands:
-  subscribe-playbook     Opt into push for a playbook (any of its feeds)
-  unsubscribe-playbook   Opt out of push for a playbook (soft-disable)
-  subscribe-feed         Opt into push for a single feed
-  unsubscribe-feed       Opt out of push for a single feed (soft-disable)
-  list                   List the caller's push subscriptions
+  subscribe-playbook     Subscribe a playbook (follow + enable all its alerts)
+  unsubscribe-playbook   Unsubscribe a playbook (unfollow + disable its alerts)
+  subscribe-feed         Enable alerts for a single feed
+  unsubscribe-feed       Disable alerts for a single feed
+  list                   List the caller's active subscriptions
 
 Subscribe/unsubscribe flags (playbook + feed):
   --username <user>      Owner's username (required)
@@ -734,10 +735,10 @@ List flags:
   --cursor <token>       Optional cursor from the previous page
 
 Examples:
-  alva push-subscriptions subscribe-playbook --username alice --name btc-dashboard
-  alva push-subscriptions subscribe-feed     --username alice --name btc-ema-cross
-  alva push-subscriptions unsubscribe-feed   --username alice --name btc-ema-cross
-  alva push-subscriptions list --first 20`,
+  alva subscriptions subscribe-playbook --username alice --name btc-dashboard
+  alva subscriptions subscribe-feed     --username alice --name btc-ema-cross
+  alva subscriptions unsubscribe-feed   --username alice --name btc-ema-cross
+  alva subscriptions list --first 20`,
 
   channel: `Usage: alva channel group-subscriptions <subcommand> [options]
 
@@ -1884,7 +1885,6 @@ export async function dispatch(
             details: flags['details'],
             evidence: jsonObjectFlag(flags, 'evidence-json', 'feedback submit'),
             context: jsonObjectFlag(flags, 'context-json', 'feedback submit'),
-            dedupe_key: flags['dedupe-key'],
           });
         default:
           throw new CliUsageError(
@@ -1894,74 +1894,66 @@ export async function dispatch(
       }
     }
 
-    case 'push-subscriptions': {
+    case 'subscriptions': {
       if (!subcommand)
         throw new CliUsageError(
-          'Missing subcommand for push-subscriptions',
-          'push-subscriptions'
+          'Missing subcommand for subscriptions',
+          'subscriptions'
         );
       switch (subcommand) {
         case 'subscribe-playbook':
-          return client.pushSubscriptions.subscribePlaybook({
+          return client.subscriptions.subscribePlaybook({
             username: requireFlag(
               flags,
               'username',
-              'push-subscriptions subscribe-playbook'
+              'subscriptions subscribe-playbook'
             ),
             name: requireFlag(
               flags,
               'name',
-              'push-subscriptions subscribe-playbook'
+              'subscriptions subscribe-playbook'
             ),
           });
         case 'unsubscribe-playbook':
-          return client.pushSubscriptions.unsubscribePlaybook({
+          return client.subscriptions.unsubscribePlaybook({
             username: requireFlag(
               flags,
               'username',
-              'push-subscriptions unsubscribe-playbook'
+              'subscriptions unsubscribe-playbook'
             ),
             name: requireFlag(
               flags,
               'name',
-              'push-subscriptions unsubscribe-playbook'
+              'subscriptions unsubscribe-playbook'
             ),
           });
         case 'subscribe-feed':
-          return client.pushSubscriptions.subscribeFeed({
+          return client.subscriptions.subscribeFeed({
             username: requireFlag(
               flags,
               'username',
-              'push-subscriptions subscribe-feed'
+              'subscriptions subscribe-feed'
             ),
-            name: requireFlag(
-              flags,
-              'name',
-              'push-subscriptions subscribe-feed'
-            ),
+            name: requireFlag(flags, 'name', 'subscriptions subscribe-feed'),
           });
         case 'unsubscribe-feed':
-          return client.pushSubscriptions.unsubscribeFeed({
+          return client.subscriptions.unsubscribeFeed({
             username: requireFlag(
               flags,
               'username',
-              'push-subscriptions unsubscribe-feed'
+              'subscriptions unsubscribe-feed'
             ),
-            name: requireFlag(
-              flags,
-              'name',
-              'push-subscriptions unsubscribe-feed'
-            ),
+            name: requireFlag(flags, 'name', 'subscriptions unsubscribe-feed'),
           });
         case 'list':
-          return client.pushSubscriptions.list({
+          return client.subscriptions.list({
             first: num(flags['first']),
             cursor: flags['cursor'],
           });
         default:
           throw new CliUsageError(
-            `Unknown subcommand: push-subscriptions ${subcommand}`,
-            'push-subscriptions'
+            `Unknown subcommand: subscriptions ${subcommand}`,
+            'subscriptions'
           );
       }
     }
