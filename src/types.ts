@@ -694,7 +694,9 @@ export interface SubmitFeedbackRequest {
   severity?: 'low' | 'medium' | 'high' | 'critical' | string;
   summary: string;
   details?: string;
+  /** Optional structured diagnostics; omit unless the agent has useful metadata. */
   evidence?: Record<string, unknown>;
+  /** Optional structured session metadata; omit unless relevant to triage. */
   context?: Record<string, unknown>;
 }
 

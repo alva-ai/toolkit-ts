@@ -716,6 +716,30 @@ components: {}
     });
   });
 
+  it('dispatches feedback submit with optional metadata omitted', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'feedback',
+      'submit',
+      '--summary',
+      'runtime failed',
+    ]);
+    expect(client.feedback.submit).toHaveBeenCalledWith({
+      source: undefined,
+      category: undefined,
+      severity: undefined,
+      summary: 'runtime failed',
+      details: undefined,
+      evidence: undefined,
+      context: undefined,
+    });
+    expect(result).toEqual({
+      feedback_id: 123,
+      notion_page_id: 'page-123',
+      notion_url: 'https://notion.so/page-123',
+    });
+  });
+
   it('rejects stale feedback dedupe flag', async () => {
     const client = makeClient();
     await expect(
@@ -1424,6 +1448,7 @@ describe('help text', () => {
     expect(result.text).toContain('user-confirmed');
     expect(result.text).toContain('submit');
     expect(result.text).toContain('--evidence-json');
+    expect(result.text).toContain('Optional structured diagnostics');
   });
 
   it('returns per-command help for release --help with workflow', async () => {

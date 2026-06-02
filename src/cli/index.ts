@@ -703,12 +703,12 @@ Submit flags:
   --category <category>   api_error, data_quality, docs, runtime, auth, billing, other
   --severity <severity>   low, medium, high, critical
   --source <source>       agent_detected, user_reported, system_detected
-  --evidence-json <json>  JSON evidence object, sanitized server-side
-  --context-json <json>   JSON context object, sanitized server-side
+  --evidence-json <json>  Optional structured diagnostics for agents
+  --context-json <json>   Optional structured session metadata for agents
 
 Examples:
   alva feedback submit --summary "runtime failed" --category runtime --severity high
-  alva feedback submit --summary "bad quote data" --category data_quality --evidence-json '{"symbol":"BTC"}'`,
+  alva feedback submit --summary "bad quote data" --category data_quality`,
 
   subscriptions: `Usage: alva subscriptions <subcommand> [options]
 
