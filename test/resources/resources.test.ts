@@ -179,6 +179,26 @@ describe('ReleaseResource', () => {
 });
 
 describe('FeedResource', () => {
+  it('stop() sends POST /api/v1/feed/:id/stop', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.stop({ id: 42 });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/feed/42/stop'
+    );
+  });
+
+  it('resume() sends POST /api/v1/feed/:id/resume', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.resume({ id: 42 });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/feed/42/resume'
+    );
+  });
+
   it('delete() sends DELETE /api/v1/feed/:id', async () => {
     const client = makeClient();
     const feed = new FeedResource(client);
@@ -186,18 +206,20 @@ describe('FeedResource', () => {
     expect(client._request).toHaveBeenCalledWith('DELETE', '/api/v1/feed/42');
   });
 
-  it('delete() rejects non-positive id without calling _request', async () => {
+  it('feed lifecycle methods reject non-positive id without calling _request', async () => {
     const client = makeClient();
     const feed = new FeedResource(client);
-    await expect(feed.delete({ id: 0 })).rejects.toThrow(
-      'feed id must be a positive integer'
-    );
-    await expect(feed.delete({ id: -1 })).rejects.toThrow(
-      'feed id must be a positive integer'
-    );
-    await expect(feed.delete({ id: 1.5 })).rejects.toThrow(
-      'feed id must be a positive integer'
-    );
+    for (const action of [feed.stop, feed.resume, feed.delete]) {
+      await expect(action.call(feed, { id: 0 })).rejects.toThrow(
+        'feed id must be a positive integer'
+      );
+      await expect(action.call(feed, { id: -1 })).rejects.toThrow(
+        'feed id must be a positive integer'
+      );
+      await expect(action.call(feed, { id: 1.5 })).rejects.toThrow(
+        'feed id must be a positive integer'
+      );
+    }
     expect(client._request).not.toHaveBeenCalled();
   });
 });

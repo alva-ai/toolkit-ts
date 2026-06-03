@@ -1,5 +1,10 @@
 import type { AlvaClient } from '../client.js';
-import type { FeedDeleteRequest, FeedDeleteResponse } from '../types.js';
+import type {
+  FeedDeleteRequest,
+  FeedDeleteResponse,
+  FeedStatusUpdateRequest,
+  FeedStatusUpdateResponse,
+} from '../types.js';
 
 /**
  * Feed lifecycle management. Backed by alva-gateway REST (mirrors the
@@ -7,6 +12,39 @@ import type { FeedDeleteRequest, FeedDeleteResponse } from '../types.js';
  */
 export class FeedResource {
   constructor(private client: AlvaClient) {}
+
+  /**
+   * Stop a feed's producer cronjob. This pauses future scheduled runs while
+   * preserving the feed and its existing data.
+   *
+   * Auth: caller must own the feed (uid match), enforced by the backend.
+   */
+  async stop(
+    params: FeedStatusUpdateRequest
+  ): Promise<FeedStatusUpdateResponse> {
+    this.client._requireAuth();
+    const id = requireFeedID(params.id);
+    return this.client._request(
+      'POST',
+      `/api/v1/feed/${encodeURIComponent(String(id))}/stop`
+    ) as Promise<FeedStatusUpdateResponse>;
+  }
+
+  /**
+   * Resume a stopped feed's producer cronjob.
+   *
+   * Auth: caller must own the feed (uid match), enforced by the backend.
+   */
+  async resume(
+    params: FeedStatusUpdateRequest
+  ): Promise<FeedStatusUpdateResponse> {
+    this.client._requireAuth();
+    const id = requireFeedID(params.id);
+    return this.client._request(
+      'POST',
+      `/api/v1/feed/${encodeURIComponent(String(id))}/resume`
+    ) as Promise<FeedStatusUpdateResponse>;
+  }
 
   /**
    * Soft-delete a feed and all its active majors. Cascades:
@@ -18,12 +56,17 @@ export class FeedResource {
    */
   async delete(params: FeedDeleteRequest): Promise<FeedDeleteResponse> {
     this.client._requireAuth();
-    if (!Number.isInteger(params.id) || params.id <= 0) {
-      throw new Error('feed id must be a positive integer');
-    }
+    const id = requireFeedID(params.id);
     return this.client._request(
       'DELETE',
-      `/api/v1/feed/${encodeURIComponent(String(params.id))}`
+      `/api/v1/feed/${encodeURIComponent(String(id))}`
     ) as Promise<FeedDeleteResponse>;
   }
+}
+
+function requireFeedID(id: number): number {
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('feed id must be a positive integer');
+  }
+  return id;
 }
