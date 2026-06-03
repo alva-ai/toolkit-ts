@@ -60,6 +60,10 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
+  client.feed.resume = vi
+    .fn()
+    .mockResolvedValue({ id: '42', status: 'ACTIVE' });
   client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
   client.playbooks.trending = vi
     .fn()
@@ -377,6 +381,32 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);
     expect(client.feed.delete).toHaveBeenCalledWith({ id: 42 });
+  });
+
+  it('dispatches feed stop', async () => {
+    const client = makeClient();
+    await dispatch(client, ['feed', 'stop', '--id', '42']);
+    expect(client.feed.stop).toHaveBeenCalledWith({ id: 42 });
+  });
+
+  it('dispatches feed resume', async () => {
+    const client = makeClient();
+    await dispatch(client, ['feed', 'resume', '--id', '42']);
+    expect(client.feed.resume).toHaveBeenCalledWith({ id: 42 });
+  });
+
+  it('feed stop requires --id', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['feed', 'stop'])).rejects.toThrow(
+      "--id is required for 'feed stop'"
+    );
+  });
+
+  it('feed resume requires --id', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['feed', 'resume'])).rejects.toThrow(
+      "--id is required for 'feed resume'"
+    );
   });
 
   it('feed delete requires --id', async () => {

@@ -45,6 +45,8 @@ export type {
   SubmitFeedbackResponse,
   FeedDeleteRequest,
   FeedDeleteResponse,
+  FeedStatusUpdateRequest,
+  FeedStatusUpdateResponse,
 } from './types.js';
 export type {
   SkillDoc,

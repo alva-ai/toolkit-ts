@@ -371,21 +371,26 @@ Build-time verify (fire once, then poll until your run completes):
 
   feed: `Usage: alva feed <subcommand> [options]
 
-Feed lifecycle management. Currently exposes a single subcommand:
+Feed lifecycle management.
 
 Subcommands:
+  stop      Stop a feed's producer cronjob
+  resume    Resume a stopped feed's producer cronjob
   delete    Soft-delete a feed and all its active majors
 
-Delete flags:
+Flags:
   --id <feed_id>   Numeric feed id (required, positive integer)
 
 Notes:
-  - Cascades to all active feed_majors in the same DB transaction.
-  - Producer cronjobs are removed best-effort; the cronjob scavenger
+  - stop/resume affect future scheduled runs; existing feed data remains.
+  - delete cascades to all active feed_majors in the same DB transaction.
+  - delete removes producer cronjobs best-effort; the cronjob scavenger
     reconciles any leftover rows on its next sweep.
   - Auth: caller must own the feed (uid match), enforced by the backend.
 
 Examples:
+  alva feed stop --id 42
+  alva feed resume --id 42
   alva feed delete --id 42`,
 
   playbooks: `Usage: alva playbooks <subcommand> [options]
@@ -1466,6 +1471,14 @@ export async function dispatch(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for feed', 'feed');
       switch (subcommand) {
+        case 'stop':
+          return client.feed.stop({
+            id: requireNumericFlag(flags, 'id', 'feed stop'),
+          });
+        case 'resume':
+          return client.feed.resume({
+            id: requireNumericFlag(flags, 'id', 'feed resume'),
+          });
         case 'delete':
           return client.feed.delete({
             id: requireNumericFlag(flags, 'id', 'feed delete'),

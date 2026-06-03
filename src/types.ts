@@ -281,6 +281,18 @@ export interface FeedDeleteRequest {
   id: number;
 }
 
+export interface FeedStatusUpdateRequest {
+  /** Numeric feed id to stop/resume. */
+  id: number;
+}
+
+export interface FeedStatusUpdateResponse {
+  /** Echoed feed id (string form, matching gateway response). */
+  id: string;
+  /** Feed runtime status after the update. */
+  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | string;
+}
+
 export interface FeedDeleteResponse {
   /** Echoed feed id (string form, matching gateway response). */
   id: string;
