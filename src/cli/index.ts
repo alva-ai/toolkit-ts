@@ -62,6 +62,7 @@ Commands:
   lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
   playbooks   Playbook discovery (trending) and visibility
+  functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -436,6 +437,67 @@ Examples:
   alva playbooks trending --tag btc --cursor abc
   alva playbooks set-visibility --name my-scanner --visibility private
   alva playbooks set-visibility --name my-scanner --visibility public`,
+
+  functions: `Usage: alva functions <subcommand> [options]
+
+Register and manage playbook UDF functions. These are creator-owned functions
+that released playbook HTML invokes through window.alva.udf.
+
+Subcommands:
+  register    Register or update a function on a playbook
+  list        List registered functions for a playbook
+  delete      Delete a registered function
+  invoke      Invoke a registered function with creator/session auth
+  allowance   Manage your viewer credit allowance for a playbook
+
+Register flags:
+  --playbook-id <id>          Numeric playbook id (required)
+  --function-name <name>      Function name exposed to window.alva.udf (required)
+  --entry-script-path <path>  Absolute ALFS path to a .js entry script (required)
+  --params-schema <json>      JSON Schema object/string for parameters_json
+  --params-schema-file <path> Read JSON Schema from a local file
+  --allow-charges             Allow this function to charge viewer allowance
+  --no-allow-charges          Explicitly register as no-charge
+
+List flags:
+  --playbook-id <id>          Numeric playbook id (required)
+
+Delete flags:
+  --playbook-id <id>          Numeric playbook id (required)
+  --function-name <name>      Function name to delete (required)
+
+Invoke flags:
+  --playbook-id <id>          Numeric playbook id (required)
+  --function-name <name>      Function name to invoke (required)
+  --params <json>             Parameters object passed as parameters_json
+
+Allowance subcommands:
+  allowance get      Get your allowance for a playbook
+  allowance list     List your allowances
+  allowance create   Create or update your allowance for a playbook
+  allowance revoke   Revoke your allowance for a playbook
+
+Allowance flags:
+  --playbook-id <id>          Numeric playbook id (required for get/create/revoke)
+  --amount <credits>          Positive integer allowance amount (required for create)
+
+Notes:
+  entry_script_path must be an absolute ALFS path under your home, such as
+  /alva/home/alice/playbooks/my-playbook/udf/analyze.js. Use alva whoami to
+  discover home_path. Use the browser runtime window.alva.udf for released
+  playbook UI; this CLI is mainly for creator-side setup and smoke tests.
+  Allowance commands use the gateway GraphQL session-user surface and reject
+  playbook-scoped viewer tokens.
+
+Examples:
+  alva functions register --playbook-id 123 --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
+  alva functions list --playbook-id 123
+  alva functions delete --playbook-id 123 --function-name analyze
+  alva functions invoke --playbook-id 123 --function-name analyze --params '{"ticker":"AAPL"}'
+  alva functions allowance create --playbook-id 123 --amount 25
+  alva functions allowance get --playbook-id 123
+  alva functions allowance list
+  alva functions allowance revoke --playbook-id 123`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -988,6 +1050,7 @@ const BOOLEAN_FLAGS = new Set([
   'help',
   'execute-latest',
   'dry-run',
+  'allow-charges',
   'json',
   'compress',
   'bypass-lint',
@@ -1082,6 +1145,22 @@ function requireNumericFlag(
     );
   }
   return n;
+}
+
+function requirePositiveIntegerFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): number {
+  const val = requireFlag(flags, name, command);
+  if (!/^[1-9]\d*$/.test(val)) {
+    const group = command.split(' ')[0];
+    throw new CliUsageError(
+      `--${name} must be a positive integer for '${command}', got '${val}'`,
+      group
+    );
+  }
+  return Number(val);
 }
 
 function requirePositiveIntegerStringFlag(
@@ -1202,6 +1281,52 @@ function jsonObjectFlag(
     );
   }
   return parsed as Record<string, unknown>;
+}
+
+function jsonRequiredFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): unknown {
+  const raw = requireFlag(flags, name, command);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new CliUsageError(
+      `--${name} must be valid JSON for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+}
+
+function jsonSchemaStringFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  const inlineSchema = flags['params-schema'];
+  const schemaFile = flags['params-schema-file'];
+  if (inlineSchema !== undefined && schemaFile !== undefined) {
+    throw new CliUsageError(
+      '--params-schema and --params-schema-file are mutually exclusive',
+      command.split(' ')[0]
+    );
+  }
+  const raw =
+    schemaFile !== undefined
+      ? fs.readFileSync(schemaFile, 'utf-8')
+      : inlineSchema;
+  if (raw === undefined) return undefined;
+  try {
+    JSON.parse(raw);
+  } catch {
+    const flag =
+      schemaFile !== undefined ? 'params-schema-file' : 'params-schema';
+    throw new CliUsageError(
+      `--${flag} must contain valid JSON for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return raw;
 }
 
 export async function dispatch(
@@ -1522,6 +1647,123 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: playbooks ${subcommand}`,
             'playbooks'
+          );
+      }
+    }
+
+    case 'functions': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for functions',
+          'functions'
+        );
+      switch (subcommand) {
+        case 'allowance': {
+          const leaf = args[2];
+          if (!leaf || leaf === '--help' || leaf === '-h') {
+            return { _help: true, text: COMMAND_HELP.functions };
+          }
+          switch (leaf) {
+            case 'get':
+              return client.functions.getAllowance({
+                playbook_id: requireNumericFlag(
+                  flags,
+                  'playbook-id',
+                  'functions allowance get'
+                ),
+              });
+            case 'list':
+              return client.functions.listAllowances();
+            case 'create':
+              return client.functions.createAllowance({
+                playbook_id: requireNumericFlag(
+                  flags,
+                  'playbook-id',
+                  'functions allowance create'
+                ),
+                amount: requirePositiveIntegerFlag(
+                  flags,
+                  'amount',
+                  'functions allowance create'
+                ),
+              });
+            case 'revoke':
+              return client.functions.revokeAllowance({
+                playbook_id: requireNumericFlag(
+                  flags,
+                  'playbook-id',
+                  'functions allowance revoke'
+                ),
+              });
+            default:
+              throw new CliUsageError(
+                `Unknown subcommand: functions allowance ${leaf}`,
+                'functions'
+              );
+          }
+        }
+        case 'register':
+          return client.functions.register({
+            playbook_id: requireNumericFlag(
+              flags,
+              'playbook-id',
+              'functions register'
+            ),
+            function_name: requireFlag(
+              flags,
+              'function-name',
+              'functions register'
+            ),
+            entry_script_path: requireFlag(
+              flags,
+              'entry-script-path',
+              'functions register'
+            ),
+            params_schema: jsonSchemaStringFlag(flags, 'functions register'),
+            allow_charges: boolFlag(flags['allow-charges']),
+          });
+        case 'list':
+          return client.functions.list({
+            playbook_id: requireNumericFlag(
+              flags,
+              'playbook-id',
+              'functions list'
+            ),
+          });
+        case 'delete':
+          return client.functions.delete({
+            playbook_id: requireNumericFlag(
+              flags,
+              'playbook-id',
+              'functions delete'
+            ),
+            function_name: requireFlag(
+              flags,
+              'function-name',
+              'functions delete'
+            ),
+          });
+        case 'invoke':
+          return client.functions.invoke({
+            playbook_id: requireNumericFlag(
+              flags,
+              'playbook-id',
+              'functions invoke'
+            ),
+            function_name: requireFlag(
+              flags,
+              'function-name',
+              'functions invoke'
+            ),
+            parameters:
+              flags['params'] === undefined
+                ? undefined
+                : jsonRequiredFlag(flags, 'params', 'functions invoke'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: functions ${subcommand}`,
+            'functions'
           );
       }
     }

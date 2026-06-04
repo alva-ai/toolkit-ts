@@ -12,6 +12,7 @@ import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGr
 import { NotificationsResource } from '../../src/resources/notifications.js';
 import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
 import { PlaybookSkillsResource } from '../../src/resources/playbookSkills.js';
+import { FunctionsResource } from '../../src/resources/functions.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 
@@ -240,6 +241,179 @@ describe('FeedResource', () => {
       );
     }
     expect(client._request).not.toHaveBeenCalled();
+  });
+});
+
+describe('FunctionsResource', () => {
+  it('register() sends POST /api/v1/service/functions', async () => {
+    const client = makeClient();
+    const functions = new FunctionsResource(client);
+    await functions.register({
+      playbook_id: 123,
+      function_name: 'analyze',
+      entry_script_path:
+        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      params_schema: '{"type":"object"}',
+      allow_charges: false,
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/service/functions',
+      {
+        body: {
+          playbook_id: 123,
+          function_name: 'analyze',
+          entry_script_path:
+            '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+          params_schema: '{"type":"object"}',
+          allow_charges: false,
+        },
+      }
+    );
+  });
+
+  it('list() sends GET /api/v1/service/functions', async () => {
+    const client = makeClient();
+    const functions = new FunctionsResource(client);
+    await functions.list({ playbook_id: 123 });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/service/functions',
+      {
+        query: { playbook_id: 123 },
+      }
+    );
+  });
+
+  it('delete() sends DELETE /api/v1/service/functions', async () => {
+    const client = makeClient();
+    const functions = new FunctionsResource(client);
+    await functions.delete({ playbook_id: 123, function_name: 'analyze' });
+    expect(client._request).toHaveBeenCalledWith(
+      'DELETE',
+      '/api/v1/service/functions',
+      {
+        query: { playbook_id: 123, function_name: 'analyze' },
+      }
+    );
+  });
+
+  it('invoke() sends POST /api/v1/service/invoke and parses result JSON', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      result: '{"ok":true}',
+      logs: '',
+      credits_used_total: 0,
+      credits_charged_owner: 0,
+      credits_charged_consumer: 0,
+    });
+    const functions = new FunctionsResource(client);
+    const result = await functions.invoke({
+      playbook_id: 123,
+      function_name: 'analyze',
+      parameters: { ticker: 'AAPL' },
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/service/invoke',
+      {
+        body: {
+          playbook_id: 123,
+          function_name: 'analyze',
+          parameters_json: '{"ticker":"AAPL"}',
+        },
+      }
+    );
+    expect(result.result).toEqual({ ok: true });
+  });
+
+  it('getAllowance() sends GET /api/v1/service/allowance and normalizes timestamps', async () => {
+    const allowance = {
+      id: '1',
+      consumer_uid: '42',
+      playbook_id: '123',
+      amount: 25,
+      used: 0,
+      remaining: 25,
+      created_at: { seconds: '1700000000', nanos: 123000000 },
+      updated_at_ms: 1700000001000,
+    };
+    const client = makeClient();
+    client._request.mockResolvedValue({ allowance });
+    const functions = new FunctionsResource(client);
+    const result = await functions.getAllowance({ playbook_id: 123 });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/service/allowance',
+      {
+        query: { playbook_id: 123 },
+      }
+    );
+    expect(result).toEqual({
+      id: '1',
+      consumer_uid: '42',
+      playbook_id: '123',
+      amount: 25,
+      used: 0,
+      remaining: 25,
+      created_at_ms: 1700000000123,
+      updated_at_ms: 1700000001000,
+    });
+  });
+
+  it('listAllowances() sends GET /api/v1/service/allowances', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({ allowances: [] });
+    const functions = new FunctionsResource(client);
+    const result = await functions.listAllowances();
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/service/allowances'
+    );
+    expect(result).toEqual({ allowances: [] });
+  });
+
+  it('createAllowance() sends POST /api/v1/service/allowance', async () => {
+    const allowance = {
+      id: '1',
+      consumer_uid: '42',
+      playbook_id: '123',
+      amount: 25,
+      used: 0,
+      remaining: 25,
+      created_at_ms: 1700000000000,
+      updated_at_ms: 1700000000000,
+    };
+    const client = makeClient();
+    client._request.mockResolvedValue({ allowance });
+    const functions = new FunctionsResource(client);
+    const result = await functions.createAllowance({
+      playbook_id: 123,
+      amount: 25,
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/service/allowance',
+      {
+        body: { playbook_id: 123, amount: 25 },
+      }
+    );
+    expect(result).toEqual({ allowance });
+  });
+
+  it('revokeAllowance() sends DELETE /api/v1/service/allowance', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({});
+    const functions = new FunctionsResource(client);
+    const result = await functions.revokeAllowance({ playbook_id: 123 });
+    expect(client._request).toHaveBeenCalledWith(
+      'DELETE',
+      '/api/v1/service/allowance',
+      {
+        query: { playbook_id: 123 },
+      }
+    );
+    expect(result).toEqual({ ok: true });
   });
 });
 

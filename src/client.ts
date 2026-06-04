@@ -22,6 +22,7 @@ import { NotificationPreferencesResource } from './resources/notificationPrefere
 import { SubscriptionsResource } from './resources/subscriptions.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 import { FeedbackResource } from './resources/feedback.js';
+import { FunctionsResource } from './resources/functions.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -71,6 +72,7 @@ export class AlvaClient {
   private _subscriptions?: SubscriptionsResource;
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
   private _feedback?: FeedbackResource;
+  private _functions?: FunctionsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -150,6 +152,9 @@ export class AlvaClient {
   }
   get feedback(): FeedbackResource {
     return (this._feedback ??= new FeedbackResource(this));
+  }
+  get functions(): FunctionsResource {
+    return (this._functions ??= new FunctionsResource(this));
   }
 
   _requireAuth(): void {
