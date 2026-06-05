@@ -259,9 +259,6 @@ Options:
   --working-dir <dir>    Working directory for require() (inline code only)
   --args <json>          JSON object passed to require("env").args
   --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
-  --dry-run              Run the script but never persist its writes (the store's
-                         @append / time-series writes are buffered and dropped).
-                         Use to validate a feed/task without polluting series.
 
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
@@ -1385,7 +1382,6 @@ export async function dispatch(
           1,
           2048
         ),
-        dry_run: boolFlag(flags['dry-run']),
       });
     }
 

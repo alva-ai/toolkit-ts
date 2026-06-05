@@ -44,7 +44,6 @@ describe('RunResource', () => {
         working_dir: undefined,
         args: undefined,
         max_heap_size_mb: undefined,
-        dry_run: undefined,
       },
     });
   });
@@ -60,7 +59,6 @@ describe('RunResource', () => {
         working_dir: undefined,
         args: undefined,
         max_heap_size_mb: undefined,
-        dry_run: undefined,
       },
     });
   });
@@ -76,23 +74,6 @@ describe('RunResource', () => {
         working_dir: undefined,
         args: undefined,
         max_heap_size_mb: 512,
-        dry_run: undefined,
-      },
-    });
-  });
-
-  it('execute() forwards dry_run when true', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
-    await run.execute({ code: '1+1', dry_run: true });
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
-      body: {
-        code: '1+1',
-        entry_path: undefined,
-        working_dir: undefined,
-        args: undefined,
-        max_heap_size_mb: undefined,
-        dry_run: true,
       },
     });
   });

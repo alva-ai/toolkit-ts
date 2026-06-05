@@ -149,13 +149,6 @@ export interface RunRequest {
    * 1–2048. Omitted means the server uses its default heap (256 MB).
    */
   max_heap_size_mb?: number;
-  /**
-   * Run the script to completion but never commit its writes to the database
-   * (the store's @append / time-series writes are buffered and dropped). Use
-   * to validate a feed/task script without polluting published series.
-   * Defaults to false (writes persist).
-   */
-  dry_run?: boolean;
 }
 
 export interface RunResponse {
