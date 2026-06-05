@@ -129,6 +129,24 @@ alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 
 alva playbooks trending --tag btc --cursor <cursor>
 ```
 
+### Playbook Functions
+
+Register creator-owned functions for released playbooks to invoke through
+`window.alva.udf`. Function entry scripts must live at an absolute ALFS `.js`
+path under the creator's home directory. Viewer credit allowance is managed
+through the gateway REST session-user surface.
+
+```bash
+alva functions register --playbook-id 123 --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
+alva functions list --playbook-id 123
+alva functions delete --playbook-id 123 --function-name analyze
+alva functions invoke --playbook-id 123 --function-name analyze --params '{"ticker":"AAPL"}'
+alva functions allowance create --playbook-id 123 --amount 25
+alva functions allowance get --playbook-id 123
+alva functions allowance list
+alva functions allowance revoke --playbook-id 123
+```
+
 ### Data Skills
 
 Browse the Arrays backend's data-skill documentation. These endpoints are
@@ -195,6 +213,9 @@ token (`_pbsv`) from the iframe URL, removes only that sensitive query
 parameter, accepts parent-pushed token refreshes, and uses PBSV headers for
 UDF calls.
 
+Register creator-side functions first with `alva functions register`; viewer
+HTML should call the browser runtime instead of hand-writing API fetches.
+
 ```html
 <script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
 <script>
@@ -246,6 +267,7 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 | `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
 | `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
 | `client.playbooks`  | `trending()`                                                                                                                                                       |
+| `client.functions`  | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
 | `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
 | `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
 | `client.comments`   | `create()`, `pin()`, `unpin()`                                                                                                                                     |
@@ -280,6 +302,7 @@ alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json
 alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
+alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
 alva skillhub <list|tags|get|file> [<user>/<name>] [<file>] [--tag <t>] [--username <u>] [--json]

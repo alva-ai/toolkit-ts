@@ -139,6 +139,44 @@ function makeClient(): AlvaClient {
     .mockResolvedValue({ ok: true, subscriptions: [] });
   client.remix.save = vi.fn().mockResolvedValue(undefined);
   client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
+  client.functions.register = vi.fn().mockResolvedValue({
+    function: { function_name: 'analyze', playbook_id: 123 },
+  });
+  client.functions.list = vi.fn().mockResolvedValue({ functions: [] });
+  client.functions.delete = vi.fn().mockResolvedValue(undefined);
+  client.functions.invoke = vi.fn().mockResolvedValue({
+    result: { ok: true },
+    logs: '',
+    credits_used_total: 0,
+    credits_charged_owner: 0,
+    credits_charged_consumer: 0,
+  });
+  client.functions.getAllowance = vi.fn().mockResolvedValue({
+    id: '1',
+    consumer_uid: '42',
+    playbook_id: '123',
+    amount: 25,
+    used: 0,
+    remaining: 25,
+    created_at_ms: 1700000000000,
+    updated_at_ms: 1700000000000,
+  });
+  client.functions.listAllowances = vi
+    .fn()
+    .mockResolvedValue({ allowances: [] });
+  client.functions.createAllowance = vi.fn().mockResolvedValue({
+    allowance: {
+      id: '1',
+      consumer_uid: '42',
+      playbook_id: '123',
+      amount: 25,
+      used: 0,
+      remaining: 25,
+      created_at_ms: 1700000000000,
+      updated_at_ms: 1700000000000,
+    },
+  });
+  client.functions.revokeAllowance = vi.fn().mockResolvedValue({ ok: true });
   return client;
 }
 
@@ -447,6 +485,217 @@ describe('CLI dispatch', () => {
       cursor: 'abc',
       current: undefined,
     });
+  });
+
+  it('dispatches functions register with inline params schema', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'register',
+      '--playbook-id',
+      '123',
+      '--function-name',
+      'analyze',
+      '--entry-script-path',
+      '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      '--params-schema',
+      '{"type":"object"}',
+      '--no-allow-charges',
+    ]);
+    expect(client.functions.register).toHaveBeenCalledWith({
+      playbook_id: 123,
+      function_name: 'analyze',
+      entry_script_path:
+        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      params_schema: '{"type":"object"}',
+      allow_charges: false,
+    });
+  });
+
+  it('dispatches functions register with params schema file', async () => {
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue('{"type":"object"}');
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'register',
+      '--playbook-id',
+      '123',
+      '--function-name',
+      'analyze',
+      '--entry-script-path',
+      '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      '--params-schema-file',
+      '/tmp/schema.json',
+      '--allow-charges',
+    ]);
+    expect(mock).toHaveBeenCalledWith('/tmp/schema.json', 'utf-8');
+    expect(client.functions.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params_schema: '{"type":"object"}',
+        allow_charges: true,
+      })
+    );
+    mock.mockReset();
+  });
+
+  it('functions register rejects both schema flags', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'functions',
+        'register',
+        '--playbook-id',
+        '123',
+        '--function-name',
+        'analyze',
+        '--entry-script-path',
+        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+        '--params-schema',
+        '{"type":"object"}',
+        '--params-schema-file',
+        '/tmp/schema.json',
+      ])
+    ).rejects.toThrow(
+      '--params-schema and --params-schema-file are mutually exclusive'
+    );
+  });
+
+  it('dispatches functions list', async () => {
+    const client = makeClient();
+    await dispatch(client, ['functions', 'list', '--playbook-id', '123']);
+    expect(client.functions.list).toHaveBeenCalledWith({ playbook_id: 123 });
+  });
+
+  it('dispatches functions delete', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'delete',
+      '--playbook-id',
+      '123',
+      '--function-name',
+      'analyze',
+    ]);
+    expect(client.functions.delete).toHaveBeenCalledWith({
+      playbook_id: 123,
+      function_name: 'analyze',
+    });
+  });
+
+  it('dispatches functions invoke with params JSON', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'invoke',
+      '--playbook-id',
+      '123',
+      '--function-name',
+      'analyze',
+      '--params',
+      '{"ticker":"AAPL"}',
+    ]);
+    expect(client.functions.invoke).toHaveBeenCalledWith({
+      playbook_id: 123,
+      function_name: 'analyze',
+      parameters: { ticker: 'AAPL' },
+    });
+  });
+
+  it('functions invoke rejects invalid params JSON', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'functions',
+        'invoke',
+        '--playbook-id',
+        '123',
+        '--function-name',
+        'analyze',
+        '--params',
+        '{nope}',
+      ])
+    ).rejects.toThrow("--params must be valid JSON for 'functions invoke'");
+  });
+
+  it('dispatches functions allowance get', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'allowance',
+      'get',
+      '--playbook-id',
+      '123',
+    ]);
+    expect(client.functions.getAllowance).toHaveBeenCalledWith({
+      playbook_id: 123,
+    });
+  });
+
+  it('dispatches functions allowance list', async () => {
+    const client = makeClient();
+    await dispatch(client, ['functions', 'allowance', 'list']);
+    expect(client.functions.listAllowances).toHaveBeenCalled();
+  });
+
+  it('dispatches functions allowance create', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'allowance',
+      'create',
+      '--playbook-id',
+      '123',
+      '--amount',
+      '25',
+    ]);
+    expect(client.functions.createAllowance).toHaveBeenCalledWith({
+      playbook_id: 123,
+      amount: 25,
+    });
+  });
+
+  it('functions allowance create rejects non-positive amount', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'functions',
+        'allowance',
+        'create',
+        '--playbook-id',
+        '123',
+        '--amount',
+        '0',
+      ])
+    ).rejects.toThrow(
+      "--amount must be a positive integer for 'functions allowance create'"
+    );
+  });
+
+  it('dispatches functions allowance revoke', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'allowance',
+      'revoke',
+      '--playbook-id',
+      '123',
+    ]);
+    expect(client.functions.revokeAllowance).toHaveBeenCalledWith({
+      playbook_id: 123,
+    });
+  });
+
+  it('functions --help documents register and allowance', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['functions', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('functions register');
+    expect(result.text).toContain('functions allowance create');
+    expect(result.text).toContain('--entry-script-path');
   });
 
   it('dispatches release feed', async () => {
