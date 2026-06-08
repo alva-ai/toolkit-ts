@@ -1107,7 +1107,6 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     pro_required: false,
   },
   {
-    // TODO(audit): verify tier — auto-defaulted to pro
     skill: 'arrays-data-api-social-feeds',
     file: 'x-search',
     method: 'GET',
