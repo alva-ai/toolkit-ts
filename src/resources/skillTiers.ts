@@ -1097,15 +1097,14 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     pro_required: true,
   },
   {
-    // TODO(audit): verify tier — auto-defaulted to pro
     skill: 'arrays-data-api-equity-fundamentals',
     file: 'company-detail-non-us',
     method: 'GET',
     path: '/api/v1/stocks/non-us/company/detail',
-    tier: 'alternative',
-    required_subscription_tier: 'pro',
-    access: 'pro_only',
-    pro_required: true,
+    tier: 'public',
+    required_subscription_tier: 'free',
+    access: 'free_and_pro',
+    pro_required: false,
   },
   {
     // TODO(audit): verify tier — auto-defaulted to pro
@@ -1119,15 +1118,14 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     pro_required: true,
   },
   {
-    // TODO(audit): verify tier — auto-defaulted to pro
     skill: 'arrays-data-api-spot-market-price-and-volume',
     file: 'stocks-non-us-kline',
     method: 'GET',
     path: '/api/v1/stocks/non-us/kline',
-    tier: 'alternative',
-    required_subscription_tier: 'pro',
-    access: 'pro_only',
-    pro_required: true,
+    tier: 'public',
+    required_subscription_tier: 'free',
+    access: 'free_and_pro',
+    pro_required: false,
   },
 ];
 
@@ -1150,5 +1148,5 @@ export function countSkillEndpointMetadata(): Record<
   SkillEndpointTier,
   number
 > {
-  return { public: 56, alternative: 46, unstructured: 2 };
+  return { public: 58, alternative: 44, unstructured: 2 };
 }
