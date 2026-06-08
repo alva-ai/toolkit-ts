@@ -173,6 +173,7 @@ Response fields:
   username            Username (used in ALFS paths and playbook URLs)
   subscription_tier   "free" or "pro" — determines release flow and feature gates
   telegram_username   Telegram username if connected, null otherwise
+  slack_username      Slack display name if connected, null otherwise
 
 Examples:
   alva user me`,

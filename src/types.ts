@@ -18,6 +18,7 @@ export interface UserProfile {
   username: string;
   subscription_tier: 'free' | 'pro';
   telegram_username: string | null;
+  slack_username: string | null;
   /** Caller's alfs home directory, e.g. `/alva/home/<username>`. */
   home_path: string;
 }
