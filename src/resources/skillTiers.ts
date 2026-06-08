@@ -1096,6 +1096,36 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     access: 'pro_only',
     pro_required: true,
   },
+  {
+    skill: 'arrays-data-api-equity-fundamentals',
+    file: 'company-detail-non-us',
+    method: 'GET',
+    path: '/api/v1/stocks/non-us/company/detail',
+    tier: 'public',
+    required_subscription_tier: 'free',
+    access: 'free_and_pro',
+    pro_required: false,
+  },
+  {
+    skill: 'arrays-data-api-social-feeds',
+    file: 'x-search',
+    method: 'GET',
+    path: '/api/v1/social-feeds/x/search',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
+  {
+    skill: 'arrays-data-api-spot-market-price-and-volume',
+    file: 'stocks-non-us-kline',
+    method: 'GET',
+    path: '/api/v1/stocks/non-us/kline',
+    tier: 'public',
+    required_subscription_tier: 'free',
+    access: 'free_and_pro',
+    pro_required: false,
+  },
 ];
 
 export function getSkillEndpointMetadata(
@@ -1117,5 +1147,5 @@ export function countSkillEndpointMetadata(): Record<
   SkillEndpointTier,
   number
 > {
-  return { public: 56, alternative: 46, unstructured: 2 };
+  return { public: 58, alternative: 44, unstructured: 2 };
 }
