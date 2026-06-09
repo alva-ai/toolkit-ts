@@ -500,17 +500,31 @@ Examples:
   release: `Usage: alva release <subcommand> [options]
 
 Publish feeds and playbooks to the Alva platform. The typical workflow:
-  1. Deploy cronjob (alva deploy create)
-  2. Register feed (alva release feed)
-  3. Create playbook draft (alva release playbook-draft)
-  4. Write HTML to ALFS (alva fs write --path ~/playbooks/{name}/index.html)
-  5. Write README to ALFS (alva fs write --path ~/playbooks/{name}/README.md)
-  6. Release playbook (alva release playbook --readme-url "/alva/home/<username>/playbooks/{name}/README.md")
+  1. Publish automation (alva release automation)
+  2. Create playbook draft (alva release playbook-draft)
+  3. Write HTML to ALFS (alva fs write --path ~/playbooks/{name}/index.html)
+  4. Write README to ALFS (alva fs write --path ~/playbooks/{name}/README.md)
+  5. Release playbook (alva release playbook --readme-url "/alva/home/<username>/playbooks/{name}/README.md")
 
 Subcommands:
+  automation        Create the backing cronjob and register its feed
   feed              Register a feed after deploying its cronjob
   playbook-draft    Create a playbook draft (preview before publishing)
   playbook          Publish a playbook (public for free users, choice for pro)
+
+Automation flags:
+  --name <name>          Feed/automation name, unique per user (required)
+  --version <version>    Semantic version, e.g. "1.0.0" (required)
+  --path <path>          Path to script on ALFS (required, must exist)
+  --cron <expression>    Cron expression (required, e.g. "0 */4 * * *")
+  --cronjob-name <name>  Backing cronjob name (defaults to --name)
+  --args <json>          JSON object passed to require("env").args
+  --push-notify          Enable Telegram push notifications on completion
+  --no-push-notify       Disable push notifications
+  --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046)
+  --view-json <json>     View configuration JSON
+  --description <text>   Feed description
+  --changelog <text>     Per-major changelog summary
 
 Feed flags:
   --name <name>          Feed name, unique per user (required)
@@ -554,6 +568,8 @@ Display name conventions:
   Bad:  "My Dashboard", "Test V2", "Stock Dashboard"
 
 Examples:
+  alva release automation --name btc-ema --version 1.0.0 --path ~/feeds/btc-ema/v1/src/index.js --cron "0 */4 * * *"
+  alva release automation --name nvda-insiders --version 1.0.0 --path ~/feeds/nvda-insiders/v1/src/index.js --cron "0 14 * * 1-5" --description "NVDA insider trading activity"
   alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
@@ -1769,6 +1785,31 @@ export async function dispatch(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for release', 'release');
       switch (subcommand) {
+        case 'automation':
+          return client.release.automation({
+            name: requireFlag(flags, 'name', 'release automation'),
+            version: requireFlag(flags, 'version', 'release automation'),
+            path: requireFlag(flags, 'path', 'release automation'),
+            cron_expression: requireFlag(flags, 'cron', 'release automation'),
+            cronjob_name: flags['cronjob-name'],
+            args: jsonParse(flags['args']) as
+              | Record<string, unknown>
+              | undefined,
+            push_notify: boolFlag(flags['push-notify']),
+            max_heap_size_mb:
+              flags['max-heap-size-mb'] === undefined
+                ? undefined
+                : requireNumericFlag(
+                    flags,
+                    'max-heap-size-mb',
+                    'release automation'
+                  ),
+            view_json: jsonParse(flags['view-json']) as
+              | Record<string, unknown>
+              | undefined,
+            description: flags['description'],
+            changelog: flags['changelog'],
+          });
         case 'feed':
           return client.release.feed({
             name: requireFlag(flags, 'name', 'release feed'),

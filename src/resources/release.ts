@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
 import type {
+  AutomationReleaseRequest,
+  AutomationReleaseResponse,
   FeedReleaseRequest,
   FeedReleaseResponse,
   PlaybookDraftRequest,
@@ -23,6 +25,27 @@ export class ReleaseResource {
         changelog: params.changelog,
       },
     }) as Promise<FeedReleaseResponse>;
+  }
+
+  async automation(
+    params: AutomationReleaseRequest
+  ): Promise<AutomationReleaseResponse> {
+    this.client._requireAuth();
+    return this.client._request('POST', '/api/v1/release/automation', {
+      body: {
+        name: params.name,
+        version: params.version,
+        path: params.path,
+        cron_expression: params.cron_expression,
+        cronjob_name: params.cronjob_name,
+        args: params.args,
+        push_notify: params.push_notify,
+        max_heap_size_mb: params.max_heap_size_mb,
+        view_json: params.view_json,
+        description: params.description,
+        changelog: params.changelog,
+      },
+    }) as Promise<AutomationReleaseResponse>;
   }
 
   async playbookDraft(

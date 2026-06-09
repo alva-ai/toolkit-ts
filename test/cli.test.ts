@@ -60,6 +60,10 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.release.automation = vi.fn().mockResolvedValue({
+    feed_id: 1,
+    cronjob_id: 2,
+  });
   client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
   client.feed.resume = vi
     .fn()
@@ -712,6 +716,38 @@ describe('CLI dispatch', () => {
     ]);
     expect(client.release.feed).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'btc', version: '1.0', cronjob_id: 5 })
+    );
+  });
+
+  it('dispatches release automation', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'release',
+      'automation',
+      '--name',
+      'btc',
+      '--version',
+      '1.0.0',
+      '--path',
+      '~/feeds/btc/v1/src/index.js',
+      '--cron',
+      '0 */4 * * *',
+      '--args',
+      '{"symbol":"BTC"}',
+      '--push-notify',
+      '--max-heap-size-mb',
+      '512',
+    ]);
+    expect(client.release.automation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'btc',
+        version: '1.0.0',
+        path: '~/feeds/btc/v1/src/index.js',
+        cron_expression: '0 */4 * * *',
+        args: { symbol: 'BTC' },
+        push_notify: true,
+        max_heap_size_mb: 512,
+      })
     );
   });
 
