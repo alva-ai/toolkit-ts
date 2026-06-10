@@ -131,9 +131,12 @@ export class PlaybooksResource {
    * playbook ids — return no row. Treat a missing id as "deleted or not
    * visible" (the subscriptions list's `target_status` distinguishes ghosts).
    * Ids are strings (snowflake-safe). Max 100 per call.
+   *
+   * Auth is optional (like `trending`): with an API key, private/paid
+   * visibility is evaluated for the caller; without one, only public
+   * playbooks resolve. The server decides — no client-side gate.
    */
   async getByIds(ids: string[]): Promise<DiscoveryByIDsResponse> {
-    this.client._requireAuth();
     return (await this.client._request('GET', '/api/v1/playbooks', {
       query: { ids: ids.join(',') },
     })) as DiscoveryByIDsResponse;
@@ -142,9 +145,10 @@ export class PlaybooksResource {
   /**
    * List a user's playbooks by owner username (mono-meta#584 C10).
    * Visibility-gated: another user's private playbooks are omitted.
+   * Auth is optional (like `trending`); without credentials only public
+   * playbooks are listed.
    */
   async listByOwner(params: ListByOwnerParams): Promise<ListByOwnerResponse> {
-    this.client._requireAuth();
     const query: Record<string, string> = { owner: params.owner };
     if (params.limit !== undefined && params.limit > 0) {
       query.limit = String(params.limit);
