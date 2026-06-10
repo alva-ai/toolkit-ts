@@ -150,6 +150,11 @@ export interface RunRequest {
    * 1–2048. Omitted means the server uses its default heap (256 MB).
    */
   max_heap_size_mb?: number;
+  /**
+   * Client-side HTTP timeout for waiting on POST /api/v1/run, in
+   * milliseconds. This is not sent to the server.
+   */
+  timeout_ms?: number;
 }
 
 export interface RunResponse {

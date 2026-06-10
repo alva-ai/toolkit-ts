@@ -234,7 +234,15 @@ describe('AlvaClient', () => {
     });
 
     it('wraps network error as AlvaError', async () => {
-      const fetch = mockFetch({ throwError: new TypeError('Failed to fetch') });
+      const cause = new Error('Headers Timeout Error') as Error & {
+        code?: string;
+      };
+      cause.code = 'UND_ERR_HEADERS_TIMEOUT';
+      const err = new TypeError('fetch failed') as TypeError & {
+        cause?: unknown;
+      };
+      err.cause = cause;
+      const fetch = mockFetch({ throwError: err });
       globalThis.fetch = fetch;
       const client = new AlvaClient({});
 
@@ -246,7 +254,40 @@ describe('AlvaClient', () => {
       } catch (e) {
         expect(e).toBeInstanceOf(AlvaError);
         expect((e as AlvaError).code).toBe('NETWORK_ERROR');
+        expect((e as AlvaError).message).toContain('UND_ERR_HEADERS_TIMEOUT');
+        expect((e as AlvaError).details).toMatchObject({
+          method: 'GET',
+          path: '/api/v1/me',
+          cause: { code: 'UND_ERR_HEADERS_TIMEOUT' },
+        });
       }
+    });
+
+    it('passes AbortSignal and reports NETWORK_TIMEOUT after timeoutMs', async () => {
+      vi.useFakeTimers();
+      const fetch = vi.fn((_url: string, init: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason ?? new Error('aborted'));
+          });
+        });
+      });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({});
+
+      const request = expect(
+        client._request('GET', '/api/v1/me', { timeoutMs: 50 })
+      ).rejects.toMatchObject({
+        code: 'NETWORK_TIMEOUT',
+        status: 0,
+        details: { method: 'GET', path: '/api/v1/me', timeout_ms: 50 },
+      });
+      await vi.advanceTimersByTimeAsync(50);
+      await request;
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      vi.useRealTimers();
     });
 
     it('parses API error envelope', async () => {

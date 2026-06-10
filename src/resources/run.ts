@@ -14,6 +14,7 @@ export class RunResource {
         args: params.args,
         max_heap_size_mb: params.max_heap_size_mb,
       },
+      timeoutMs: params.timeout_ms,
     }) as Promise<RunResponse>;
   }
 }

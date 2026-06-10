@@ -22,10 +22,14 @@ import {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
+import { Agent, setGlobalDispatcher } from 'undici';
 
 declare const __VERSION__: string;
 export const CLI_VERSION: string =
   typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
+export const DEFAULT_RUN_TIMEOUT_MS = 600_000;
+const RUN_TIMEOUT_ENV = 'ALVA_RUN_TIMEOUT_MS';
+let configuredRunFetchTimeoutMs: number | undefined;
 
 /**
  * Returns true if version `a` is strictly older than version `b`.
@@ -261,6 +265,7 @@ Options:
   --working-dir <dir>    Working directory for require() (inline code only)
   --args <json>          JSON object passed to require("env").args
   --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
+  --timeout-ms <ms>      Client HTTP timeout for /api/v1/run (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
 
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
@@ -292,7 +297,8 @@ Examples:
   alva run --entry-path "~/feeds/my-feed/v1/src/index.js"
   alva run --entry-path "~/tasks/analyze/src/index.js" --args '{"symbol":"NVDA","limit":50}'
   alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'
-  alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024`,
+  alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024
+  alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
@@ -1197,6 +1203,48 @@ function optionalBoundedIntegerFlag(
   return n;
 }
 
+function parsePositiveIntegerValue(
+  val: string,
+  label: string,
+  command: string
+): number {
+  const n = Number(val);
+  if (!/^[1-9]\d*$/.test(val) || !Number.isSafeInteger(n)) {
+    const group = command.split(' ')[0];
+    throw new CliUsageError(
+      `${label} must be a positive integer for '${command}', got '${val}'`,
+      group
+    );
+  }
+  return n;
+}
+
+function runTimeoutMs(flags: Record<string, string>): number {
+  if (flags['timeout-ms'] !== undefined) {
+    return parsePositiveIntegerValue(
+      flags['timeout-ms'],
+      '--timeout-ms',
+      'run'
+    );
+  }
+  const envValue = process.env[RUN_TIMEOUT_ENV];
+  if (envValue !== undefined && envValue !== '') {
+    return parsePositiveIntegerValue(envValue, RUN_TIMEOUT_ENV, 'run');
+  }
+  return DEFAULT_RUN_TIMEOUT_MS;
+}
+
+function configureRunFetchTimeout(timeoutMs: number): void {
+  if (configuredRunFetchTimeoutMs === timeoutMs) return;
+  setGlobalDispatcher(
+    new Agent({
+      headersTimeout: timeoutMs,
+      bodyTimeout: timeoutMs,
+    })
+  );
+  configuredRunFetchTimeoutMs = timeoutMs;
+}
+
 function requireGroupSubscriptionTargetType(
   flags: Record<string, string>,
   command: string
@@ -1496,6 +1544,8 @@ export async function dispatch(
       if (flags['local-file']) {
         code = fs.readFileSync(flags['local-file'], 'utf-8') as string;
       }
+      const timeout_ms = runTimeoutMs(flags);
+      configureRunFetchTimeout(timeout_ms);
       return client.run.execute({
         code,
         entry_path: flags['entry-path'],
@@ -1508,6 +1558,7 @@ export async function dispatch(
           1,
           2048
         ),
+        timeout_ms,
       });
     }
 
@@ -2673,6 +2724,7 @@ async function main() {
         code: err.code,
         message: err.message,
         status: err.status,
+        ...(err.details !== undefined ? { details: err.details } : {}),
       };
       process.stderr.write(`${JSON.stringify({ error }, null, 2)}\n`);
       process.exit(1);
