@@ -749,6 +749,35 @@ export interface PushSubscription {
   /** Playbooks whose latest release currently references this feed. */
   used_by?: PushSubscriptionUsedBy[];
   used_by_total?: number;
+  /**
+   * Row-shape discriminator: PLAYBOOK_ALERTS = a playbook-level wildcard
+   * (alerts for every push-enabled automation of the playbook);
+   * FEED_ALERT = a single feed's alert.
+   */
+  kind?: 'PLAYBOOK_ALERTS' | 'FEED_ALERT' | 'UNSPECIFIED' | string;
+  /**
+   * Whether the caller also FOLLOWS the target playbook — the social
+   * relation, distinct from this alert row. Always false for FEED targets.
+   */
+  following?: boolean;
+  /**
+   * Target lifecycle: TARGET_DELETED marks a ghost row (the playbook/feed
+   * was deleted) — clear it with unsubscribeBatch by target id.
+   */
+  target_status?:
+    | 'ACTIVE'
+    | 'TARGET_DELETED'
+    | 'PAUSED'
+    | 'UNSPECIFIED'
+    | string;
+  /** Playbook identity, present for PLAYBOOK targets on list responses. */
+  playbook?: PushSubscriptionPlaybookInfo;
+}
+
+export interface PushSubscriptionPlaybookInfo {
+  owner_username: string;
+  name: string;
+  display_name: string;
 }
 
 export interface PushSubscriptionUsedBy {
@@ -780,6 +809,52 @@ export interface PushSubscriptionListResponse {
   items: PushSubscription[];
   /** Empty when there is no next page. */
   next_cursor?: string;
+  /**
+   * Total active subscription rows independent of pagination — when
+   * items.length < total_count, the page is truncated; keep paginating.
+   */
+  total_count?: number;
+}
+
+export interface FollowsListParams {
+  /** Page size, default 50, max 100 server-side. */
+  limit?: number;
+  /** Opaque cursor from the previous page's `next_cursor`. */
+  cursor?: string;
+}
+
+export interface PlaybookFollowItem {
+  playbook_id: string;
+  owner_username: string;
+  name: string;
+  display_name: string;
+  followed_at_ms: number;
+  cursor: string;
+}
+
+export interface FollowsListResponse {
+  items: PlaybookFollowItem[];
+  has_next: boolean;
+  next_cursor?: string;
+}
+
+export interface UnsubscribeBatchParams {
+  /** Playbook target ids (strings — snowflake ids exceed JS safe integers). */
+  playbookIds?: string[];
+  /** Feed target ids (strings). */
+  feedIds?: string[];
+}
+
+export interface UnsubscribeBatchResult {
+  id: string;
+  kind: 'PLAYBOOK' | 'FEED' | string;
+  ok: boolean;
+  status: 'UNSUBSCRIBED' | 'INVALID_ID' | string;
+}
+
+export interface UnsubscribeBatchResponse {
+  results: UnsubscribeBatchResult[];
+  ok_count: number;
 }
 
 export interface PlaybookFollow {

@@ -89,8 +89,112 @@ interface RawTrendingPlaybook {
  * Public playbook discovery. Backed by alva-gateway REST and mirrors the
  * GraphQL `trendingPlaybooks(cursor, sort, tags, keyword)` query.
  */
+/** Compact discovery record returned by getByIds / listByOwner / get. */
+export interface PlaybookDiscoveryItem {
+  /** Numeric playbook id encoded as a string. */
+  id: string;
+  /** Owner username (empty when not resolvable). */
+  owner_username: string;
+  /** URL-safe playbook name. */
+  name: string;
+  display_name: string;
+  visibility: string;
+  /** Stable "owner/name" handle for name-addressed operations. */
+  ref?: string;
+  /** Present on listByOwner rows. */
+  cursor?: string;
+}
+
+export interface DiscoveryByIDsResponse {
+  items: PlaybookDiscoveryItem[];
+}
+
+export interface ListByOwnerParams {
+  owner: string;
+  /** Page size, default 50, max 100 server-side. */
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ListByOwnerResponse {
+  items: PlaybookDiscoveryItem[];
+  has_next: boolean;
+  next_cursor?: string;
+}
+
 export class PlaybooksResource {
   constructor(private client: AlvaClient) {}
+
+  /**
+   * Resolve playbook ids to named, addressable records (mono-meta#584 A2).
+   * Visibility-gated server-side; ids the caller cannot see — and DELETED
+   * playbook ids — return no row. Treat a missing id as "deleted or not
+   * visible" (the subscriptions list's `target_status` distinguishes ghosts).
+   * Ids are strings (snowflake-safe). Max 100 per call.
+   *
+   * Auth is optional (like `trending`): with an API key, private/paid
+   * visibility is evaluated for the caller; without one, only public
+   * playbooks resolve. The server decides — no client-side gate.
+   */
+  async getByIds(ids: string[]): Promise<DiscoveryByIDsResponse> {
+    return (await this.client._request('GET', '/api/v1/playbooks', {
+      query: { ids: ids.join(',') },
+    })) as DiscoveryByIDsResponse;
+  }
+
+  /**
+   * List a user's playbooks by owner username (mono-meta#584 C10).
+   * Visibility-gated: another user's private playbooks are omitted.
+   * Auth is optional (like `trending`); without credentials only public
+   * playbooks are listed.
+   */
+  async listByOwner(params: ListByOwnerParams): Promise<ListByOwnerResponse> {
+    const query: Record<string, string> = { owner: params.owner };
+    if (params.limit !== undefined && params.limit > 0) {
+      query.limit = String(params.limit);
+    }
+    if (params.cursor) query.cursor = params.cursor;
+    return (await this.client._request('GET', '/api/v1/playbooks', {
+      query,
+    })) as ListByOwnerResponse;
+  }
+
+  /**
+   * Get one playbook by numeric id or by "owner/name" ref. Returns null when
+   * not found / not visible / deleted.
+   */
+  async get(params: {
+    id?: string;
+    ref?: string;
+  }): Promise<PlaybookDiscoveryItem | null> {
+    if (params.id) {
+      const resp = await this.getByIds([params.id]);
+      return resp.items[0] ?? null;
+    }
+    if (params.ref) {
+      const slash = params.ref.indexOf('/');
+      if (slash <= 0 || slash === params.ref.length - 1) {
+        throw new AlvaError(
+          'INVALID_ARGUMENT',
+          `Invalid ref "${params.ref}". Expected "owner/name".`,
+          400
+        );
+      }
+      const owner = params.ref.slice(0, slash);
+      const name = params.ref.slice(slash + 1);
+      let cursor: string | undefined;
+      // Paginate the owner's playbooks until the name matches (bounded by
+      // the server-side page cap; owner catalogs are small).
+      for (;;) {
+        const page = await this.listByOwner({ owner, cursor, limit: 100 });
+        const hit = page.items.find((item) => item.name === name);
+        if (hit) return hit;
+        if (!page.has_next || !page.next_cursor) return null;
+        cursor = page.next_cursor;
+      }
+    }
+    throw new AlvaError('INVALID_ARGUMENT', 'id or ref is required', 400);
+  }
 
   /**
    * List trending / searchable playbooks. Auth is optional: when the client
