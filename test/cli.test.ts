@@ -751,6 +751,35 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches automation publish alias', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'automation',
+      'publish',
+      '--name',
+      'btc',
+      '--version',
+      '1.0.0',
+      '--path',
+      '~/feeds/btc/v1/src/index.js',
+      '--schedule',
+      '0 */4 * * *',
+      '--producer-name',
+      'btc-producer',
+      '--no-push-notify',
+    ]);
+    expect(client.release.automation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'btc',
+        version: '1.0.0',
+        path: '~/feeds/btc/v1/src/index.js',
+        cron_expression: '0 */4 * * *',
+        cronjob_name: 'btc-producer',
+        push_notify: false,
+      })
+    );
+  });
+
   it('dispatches release playbook-draft', async () => {
     const client = makeClient();
     await dispatch(client, [
