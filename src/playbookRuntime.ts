@@ -396,8 +396,13 @@ const proposeSubscribe = async (
   input: SubscribeProposalInput
 ): Promise<SubscribeProposalResult> => {
   if (!runtimeWindow || !expectedParentOrigin) return 'error';
-  const feedOwner = (input?.feedOwner || '').trim();
-  const feedName = (input?.feedName || '').trim();
+  // propose() is exposed to plain (untyped) playbook JS, so the fields may not
+  // be strings at runtime. Validate before trimming — a non-string must resolve
+  // to 'error', not throw.
+  const feedOwner =
+    typeof input?.feedOwner === 'string' ? input.feedOwner.trim() : '';
+  const feedName =
+    typeof input?.feedName === 'string' ? input.feedName.trim() : '';
   if (!feedOwner || !feedName) return 'error';
   const targetOrigin = expectedParentOrigin;
   const requestId = randomRequestId();

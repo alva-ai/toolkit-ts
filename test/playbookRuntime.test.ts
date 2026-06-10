@@ -332,6 +332,15 @@ describe('playbook runtime SDK', () => {
       runtime.subscribe.propose({ feedOwner: '', feedName: 'x' })
     ).resolves.toBe('error');
     expect(fake.parent.postMessage).not.toHaveBeenCalled();
+
+    // Untyped callers may pass non-string values; must resolve 'error', not throw.
+    await expect(
+      runtime.subscribe.propose({
+        feedOwner: 123 as unknown as string,
+        feedName: 'x',
+      })
+    ).resolves.toBe('error');
+    expect(fake.parent.postMessage).not.toHaveBeenCalled();
   });
 
   it('maps backend sentinel errors to typed errors', async () => {
