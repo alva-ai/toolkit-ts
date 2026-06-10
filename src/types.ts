@@ -277,6 +277,32 @@ export interface FeedReleaseResponse {
   feed_path: string;
 }
 
+export interface AutomationReleaseRequest {
+  name: string;
+  version: string;
+  path: string;
+  cron_expression: string;
+  cronjob_name?: string;
+  args?: Record<string, unknown>;
+  push_notify?: boolean;
+  /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
+  max_heap_size_mb?: number;
+  view_json?: Record<string, unknown>;
+  description?: string;
+  changelog?: string;
+}
+
+export interface AutomationReleaseResponse extends FeedReleaseResponse {
+  cronjob_id: number;
+  cronjob_name: string;
+  entry_path: string;
+  cron_expression: string;
+  status: string;
+  args_json: string;
+  push_notify: boolean;
+  max_heap_size_mb?: number;
+}
+
 export interface FeedDeleteRequest {
   /** Numeric feed id to delete. */
   id: number;

@@ -99,6 +99,40 @@ describe('ReleaseResource', () => {
           cronjob_id: 123,
           view_json: undefined,
           description: undefined,
+          changelog: undefined,
+        },
+      }
+    );
+  });
+
+  it('automation() sends POST /api/v1/release/automation', async () => {
+    const client = makeClient();
+    const release = new ReleaseResource(client);
+    await release.automation({
+      name: 'btc-ema',
+      version: '1.0.0',
+      path: '~/feeds/btc-ema/v1/src/index.js',
+      cron_expression: '0 */4 * * *',
+      args: { symbol: 'BTC' },
+      push_notify: true,
+      max_heap_size_mb: 512,
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/release/automation',
+      {
+        body: {
+          name: 'btc-ema',
+          version: '1.0.0',
+          path: '~/feeds/btc-ema/v1/src/index.js',
+          cron_expression: '0 */4 * * *',
+          cronjob_name: undefined,
+          args: { symbol: 'BTC' },
+          push_notify: true,
+          max_heap_size_mb: 512,
+          view_json: undefined,
+          description: undefined,
+          changelog: undefined,
         },
       }
     );

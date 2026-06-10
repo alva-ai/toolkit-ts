@@ -60,6 +60,10 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.release.automation = vi.fn().mockResolvedValue({
+    feed_id: 1,
+    cronjob_id: 2,
+  });
   client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
   client.feed.resume = vi
     .fn()
@@ -712,6 +716,35 @@ describe('CLI dispatch', () => {
     ]);
     expect(client.release.feed).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'btc', version: '1.0', cronjob_id: 5 })
+    );
+  });
+
+  it('dispatches automation publish alias', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'automation',
+      'publish',
+      '--name',
+      'btc',
+      '--version',
+      '1.0.0',
+      '--path',
+      '~/feeds/btc/v1/src/index.js',
+      '--schedule',
+      '0 */4 * * *',
+      '--producer-name',
+      'btc-producer',
+      '--no-push-notify',
+    ]);
+    expect(client.release.automation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'btc',
+        version: '1.0.0',
+        path: '~/feeds/btc/v1/src/index.js',
+        cron_expression: '0 */4 * * *',
+        cronjob_name: 'btc-producer',
+        push_notify: false,
+      })
     );
   });
 
