@@ -25,6 +25,32 @@ type UdfErrorBody = {
 
 type ConsentResult = 'granted' | 'denied' | 'timeout';
 
+// Outcome of a subscribe proposal. The parent decides; the iframe only asks.
+//   subscribed — user confirmed and the parent subscribed them (session).
+//   declined   — user dismissed the confirm prompt.
+//   timeout    — no response within CONSENT_TIMEOUT_MS.
+//   error      — runtime not ready / invalid input / parent reported an error.
+export type SubscribeProposalResult =
+  | 'subscribed'
+  | 'declined'
+  | 'timeout'
+  | 'error';
+
+export type SubscribeProposalInput = {
+  feedOwner: string;
+  feedName: string;
+};
+
+export type SubscribeApi = {
+  /**
+   * Ask the parent (main site) to offer the viewer a subscription to a feed.
+   * The iframe CANNOT subscribe directly — it only proposes; the trusted
+   * parent shows a confirm prompt and, on user confirmation, subscribes with
+   * the viewer's own session. Resolves with the outcome.
+   */
+  propose: (input: SubscribeProposalInput) => Promise<SubscribeProposalResult>;
+};
+
 export type UdfDescriptor = {
   name: string;
   params_schema: unknown | null;
@@ -84,6 +110,7 @@ declare global {
   interface Window {
     alva?: {
       udf?: UdfApi;
+      subscribe?: SubscribeApi;
       [key: string]: unknown;
     };
   }
@@ -141,6 +168,8 @@ export const PBSV_UPDATE_MESSAGE = 'alva:pbsv:update';
 export const UDF_CONSENT_REQUEST_MESSAGE = 'alva:udf:consent-request';
 export const UDF_CONSENT_RESPONSE_MESSAGE = 'alva:udf:consent-response';
 export const UDF_AUTH_REQUIRED_MESSAGE = 'alva:udf:auth-required';
+export const SUBSCRIBE_PROPOSE_MESSAGE = 'alva:subscribe:propose';
+export const SUBSCRIBE_RESULT_MESSAGE = 'alva:subscribe:result';
 
 const DEFAULT_API_ORIGIN = 'https://api-llm.prd.alva.ai';
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -159,6 +188,21 @@ const pendingConsents = new Map<
     timer: ReturnType<typeof setTimeout>;
   }
 >();
+
+const pendingProposals = new Map<
+  string,
+  {
+    resolve: (result: SubscribeProposalResult) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
+
+const normalizeProposalResult = (value: unknown): SubscribeProposalResult => {
+  if (value === 'subscribed' || value === 'declined' || value === 'timeout') {
+    return value;
+  }
+  return 'error';
+};
 
 const decodeBase64Url = (value: string) => {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -281,6 +325,7 @@ const onMessage = (event: MessageEvent) => {
     token?: unknown;
     request_id?: unknown;
     granted?: unknown;
+    status?: unknown;
   };
 
   if (data.type === PBSV_UPDATE_MESSAGE) {
@@ -288,6 +333,16 @@ const onMessage = (event: MessageEvent) => {
       cachedToken = data.token;
       playbookIdFromBoot = playbookIdFromToken(data.token);
     }
+    return;
+  }
+
+  if (data.type === SUBSCRIBE_RESULT_MESSAGE) {
+    if (typeof data.request_id !== 'string') return;
+    const pending = pendingProposals.get(data.request_id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingProposals.delete(data.request_id);
+    pending.resolve(normalizeProposalResult(data.status));
     return;
   }
 
@@ -335,6 +390,42 @@ const requestConsent = async (
       targetOrigin
     );
   });
+};
+
+const proposeSubscribe = async (
+  input: SubscribeProposalInput
+): Promise<SubscribeProposalResult> => {
+  if (!runtimeWindow || !expectedParentOrigin) return 'error';
+  // propose() is exposed to plain (untyped) playbook JS, so the fields may not
+  // be strings at runtime. Validate before trimming — a non-string must resolve
+  // to 'error', not throw.
+  const feedOwner =
+    typeof input?.feedOwner === 'string' ? input.feedOwner.trim() : '';
+  const feedName =
+    typeof input?.feedName === 'string' ? input.feedName.trim() : '';
+  if (!feedOwner || !feedName) return 'error';
+  const targetOrigin = expectedParentOrigin;
+  const requestId = randomRequestId();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingProposals.delete(requestId);
+      resolve('timeout');
+    }, CONSENT_TIMEOUT_MS);
+    pendingProposals.set(requestId, { resolve, timer });
+    runtimeWindow?.parent.postMessage(
+      {
+        type: SUBSCRIBE_PROPOSE_MESSAGE,
+        request_id: requestId,
+        playbook_id: playbookIdFromBoot,
+        feed: { owner: feedOwner, name: feedName },
+      },
+      targetOrigin
+    );
+  });
+};
+
+export const subscribe: SubscribeApi = {
+  propose: proposeSubscribe,
 };
 
 const requestAuthentication = (functionName: string) => {
@@ -542,5 +633,6 @@ export const installPlaybookRuntime = (targetWindow?: Window) => {
   target.alva = {
     ...existing,
     udf,
+    subscribe,
   };
 };

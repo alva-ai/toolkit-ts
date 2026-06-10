@@ -239,6 +239,110 @@ describe('playbook runtime SDK', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('proposes a feed subscription to the parent and resolves with the result', async () => {
+    const token = tokenWithPid('42');
+    const fake = installFakeWindow(
+      `https://alice.playbook.alva.ai/demo/v1?_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai`
+    );
+    vi.stubGlobal('crypto', { randomUUID: () => 'sub-req-1' });
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    const pending = runtime.subscribe.propose({
+      feedOwner: 'ymchcom',
+      feedName: 'eth-price-push',
+    });
+
+    await vi.waitFor(() => {
+      expect(fake.parent.postMessage).toHaveBeenCalledWith(
+        {
+          type: 'alva:subscribe:propose',
+          request_id: 'sub-req-1',
+          playbook_id: '42',
+          feed: { owner: 'ymchcom', name: 'eth-price-push' },
+        },
+        'https://alva.ai'
+      );
+    });
+
+    fake.dispatchMessage({
+      origin: 'https://alva.ai',
+      source: fake.parent as Window,
+      data: {
+        type: 'alva:subscribe:result',
+        request_id: 'sub-req-1',
+        status: 'subscribed',
+      },
+    });
+
+    await expect(pending).resolves.toBe('subscribed');
+  });
+
+  it('ignores subscribe results from an untrusted origin', async () => {
+    const token = tokenWithPid('42');
+    const fake = installFakeWindow(
+      `https://alice.playbook.alva.ai/demo/v1?_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai`
+    );
+    vi.stubGlobal('crypto', { randomUUID: () => 'sub-req-2' });
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    const pending = runtime.subscribe.propose({
+      feedOwner: 'ymchcom',
+      feedName: 'eth-price-push',
+    });
+    await vi.waitFor(() => {
+      expect(fake.parent.postMessage).toHaveBeenCalled();
+    });
+
+    // Spoofed origin must NOT resolve the proposal.
+    fake.dispatchMessage({
+      origin: 'https://evil.example',
+      source: fake.parent as Window,
+      data: {
+        type: 'alva:subscribe:result',
+        request_id: 'sub-req-2',
+        status: 'subscribed',
+      },
+    });
+
+    // The real parent declines.
+    fake.dispatchMessage({
+      origin: 'https://alva.ai',
+      source: fake.parent as Window,
+      data: {
+        type: 'alva:subscribe:result',
+        request_id: 'sub-req-2',
+        status: 'declined',
+      },
+    });
+
+    await expect(pending).resolves.toBe('declined');
+  });
+
+  it('returns error for invalid proposal input without posting a message', async () => {
+    const token = tokenWithPid('42');
+    const fake = installFakeWindow(
+      `https://alice.playbook.alva.ai/demo/v1?_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai`
+    );
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    await expect(
+      runtime.subscribe.propose({ feedOwner: '', feedName: 'x' })
+    ).resolves.toBe('error');
+    expect(fake.parent.postMessage).not.toHaveBeenCalled();
+
+    // Untyped callers may pass non-string values; must resolve 'error', not throw.
+    await expect(
+      runtime.subscribe.propose({
+        feedOwner: 123 as unknown as string,
+        feedName: 'x',
+      })
+    ).resolves.toBe('error');
+    expect(fake.parent.postMessage).not.toHaveBeenCalled();
+  });
+
   it('maps backend sentinel errors to typed errors', async () => {
     const token = tokenWithPid('42');
     installFakeWindow(
