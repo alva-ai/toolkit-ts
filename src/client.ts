@@ -38,6 +38,83 @@ interface RequestOptions {
   baseUrl?: string;
   /** If true, skip attaching any Alva auth header (X-Alva-Api-Key / x-Playbook-Viewer). */
   noAuth?: boolean;
+  /** Client-side HTTP timeout in milliseconds. */
+  timeoutMs?: number;
+}
+
+interface FetchFailure {
+  message: string;
+  details: Record<string, unknown>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function stringField(value: unknown, field: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const fieldValue = value[field];
+  return typeof fieldValue === 'string' && fieldValue ? fieldValue : undefined;
+}
+
+function describeCause(cause: unknown): {
+  message?: string;
+  details?: Record<string, string>;
+} {
+  if (cause === undefined || cause === null) {
+    return {};
+  }
+  const details: Record<string, string> = {};
+  if (cause instanceof Error) {
+    if (cause.name) details.name = cause.name;
+    if (cause.message) details.message = cause.message;
+    const code = stringField(cause, 'code');
+    if (code) details.code = code;
+  } else if (isRecord(cause)) {
+    const code = stringField(cause, 'code');
+    const name = stringField(cause, 'name');
+    const message = stringField(cause, 'message');
+    if (code) details.code = code;
+    if (name) details.name = name;
+    if (message) details.message = message;
+  } else {
+    details.message = String(cause);
+  }
+
+  const parts = [details.code, details.name, details.message].filter(
+    (part): part is string => Boolean(part)
+  );
+  return {
+    message: parts.length > 0 ? parts.join(': ') : undefined,
+    details: Object.keys(details).length > 0 ? details : undefined,
+  };
+}
+
+function describeFetchFailure(err: unknown): FetchFailure {
+  const message =
+    err instanceof Error && err.message
+      ? err.message
+      : 'Network request failed';
+  const details: Record<string, unknown> = {};
+
+  if (err instanceof Error) {
+    details.name = err.name;
+    details.message = err.message;
+  } else {
+    details.message = String(err);
+  }
+
+  const { message: causeMessage, details: causeDetails } = describeCause(
+    isRecord(err) ? err.cause : undefined
+  );
+  if (causeDetails) {
+    details.cause = causeDetails;
+  }
+
+  return {
+    message: causeMessage ? `${message}; cause: ${causeMessage}` : message,
+    details,
+  };
 }
 
 export class AlvaClient {
@@ -223,18 +300,48 @@ export class AlvaClient {
     }
 
     let response: Response;
+    const timeoutMs = options?.timeoutMs;
+    const controller =
+      timeoutMs !== undefined ? new AbortController() : undefined;
+    let didTimeout = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (controller && timeoutMs !== undefined) {
+      timeoutId = setTimeout(() => {
+        didTimeout = true;
+        controller.abort(
+          new Error(
+            `Request timed out after ${timeoutMs}ms while calling ${method} ${path}`
+          )
+        );
+      }, timeoutMs);
+    }
+
     try {
       response = await fetch(url, {
         method,
         headers,
         body: fetchBody,
+        signal: controller?.signal,
       });
     } catch (err) {
-      throw new AlvaError(
-        'NETWORK_ERROR',
-        err instanceof Error ? err.message : 'Network request failed',
-        0
-      );
+      if (didTimeout) {
+        throw new AlvaError(
+          'NETWORK_TIMEOUT',
+          `Request timed out after ${timeoutMs}ms while calling ${method} ${path}`,
+          0,
+          { method, path, timeout_ms: timeoutMs }
+        );
+      }
+      const failure = describeFetchFailure(err);
+      throw new AlvaError('NETWORK_ERROR', failure.message, 0, {
+        method,
+        path,
+        ...failure.details,
+      });
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
     }
 
     if (!response.ok) {

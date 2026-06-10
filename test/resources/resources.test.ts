@@ -47,6 +47,7 @@ describe('RunResource', () => {
         args: undefined,
         max_heap_size_mb: undefined,
       },
+      timeoutMs: undefined,
     });
   });
 
@@ -62,6 +63,7 @@ describe('RunResource', () => {
         args: undefined,
         max_heap_size_mb: undefined,
       },
+      timeoutMs: undefined,
     });
   });
 
@@ -77,6 +79,23 @@ describe('RunResource', () => {
         args: undefined,
         max_heap_size_mb: 512,
       },
+      timeoutMs: undefined,
+    });
+  });
+
+  it('execute() forwards timeout_ms as client timeout only', async () => {
+    const client = makeClient();
+    const run = new RunResource(client);
+    await run.execute({ code: '1+1', timeout_ms: 900000 });
+    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
+      body: {
+        code: '1+1',
+        entry_path: undefined,
+        working_dir: undefined,
+        args: undefined,
+        max_heap_size_mb: undefined,
+      },
+      timeoutMs: 900000,
     });
   });
 });

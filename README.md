@@ -298,7 +298,7 @@ alva whoami [--profile <name>]
 alva auth login [--browser | --no-browser] [--profile <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
-alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json>]
+alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json>] [--timeout-ms <ms>]
 alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>

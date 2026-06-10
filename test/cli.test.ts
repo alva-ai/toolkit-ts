@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   dispatch,
   handleConfigure,
   CLI_VERSION,
+  DEFAULT_RUN_TIMEOUT_MS,
   isVersionOlderThan,
   stripGlobalFlags,
 } from '../src/cli/index.js';
@@ -17,6 +18,36 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 import * as fs from 'fs';
+
+vi.mock('undici', () => {
+  class Agent {
+    options: unknown;
+
+    constructor(options: unknown) {
+      this.options = options;
+    }
+  }
+  return {
+    Agent,
+    setGlobalDispatcher: vi.fn(),
+  };
+});
+import { setGlobalDispatcher } from 'undici';
+
+const originalRunTimeoutEnv = process.env.ALVA_RUN_TIMEOUT_MS;
+
+beforeEach(() => {
+  delete process.env.ALVA_RUN_TIMEOUT_MS;
+  vi.mocked(setGlobalDispatcher).mockClear();
+});
+
+afterEach(() => {
+  if (originalRunTimeoutEnv === undefined) {
+    delete process.env.ALVA_RUN_TIMEOUT_MS;
+  } else {
+    process.env.ALVA_RUN_TIMEOUT_MS = originalRunTimeoutEnv;
+  }
+});
 
 function makeClient(): AlvaClient {
   const client = new AlvaClient({ apiKey: 'test-key' });
@@ -322,6 +353,51 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches run with default timeout_ms', async () => {
+    const client = makeClient();
+    await dispatch(client, ['run', '--code', '1+1']);
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: '1+1',
+        timeout_ms: DEFAULT_RUN_TIMEOUT_MS,
+      })
+    );
+  });
+
+  it('dispatches run with --timeout-ms', async () => {
+    const client = makeClient();
+    await dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '900000']);
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ code: '1+1', timeout_ms: 900000 })
+    );
+    expect(setGlobalDispatcher).toHaveBeenCalledTimes(1);
+    const dispatcher = vi.mocked(setGlobalDispatcher).mock.calls[0][0] as {
+      options: unknown;
+    };
+    expect(dispatcher.options).toEqual({
+      headersTimeout: 900000,
+      bodyTimeout: 900000,
+    });
+  });
+
+  it('uses ALVA_RUN_TIMEOUT_MS when --timeout-ms is absent', async () => {
+    process.env.ALVA_RUN_TIMEOUT_MS = '750000';
+    const client = makeClient();
+    await dispatch(client, ['run', '--code', '1+1']);
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ code: '1+1', timeout_ms: 750000 })
+    );
+  });
+
+  it('lets --timeout-ms override ALVA_RUN_TIMEOUT_MS', async () => {
+    process.env.ALVA_RUN_TIMEOUT_MS = '750000';
+    const client = makeClient();
+    await dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '900000']);
+    expect(client.run.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ code: '1+1', timeout_ms: 900000 })
+    );
+  });
+
   it('omits max_heap_size_mb when --max-heap-size-mb is not provided', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
@@ -357,6 +433,23 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('throws CliUsageError when --timeout-ms is non-integer', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '1.5'])
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
+  it('throws CliUsageError when ALVA_RUN_TIMEOUT_MS is invalid', async () => {
+    process.env.ALVA_RUN_TIMEOUT_MS = 'nope';
+    const client = makeClient();
+    await expect(dispatch(client, ['run', '--code', '1+1'])).rejects.toSatisfy(
+      (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+    );
+  });
+
   it('run --help documents --max-heap-size-mb', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['run', '--help'])) as {
@@ -364,6 +457,8 @@ describe('CLI dispatch', () => {
       text: string;
     };
     expect(result.text).toContain('--max-heap-size-mb');
+    expect(result.text).toContain('--timeout-ms');
+    expect(result.text).toContain('ALVA_RUN_TIMEOUT_MS');
   });
 
   it('throws CliUsageError when --code and --local-file are both provided', async () => {

@@ -66,6 +66,7 @@
   "homepage": "https://github.com/alva-ai/toolkit-ts#readme",
   "dependencies": {
     "css-tree": "^3.2.1",
+    "undici": "^6.24.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
