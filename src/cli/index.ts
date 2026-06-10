@@ -538,24 +538,9 @@ Publish feeds and playbooks to the Alva platform. The typical workflow:
   5. Release playbook (alva release playbook --readme-url "/alva/home/<username>/playbooks/{name}/README.md")
 
 Subcommands:
-  automation        Create the backing scheduler and register its feed
   feed              Register a feed after deploying its cronjob
   playbook-draft    Create a playbook draft (preview before publishing)
   playbook          Publish a playbook (public for free users, choice for pro)
-
-Automation flags:
-  --name <name>          Feed/automation name, unique per user (required)
-  --version <version>    Semantic version, e.g. "1.0.0" (required)
-  --path <path>          Path to script on ALFS (required, must exist)
-  --cron <expression>    Cron expression (required, e.g. "0 */4 * * *")
-  --cronjob-name <name>  Backing cronjob name (defaults to --name)
-  --args <json>          JSON object passed to require("env").args
-  --push-notify          Enable Telegram push notifications on completion
-  --no-push-notify       Disable push notifications
-  --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046)
-  --view-json <json>     View configuration JSON
-  --description <text>   Feed description
-  --changelog <text>     Per-major changelog summary
 
 Feed flags:
   --name <name>          Feed name, unique per user (required)
@@ -600,8 +585,6 @@ Display name conventions:
 
 Examples:
   alva automation publish --name btc-ema --version 1.0.0 --path ~/feeds/btc-ema/v1/src/index.js --schedule "0 */4 * * *"
-  alva release automation --name btc-ema --version 1.0.0 --path ~/feeds/btc-ema/v1/src/index.js --cron "0 */4 * * *"
-  alva release automation --name nvda-insiders --version 1.0.0 --path ~/feeds/nvda-insiders/v1/src/index.js --cron "0 14 * * 1-5" --description "NVDA insider trading activity"
   alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
@@ -1871,10 +1854,6 @@ export async function dispatch(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for release', 'release');
       switch (subcommand) {
-        case 'automation':
-          return client.release.automation(
-            automationReleaseRequest(flags, 'release automation')
-          );
         case 'feed':
           return client.release.feed({
             name: requireFlag(flags, 'name', 'release feed'),

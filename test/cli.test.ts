@@ -719,38 +719,6 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('dispatches release automation', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'release',
-      'automation',
-      '--name',
-      'btc',
-      '--version',
-      '1.0.0',
-      '--path',
-      '~/feeds/btc/v1/src/index.js',
-      '--cron',
-      '0 */4 * * *',
-      '--args',
-      '{"symbol":"BTC"}',
-      '--push-notify',
-      '--max-heap-size-mb',
-      '512',
-    ]);
-    expect(client.release.automation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc',
-        version: '1.0.0',
-        path: '~/feeds/btc/v1/src/index.js',
-        cron_expression: '0 */4 * * *',
-        args: { symbol: 'BTC' },
-        push_notify: true,
-        max_heap_size_mb: 512,
-      })
-    );
-  });
-
   it('dispatches automation publish alias', async () => {
     const client = makeClient();
     await dispatch(client, [
