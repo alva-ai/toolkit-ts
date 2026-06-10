@@ -66,6 +66,7 @@ export const FALLBACK_BUNDLE_CSS: string = `/* ════ Tokens ════ 
     --chart-grey-2: #b7b7b7; /* ⚠ Only When chart has ≥ 3 series */
 
     /* ── Spacing ── */
+    --spacing-min: 0px;
     --spacing-xxxs: 2px;
     --spacing-xxs: 4px;
     --spacing-xs: 8px;
@@ -80,21 +81,25 @@ export const FALLBACK_BUNDLE_CSS: string = `/* ════ Tokens ════ 
     --spacing-xxxxxxl: 56px;
 
     /* ── Radius ── */
-    --radius-ct-xs: 2px;
+    --radius-ct-min: 2px;
     --radius-ct-s: 4px;
     --radius-ct-m: 6px;
     --radius-ct-l: 8px;
     --radius-ct-xl: 12px;
-    --radius-pop-dialog: 12px;
-    --radius-pop-action-sheets: 12px;
-    --radius-pop-dropdown: 8px;
-    --radius-pop-popover: 8px;
-    --radius-pop-toast: 8px;
-    --radius-pop-tips: 8px;
-    --radius-btn-xs: 4px;
-    --radius-btn-s: 6px;
-    --radius-btn-m: 8px;
-    --radius-btn-l: 12px;
+    --radius-ct-xxl: 16px;
+    --radius-ct-xxxl: 20px;
+    --radius-ct-max: 960px;
+    --radius-pop-dialog: 8px;
+    --radius-pop-action-sheets: 8px;
+    --radius-pop-dropdown: 6px;
+    --radius-pop-popover: 6px;
+    --radius-pop-toast: 4px;
+    --radius-pop-tips: 4px;
+    --radius-btn-min: 0px;
+    --radius-btn-xs: 2px;
+    --radius-btn-s: 4px;
+    --radius-btn-m: 6px;
+    --radius-btn-l: 8px;
   }
 }
 
@@ -113,12 +118,17 @@ export const FALLBACK_BUNDLE_CSS: string = `/* ════ Tokens ════ 
     --b0-page: #ffffff;
     --b0-container: #ffffff;
     --b0-sidebar: #2a2a38;
-    --b0-sidebar-select: rgba(255, 255, 255, 0.03);
+    --b0-sidebar-select: rgba(255, 255, 255, 0.05);
+    --b0-special: #375454;
     --grey-g01: #fafafa; /* Dashboard Card */
     --grey-g02: #f5f5f5;
     --grey-g03: #f0f0f0;
     --grey-g05: #eaeaea;
     --grey-g1: #dedede;
+    --grey-g2: #c5c5c5;
+    --grey-g3: #acacac;
+    --grey-g5: #7b7b7b;
+    --grey-g7: #4a4a4a;
     --b-r02: rgba(0, 0, 0, 0.02); /* Content Block */
     --b-r03: rgba(0, 0, 0, 0.03); /* Darker Block */
     --b-r05: rgba(0, 0, 0, 0.05);
@@ -268,16 +278,13 @@ body {
   position: relative;
   width: 100%;
   cursor: pointer;
+  border-radius: var(--radius-ct-s);
   transition: background-color 0.12s ease;
 }
 
 .list-item:hover,
 .list-item.selected {
   background-color: rgba(73,163,166,0.08);
-}
-
-.list-item.selected {
-  border-radius: var(--radius-ct-m);
 }
 
 .list-item.selected .list-item-text {
@@ -306,6 +313,13 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Size S — width follows the Select trigger; only typography shrinks */
+.dropdown.size-s .list-item-text {
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.12px;
 }
 
 /* ── Container ── */
@@ -433,7 +447,7 @@ body {
 .markdown-container code,
 .markdown-container pre {
   background: var(--b-r02);
-  border-radius: var(--radius-ct-xs);
+  border-radius: var(--radius-ct-min);
   font-family: "JetBrains Mono", monospace;
   color: var(--text-n7);
 }
@@ -470,8 +484,8 @@ body {
 
 /* ── Divider ── */
 .markdown-container hr {
-  height: 1px;
-  background: var(--line-l07);
+  height: 0.5px;
+  background: var(--line-l12);
   border: none;
   margin: var(--spacing-xxs) 0;
 }
@@ -499,7 +513,7 @@ body {
   min-height: 176px;
 }
 .markdown-container tr {
-  border-bottom: 1px solid var(--line-l07);
+  border-bottom: 0.5px solid var(--line-l12);
 }
 .markdown-container tr:last-child {
   border-bottom: none;
@@ -858,7 +872,7 @@ body {
   outline-offset: 2px;
 }
 
-/* Base (default size = Small) */
+/* Base (default size) */
 .tag {
   display: inline-flex;
   align-items: center;
@@ -892,14 +906,24 @@ body {
   letter-spacing: 0.14px;
 }
 
+/* Size — Small */
+.tag-sm {
+  height: 20px;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 18px;
+  letter-spacing: 0.11px;
+  border-radius: var(--radius-ct-min);
+}
+
 /* Size — Extra Small */
 .tag-xs {
   height: 18px;
-  padding: 1px 6px;
+  padding: 1px 4px;
   font-size: 10px;
   line-height: 16px;
   letter-spacing: 0.1px;
-  border-radius: var(--radius-ct-xs);
+  border-radius: var(--radius-ct-min);
 }
 
 /*
@@ -1041,8 +1065,10 @@ body {
   transition: border-color 0.12s ease;
 }
 
-.select:hover .select-border {
+/* Activated (dropdown open) — color + 1px border. Hover does not change color. */
+.select.open .select-border {
   border-color: var(--line-l9);
+  border-width: 1px;
 }
 
 .select-text {
@@ -1058,7 +1084,7 @@ body {
   color: var(--text-n9);
 }
 
-.select:hover .select-text {
+.select.open .select-text {
   color: var(--text-n9);
 }
 
@@ -1090,6 +1116,17 @@ body {
 
 /* Size — Small */
 .select-sm {
+  height: 32px;
+  padding: 6px var(--spacing-s);
+  gap: var(--spacing-xxs);
+  border-radius: var(--radius-btn-s);
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.12px;
+}
+
+/* Size — Extra Small */
+.select-xs {
   height: 28px;
   padding: var(--spacing-xxs) var(--spacing-xs);
   gap: var(--spacing-xxs);
@@ -1098,22 +1135,25 @@ body {
   line-height: 20px;
   letter-spacing: 0.12px;
 }
-.select-sm .select-text {
-  width: 70px;
-  flex: none;
-}
 
-/* Arrow Icon */
+/* Arrow Icon — 14px for L/M, 12px for S/XS */
 .select-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 14px;
+  height: 14px;
   opacity: 0.22;
   transition: opacity 0.12s ease;
 }
 
-.select:hover .select-icon,
+.select-sm .select-icon,
+.select-xs .select-icon {
+  width: 12px;
+  height: 12px;
+}
+
 .select.open .select-icon {
   opacity: 1;
 }
@@ -1147,9 +1187,10 @@ body {
   transition: border-color 0.12s ease;
 }
 
-.input:hover .input-border,
+/* Activated (focused/typing) — color + 1px border. Hover does not change color. */
 .input:focus-within .input-border {
   border-color: var(--line-l9);
+  border-width: 1px;
 }
 
 .input-field {
@@ -1189,6 +1230,16 @@ body {
 
 /* Size — Small */
 .input-sm {
+  height: 32px;
+  padding: 6px var(--spacing-s);
+  border-radius: var(--radius-btn-s);
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.12px;
+}
+
+/* Size — Extra Small */
+.input-xs {
   height: 28px;
   padding: var(--spacing-xxs) var(--spacing-xs);
   border-radius: var(--radius-btn-s);
@@ -1224,10 +1275,13 @@ body {
   overflow: hidden;
 }
 
-/* ── Underline ── */
+/* ── Underline ── divider + active bar are bottom-anchored overlays (both bottom:0,
+   so bottoms align); bar covers divider via z-index. Do not refactor to a border. */
 .tab-underline {
+  position: relative;
+  width: 100%;
+  align-items: flex-end;
   gap: var(--spacing-m);
-  border-bottom: 1px solid var(--line-l07);
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: none; /* Firefox */
@@ -1235,19 +1289,37 @@ body {
 .tab-underline::-webkit-scrollbar {
   display: none;
 }
+.tab-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.5px;
+  background: var(--line-l12);
+  z-index: 0;
+}
 .tab-underline .tab-item {
   padding-bottom: var(--spacing-xxs);
-  margin-bottom: -1px;
   font-size: 14px;
   line-height: 22px;
   letter-spacing: 0.14px;
   color: var(--text-n7);
-  border-bottom: 2px solid transparent;
 }
 .tab-underline .tab-item.active {
+  position: relative;
+  z-index: 1;
   color: var(--text-n9);
   font-weight: 500;
-  border-bottom-color: var(--main-m1);
+}
+.tab-underline .tab-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--main-m1);
 }
 
 /* Underline — Size L */
@@ -1277,7 +1349,7 @@ body {
 }
 .tab-underline.tab-xl .tab-item {
   padding-top: var(--spacing-s);
-  padding-bottom: 10px; /* 12 − 2px border = matches inactive py-12 */
+  padding-bottom: 10px;
   font-size: 18px;
   line-height: 28px;
   letter-spacing: 0.18px;
@@ -1322,7 +1394,7 @@ body {
 }
 .tab-segmented.tab-s .tab-item {
   padding: var(--spacing-xxs) 10px;
-  border-radius: var(--radius-ct-xs); /* 2px */
+  border-radius: var(--radius-ct-min); /* 2px */
   font-size: 12px;
   line-height: 20px;
   letter-spacing: 0.12px;
@@ -1335,7 +1407,7 @@ body {
 }
 .tab-pill .tab-item {
   padding: 6px var(--spacing-s);
-  border-radius: 999px; /* capsule */
+  border-radius: var(--radius-ct-max); /* capsule */
   font-size: 14px;
   line-height: 22px;
   letter-spacing: 0.14px;
@@ -1370,7 +1442,7 @@ body {
 .tooltip {
   background-color: var(--b0-container);
   position: absolute;
-  border-radius: var(--radius-ct-m);
+  border-radius: var(--radius-pop-tips);
   box-shadow: var(--shadow-s);
   padding: var(--spacing-m);
   width: fit-content;
@@ -1383,7 +1455,7 @@ body {
 .tooltip-border {
   position: absolute;
   border: 0.5px solid var(--line-l2);
-  border-radius: var(--radius-ct-m);
+  border-radius: var(--radius-pop-tips);
   inset: 0;
   pointer-events: none;
 }
@@ -1472,16 +1544,16 @@ body {
 
 /* ── Dividers ── */
 .divider-v {
-  width: 1px;
+  width: 0.5px;
   flex-shrink: 0;
   margin-block: var(--spacing-l);
-  background-color: var(--line-l05);
+  background-color: var(--line-l07);
 }
 
 .divider-h {
-  height: 1px;
+  height: 0.5px;
   margin-inline: var(--spacing-l);
-  background-color: var(--line-l05);
+  background-color: var(--line-l07);
 }
 
 /* ── Equal Height Fill ── */
@@ -1655,7 +1727,7 @@ body {
   display: flex;
   width: 100%;
   gap: var(--spacing-m); /* column spacing between cells */
-  border-bottom: 1px solid var(--line-l07); /* row divider — on the row, not cells */
+  border-bottom: 0.5px solid var(--line-l12); /* row divider — on the row, not cells */
   /* min-width is set by initTableAlignment JS — do NOT use CSS min-width here */
 }
 .table-row:last-child {
@@ -1705,8 +1777,8 @@ body {
   bottom: 0;
   left: var(--spacing-m);
   right: var(--spacing-m);
-  height: 1px;
-  background: var(--line-l05);
+  height: 0.5px;
+  background: var(--line-l07);
 }
 
 .feed-item:last-child::after {
@@ -1967,6 +2039,6 @@ body {
   letter-spacing: 0.12px;
   color: var(--text-n5);
   padding-left: 8px;
-  border-left: 1px solid var(--line-l07);
+  border-left: 0.5px solid var(--line-l12);
 }
 `;
