@@ -4,6 +4,7 @@ import { RunResource } from '../../src/resources/run.js';
 import { ReleaseResource } from '../../src/resources/release.js';
 import { FeedResource } from '../../src/resources/feed.js';
 import { PlaybooksResource } from '../../src/resources/playbooks.js';
+import { SubscriptionsResource } from '../../src/resources/subscriptions.js';
 import { SdkDocsResource } from '../../src/resources/sdkDocs.js';
 import { CommentsResource } from '../../src/resources/comments.js';
 import { RemixResource } from '../../src/resources/remix.js';
@@ -831,5 +832,78 @@ describe('ScreenshotResource', () => {
         compress_max_width: 1280,
       },
     });
+  });
+});
+
+describe('SubscriptionsResource — agent surface (mono-meta#584 W3)', () => {
+  it('follows() sends GET /api/v1/me/follows with pagination', async () => {
+    const client = makeClient();
+    const subs = new SubscriptionsResource(client);
+    await subs.follows({ limit: 20, cursor: 'c1' });
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/me/follows', {
+      query: { limit: '20', cursor: 'c1' },
+    });
+  });
+
+  it('unsubscribeBatch() posts string ids to unsubscribe-batch', async () => {
+    const client = makeClient();
+    const subs = new SubscriptionsResource(client);
+    await subs.unsubscribeBatch({
+      playbookIds: ['8009'],
+      feedIds: ['13292'],
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/subscriptions/unsubscribe-batch',
+      { body: { playbook_ids: ['8009'], feed_ids: ['13292'] } }
+    );
+  });
+});
+
+describe('PlaybooksResource — discovery (mono-meta#584 W3)', () => {
+  it('getByIds() sends GET /api/v1/playbooks?ids=', async () => {
+    const client = makeClient();
+    client._request = vi.fn().mockResolvedValue({ items: [] });
+    const playbooks = new PlaybooksResource(client);
+    await playbooks.getByIds(['1', '2']);
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/playbooks', {
+      query: { ids: '1,2' },
+    });
+  });
+
+  it('listByOwner() sends GET /api/v1/playbooks?owner=', async () => {
+    const client = makeClient();
+    client._request = vi.fn().mockResolvedValue({ items: [], has_next: false });
+    const playbooks = new PlaybooksResource(client);
+    await playbooks.listByOwner({ owner: 'alice', limit: 10 });
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/playbooks', {
+      query: { owner: 'alice', limit: '10' },
+    });
+  });
+
+  it('get({ref}) paginates the owner list until the name matches', async () => {
+    const client = makeClient();
+    client._request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        items: [{ id: '1', name: 'other', owner_username: 'alice' }],
+        has_next: true,
+        next_cursor: 'c1',
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: '2', name: 'macro', owner_username: 'alice' }],
+        has_next: false,
+      });
+    const playbooks = new PlaybooksResource(client);
+    const hit = await playbooks.get({ ref: 'alice/macro' });
+    expect(hit?.id).toBe('2');
+    expect(client._request).toHaveBeenCalledTimes(2);
+  });
+
+  it('get({ref}) returns null when exhausted without a match', async () => {
+    const client = makeClient();
+    client._request = vi.fn().mockResolvedValue({ items: [], has_next: false });
+    const playbooks = new PlaybooksResource(client);
+    expect(await playbooks.get({ ref: 'alice/nope' })).toBeNull();
   });
 });

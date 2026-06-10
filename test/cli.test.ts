@@ -68,6 +68,17 @@ function makeClient(): AlvaClient {
   client.playbooks.trending = vi
     .fn()
     .mockResolvedValue({ playbooks: [], has_next: false });
+  client.playbooks.getByIds = vi.fn().mockResolvedValue({ items: [] });
+  client.playbooks.get = vi.fn().mockResolvedValue(null);
+  client.playbooks.listByOwner = vi
+    .fn()
+    .mockResolvedValue({ items: [], has_next: false });
+  client.subscriptions.follows = vi
+    .fn()
+    .mockResolvedValue({ items: [], has_next: false });
+  client.subscriptions.unsubscribeBatch = vi
+    .fn()
+    .mockResolvedValue({ results: [], ok_count: 0 });
   client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
@@ -2561,5 +2572,76 @@ components: {}
     } finally {
       process.stderr.write = origWrite;
     }
+  });
+});
+
+describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 W3)', () => {
+  it('dispatches subscriptions follows with pagination flags', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'subscriptions',
+      'follows',
+      '--limit',
+      '20',
+      '--cursor',
+      'c1',
+    ]);
+    expect(client.subscriptions.follows).toHaveBeenCalledWith({
+      limit: 20,
+      cursor: 'c1',
+    });
+  });
+
+  it('dispatches subscriptions unsubscribe with comma-separated ids', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'subscriptions',
+      'unsubscribe',
+      '--playbook-ids',
+      '8009,8010',
+      '--feed-ids',
+      '13292',
+    ]);
+    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
+      playbookIds: ['8009', '8010'],
+      feedIds: ['13292'],
+    });
+  });
+
+  it('rejects subscriptions unsubscribe without ids', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['subscriptions', 'unsubscribe'])
+    ).rejects.toThrow(/playbook-ids or --feed-ids/);
+    expect(client.subscriptions.unsubscribeBatch).not.toHaveBeenCalled();
+  });
+
+  it('dispatches playbooks get --ids as a batch', async () => {
+    const client = makeClient();
+    await dispatch(client, ['playbooks', 'get', '--ids', '1,2']);
+    expect(client.playbooks.getByIds).toHaveBeenCalledWith(['1', '2']);
+  });
+
+  it('dispatches playbooks get --ref', async () => {
+    const client = makeClient();
+    await dispatch(client, ['playbooks', 'get', '--ref', 'alice/macro']);
+    expect(client.playbooks.get).toHaveBeenCalledWith({ ref: 'alice/macro' });
+  });
+
+  it('dispatches playbooks list --owner', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'playbooks',
+      'list',
+      '--owner',
+      'alice',
+      '--limit',
+      '10',
+    ]);
+    expect(client.playbooks.listByOwner).toHaveBeenCalledWith({
+      owner: 'alice',
+      limit: 10,
+      cursor: undefined,
+    });
   });
 });

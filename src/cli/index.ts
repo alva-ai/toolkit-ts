@@ -61,7 +61,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
-  playbooks   Playbook discovery (trending) and visibility
+  playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
@@ -71,7 +71,7 @@ Commands:
   notification-history  Notification delivery history (list-playbook, list-feed)
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
-  subscriptions       Subscribe to playbooks/feeds (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, list)
+  subscriptions       Follows + push alerts (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, unsubscribe, list, follows)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
@@ -397,11 +397,24 @@ Examples:
 
   playbooks: `Usage: alva playbooks <subcommand> [options]
 
-Find public playbooks with an agent-friendly response shape.
+Find and resolve playbooks with an agent-friendly response shape.
 
 Subcommands:
   trending        List trending playbooks
+  get             Resolve playbooks by id(s) or "owner/name" ref
+  list            List a user's playbooks by owner username
   set-visibility  Set a playbook's visibility (requires auth)
+
+Get flags:
+  --id <n>               Single numeric playbook id
+  --ids <a,b>            Comma-separated ids (max 100); ids you cannot see
+                         — and DELETED playbooks — return no row
+  --ref <owner/name>     Resolve by handle
+
+List flags:
+  --owner <username>     Owner username (required)
+  --limit <n>            Max results per page
+  --cursor <cursor>      Pagination cursor from previous response
 
 Trending flags:
   --keyword <text>       Search text
@@ -432,7 +445,9 @@ Notes:
 
 Examples:
   alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
-  alva playbooks trending --tag btc --cursor abc
+  alva playbooks get --ids 8009,8010
+  alva playbooks get --ref alice/btc-dashboard
+  alva playbooks list --owner alice
   alva playbooks set-visibility --name my-scanner --visibility private
   alva playbooks set-visibility --name my-scanner --visibility public`,
 
@@ -780,33 +795,63 @@ Examples:
 
   subscriptions: `Usage: alva subscriptions <subcommand> [options]
 
-Subscribe to playbooks and feeds.
+Three DISTINCT concepts share the word "subscribe" in the product:
+  - FOLLOW   — the social relation (the UI's "Subscribed Playbooks").
+               Enumerate with: alva subscriptions follows
+  - ALERTS   — push/notification opt-ins (what list returns).
+  - PURCHASE — paid playbook access / the SaaS plan. NOT this command.
+
+Operations:
   - subscribe-playbook is a CASCADE: follows the playbook AND enables alerts
     on all its push-enabled automations (one call). unsubscribe-playbook
-    reverses both (unfollow + disable all of its alerts).
+    reverses both and reports exactly what it changed
+    ({unfollowed, wildcard_disabled}).
   - subscribe-feed / unsubscribe-feed toggle ONE feed's alert (a single
     automation) without touching the playbook follow.
+  - unsubscribe disables alerts BY TARGET ID — bulk, idempotent, and the
+    only way to clear ghost rows whose playbook/feed was deleted
+    (name-addressed unsubscribe 404s on deleted targets).
 
 Subcommands:
   subscribe-playbook     Subscribe a playbook (follow + enable all its alerts)
   unsubscribe-playbook   Unsubscribe a playbook (unfollow + disable its alerts)
   subscribe-feed         Enable alerts for a single feed
   unsubscribe-feed       Disable alerts for a single feed
-  list                   List the caller's active subscriptions
+  unsubscribe            Bulk disable alerts by target id (handles ghosts)
+  list                   List the caller's active alert subscriptions
+  follows                List the playbooks the caller follows
 
-Subscribe/unsubscribe flags (playbook + feed):
+Subscribe/unsubscribe flags (playbook + feed, name-addressed):
   --username <user>      Owner's username (required)
   --name <name>          URL-safe playbook or feed name (required)
 
+Unsubscribe (by id) flags:
+  --playbook-ids <a,b>   Comma-separated playbook target ids
+  --feed-ids <a,b>       Comma-separated feed target ids
+                         (at least one of the two; max 100 ids total)
+
 List flags:
-  --first <n>            Optional page size
+  --first <n>            Optional page size (response carries total_count —
+                         when items < total_count, keep paginating)
   --cursor <token>       Optional cursor from the previous page
+
+Follows flags:
+  --limit <n>            Optional page size
+  --cursor <token>       Optional cursor from the previous page
+
+List response notes:
+  items[].kind           PLAYBOOK_ALERTS (playbook-level wildcard) | FEED_ALERT
+  items[].following      Whether the caller also FOLLOWS the playbook
+  items[].target_status  ACTIVE | TARGET_DELETED (ghost — clear via
+                         unsubscribe --playbook-ids/--feed-ids) | PAUSED
+  items[].playbook       {owner_username, name, display_name} for PLAYBOOK rows
 
 Examples:
   alva subscriptions subscribe-playbook --username alice --name btc-dashboard
   alva subscriptions subscribe-feed     --username alice --name btc-ema-cross
-  alva subscriptions unsubscribe-feed   --username alice --name btc-ema-cross
-  alva subscriptions list --first 20`,
+  alva subscriptions unsubscribe --playbook-ids 8009,8010 --feed-ids 13292
+  alva subscriptions list --first 200
+  alva subscriptions follows`,
 
   channel: `Usage: alva channel group-subscriptions <subcommand> [options]
 
@@ -1640,6 +1685,28 @@ export async function dispatch(
               requireFlag(flags, 'visibility', 'playbooks set-visibility')
             ),
           });
+        case 'get': {
+          const ids = csvList(flags['ids']);
+          if (ids && ids.length > 0) {
+            return client.playbooks.getByIds(ids);
+          }
+          if (flags['id']) {
+            return client.playbooks.get({ id: flags['id'] });
+          }
+          if (flags['ref']) {
+            return client.playbooks.get({ ref: flags['ref'] });
+          }
+          throw new CliUsageError(
+            '--id, --ids or --ref is required',
+            'playbooks'
+          );
+        }
+        case 'list':
+          return client.playbooks.listByOwner({
+            owner: requireFlag(flags, 'owner', 'playbooks list'),
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+          });
         default:
           throw new CliUsageError(
             `Unknown subcommand: playbooks ${subcommand}`,
@@ -2212,6 +2279,25 @@ export async function dispatch(
             first: num(flags['first']),
             cursor: flags['cursor'],
           });
+        case 'follows':
+          return client.subscriptions.follows({
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+          });
+        case 'unsubscribe': {
+          const playbookIds = csvList(flags['playbook-ids']) ?? [];
+          const feedIds = csvList(flags['feed-ids']) ?? [];
+          if (playbookIds.length === 0 && feedIds.length === 0) {
+            throw new CliUsageError(
+              '--playbook-ids or --feed-ids is required',
+              'subscriptions'
+            );
+          }
+          return client.subscriptions.unsubscribeBatch({
+            playbookIds,
+            feedIds,
+          });
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: subscriptions ${subcommand}`,
