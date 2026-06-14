@@ -521,6 +521,48 @@ describe('CLI dispatch', () => {
     mock.mockReset();
   });
 
+  it('rejects local file flags in jagent mode with ALFS guidance', async () => {
+    const cases: Array<{ argv: string[] }> = [
+      { argv: ['run', '--local-file', './script.js'] },
+      {
+        argv: [
+          'fs',
+          'write',
+          '--path',
+          '~/uploads/script.js',
+          '--file',
+          './script.js',
+        ],
+      },
+      {
+        argv: [
+          'functions',
+          'register',
+          '--playbook-id',
+          '123',
+          '--function-name',
+          'analyze',
+          '--entry-script-path',
+          '~/playbooks/p/udf/analyze.js',
+          '--params-schema-file',
+          './schema.json',
+        ],
+      },
+      { argv: ['screenshot', '--url', '/playbook/alice/p', '--out', 'p.png'] },
+    ];
+
+    for (const { argv } of cases) {
+      await expect(
+        dispatch(makeClient(), argv, undefined, { mode: 'jagent' })
+      ).rejects.toSatisfy(
+        (err: unknown) =>
+          err instanceof CliUsageError &&
+          err.message.includes('local file') &&
+          err.message.includes('Use ALFS-native read/write/edit tools')
+      );
+    }
+  });
+
   it('dispatches feed delete', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);

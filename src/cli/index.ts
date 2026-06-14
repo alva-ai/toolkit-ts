@@ -1042,10 +1042,6 @@ export type AlvaCliRuntimeMode = 'nodejs' | 'jagent';
 export interface DispatchRuntimeDeps {
   mode?: AlvaCliRuntimeMode;
   env?: Record<string, string | undefined>;
-  readFile?: (path: string, encoding: 'utf-8') => string | Promise<string>;
-  readFileBytes?: (path: string) => BodyInit | Promise<BodyInit>;
-  writeFileBytes?: (path: string, data: Uint8Array) => void | Promise<void>;
-  setRunFetchTimeout?: (timeoutMs: number) => void;
   stderr?: Pick<typeof process.stderr, 'write'>;
 }
 
@@ -1276,7 +1272,9 @@ function parsePositiveIntegerValue(
   return n;
 }
 
-function runtimeEnv(deps?: DispatchRuntimeDeps): Record<string, string | undefined> {
+function runtimeEnv(
+  deps?: DispatchRuntimeDeps
+): Record<string, string | undefined> {
   return deps?.env ?? (process.env as Record<string, string | undefined>);
 }
 
@@ -1302,10 +1300,6 @@ function configureRunFetchTimeout(
   timeoutMs: number,
   deps?: DispatchRuntimeDeps
 ): void {
-  if (deps?.setRunFetchTimeout) {
-    deps.setRunFetchTimeout(timeoutMs);
-    return;
-  }
   if (deps?.mode === 'jagent') return;
   if (configuredRunFetchTimeoutMs === timeoutMs) return;
   setGlobalDispatcher(
@@ -1456,59 +1450,54 @@ function localFileUnsupported(command: string, flag: string): CliUsageError {
   );
 }
 
+function assertLocalFileAvailable(
+  command: string,
+  flag: string,
+  deps?: DispatchRuntimeDeps
+): void {
+  if (deps?.mode === 'jagent') {
+    throw localFileUnsupported(command, flag);
+  }
+}
+
 function readLocalTextFileSync(
   path: string,
   command: string,
   flag: string,
   deps?: DispatchRuntimeDeps
 ): string {
-  if (deps?.readFile) {
-    const result = deps.readFile(path, 'utf-8');
-    if (typeof (result as Promise<string>).then === 'function') {
-      throw new Error(`Async readFile dependency is not supported while parsing '${command}'`);
-    }
-    return result as string;
-  }
-  if (deps?.mode === 'jagent') {
-    throw localFileUnsupported(command, flag);
-  }
+  assertLocalFileAvailable(command, flag, deps);
   return fs.readFileSync(path, 'utf-8');
 }
 
-async function readLocalTextFile(
+function readLocalTextFile(
   path: string,
   command: string,
   flag: string,
   deps?: DispatchRuntimeDeps
-): Promise<string> {
-  if (deps?.readFile) return await deps.readFile(path, 'utf-8');
-  if (deps?.mode === 'jagent') throw localFileUnsupported(command, flag);
+): string {
+  assertLocalFileAvailable(command, flag, deps);
   return fs.readFileSync(path, 'utf-8');
 }
 
-async function readLocalFileBytes(
+function readLocalFileBytes(
   path: string,
   command: string,
   flag: string,
   deps?: DispatchRuntimeDeps
-): Promise<BodyInit> {
-  if (deps?.readFileBytes) return await deps.readFileBytes(path);
-  if (deps?.mode === 'jagent') throw localFileUnsupported(command, flag);
+): BodyInit {
+  assertLocalFileAvailable(command, flag, deps);
   return fs.readFileSync(path) as unknown as BodyInit;
 }
 
-async function writeLocalFileBytes(
+function writeLocalFileBytes(
   path: string,
   data: Uint8Array,
   command: string,
   flag: string,
   deps?: DispatchRuntimeDeps
-): Promise<void> {
-  if (deps?.writeFileBytes) {
-    await deps.writeFileBytes(path, data);
-    return;
-  }
-  if (deps?.mode === 'jagent') throw localFileUnsupported(command, flag);
+): void {
+  assertLocalFileAvailable(command, flag, deps);
   fs.writeFileSync(path, data);
 }
 
@@ -1597,7 +1586,7 @@ export async function dispatch(
           });
         case 'write':
           if (flags['file']) {
-            const fileData = await readLocalFileBytes(
+            const fileData = readLocalFileBytes(
               flags['file'],
               'fs write',
               'file',
@@ -1685,7 +1674,7 @@ export async function dispatch(
       }
       let code = flags['code'];
       if (flags['local-file']) {
-        code = await readLocalTextFile(
+        code = readLocalTextFile(
           flags['local-file'],
           'run',
           'local-file',
@@ -2597,7 +2586,7 @@ export async function dispatch(
           'screenshot'
         );
       }
-      await writeLocalFileBytes(
+      writeLocalFileBytes(
         outFile,
         new Uint8Array(buf),
         'screenshot',

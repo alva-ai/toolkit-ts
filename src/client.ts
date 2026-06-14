@@ -374,7 +374,8 @@ export class AlvaClient {
     if (!response.ok) {
       // Read body as text first to avoid double consumption
       const bodyText = await response.text().catch(() => '');
-      const contentType = responseHeader(response.headers, 'content-type') ?? '';
+      const contentType =
+        responseHeader(response.headers, 'content-type') ?? '';
       if (contentType.includes('application/json') && bodyText) {
         try {
           const data = JSON.parse(bodyText) as {
