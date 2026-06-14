@@ -27,6 +27,10 @@ import { FunctionsResource } from './resources/functions.js';
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
 
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
 interface RequestOptions {
   query?: Record<string, unknown>;
   body?: unknown;
@@ -55,6 +59,25 @@ function stringField(value: unknown, field: string): string | undefined {
   if (!isRecord(value)) return undefined;
   const fieldValue = value[field];
   return typeof fieldValue === 'string' && fieldValue ? fieldValue : undefined;
+}
+
+function responseHeader(headers: unknown, name: string): string | undefined {
+  const maybeHeaders = headers as
+    | { get?: (name: string) => unknown }
+    | undefined;
+  if (typeof maybeHeaders?.get === 'function') {
+    const value = maybeHeaders.get(name);
+    return value == null ? undefined : String(value);
+  }
+
+  if (!isRecord(headers)) return undefined;
+  const lowerName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== lowerName || value == null) continue;
+    if (Array.isArray(value)) return value.map(String).join(', ');
+    return String(value);
+  }
+  return undefined;
 }
 
 function describeCause(cause: unknown): {
@@ -123,6 +146,7 @@ export class AlvaClient {
   readonly viewer_token?: string;
   readonly pbsvToken?: string;
   readonly apiKey?: string;
+  readonly fetch: typeof globalThis.fetch;
   readonly gaClientId?: string;
   readonly gaSessionId?: string;
   readonly utmParams?: string;
@@ -152,11 +176,14 @@ export class AlvaClient {
   private _functions?: FunctionsResource;
 
   constructor(config: AlvaClientConfig) {
-    this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
-    this.arraysBaseUrl = config.arraysBaseUrl ?? DEFAULT_ARRAYS_BASE_URL;
+    this.baseUrl = trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL);
+    this.arraysBaseUrl = trimTrailingSlash(
+      config.arraysBaseUrl ?? DEFAULT_ARRAYS_BASE_URL
+    );
     this.viewer_token = config.viewer_token;
     this.pbsvToken = config.pbsvToken;
     this.apiKey = config.apiKey;
+    this.fetch = config.fetch ?? globalThis.fetch;
     this.gaClientId = config.gaClientId;
     this.gaSessionId = config.gaSessionId;
     this.utmParams = config.utmParams;
@@ -317,7 +344,7 @@ export class AlvaClient {
     }
 
     try {
-      response = await fetch(url, {
+      response = await this.fetch(url, {
         method,
         headers,
         body: fetchBody,
@@ -347,7 +374,7 @@ export class AlvaClient {
     if (!response.ok) {
       // Read body as text first to avoid double consumption
       const bodyText = await response.text().catch(() => '');
-      const contentType = response.headers.get('content-type') ?? '';
+      const contentType = responseHeader(response.headers, 'content-type') ?? '';
       if (contentType.includes('application/json') && bodyText) {
         try {
           const data = JSON.parse(bodyText) as {
@@ -377,7 +404,7 @@ export class AlvaClient {
       return undefined;
     }
 
-    const contentType = response.headers.get('content-type') ?? '';
+    const contentType = responseHeader(response.headers, 'content-type') ?? '';
     if (
       contentType.includes('application/octet-stream') ||
       contentType.includes('image/')

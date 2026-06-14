@@ -1037,6 +1037,18 @@ interface WriteConfigDeps {
   runHooks?: (client: AlvaClient) => Promise<void>;
 }
 
+export type AlvaCliRuntimeMode = 'nodejs' | 'jagent';
+
+export interface DispatchRuntimeDeps {
+  mode?: AlvaCliRuntimeMode;
+  env?: Record<string, string | undefined>;
+  readFile?: (path: string, encoding: 'utf-8') => string | Promise<string>;
+  readFileBytes?: (path: string) => BodyInit | Promise<BodyInit>;
+  writeFileBytes?: (path: string, data: Uint8Array) => void | Promise<void>;
+  setRunFetchTimeout?: (timeoutMs: number) => void;
+  stderr?: Pick<typeof process.stderr, 'write'>;
+}
+
 export async function handleConfigure(
   args: string[],
   deps?: WriteConfigDeps
@@ -1264,7 +1276,14 @@ function parsePositiveIntegerValue(
   return n;
 }
 
-function runTimeoutMs(flags: Record<string, string>): number {
+function runtimeEnv(deps?: DispatchRuntimeDeps): Record<string, string | undefined> {
+  return deps?.env ?? (process.env as Record<string, string | undefined>);
+}
+
+function runTimeoutMs(
+  flags: Record<string, string>,
+  deps?: DispatchRuntimeDeps
+): number {
   if (flags['timeout-ms'] !== undefined) {
     return parsePositiveIntegerValue(
       flags['timeout-ms'],
@@ -1272,14 +1291,22 @@ function runTimeoutMs(flags: Record<string, string>): number {
       'run'
     );
   }
-  const envValue = process.env[RUN_TIMEOUT_ENV];
+  const envValue = runtimeEnv(deps)[RUN_TIMEOUT_ENV];
   if (envValue !== undefined && envValue !== '') {
     return parsePositiveIntegerValue(envValue, RUN_TIMEOUT_ENV, 'run');
   }
   return DEFAULT_RUN_TIMEOUT_MS;
 }
 
-function configureRunFetchTimeout(timeoutMs: number): void {
+function configureRunFetchTimeout(
+  timeoutMs: number,
+  deps?: DispatchRuntimeDeps
+): void {
+  if (deps?.setRunFetchTimeout) {
+    deps.setRunFetchTimeout(timeoutMs);
+    return;
+  }
+  if (deps?.mode === 'jagent') return;
   if (configuredRunFetchTimeoutMs === timeoutMs) return;
   setGlobalDispatcher(
     new Agent({
@@ -1392,7 +1419,8 @@ function jsonRequiredFlag(
 
 function jsonSchemaStringFlag(
   flags: Record<string, string>,
-  command: string
+  command: string,
+  deps?: DispatchRuntimeDeps
 ): string | undefined {
   const inlineSchema = flags['params-schema'];
   const schemaFile = flags['params-schema-file'];
@@ -1404,7 +1432,7 @@ function jsonSchemaStringFlag(
   }
   const raw =
     schemaFile !== undefined
-      ? fs.readFileSync(schemaFile, 'utf-8')
+      ? readLocalTextFileSync(schemaFile, command, 'params-schema-file', deps)
       : inlineSchema;
   if (raw === undefined) return undefined;
   try {
@@ -1420,10 +1448,75 @@ function jsonSchemaStringFlag(
   return raw;
 }
 
+function localFileUnsupported(command: string, flag: string): CliUsageError {
+  return new CliUsageError(
+    `--${flag} reads or writes a local file, which is unavailable in jagent. ` +
+      `Use ALFS-native read/write/edit tools first, then pass ALFS paths or inline data to '${command}'.`,
+    command.split(' ')[0]
+  );
+}
+
+function readLocalTextFileSync(
+  path: string,
+  command: string,
+  flag: string,
+  deps?: DispatchRuntimeDeps
+): string {
+  if (deps?.readFile) {
+    const result = deps.readFile(path, 'utf-8');
+    if (typeof (result as Promise<string>).then === 'function') {
+      throw new Error(`Async readFile dependency is not supported while parsing '${command}'`);
+    }
+    return result as string;
+  }
+  if (deps?.mode === 'jagent') {
+    throw localFileUnsupported(command, flag);
+  }
+  return fs.readFileSync(path, 'utf-8');
+}
+
+async function readLocalTextFile(
+  path: string,
+  command: string,
+  flag: string,
+  deps?: DispatchRuntimeDeps
+): Promise<string> {
+  if (deps?.readFile) return await deps.readFile(path, 'utf-8');
+  if (deps?.mode === 'jagent') throw localFileUnsupported(command, flag);
+  return fs.readFileSync(path, 'utf-8');
+}
+
+async function readLocalFileBytes(
+  path: string,
+  command: string,
+  flag: string,
+  deps?: DispatchRuntimeDeps
+): Promise<BodyInit> {
+  if (deps?.readFileBytes) return await deps.readFileBytes(path);
+  if (deps?.mode === 'jagent') throw localFileUnsupported(command, flag);
+  return fs.readFileSync(path) as unknown as BodyInit;
+}
+
+async function writeLocalFileBytes(
+  path: string,
+  data: Uint8Array,
+  command: string,
+  flag: string,
+  deps?: DispatchRuntimeDeps
+): Promise<void> {
+  if (deps?.writeFileBytes) {
+    await deps.writeFileBytes(path, data);
+    return;
+  }
+  if (deps?.mode === 'jagent') throw localFileUnsupported(command, flag);
+  fs.writeFileSync(path, data);
+}
+
 export async function dispatch(
   client: AlvaClient,
   args: string[],
-  meta?: { profile?: string; baseUrl?: string; cliVersion?: string }
+  meta?: { profile?: string; baseUrl?: string; cliVersion?: string },
+  deps?: DispatchRuntimeDeps
 ): Promise<unknown> {
   const group = args[0];
 
@@ -1504,10 +1597,15 @@ export async function dispatch(
           });
         case 'write':
           if (flags['file']) {
-            const fileData = fs.readFileSync(flags['file']);
+            const fileData = await readLocalFileBytes(
+              flags['file'],
+              'fs write',
+              'file',
+              deps
+            );
             return client.fs.rawWrite({
               path: requireFlag(flags, 'path', 'fs write'),
-              body: fileData as unknown as BodyInit,
+              body: fileData,
               mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
             });
           }
@@ -1587,10 +1685,15 @@ export async function dispatch(
       }
       let code = flags['code'];
       if (flags['local-file']) {
-        code = fs.readFileSync(flags['local-file'], 'utf-8') as string;
+        code = await readLocalTextFile(
+          flags['local-file'],
+          'run',
+          'local-file',
+          deps
+        );
       }
-      const timeout_ms = runTimeoutMs(flags);
-      configureRunFetchTimeout(timeout_ms);
+      const timeout_ms = runTimeoutMs(flags, deps);
+      configureRunFetchTimeout(timeout_ms, deps);
       return client.run.execute({
         code,
         entry_path: flags['entry-path'],
@@ -1834,7 +1937,11 @@ export async function dispatch(
               'entry-script-path',
               'functions register'
             ),
-            params_schema: jsonSchemaStringFlag(flags, 'functions register'),
+            params_schema: jsonSchemaStringFlag(
+              flags,
+              'functions register',
+              deps
+            ),
             allow_charges: boolFlag(flags['allow-charges']),
           });
         case 'list':
@@ -1942,7 +2049,7 @@ export async function dispatch(
           });
           if (lintReport.summary.warnings > 0) {
             const { formatReport } = await import('../lint/report.js');
-            process.stderr.write(
+            (deps?.stderr ?? process.stderr).write(
               'design lint warnings:\n' +
                 formatReport(lintReport, 'human') +
                 '\n'
@@ -2490,7 +2597,13 @@ export async function dispatch(
           'screenshot'
         );
       }
-      fs.writeFileSync(outFile, buf);
+      await writeLocalFileBytes(
+        outFile,
+        new Uint8Array(buf),
+        'screenshot',
+        'out',
+        deps
+      );
       return { written: outFile, bytes: buf.length };
     }
 
