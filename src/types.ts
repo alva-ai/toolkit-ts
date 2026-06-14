@@ -6,7 +6,6 @@ export interface AlvaClientConfig {
   apiKey?: string;
   baseUrl?: string;
   arraysBaseUrl?: string;
-  fetch?: typeof globalThis.fetch;
   gaClientId?: string;
   gaSessionId?: string;
   utmParams?: string;

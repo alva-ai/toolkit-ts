@@ -18,6 +18,7 @@ export default defineConfig([
   {
     entry: { cli: 'src/cli/index.ts' },
     format: ['esm'],
+    dts: true,
     splitting: false,
     sourcemap: true,
     target: 'node18',

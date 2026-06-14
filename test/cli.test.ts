@@ -529,7 +529,7 @@ describe('CLI dispatch', () => {
           'fs',
           'write',
           '--path',
-          '~/uploads/script.js',
+          '~/library/script.js',
           '--file',
           './script.js',
         ],

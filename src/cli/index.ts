@@ -1426,7 +1426,7 @@ function jsonSchemaStringFlag(
   }
   const raw =
     schemaFile !== undefined
-      ? readLocalTextFileSync(schemaFile, command, 'params-schema-file', deps)
+      ? readLocalTextFile(schemaFile, command, 'params-schema-file', deps)
       : inlineSchema;
   if (raw === undefined) return undefined;
   try {
@@ -1458,16 +1458,6 @@ function assertLocalFileAvailable(
   if (deps?.mode === 'jagent') {
     throw localFileUnsupported(command, flag);
   }
-}
-
-function readLocalTextFileSync(
-  path: string,
-  command: string,
-  flag: string,
-  deps?: DispatchRuntimeDeps
-): string {
-  assertLocalFileAvailable(command, flag, deps);
-  return fs.readFileSync(path, 'utf-8');
 }
 
 function readLocalTextFile(

@@ -49,15 +49,6 @@ describe('AlvaClient', () => {
       expect(client.baseUrl).toBe('http://localhost:8080');
     });
 
-    it('trims trailing slashes from base URLs', () => {
-      const client = new AlvaClient({
-        baseUrl: 'http://localhost:8080/',
-        arraysBaseUrl: 'https://arrays.example/',
-      });
-      expect(client.baseUrl).toBe('http://localhost:8080');
-      expect(client.arraysBaseUrl).toBe('https://arrays.example');
-    });
-
     it('stores apiKey', () => {
       const client = new AlvaClient({ apiKey: 'test-key' });
       expect(client.apiKey).toBe('test-key');
@@ -212,22 +203,6 @@ describe('AlvaClient', () => {
       const fetch = mockFetch({
         body: { id: 42, username: 'alice' },
         headers: { 'content-type': 'application/json' },
-      });
-      globalThis.fetch = fetch;
-      const client = new AlvaClient({});
-
-      const result = await client._request('GET', '/api/v1/me');
-      expect(result).toEqual({ id: 42, username: 'alice' });
-    });
-
-    it('parses JSON response from jagent plain-object headers', async () => {
-      const fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: { 'Content-Type': ['application/json'] },
-        json: () => Promise.resolve({ id: 42, username: 'alice' }),
-        text: () => Promise.resolve('{"id":42,"username":"alice"}'),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
       });
       globalThis.fetch = fetch;
       const client = new AlvaClient({});

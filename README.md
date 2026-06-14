@@ -166,6 +166,29 @@ The CLI resolves config in this order:
 2. `ALVA_API_KEY` / `ALVA_ENDPOINT` environment variables
 3. `~/.config/alva/config.json` (or `$XDG_CONFIG_HOME/alva/config.json`)
 
+### Embedded CLI Dispatch
+
+Node.js tools can reuse the CLI dispatcher directly instead of shelling out to
+the `alva` binary:
+
+```typescript
+import { AlvaClient } from '@alva-ai/toolkit';
+import { dispatch } from '@alva-ai/toolkit/cli';
+
+const client = new AlvaClient({ apiKey: process.env.ALVA_API_KEY });
+const result = await dispatch(
+  client,
+  ['fs', 'read', '--path', '/alva/home/alice/playbooks/demo/README.md'],
+  undefined,
+  { mode: 'jagent' }
+);
+```
+
+`mode: 'jagent'` keeps the command surface aligned with ALFS-native agent
+tools: flags that read or write local files, such as `--local-file`, `--file`,
+`--params-schema-file`, and screenshot `--out`, are rejected. Use inline data
+or prepare content in ALFS before dispatching the CLI command.
+
 ## SDK Usage (Node.js)
 
 ```typescript
