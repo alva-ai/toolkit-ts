@@ -14,6 +14,10 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    },
     "./browser": "./dist/browser.global.js"
   },
   "main": "./dist/index.cjs",
