@@ -9,6 +9,8 @@ export interface AlvaClientConfig {
   gaClientId?: string;
   gaSessionId?: string;
   utmParams?: string;
+  /** Optional default AbortSignal applied to every request from this client. */
+  signal?: AbortSignal;
 }
 
 // --- User ---
@@ -214,7 +216,7 @@ export interface CronjobUpdateRequest {
 export interface CronjobRunsListParams {
   cronjob_id: number;
   first?: number;
-  cursor?: number;
+  cursor?: string;
 }
 
 export interface CronjobRun {

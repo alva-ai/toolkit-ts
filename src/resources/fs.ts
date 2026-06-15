@@ -18,6 +18,52 @@ import type {
   FsRevokeParams,
 } from '../types.js';
 
+function isValidUtf8(bytes: Uint8Array): boolean {
+  let i = 0;
+  while (i < bytes.length) {
+    const byte = bytes[i];
+    if (byte <= 0x7f) {
+      i += 1;
+      continue;
+    }
+
+    let needed = 0;
+    let minCodePoint = 0;
+    let codePoint = 0;
+    if (byte >= 0xc2 && byte <= 0xdf) {
+      needed = 1;
+      minCodePoint = 0x80;
+      codePoint = byte & 0x1f;
+    } else if (byte >= 0xe0 && byte <= 0xef) {
+      needed = 2;
+      minCodePoint = 0x800;
+      codePoint = byte & 0x0f;
+    } else if (byte >= 0xf0 && byte <= 0xf4) {
+      needed = 3;
+      minCodePoint = 0x10000;
+      codePoint = byte & 0x07;
+    } else {
+      return false;
+    }
+
+    if (i + needed >= bytes.length) return false;
+    for (let j = 1; j <= needed; j += 1) {
+      const next = bytes[i + j];
+      if ((next & 0xc0) !== 0x80) return false;
+      codePoint = (codePoint << 6) | (next & 0x3f);
+    }
+    if (
+      codePoint < minCodePoint ||
+      codePoint > 0x10ffff ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff)
+    ) {
+      return false;
+    }
+    i += needed + 1;
+  }
+  return true;
+}
+
 export class FsResource {
   constructor(private client: AlvaClient) {}
 
@@ -27,15 +73,14 @@ export class FsResource {
       query: { path: params.path, offset: params.offset, size: params.size },
     });
     if (!(result instanceof ArrayBuffer)) return result;
-    try {
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(result);
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    } catch {
+    if (!isValidUtf8(new Uint8Array(result))) {
       return result;
+    }
+    const text = new TextDecoder('utf-8').decode(result);
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
     }
   }
 

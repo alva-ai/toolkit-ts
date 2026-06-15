@@ -40,6 +40,8 @@ interface RequestOptions {
   noAuth?: boolean;
   /** Client-side HTTP timeout in milliseconds. */
   timeoutMs?: number;
+  /** Optional AbortSignal for this request. Defaults to the client-level signal. */
+  signal?: AbortSignal;
 }
 
 interface FetchFailure {
@@ -126,6 +128,7 @@ export class AlvaClient {
   readonly gaClientId?: string;
   readonly gaSessionId?: string;
   readonly utmParams?: string;
+  readonly signal?: AbortSignal;
 
   private _fs?: FsResource;
   private _run?: RunResource;
@@ -160,6 +163,7 @@ export class AlvaClient {
     this.gaClientId = config.gaClientId;
     this.gaSessionId = config.gaSessionId;
     this.utmParams = config.utmParams;
+    this.signal = config.signal;
   }
 
   get fs(): FsResource {
@@ -301,11 +305,28 @@ export class AlvaClient {
 
     let response: Response;
     const timeoutMs = options?.timeoutMs;
+    const externalSignal = options?.signal ?? this.signal;
+    if (externalSignal?.aborted) {
+      throw new AlvaError(
+        'NETWORK_ABORTED',
+        `Request aborted while calling ${method} ${path}`,
+        0,
+        {
+          method,
+          path,
+        }
+      );
+    }
     const controller =
       timeoutMs !== undefined ? new AbortController() : undefined;
     let didTimeout = false;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let abortListener: (() => void) | undefined;
     if (controller && timeoutMs !== undefined) {
+      if (externalSignal) {
+        abortListener = () => controller.abort(externalSignal.reason);
+        externalSignal.addEventListener('abort', abortListener, { once: true });
+      }
       timeoutId = setTimeout(() => {
         didTimeout = true;
         controller.abort(
@@ -316,14 +337,30 @@ export class AlvaClient {
       }, timeoutMs);
     }
 
+    const fetchInit: RequestInit & { timeout?: number } = {
+      method,
+      headers,
+      body: fetchBody,
+      signal: controller?.signal ?? externalSignal,
+    };
+    if (timeoutMs !== undefined) {
+      fetchInit.timeout = timeoutMs;
+    }
+
     try {
-      response = await fetch(url, {
-        method,
-        headers,
-        body: fetchBody,
-        signal: controller?.signal,
-      });
+      response = await fetch(url, fetchInit);
     } catch (err) {
+      if (externalSignal?.aborted && !didTimeout) {
+        throw new AlvaError(
+          'NETWORK_ABORTED',
+          `Request aborted while calling ${method} ${path}`,
+          0,
+          {
+            method,
+            path,
+          }
+        );
+      }
       if (didTimeout) {
         throw new AlvaError(
           'NETWORK_TIMEOUT',
@@ -339,6 +376,9 @@ export class AlvaClient {
         ...failure.details,
       });
     } finally {
+      if (abortListener && externalSignal) {
+        externalSignal.removeEventListener('abort', abortListener);
+      }
       if (timeoutId !== undefined) {
         clearTimeout(timeoutId);
       }
@@ -346,7 +386,12 @@ export class AlvaClient {
 
     if (!response.ok) {
       // Read body as text first to avoid double consumption
-      const bodyText = await response.text().catch(() => '');
+      let bodyText = '';
+      try {
+        bodyText = await Promise.resolve(response.text());
+      } catch {
+        bodyText = '';
+      }
       const contentType = response.headers.get('content-type') ?? '';
       if (contentType.includes('application/json') && bodyText) {
         try {

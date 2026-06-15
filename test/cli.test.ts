@@ -258,6 +258,25 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches deploy runs with opaque cursor unchanged', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'runs',
+      '--id',
+      '42',
+      '--first',
+      '5',
+      '--cursor',
+      'next.page.token',
+    ]);
+    expect(client.deploy.listRuns).toHaveBeenCalledWith({
+      cronjob_id: 42,
+      first: 5,
+      cursor: 'next.page.token',
+    });
+  });
+
   it('dispatches deploy trigger with --id and returns workflow_run_id', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['deploy', 'trigger', '--id', '42']);
@@ -561,6 +580,25 @@ describe('CLI dispatch', () => {
           err.message.includes('Use ALFS-native read/write/edit tools')
       );
     }
+  });
+
+  it('rejects screenshot --out in jagent mode before capturing', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatch(
+        client,
+        ['screenshot', '--url', '/playbook/alice/p', '--out', 'p.png'],
+        undefined,
+        { mode: 'jagent' }
+      )
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError &&
+        err.message.includes('local file') &&
+        err.message.includes('Use ALFS-native read/write/edit tools')
+    );
+    expect(client.screenshot.capture).not.toHaveBeenCalled();
   });
 
   it('dispatches feed delete', async () => {
@@ -2629,6 +2667,37 @@ components: {}
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain('required-container');
     nodeFs.unlinkSync(tmp);
+  });
+
+  it('can read playbook HTML through the client filesystem', async () => {
+    const { handleLintPlaybook } = await import('../src/cli/lint.js');
+    const client = makeClient();
+    client.fs.read = vi
+      .fn()
+      .mockResolvedValue('<html><body><p>no container</p></body></html>');
+    vi.mocked(fs.readFileSync).mockClear();
+
+    const result = await handleLintPlaybook({
+      file: '~/playbooks/demo/index.html',
+      client,
+      format: 'json',
+      contractYaml: `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`,
+    });
+
+    expect(client.fs.read).toHaveBeenCalledWith({
+      path: '~/playbooks/demo/index.html',
+    });
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('required-container');
   });
 });
 

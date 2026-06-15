@@ -222,6 +222,21 @@ describe('AlvaClient', () => {
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
+    it('keeps fs.read invalid UTF-8 bytes as ArrayBuffer', async () => {
+      const bytes = new Uint8Array([0xff, 0xfe, 0xfd]).buffer;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/octet-stream' },
+        arrayBuffer: () => Promise.resolve(bytes),
+      });
+      const client = new AlvaClient({});
+
+      const result = await client.fs.read({ path: '~/image.bin' });
+
+      expect(result).toBe(bytes);
+    });
+
     it('returns ArrayBuffer for image/png response', async () => {
       const fetch = mockFetch({
         headers: { 'content-type': 'image/png' },
@@ -287,7 +302,33 @@ describe('AlvaClient', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
       const [, init] = fetch.mock.calls[0] as [string, RequestInit];
       expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect((init as RequestInit & { timeout?: number }).timeout).toBe(50);
       vi.useRealTimers();
+    });
+
+    it('passes client AbortSignal to fetch', async () => {
+      const controller = new AbortController();
+      const fetch = mockFetch({ body: { id: 1 } });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ signal: controller.signal });
+
+      await client._request('GET', '/api/v1/me');
+
+      const [, init] = fetch.mock.calls[0];
+      expect(init.signal).toBe(controller.signal);
+    });
+
+    it('rejects before fetch when the client AbortSignal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const fetch = mockFetch({ body: { id: 1 } });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ signal: controller.signal });
+
+      await expect(client._request('GET', '/api/v1/me')).rejects.toMatchObject({
+        code: 'NETWORK_ABORTED',
+      });
+      expect(fetch).not.toHaveBeenCalled();
     });
 
     it('parses API error envelope', async () => {
@@ -360,6 +401,30 @@ describe('AlvaClient', () => {
         expect((e as AlvaError).status).toBe(400);
         expect((e as AlvaError).message).toContain('bad request');
       }
+    });
+
+    it('handles synchronous response.text for API errors', async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        headers: {
+          get: (key: string) =>
+            key.toLowerCase() === 'content-type' ? 'application/json' : null,
+        },
+        text: () => '{"error":{"code":"BAD_REQUEST","message":"sync body"}}',
+        json: () => Promise.resolve({ error: { code: 'BAD_REQUEST' } }),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      });
+      globalThis.fetch = fetch;
+      const client = new AlvaClient({ apiKey: 'key' });
+
+      await expect(
+        client._request('POST', '/api/v1/run')
+      ).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+        message: 'sync body',
+        status: 400,
+      });
     });
 
     it('_request sends to override baseUrl when options.baseUrl is set', async () => {
