@@ -300,7 +300,9 @@ export class AlvaClient {
     if (this.utmParams) {
       headers['X-Alva-UTM-Params'] = this.utmParams;
     }
-    if (this.originSessionId) {
+    // Origin-session attribution is identity-scoped: never attach it on noAuth
+    // requests, which carry no caller identity to attribute work to.
+    if (this.originSessionId && !options?.noAuth) {
       headers['X-Alva-Origin-Session-Id'] = this.originSessionId;
     }
 
