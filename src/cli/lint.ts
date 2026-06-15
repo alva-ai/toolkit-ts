@@ -7,6 +7,8 @@ import type { Report } from '../lint/types.js';
 export interface LintPlaybookOptions {
   file: string;
   format?: 'human' | 'json';
+  /** Optional ALFS-backed client. When supplied, file is read through client.fs. */
+  client?: AlvaClient;
   /** Override: use this YAML string instead of fetching the active contract. */
   contractYaml?: string;
 }
@@ -16,10 +18,30 @@ export interface LintResult {
   output: string;
 }
 
+function textContent(result: ArrayBuffer | unknown, path: string): string {
+  if (typeof result === 'string') return result;
+  if (result instanceof ArrayBuffer) {
+    return new TextDecoder('utf-8').decode(result);
+  }
+  throw new Error(
+    `Cannot lint ${path}: expected text content, got ${typeof result}.`
+  );
+}
+
+async function readPlaybookHtml(opts: LintPlaybookOptions): Promise<string> {
+  if (opts.client) {
+    return textContent(
+      await opts.client.fs.read({ path: opts.file }),
+      opts.file
+    );
+  }
+  return fs.readFileSync(opts.file, 'utf8');
+}
+
 export async function handleLintPlaybook(
   opts: LintPlaybookOptions
 ): Promise<LintResult> {
-  const html = fs.readFileSync(opts.file, 'utf8');
+  const html = await readPlaybookHtml(opts);
   const contract = opts.contractYaml
     ? loadContract(opts.contractYaml)
     : await loadActiveDesignSystem();
@@ -58,15 +80,7 @@ export async function lintBeforeRelease(
     const result = await opts.client.fs.read({
       path: `~/playbooks/${opts.playbookName}/index.html`,
     });
-    if (typeof result === 'string') {
-      html = result;
-    } else if (result instanceof ArrayBuffer) {
-      html = new TextDecoder('utf-8').decode(result);
-    } else {
-      throw new Error(
-        `Cannot lint ~/playbooks/${opts.playbookName}/index.html: expected text content, got ${typeof result}.`
-      );
-    }
+    html = textContent(result, `~/playbooks/${opts.playbookName}/index.html`);
   }
 
   const contract = opts.contractYaml

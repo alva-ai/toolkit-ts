@@ -1100,7 +1100,7 @@ export async function handleConfigure(
   };
 }
 
-const BOOLEAN_FLAGS = new Set([
+export const BOOLEAN_FLAGS = new Set([
   'recursive',
   'mkdir-parents',
   'push-notify',
@@ -1756,7 +1756,7 @@ export async function dispatch(
           return client.deploy.listRuns({
             cronjob_id: requireNumericFlag(flags, 'id', 'deploy runs'),
             first: num(flags['first']),
-            cursor: num(flags['cursor']),
+            cursor: flags['cursor'],
           });
         case 'run-logs':
           return client.deploy.getRunLogs({
@@ -2080,7 +2080,15 @@ export async function dispatch(
       }
       const format = (formatFlag as 'human' | 'json' | undefined) ?? 'human';
       const { handleLintPlaybook } = await import('./lint.js');
-      const { exitCode, output } = await handleLintPlaybook({ file, format });
+      const { exitCode, output } = await handleLintPlaybook({
+        file,
+        format,
+        client: deps?.mode === 'jagent' ? client : undefined,
+      });
+      if (deps?.mode === 'jagent') {
+        if (exitCode !== 0) throw new Error(output);
+        return output;
+      }
       process.stdout.write(output + (output.endsWith('\n') ? '' : '\n'));
       if (exitCode !== 0) process.exit(exitCode);
       return undefined;
@@ -2557,6 +2565,7 @@ export async function dispatch(
 
     case 'screenshot': {
       const outFile = requireFlag(flags, 'out', 'screenshot');
+      assertLocalFileAvailable('screenshot', 'out', deps);
       const compressQuality = flags['compress-quality'];
       const compressMaxWidth = flags['compress-max-width'];
       const result = await client.screenshot.capture({
