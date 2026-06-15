@@ -11,6 +11,8 @@ export interface AlvaClientConfig {
   utmParams?: string;
   /** Optional default AbortSignal applied to every request from this client. */
   signal?: AbortSignal;
+  /** Alva chat session owning produced artifacts; sent as X-Alva-Origin-Session-Id. */
+  originSessionId?: string;
 }
 
 // --- User ---

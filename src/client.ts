@@ -129,6 +129,15 @@ export class AlvaClient {
   readonly gaSessionId?: string;
   readonly utmParams?: string;
   readonly signal?: AbortSignal;
+  /**
+   * Alva chat session that owns work produced through this client (playbooks,
+   * feeds, uploaded files). Forwarded as `X-Alva-Origin-Session-Id` so the
+   * backend can attribute created artifacts to the originating session. This
+   * is a request-context hint, NOT auth — the backend still verifies the
+   * session belongs to the authenticated user before honoring it. Distinct
+   * from `gaSessionId` (browser analytics).
+   */
+  readonly originSessionId?: string;
 
   private _fs?: FsResource;
   private _run?: RunResource;
@@ -164,6 +173,7 @@ export class AlvaClient {
     this.gaSessionId = config.gaSessionId;
     this.utmParams = config.utmParams;
     this.signal = config.signal;
+    this.originSessionId = config.originSessionId;
   }
 
   get fs(): FsResource {
@@ -289,6 +299,11 @@ export class AlvaClient {
     }
     if (this.utmParams) {
       headers['X-Alva-UTM-Params'] = this.utmParams;
+    }
+    // Origin-session attribution is identity-scoped: never attach it on noAuth
+    // requests, which carry no caller identity to attribute work to.
+    if (this.originSessionId && !options?.noAuth) {
+      headers['X-Alva-Origin-Session-Id'] = this.originSessionId;
     }
 
     let fetchBody: BodyInit | undefined;

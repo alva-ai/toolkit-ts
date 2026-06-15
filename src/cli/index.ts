@@ -2865,6 +2865,7 @@ async function main() {
       gaClientId: config.gaClientId,
       gaSessionId: config.gaSessionId,
       utmParams: config.utmParams,
+      originSessionId: config.originSessionId,
     });
 
     const cleanArgs = stripGlobalFlags(rawArgs);
