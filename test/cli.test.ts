@@ -725,7 +725,13 @@ describe('CLI dispatch', () => {
     client.screenshot.capture = vi
       .fn()
       .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
-    await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--no-compress']);
+    await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+      '--no-compress',
+    ]);
     expect(client.screenshot.capture).toHaveBeenCalledWith(
       expect.objectContaining({ compress: false })
     );
