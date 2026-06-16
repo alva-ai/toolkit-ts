@@ -2988,11 +2988,19 @@ async function main() {
       process.stdout.write(helpResult.text + '\n');
       return;
     }
-    if (result && typeof result === 'object' && '_image' in result) {
+    if (
+      result &&
+      typeof result === 'object' &&
+      (result as Record<string, unknown>)._image === true &&
+      typeof (result as Record<string, unknown>).data === 'string'
+    ) {
       // Tagged image result (e.g. `screenshot --base64`): emit just the raw
       // base64 to stdout so it can be piped/decoded, rather than the JSON
-      // envelope. (In-process callers like the @alva/pi tool consume the
-      // envelope directly and never reach main().)
+      // envelope. The shape is validated narrowly (not just key presence) so an
+      // ordinary result that happens to carry an `_image` field — e.g. `fs read`
+      // of a JSON file like {"_image":false,...} — is not mistaken for one.
+      // (In-process callers like the @alva/pi tool consume the envelope directly
+      // and never reach main().)
       const imageResult = result as unknown as { data: string };
       process.stdout.write(imageResult.data + '\n');
       return;
