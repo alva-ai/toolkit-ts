@@ -601,6 +601,179 @@ describe('CLI dispatch', () => {
     expect(client.screenshot.capture).not.toHaveBeenCalled();
   });
 
+  it('returns a tagged _image result for screenshot --base64 (png)', async () => {
+    const client = makeClient();
+    const pngBytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(pngBytes.buffer.slice(0));
+    const result = await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ]);
+    expect(result).toEqual({
+      _image: true,
+      mimeType: 'image/png',
+      data: Buffer.from(pngBytes).toString('base64'),
+      bytes: 8,
+    });
+  });
+
+  it('sniffs jpeg mime for screenshot --base64', async () => {
+    const client = makeClient();
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(bytes.buffer.slice(0));
+    const result = (await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ])) as { mimeType: string };
+    expect(result.mimeType).toBe('image/jpeg');
+  });
+
+  it('sniffs webp mime for screenshot --base64', async () => {
+    const client = makeClient();
+    const bytes = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+    ]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(bytes.buffer.slice(0));
+    const result = (await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ])) as { mimeType: string };
+    expect(result.mimeType).toBe('image/webp');
+  });
+
+  it('falls back to image/png mime for unknown bytes (--base64)', async () => {
+    const client = makeClient();
+    const bytes = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(bytes.buffer.slice(0));
+    const result = (await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ])) as { mimeType: string };
+    expect(result.mimeType).toBe('image/png');
+  });
+
+  it('applies default compression for screenshot --base64', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, ['screenshot', '--url', 'u', '--base64']);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compress: true,
+        compressMaxWidth: 1280,
+        compressQuality: 70,
+      })
+    );
+  });
+
+  it('honors explicit compress overrides for screenshot --base64', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+      '--compress-quality',
+      '90',
+      '--compress-max-width',
+      '1920',
+    ]);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compress: true,
+        compressQuality: 90,
+        compressMaxWidth: 1920,
+      })
+    );
+  });
+
+  it('opts out of compression with screenshot --base64 --full', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--full']);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ compress: false })
+    );
+  });
+
+  it('throws CliUsageError when screenshot has both --out and --base64', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['screenshot', '--url', 'u', '--out', 'f', '--base64'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'screenshot'
+    );
+  });
+
+  it('throws CliUsageError when screenshot has neither --out nor --base64', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['screenshot', '--url', 'u'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'screenshot'
+    );
+  });
+
+  it('writes file and returns {written,bytes} for screenshot --out', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    const writeSpy = vi
+      .spyOn(fs, 'writeFileSync')
+      .mockImplementation(() => undefined);
+    try {
+      const result = await dispatch(client, [
+        'screenshot',
+        '--url',
+        'u',
+        '--out',
+        'f.png',
+      ]);
+      expect(result).toEqual({ written: 'f.png', bytes: 4 });
+      expect(writeSpy).toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it('throws CliUsageError for screenshot --base64 with empty bytes', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+    await expect(
+      dispatch(client, ['screenshot', '--url', 'u', '--base64'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'screenshot'
+    );
+  });
+
   it('dispatches feed delete', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);

@@ -899,23 +899,33 @@ Required:
 Examples:
   alva remix --child-username bob --child-name my-btc --parents '[{"username":"alice","name":"btc-signals"}]'`,
 
-  screenshot: `Usage: alva screenshot --url <url> --out <file> [--selector <css>] [--xpath <xpath>] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
+  screenshot: `Usage: alva screenshot --url <url> (--base64 | --out <file>) [--selector <css>] [--xpath <xpath>] [--full] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
 
-Capture a screenshot of an Alva page and save it as PNG. Useful for verifying
-playbook rendering before release.
+Capture a screenshot of an Alva page. Useful for verifying playbook rendering
+before release. Provide exactly one output mode: --base64 or --out.
 
 Required:
   --url <url>                URL or path to capture (e.g. /playbook/alice/dashboard)
-  --out <file>               Local file path to write the PNG output
+
+Output mode (choose exactly one):
+  --base64                   Emit the image as base64 on stdout. Works in jagent
+                             (no local filesystem). Compresses by default
+                             (max-width 1280, quality 70) unless --full is set.
+  --out <file>               Write the image to a local file. Local-file only —
+                             unavailable in jagent.
 
 Optional:
   --selector <css>           CSS selector to capture a specific element
   --xpath <xpath>            XPath selector to capture a specific element
-  --compress                 Re-encode the PNG to reduce file size
-  --compress-quality <n>     Compression quality 1-100 (gateway default applies if omitted)
+  --full                     (--base64 only) Return the raw image, skipping the
+                             default compression and downscaling.
+  --compress                 (--out) Re-encode the image to reduce file size
+  --compress-quality <n>     Compression quality 1-100
   --compress-max-width <px>  Downscale to at most this width in pixels
 
 Examples:
+  alva screenshot --url /playbook/alice/btc-dashboard --base64
+  alva screenshot --url /playbook/alice/btc-dashboard --base64 --full
   alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
   alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"
   alva screenshot --url /playbook/alice/btc-dashboard --out small.png --compress --compress-quality 70 --compress-max-width 1280`,
@@ -1113,6 +1123,8 @@ export const BOOLEAN_FLAGS = new Set([
   'bypass-lint',
   'no-browser',
   'browser',
+  'base64',
+  'full',
 ]);
 
 export function parseFlags(argv: string[]): Record<string, string> {
@@ -1478,6 +1490,36 @@ function readLocalFileBytes(
 ): BodyInit {
   assertLocalFileAvailable(command, flag, deps);
   return fs.readFileSync(path) as unknown as BodyInit;
+}
+
+function sniffImageMime(bytes: Uint8Array | Buffer): string {
+  const b = bytes;
+  if (
+    b.length >= 4 &&
+    b[0] === 0x89 &&
+    b[1] === 0x50 &&
+    b[2] === 0x4e &&
+    b[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    b.length >= 12 &&
+    b[0] === 0x52 &&
+    b[1] === 0x49 &&
+    b[2] === 0x46 &&
+    b[3] === 0x46 &&
+    b[8] === 0x57 &&
+    b[9] === 0x45 &&
+    b[10] === 0x42 &&
+    b[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return 'image/png';
 }
 
 function writeLocalFileBytes(
@@ -2564,14 +2606,75 @@ export async function dispatch(
     }
 
     case 'screenshot': {
+      const hasOut = flags['out'] !== undefined;
+      const wantBase64 = boolFlag(flags['base64']) === true;
+      if (hasOut && wantBase64) {
+        throw new CliUsageError(
+          'screenshot accepts only one of --out (local file) or --base64 (stdout); both were provided.',
+          'screenshot'
+        );
+      }
+      if (!hasOut && !wantBase64) {
+        throw new CliUsageError(
+          'one of --out/--base64 is required for screenshot',
+          'screenshot'
+        );
+      }
+
+      const url = requireFlag(flags, 'url', 'screenshot');
+      const selector = flags['selector'];
+      const xpath = flags['xpath'];
+
+      if (wantBase64) {
+        // base64 mode: no local FS — safe in jagent.
+        const full = boolFlag(flags['full']) === true;
+        const explicitQuality = flags['compress-quality'];
+        const explicitMaxWidth = flags['compress-max-width'];
+        let compress: boolean;
+        let compressQuality: number | undefined;
+        let compressMaxWidth: number | undefined;
+        if (full) {
+          compress = false;
+          compressQuality = undefined;
+          compressMaxWidth = undefined;
+        } else {
+          compress = true;
+          compressQuality =
+            explicitQuality !== undefined ? Number(explicitQuality) : 70;
+          compressMaxWidth =
+            explicitMaxWidth !== undefined ? Number(explicitMaxWidth) : 1280;
+        }
+        const result = await client.screenshot.capture({
+          url,
+          selector,
+          xpath,
+          compress,
+          compressQuality,
+          compressMaxWidth,
+        });
+        const buf = Buffer.from(result as ArrayBuffer);
+        if (buf.length === 0) {
+          throw new CliUsageError(
+            'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
+            'screenshot'
+          );
+        }
+        return {
+          _image: true,
+          mimeType: sniffImageMime(buf),
+          data: Buffer.from(buf).toString('base64'),
+          bytes: buf.length,
+        };
+      }
+
       const outFile = requireFlag(flags, 'out', 'screenshot');
       assertLocalFileAvailable('screenshot', 'out', deps);
       const compressQuality = flags['compress-quality'];
       const compressMaxWidth = flags['compress-max-width'];
       const result = await client.screenshot.capture({
-        url: requireFlag(flags, 'url', 'screenshot'),
-        selector: flags['selector'],
-        xpath: flags['xpath'],
+        url,
+        selector,
+        xpath,
         compress: boolFlag(flags['compress']),
         compressQuality:
           compressQuality !== undefined ? Number(compressQuality) : undefined,
