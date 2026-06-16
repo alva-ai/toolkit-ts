@@ -901,34 +901,28 @@ Examples:
 
   screenshot: `Usage: alva screenshot --url <url> (--base64 | --out <file>) [--selector <css>] [--xpath <xpath>] [--full] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
 
-Capture a screenshot of an Alva page. Useful for verifying playbook rendering
-before release. Provide exactly one output mode: --base64 or --out.
+Capture a screenshot of an Alva page. Choose exactly one output mode.
 
 Required:
   --url <url>                URL or path to capture (e.g. /playbook/alice/dashboard)
 
-Output mode (choose exactly one):
-  --base64                   Emit the image as base64 on stdout. Works in jagent
-                             (no local filesystem). Compresses by default
-                             (max-width 1280, quality 70) unless --full is set.
-  --out <file>               Write the image to a local file. Local-file only —
-                             unavailable in jagent.
+Output (choose one):
+  --base64                   Emit the image as base64 to stdout. Compresses by
+                             default (max-width 1280, quality 70) unless --full.
+  --out <file>               Write the image to a local file.
 
 Optional:
-  --selector <css>           CSS selector to capture a specific element
-  --xpath <xpath>            XPath selector to capture a specific element
-  --full                     (--base64 only) Return the raw image, skipping the
-                             default compression and downscaling.
-  --compress                 (--out) Re-encode the image to reduce file size
+  --selector <css>           Capture a specific element by CSS selector
+  --xpath <xpath>            Capture a specific element by XPath
+  --full                     (--base64) Return the raw image, no default compression
+  --compress                 Re-encode the image to reduce file size
   --compress-quality <n>     Compression quality 1-100
   --compress-max-width <px>  Downscale to at most this width in pixels
 
 Examples:
-  alva screenshot --url /playbook/alice/btc-dashboard --base64
-  alva screenshot --url /playbook/alice/btc-dashboard --base64 --full
-  alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
-  alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"
-  alva screenshot --url /playbook/alice/btc-dashboard --out small.png --compress --compress-quality 70 --compress-max-width 1280`,
+  alva screenshot --url /playbook/alice/dashboard --base64
+  alva screenshot --url /playbook/alice/dashboard --out dashboard.png
+  alva screenshot --url /playbook/alice/dashboard --out chart.png --selector ".chart-container"`,
 
   portfolio: `Usage: alva portfolio <subcommand> [options]
 
