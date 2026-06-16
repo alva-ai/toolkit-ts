@@ -720,6 +720,17 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('honors explicit --no-compress in screenshot --base64', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--no-compress']);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ compress: false })
+    );
+  });
+
   it('throws CliUsageError when screenshot has both --out and --base64', async () => {
     const client = makeClient();
     await expect(

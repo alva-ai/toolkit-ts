@@ -2624,10 +2624,15 @@ export async function dispatch(
         const full = boolFlag(flags['full']) === true;
         const explicitQuality = flags['compress-quality'];
         const explicitMaxWidth = flags['compress-max-width'];
+        // Disable compression when --full, or when the caller explicitly opts
+        // out via --no-compress / --compress=false (mirrors the --out path,
+        // which honors boolFlag(flags['compress'])). Otherwise compress by
+        // default to bound the base64 payload size.
+        const noCompress = full || boolFlag(flags['compress']) === false;
         let compress: boolean;
         let compressQuality: number | undefined;
         let compressMaxWidth: number | undefined;
-        if (full) {
+        if (noCompress) {
           compress = false;
           compressQuality = undefined;
           compressMaxWidth = undefined;
