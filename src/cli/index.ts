@@ -24,6 +24,8 @@ import * as os from 'os';
 import * as fsPromises from 'fs/promises';
 import { Agent, setGlobalDispatcher } from 'undici';
 
+export { CliUsageError } from '../error.js';
+
 declare const __VERSION__: string;
 export const CLI_VERSION: string =
   typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
