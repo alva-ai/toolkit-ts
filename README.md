@@ -173,7 +173,7 @@ the `alva` binary:
 
 ```typescript
 import { AlvaClient } from '@alva-ai/toolkit';
-import { dispatch } from '@alva-ai/toolkit/cli';
+import { CliUsageError, dispatch } from '@alva-ai/toolkit/cli';
 
 const client = new AlvaClient({ apiKey: process.env.ALVA_API_KEY });
 const result = await dispatch(
@@ -187,7 +187,9 @@ const result = await dispatch(
 `mode: 'jagent'` keeps the command surface aligned with ALFS-native agent
 tools: flags that read or write local files, such as `--local-file`, `--file`,
 `--params-schema-file`, and screenshot `--out`, are rejected. Use inline data
-or prepare content in ALFS before dispatching the CLI command.
+or prepare content in ALFS before dispatching the CLI command. `dispatch()`
+throws `CliUsageError` for command-line usage errors and `AlvaError` for API
+errors.
 
 ## SDK Usage (Node.js)
 

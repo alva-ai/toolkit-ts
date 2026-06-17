@@ -5,7 +5,7 @@ export const VERSION: string =
   typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
 
 export { AlvaClient } from './client.js';
-export { AlvaError } from './error.js';
+export { AlvaError, CliUsageError } from './error.js';
 export * from './playbookRuntime.js';
 export type {
   AlvaClientConfig,
