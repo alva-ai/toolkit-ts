@@ -325,6 +325,7 @@ Create/Update flags:
   --path <path>          Path to script on ALFS (required on create, must exist)
   --cron <expression>    Cron expression (required on create, e.g. "0 */4 * * *")
   --args <json>          JSON object passed to require("env").args
+  --user-prompt <text>   User prompt injected into @alva/pi before each agent run
   --push-notify          Enable Telegram push notifications on completion
   --no-push-notify       Disable push notifications
   --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
@@ -357,7 +358,7 @@ Recommended cron schedules:
 
 Examples:
   alva deploy create --name btc-ema --path "~/feeds/btc-ema/v1/src/index.js" --cron "0 */4 * * *"
-  alva deploy create --name alert --path "~/feeds/alert/v1/src/index.js" --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
+  alva deploy create --name alert --path "~/feeds/alert/v1/src/index.js" --cron "*/5 * * * *" --push-notify --args '{"threshold":100}' --user-prompt "Only send material changes"
   alva deploy list
   alva deploy list --limit 10
   alva deploy get --id 42
@@ -1740,6 +1741,7 @@ export async function dispatch(
               | Record<string, unknown>
               | undefined,
             push_notify: boolFlag(flags['push-notify']),
+            user_prompt: flags['user-prompt'],
             max_heap_size_mb: optionalBoundedIntegerFlag(
               flags,
               'max-heap-size-mb',
@@ -1766,6 +1768,7 @@ export async function dispatch(
               | Record<string, unknown>
               | undefined,
             push_notify: boolFlag(flags['push-notify']),
+            user_prompt: flags['user-prompt'],
             max_heap_size_mb: optionalBoundedIntegerFlag(
               flags,
               'max-heap-size-mb',

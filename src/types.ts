@@ -179,6 +179,8 @@ export interface CronjobCreateRequest {
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
+  /** User prompt injected into @alva/pi before each agent run. */
+  user_prompt?: string;
 }
 
 export interface Cronjob {
@@ -191,6 +193,8 @@ export interface Cronjob {
   push_notify: boolean;
   /** Per-cronjob V8 heap cap (MB). null when using the server default. */
   max_heap_size_mb: number | null;
+  /** User prompt injected into @alva/pi before each agent run. */
+  user_prompt: string;
   created_at: string;
   updated_at: string;
 }
@@ -213,6 +217,8 @@ export interface CronjobUpdateRequest {
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
+  /** User prompt injected into @alva/pi before each agent run. */
+  user_prompt?: string;
 }
 
 export interface CronjobRunsListParams {

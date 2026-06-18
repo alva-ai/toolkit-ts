@@ -1519,6 +1519,45 @@ components: {}
     );
   });
 
+  it('dispatches deploy create with --user-prompt', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'create',
+      '--name',
+      'j',
+      '--path',
+      '~/j.js',
+      '--cron',
+      '* * * * *',
+      '--user-prompt',
+      'Only summarize skipped cron runs.',
+    ]);
+    expect(client.deploy.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_prompt: 'Only summarize skipped cron runs.',
+      })
+    );
+  });
+
+  it('dispatches deploy update with --user-prompt', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'update',
+      '--id',
+      '42',
+      '--user-prompt',
+      'Use the beta account only.',
+    ]);
+    expect(client.deploy.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 42,
+        user_prompt: 'Use the beta account only.',
+      })
+    );
+  });
+
   it('throws on unknown group with help hint', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(
@@ -1974,6 +2013,7 @@ describe('help text', () => {
     expect(result.text).toContain('create');
     expect(result.text).toContain('--cron');
     expect(result.text).toContain('--push-notify');
+    expect(result.text).toContain('--user-prompt');
     expect(result.text).toContain('Recommended cron schedules');
   });
 

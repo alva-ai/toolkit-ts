@@ -29,8 +29,30 @@ describe('DeployResource', () => {
           cron_expression: '*/5 * * * *',
           args: undefined,
           push_notify: undefined,
+          max_heap_size_mb: undefined,
+          user_prompt: undefined,
         },
       }
+    );
+  });
+
+  it('create forwards user_prompt', async () => {
+    const client = makeClient();
+    const deploy = new DeployResource(client);
+    await deploy.create({
+      name: 'my-job',
+      path: '~/scripts/job.js',
+      cron_expression: '*/5 * * * *',
+      user_prompt: 'Only summarize skipped cron runs.',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/deploy/cronjob',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          user_prompt: 'Only summarize skipped cron runs.',
+        }),
+      })
     );
   });
 
@@ -69,11 +91,20 @@ describe('DeployResource', () => {
   it('update sends PATCH /api/v1/deploy/cronjob/:id', async () => {
     const client = makeClient();
     const deploy = new DeployResource(client);
-    await deploy.update({ id: 123, name: 'new-name' });
+    await deploy.update({
+      id: 123,
+      name: 'new-name',
+      user_prompt: 'Use the beta account only.',
+    });
     expect(client._request).toHaveBeenCalledWith(
       'PATCH',
       '/api/v1/deploy/cronjob/123',
-      { body: { name: 'new-name' } }
+      {
+        body: {
+          name: 'new-name',
+          user_prompt: 'Use the beta account only.',
+        },
+      }
     );
   });
 
