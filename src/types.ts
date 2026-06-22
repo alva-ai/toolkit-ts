@@ -276,6 +276,7 @@ export interface FeedReleaseRequest {
   view_json?: Record<string, unknown>;
   description?: string;
   changelog?: string;
+  agent_type?: string;
 }
 
 export interface FeedReleaseResponse {

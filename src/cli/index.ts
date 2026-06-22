@@ -542,6 +542,7 @@ Feed flags:
   --view-json <json>     View configuration JSON
   --description <text>   Feed description
   --changelog <text>     Per-major changelog summary
+  --agent-type <kind>    Agent type backing the feed
 
 Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
@@ -2021,6 +2022,7 @@ export async function dispatch(
               | undefined,
             description: flags['description'],
             changelog: flags['changelog'],
+            agent_type: flags['agent-type'],
           });
         case 'playbook-draft':
           return client.release.playbookDraft({
