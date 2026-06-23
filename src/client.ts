@@ -23,6 +23,7 @@ import { SubscriptionsResource } from './resources/subscriptions.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 import { FeedbackResource } from './resources/feedback.js';
 import { FunctionsResource } from './resources/functions.js';
+import { CreditsResource } from './resources/credits.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -162,6 +163,7 @@ export class AlvaClient {
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
   private _feedback?: FeedbackResource;
   private _functions?: FunctionsResource;
+  private _credits?: CreditsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -246,6 +248,9 @@ export class AlvaClient {
   }
   get functions(): FunctionsResource {
     return (this._functions ??= new FunctionsResource(this));
+  }
+  get credits(): CreditsResource {
+    return (this._credits ??= new CreditsResource(this));
   }
 
   _requireAuth(): void {
