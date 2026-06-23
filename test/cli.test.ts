@@ -96,6 +96,25 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ id: '42', status: 'ACTIVE' });
   client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+  client.credits.wallet = vi.fn().mockResolvedValue({
+    balance: 100,
+    totalRemaining: 100,
+    todayUsed: 3,
+  });
+  client.credits.items = vi.fn().mockResolvedValue({
+    balance: 100,
+    totalRemaining: 100,
+    todayUsed: 3,
+    items: {
+      pageInfo: {
+        hasNextPage: false,
+        hasPreviousPage: false,
+        startCursor: null,
+        endCursor: null,
+      },
+      edges: [],
+    },
+  });
   client.playbooks.trending = vi
     .fn()
     .mockResolvedValue({ playbooks: [], has_next: false });
@@ -467,6 +486,145 @@ describe('CLI dispatch', () => {
     await expect(dispatch(client, ['run', '--code', '1+1'])).rejects.toSatisfy(
       (err: unknown) => err instanceof CliUsageError && err.command === 'run'
     );
+  });
+
+  it('dispatches credits wallet', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, ['credits', 'wallet']);
+    expect(client.credits.wallet).toHaveBeenCalled();
+    expect(result).toEqual({
+      balance: 100,
+      totalRemaining: 100,
+      todayUsed: 3,
+    });
+  });
+
+  it('dispatches credits items with explicit ISO window and filters', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'credits',
+      'items',
+      '--start',
+      '2026-06-23T00:00:00Z',
+      '--end',
+      '2026-06-24T00:00:00Z',
+      '--session-id',
+      '2069373335591239680',
+      '--first',
+      '10',
+      '--after',
+      'cursor-1',
+    ]);
+    expect(client.credits.items).toHaveBeenCalledWith({
+      startAtMs: 1782172800000,
+      endAtMs: 1782259200000,
+      sessionId: '2069373335591239680',
+      first: 10,
+      after: 'cursor-1',
+    });
+  });
+
+  it('dispatches credits items with date-only UTC window', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'credits',
+      'items',
+      '--start',
+      '2026-06-23',
+      '--end',
+      '2026-06-24',
+    ]);
+    expect(client.credits.items).toHaveBeenCalledWith({
+      startAtMs: 1782172800000,
+      endAtMs: 1782259200000,
+      sessionId: undefined,
+      first: undefined,
+      after: undefined,
+    });
+  });
+
+  it('dispatches credits items --today as the current UTC day', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
+      const client = makeClient();
+      await dispatch(client, ['credits', 'items', '--today', '--first', '3']);
+      expect(client.credits.items).toHaveBeenCalledWith({
+        startAtMs: 1782172800000,
+        endAtMs: 1782259200000,
+        sessionId: undefined,
+        first: 3,
+        after: undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dispatches credits items --last duration from current time', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
+      const client = makeClient();
+      await dispatch(client, ['credits', 'items', '--last', '24h']);
+      expect(client.credits.items).toHaveBeenCalledWith({
+        startAtMs: 1782127353000,
+        endAtMs: 1782213753000,
+        sessionId: undefined,
+        first: undefined,
+        after: undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('throws CliUsageError when credits items window is missing', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['credits', 'items'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'credits'
+    );
+  });
+
+  it('throws CliUsageError when credits items windows are combined', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'credits',
+        'items',
+        '--today',
+        '--start',
+        '2026-06-23',
+        '--end',
+        '2026-06-24',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'credits'
+    );
+  });
+
+  it('throws CliUsageError when credits items --first is outside range', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['credits', 'items', '--today', '--first', '501'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'credits'
+    );
+  });
+
+  it('credits --help documents items window flags', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['credits', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--today');
+    expect(result.text).toContain('--last');
+    expect(result.text).toContain('--start');
+    expect(result.text).toContain('no --user-id');
   });
 
   it('run --help documents --max-heap-size-mb', async () => {
@@ -2332,6 +2490,7 @@ describe('help-text drift guard', () => {
       'run-logs',
     ],
     release: ['feed', 'playbook-draft', 'playbook'],
+    credits: ['wallet', 'items'],
     playbooks: ['trending'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],

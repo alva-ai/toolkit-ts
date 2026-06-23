@@ -47,6 +47,13 @@ export type {
   FeedDeleteResponse,
   FeedStatusUpdateRequest,
   FeedStatusUpdateResponse,
+  CreditWallet,
+  CreditWalletItemsParams,
+  CreditWalletItem,
+  CreditWalletPageInfo,
+  CreditWalletItemEdge,
+  CreditWalletItemConnection,
+  CreditWalletItemsResponse,
 } from './types.js';
 export type {
   SkillDoc,

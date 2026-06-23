@@ -69,6 +69,7 @@ Commands:
   feed        Feed lifecycle management (delete)
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
+  credits     Credit wallet and self-scoped usage history (wallet, items)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -183,6 +184,34 @@ Response fields:
 
 Examples:
   alva user me`,
+
+  credits: `Usage: alva credits <subcommand> [options]
+
+Read the authenticated user's own credit wallet and consumption history.
+
+Subcommands:
+  wallet      Show current wallet balance, total remaining, and UTC today usage
+  items       List raw credit consumption records in a time window
+
+Items window flags (choose exactly one):
+  --today                   UTC day containing the current time
+  --last <duration>         Recent window, e.g. 7d, 24h, 30m
+  --start <time> --end <time>  Explicit UTC window; accepts ISO, YYYY-MM-DD, or Unix ms
+
+Items optional flags:
+  --session-id <id>         Filter to one chat/session
+  --first <n>               Page size (1-500)
+  --after <cursor>          Opaque cursor from pageInfo.endCursor
+
+Notes:
+  - Results are viewer-scoped by the backend; there is no --user-id override.
+  - --start is inclusive and --end is exclusive.
+
+Examples:
+  alva credits wallet
+  alva credits items --today --first 20
+  alva credits items --last 7d --session-id 2069373335591239680
+  alva credits items --start 2026-06-23 --end 2026-06-24`,
 
   fs: `Usage: alva fs <subcommand> [options]
 
@@ -1121,6 +1150,7 @@ export const BOOLEAN_FLAGS = new Set([
   'browser',
   'base64',
   'full',
+  'today',
 ]);
 
 export function parseFlags(argv: string[]): Record<string, string> {
@@ -1367,6 +1397,117 @@ function playbookVisibility(val: string): PlaybookVisibility {
     `--visibility must be one of ${PLAYBOOK_VISIBILITIES.join(', ')} for 'playbooks set-visibility', got '${val}'`,
     'playbooks'
   );
+}
+
+function parseCreditsTimestamp(
+  value: string,
+  flag: string,
+  command: string
+): number {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const ms = Number(trimmed);
+    if (Number.isSafeInteger(ms)) return ms;
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+    ? `${trimmed}T00:00:00Z`
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(trimmed)
+      ? `${trimmed}Z`
+      : trimmed;
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) {
+    throw new CliUsageError(
+      `--${flag} must be an ISO time, YYYY-MM-DD, or Unix ms for '${command}', got '${value}'`,
+      command.split(' ')[0]
+    );
+  }
+  return parsed;
+}
+
+function parseCreditsDurationMs(value: string): number {
+  const match = /^([1-9]\d*)([mhd])$/.exec(value.trim().toLowerCase());
+  if (!match) {
+    throw new CliUsageError(
+      `--last must be a positive duration like 30m, 24h, or 7d for 'credits items', got '${value}'`,
+      'credits'
+    );
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const multiplier =
+    unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  const durationMs = amount * multiplier;
+  if (!Number.isSafeInteger(durationMs)) {
+    throw new CliUsageError(
+      `--last duration is too large for 'credits items', got '${value}'`,
+      'credits'
+    );
+  }
+  return durationMs;
+}
+
+function parseCreditsItemsParams(flags: Record<string, string>): {
+  startAtMs: number;
+  endAtMs: number;
+  sessionId?: string;
+  first?: number;
+  after?: string;
+} {
+  const command = 'credits items';
+  const hasToday = boolFlag(flags['today']) === true;
+  const hasLast = flags['last'] !== undefined;
+  const hasStart = flags['start'] !== undefined;
+  const hasEnd = flags['end'] !== undefined;
+  const windowCount =
+    (hasToday ? 1 : 0) + (hasLast ? 1 : 0) + (hasStart || hasEnd ? 1 : 0);
+
+  if (windowCount !== 1) {
+    throw new CliUsageError(
+      "Choose exactly one window for 'credits items': --today, --last, or --start with --end",
+      'credits'
+    );
+  }
+  if (hasStart !== hasEnd) {
+    throw new CliUsageError(
+      "--start and --end must be provided together for 'credits items'",
+      'credits'
+    );
+  }
+
+  let startAtMs: number;
+  let endAtMs: number;
+  if (hasToday) {
+    const now = new Date();
+    startAtMs = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    );
+    endAtMs = startAtMs + 86_400_000;
+  } else if (hasLast) {
+    const durationMs = parseCreditsDurationMs(flags['last']!);
+    endAtMs = Date.now();
+    startAtMs = endAtMs - durationMs;
+  } else {
+    startAtMs = parseCreditsTimestamp(flags['start']!, 'start', command);
+    endAtMs = parseCreditsTimestamp(flags['end']!, 'end', command);
+  }
+
+  if (endAtMs <= startAtMs) {
+    throw new CliUsageError(
+      "--end must be greater than --start for 'credits items'",
+      'credits'
+    );
+  }
+
+  return {
+    startAtMs,
+    endAtMs,
+    sessionId: flags['session-id'],
+    first: optionalBoundedIntegerFlag(flags, 'first', command, 1, 500),
+    after: flags['after'],
+  };
 }
 
 function jsonParse(val: string | undefined): unknown {
@@ -1829,6 +1970,22 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: feed ${subcommand}`,
             'feed'
+          );
+      }
+    }
+
+    case 'credits': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for credits', 'credits');
+      switch (subcommand) {
+        case 'wallet':
+          return client.credits.wallet();
+        case 'items':
+          return client.credits.items(parseCreditsItemsParams(flags));
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: credits ${subcommand}`,
+            'credits'
           );
       }
     }
