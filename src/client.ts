@@ -445,6 +445,7 @@ export class AlvaClient {
     const contentType = response.headers.get('content-type') ?? '';
     if (
       contentType.includes('application/octet-stream') ||
+      contentType.startsWith('text/') ||
       contentType.includes('image/')
     ) {
       return response.arrayBuffer();

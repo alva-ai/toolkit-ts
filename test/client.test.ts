@@ -222,6 +222,22 @@ describe('AlvaClient', () => {
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
+    it('decodes text/plain fs.read response as text', async () => {
+      const text = 'Hello, Alva!';
+      const bytes = new TextEncoder().encode(text).buffer;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/plain; charset=utf-8' },
+        arrayBuffer: () => Promise.resolve(bytes),
+      });
+      const client = new AlvaClient({});
+
+      const result = await client.fs.read({ path: '~/hello.txt' });
+
+      expect(result).toBe(text);
+    });
+
     it('keeps fs.read invalid UTF-8 bytes as ArrayBuffer', async () => {
       const bytes = new Uint8Array([0xff, 0xfe, 0xfd]).buffer;
       globalThis.fetch = vi.fn().mockResolvedValue({
