@@ -331,6 +331,12 @@ export interface FeedReleaseRequest {
   view_json?: Record<string, unknown>;
   description?: string;
   changelog?: string;
+  /**
+   * Agent kind that produces this feed (e.g. "alpi"). Optional. Marks the feed
+   * as an agent feed whose prompt is editable; an empty/omitted value means a
+   * regular (non-agent) feed. The backend validates it against its catalog.
+   */
+  agent_type?: string;
 }
 
 export interface FeedReleaseResponse {

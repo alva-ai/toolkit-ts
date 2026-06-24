@@ -220,6 +220,24 @@ describe('ReleaseResource', () => {
     );
   });
 
+  it('feed() forwards agent_type', async () => {
+    const client = makeClient();
+    const release = new ReleaseResource(client);
+    await release.feed({
+      name: 'market-pulse',
+      version: '1.0.0',
+      cronjob_id: 44,
+      agent_type: 'alpi',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/release/feed',
+      expect.objectContaining({
+        body: expect.objectContaining({ agent_type: 'alpi' }),
+      })
+    );
+  });
+
   it('playbookDraft() sends POST /api/v1/draft/playbook', async () => {
     const client = makeClient();
     const release = new ReleaseResource(client);
