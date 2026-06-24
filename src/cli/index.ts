@@ -571,6 +571,9 @@ Feed flags:
   --view-json <json>     View configuration JSON
   --description <text>   Feed description
   --changelog <text>     Per-major changelog summary
+  --agent-type <type>    Agent kind that produces this feed, e.g. "alpi".
+                         Marks the feed as an agent feed with an editable
+                         prompt (AGENTS.md). Omit for a regular feed.
 
 Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
@@ -608,6 +611,7 @@ Display name conventions:
 Examples:
   alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
+  alva release feed --name market-pulse --version 1.0.0 --cronjob-id 44 --agent-type alpi
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --skill-id alva/screener
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --tags '["btc","macro"]'
@@ -2178,6 +2182,7 @@ export async function dispatch(
               | undefined,
             description: flags['description'],
             changelog: flags['changelog'],
+            agent_type: flags['agent-type'],
           });
         case 'playbook-draft':
           return client.release.playbookDraft({
