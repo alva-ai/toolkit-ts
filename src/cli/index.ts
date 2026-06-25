@@ -468,7 +468,8 @@ Set-visibility flags:
 
 Response fields:
   playbooks[].ref          "username/name" identifier for agents
-  playbooks[].url_path     Web path: /username/playbooks/name
+  playbooks[].url_path     Relative web path: /u/username/playbooks/name
+  playbooks[].url          Absolute web URL: https://alva.ai/u/username/playbooks/name
   playbooks[].description  Short summary
   playbooks[].tags         Discovery tags
   playbooks[].follow_count Social proof signal
