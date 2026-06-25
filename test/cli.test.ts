@@ -3177,6 +3177,39 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     expect(client.playbooks.getByIds).toHaveBeenCalledWith(['1', '2']);
   });
 
+  it('renders playbooks trending as readable text by default', async () => {
+    const client = makeClient();
+    client.playbooks.trending = vi.fn().mockResolvedValue({
+      playbooks: [
+        {
+          id: '1',
+          ref: 'alice/macro',
+          username: 'alice',
+          name: 'macro',
+          display_name: 'Macro',
+          description: 'Macro dashboard',
+          tags: ['macro'],
+          follow_count: 2,
+          url_path: '/u/alice/playbooks/macro',
+          url: 'https://alva.ai/u/alice/playbooks/macro',
+          cursor: 'c1',
+        },
+      ],
+      has_next: false,
+    });
+    const result = await dispatch(client, ['playbooks', 'trending']);
+    expect(typeof result).toBe('string');
+    expect(result).toContain('https://alva.ai/u/alice/playbooks/macro');
+  });
+
+  it('returns the raw envelope for playbooks trending --json', async () => {
+    const client = makeClient();
+    const envelope = { playbooks: [], has_next: false };
+    client.playbooks.trending = vi.fn().mockResolvedValue(envelope);
+    const result = await dispatch(client, ['playbooks', 'trending', '--json']);
+    expect(result).toBe(envelope);
+  });
+
   it('dispatches playbooks get --ref', async () => {
     const client = makeClient();
     await dispatch(client, ['playbooks', 'get', '--ref', 'alice/macro']);

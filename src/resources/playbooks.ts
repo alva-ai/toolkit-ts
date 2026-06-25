@@ -269,7 +269,7 @@ export class PlaybooksResource {
  * `api-llm.stg.alva.ai` → `https://stg.alva.ai`. Falls back to
  * `https://alva.ai` for unrecognized hosts (custom base URLs, local-dev).
  */
-function webOriginFromApiBase(apiBaseUrl: string): string {
+export function webOriginFromApiBase(apiBaseUrl: string): string {
   try {
     const host = new URL(apiBaseUrl).hostname;
     const match = /^api-llm\.([a-z0-9-]+)\.alva\.ai$/i.exec(host);
