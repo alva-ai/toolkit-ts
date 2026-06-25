@@ -55,8 +55,10 @@ export interface TrendingPlaybookItem {
   description: string;
   tags: string[];
   follow_count: number;
-  /** Relative web path for opening or citing the playbook. */
+  /** Relative web path for opening or citing the playbook, e.g. `/u/alice/playbooks/btc`. */
   url_path: string;
+  /** Absolute, clickable web URL, e.g. `https://alva.ai/u/alice/playbooks/btc`. */
+  url: string;
   /** README ALFS path when available. */
   readme?: string;
   /** Cursor to pass as `cursor` / `current` for pagination. */
@@ -223,8 +225,11 @@ export class PlaybooksResource {
       { query }
     )) as RawTrendingPlaybooksResponse;
 
+    const webOrigin = webOriginFromApiBase(this.client.baseUrl);
     return {
-      playbooks: (raw.playbooks ?? []).map(toAgentPlaybook),
+      playbooks: (raw.playbooks ?? []).map((p) =>
+        toAgentPlaybook(p, webOrigin)
+      ),
       has_next: raw.has_next ?? false,
     };
   }
@@ -257,10 +262,35 @@ export class PlaybooksResource {
   }
 }
 
-function toAgentPlaybook(raw: RawTrendingPlaybook): TrendingPlaybookItem {
+/**
+ * Derive the user-facing web origin (where playbooks are browsable) from the
+ * API base URL. Playbooks live at `<web-origin>/u/<owner>/playbooks/<name>`.
+ * Mirrors the env family: `api-llm.prd.alva.ai` → `https://alva.ai`,
+ * `api-llm.stg.alva.ai` → `https://stg.alva.ai`. Falls back to
+ * `https://alva.ai` for unrecognized hosts (custom base URLs, local-dev).
+ */
+export function webOriginFromApiBase(apiBaseUrl: string): string {
+  try {
+    const host = new URL(apiBaseUrl).hostname;
+    const match = /^api-llm\.([a-z0-9-]+)\.alva\.ai$/i.exec(host);
+    if (match) {
+      const env = match[1].toLowerCase();
+      return env === 'prd' ? 'https://alva.ai' : `https://${env}.alva.ai`;
+    }
+  } catch {
+    // Malformed base URL — fall through to the default origin.
+  }
+  return 'https://alva.ai';
+}
+
+function toAgentPlaybook(
+  raw: RawTrendingPlaybook,
+  webOrigin: string
+): TrendingPlaybookItem {
   const username = raw.creator?.name ?? '';
   const name = raw.name ?? '';
   const ref = username && name ? `${username}/${name}` : name;
+  const urlPath = username && name ? `/u/${username}/playbooks/${name}` : '';
   return {
     id: raw.id === undefined ? '' : String(raw.id),
     ref,
@@ -270,7 +300,8 @@ function toAgentPlaybook(raw: RawTrendingPlaybook): TrendingPlaybookItem {
     description: raw.description ?? '',
     tags: raw.tags ?? [],
     follow_count: raw.follow_count ?? 0,
-    url_path: username && name ? `/${username}/playbooks/${name}` : '',
+    url_path: urlPath,
+    url: urlPath ? `${webOrigin}${urlPath}` : '',
     ...(raw.readme ? { readme: raw.readme } : {}),
     cursor: raw.cursor ?? '',
   };

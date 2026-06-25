@@ -17,8 +17,14 @@ import {
 } from './playbookSkillsFormat.js';
 import {
   PLAYBOOK_VISIBILITIES,
+  webOriginFromApiBase,
   type PlaybookVisibility,
 } from '../resources/playbooks.js';
+import {
+  formatTrendingPlaybooks,
+  formatPlaybook,
+  formatPlaybookList,
+} from './playbooksFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -466,9 +472,16 @@ Set-visibility flags:
   --name <name>          Playbook name (required; owner derived from auth)
   --visibility <v>       public, private, or paid (required, case-insensitive)
 
-Response fields:
+Output:
+  trending / get / list print a readable summary (title, ref, clickable
+  URL, description, tags) by default. Pass --json for the raw envelope
+  (for scripting / jq).
+  --json                 Emit raw JSON instead of the readable rendering
+
+JSON response fields:
   playbooks[].ref          "username/name" identifier for agents
-  playbooks[].url_path     Web path: /username/playbooks/name
+  playbooks[].url_path     Relative web path: /u/username/playbooks/name
+  playbooks[].url          Absolute web URL: https://alva.ai/u/username/playbooks/name
   playbooks[].description  Short summary
   playbooks[].tags         Discovery tags
   playbooks[].follow_count Social proof signal
@@ -2000,9 +2013,11 @@ export async function dispatch(
           'Missing subcommand for playbooks',
           'playbooks'
         );
+      const asJson = boolFlag(flags['json']) ?? false;
+      const webOrigin = webOriginFromApiBase(client.baseUrl);
       switch (subcommand) {
-        case 'trending':
-          return client.playbooks.trending({
+        case 'trending': {
+          const result = await client.playbooks.trending({
             keyword: flags['keyword'],
             tags: csvList(flags['tags'] ?? flags['tag']),
             sort: trendingPlaybooksSort(flags['sort']),
@@ -2010,6 +2025,8 @@ export async function dispatch(
             cursor: flags['cursor'],
             current: flags['current'],
           });
+          return asJson ? result : formatTrendingPlaybooks(result);
+        }
         case 'set-visibility':
           return client.playbooks.setVisibility({
             name: requireFlag(flags, 'name', 'playbooks set-visibility'),
@@ -2020,25 +2037,35 @@ export async function dispatch(
         case 'get': {
           const ids = csvList(flags['ids']);
           if (ids && ids.length > 0) {
-            return client.playbooks.getByIds(ids);
+            const result = await client.playbooks.getByIds(ids);
+            return asJson
+              ? result
+              : formatPlaybookList(result.items, webOrigin);
           }
-          if (flags['id']) {
-            return client.playbooks.get({ id: flags['id'] });
-          }
-          if (flags['ref']) {
-            return client.playbooks.get({ ref: flags['ref'] });
+          if (flags['id'] || flags['ref']) {
+            const result = await client.playbooks.get({
+              id: flags['id'],
+              ref: flags['ref'],
+            });
+            return asJson ? result : formatPlaybook(result, webOrigin);
           }
           throw new CliUsageError(
             '--id, --ids or --ref is required',
             'playbooks'
           );
         }
-        case 'list':
-          return client.playbooks.listByOwner({
+        case 'list': {
+          const result = await client.playbooks.listByOwner({
             owner: requireFlag(flags, 'owner', 'playbooks list'),
             limit: num(flags['limit']),
             cursor: flags['cursor'],
           });
+          return asJson
+            ? result
+            : formatPlaybookList(result.items, webOrigin, {
+                hasNext: result.has_next,
+              });
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: playbooks ${subcommand}`,

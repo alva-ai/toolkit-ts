@@ -592,13 +592,40 @@ describe('PlaybooksResource', () => {
           description: 'Finds setups',
           tags: ['macro', 'ai'],
           follow_count: 7,
-          url_path: '/alice/playbooks/scanner',
+          url_path: '/u/alice/playbooks/scanner',
+          url: 'https://alva.ai/u/alice/playbooks/scanner',
           readme: '/alva/home/alice/playbooks/scanner/README.md',
           cursor: 'cur42',
         },
       ],
       has_next: true,
     });
+  });
+
+  it('trending() derives the web origin from a non-prd base URL', async () => {
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api-llm.stg.alva.ai',
+    }) as AlvaClient & { _request: ReturnType<typeof vi.fn> };
+    client._request = vi.fn().mockResolvedValue({
+      playbooks: [
+        {
+          id: '42',
+          name: 'scanner',
+          creator: { name: 'alice' },
+          cursor: 'cur42',
+        },
+      ],
+      has_next: false,
+    });
+    const playbooks = new PlaybooksResource(client);
+
+    const result = await playbooks.trending({ keyword: 'scanner' });
+
+    expect(result.playbooks[0].url_path).toBe('/u/alice/playbooks/scanner');
+    expect(result.playbooks[0].url).toBe(
+      'https://stg.alva.ai/u/alice/playbooks/scanner'
+    );
   });
 
   it('setVisibility() POSTs to the playbook visibility endpoint', async () => {
