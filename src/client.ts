@@ -3,6 +3,7 @@ import type { AlvaClientConfig } from './types.js';
 import { FsResource } from './resources/fs.js';
 import { RunResource } from './resources/run.js';
 import { DeployResource } from './resources/deploy.js';
+import { ServiceAccountResource } from './resources/serviceAccount.js';
 import { ReleaseResource } from './resources/release.js';
 import { FeedResource } from './resources/feed.js';
 import { PlaybooksResource } from './resources/playbooks.js';
@@ -142,6 +143,7 @@ export class AlvaClient {
   private _fs?: FsResource;
   private _run?: RunResource;
   private _deploy?: DeployResource;
+  private _serviceAccount?: ServiceAccountResource;
   private _release?: ReleaseResource;
   private _feed?: FeedResource;
   private _playbooks?: PlaybooksResource;
@@ -184,6 +186,9 @@ export class AlvaClient {
   }
   get deploy(): DeployResource {
     return (this._deploy ??= new DeployResource(this));
+  }
+  get serviceAccount(): ServiceAccountResource {
+    return (this._serviceAccount ??= new ServiceAccountResource(this));
   }
   get release(): ReleaseResource {
     return (this._release ??= new ReleaseResource(this));

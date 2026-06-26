@@ -951,3 +951,31 @@ export interface ChannelGroupSubscriptionMutationResponse {
   admin: ChannelGroupAdminInfo | null;
   subscriptions: ChannelGroupSubscription[];
 }
+
+// --- Service accounts (restricted run-as identities, issue #602) ---
+
+export interface ServiceAccount {
+  id: number;
+  display_name: string;
+  username: string;
+  parent_user_id: number;
+  created_at?: number;
+}
+
+export interface ServiceAccountCreateRequest {
+  display_name: string;
+}
+
+export interface ServiceAccountCreateResponse {
+  service_account: ServiceAccount;
+}
+
+export interface ServiceAccountListResponse {
+  service_accounts: ServiceAccount[];
+}
+
+export interface ServiceAccountGrantRequest {
+  id: number;
+  path: string;
+  permission: string; // read | write | import
+}

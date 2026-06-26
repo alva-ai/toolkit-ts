@@ -62,6 +62,7 @@ Commands:
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
+  service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
@@ -376,6 +377,29 @@ Build-time verify (fire once, then poll until your run completes):
   STATUS=$(echo "$ROW" | jq -r .status)
   [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
                                   --run-id "$(echo "$ROW" | jq -r .id)"`,
+
+  'service-account': `Usage: alva service-account <subcommand> [options]
+
+Manage restricted run-as identities. A service account executes a UDF or
+cronjob with only the ALFS paths you grant it; billing/audit stay with you.
+Set the resulting id as --run-as-service-account on a UDF/cronjob. Opt-in:
+no run-as = run as owner. See the service-accounts skill reference.
+
+Subcommands:
+  create     Create a service account (--name <label>)
+  list       List the service accounts you own
+  delete     Delete a service account (--id <id>); referencing jobs fail-close
+  grant      Grant an ALFS path (--id <id> --path <path> --permission read|write|import)
+  revoke     Revoke an ALFS path (--id <id> --path <path> --permission ...)
+
+Examples:
+  alva service-account create --name fintwit-bot
+  alva service-account grant --id 90123 --path '~/feeds/x/v1/src/index.js' --permission read
+  alva service-account grant --id 90123 --path '~/feeds/x/v1/' --permission read
+  alva deploy create --name x-update --path '~/feeds/x/v1/src/index.js' \\
+    --cron "0 */4 * * *" --run-as-service-account 90123
+  alva service-account revoke --id 90123 --path '~/feeds/x/v1/' --permission read
+  alva service-account delete --id 90123`,
 
   feed: `Usage: alva feed <subcommand> [options]
 
@@ -1767,6 +1791,51 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: deploy ${subcommand}`,
             'deploy'
+          );
+      }
+    }
+
+    case 'service-account': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for service-account',
+          'service-account'
+        );
+      switch (subcommand) {
+        case 'create':
+          return client.serviceAccount.create({
+            display_name: requireFlag(flags, 'name', 'service-account create'),
+          });
+        case 'list':
+          return client.serviceAccount.list();
+        case 'delete':
+          return client.serviceAccount.delete({
+            id: requireNumericFlag(flags, 'id', 'service-account delete'),
+          });
+        case 'grant':
+          return client.serviceAccount.grant({
+            id: requireNumericFlag(flags, 'id', 'service-account grant'),
+            path: requireFlag(flags, 'path', 'service-account grant'),
+            permission: requireFlag(
+              flags,
+              'permission',
+              'service-account grant'
+            ),
+          });
+        case 'revoke':
+          return client.serviceAccount.revoke({
+            id: requireNumericFlag(flags, 'id', 'service-account revoke'),
+            path: requireFlag(flags, 'path', 'service-account revoke'),
+            permission: requireFlag(
+              flags,
+              'permission',
+              'service-account revoke'
+            ),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: service-account ${subcommand}`,
+            'service-account'
           );
       }
     }
