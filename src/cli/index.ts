@@ -327,6 +327,9 @@ Create/Update flags:
   --push-notify          Enable Telegram push notifications on completion
   --no-push-notify       Disable push notifications
   --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
+  --run-as-service-account <id>  Run the cronjob under a service-account identity
+                         (id from "alva service-account create"); restricts file
+                         access to the SA's grants. Omit/0 ⇒ runs as you (#602)
 
 List flags:
   --limit <n>            Max results per page (default: 20)
@@ -1733,6 +1736,7 @@ export async function dispatch(
               1,
               2046
             ),
+            run_as_user_id: num(flags['run-as-service-account']),
           });
         case 'list':
           return client.deploy.list({
@@ -1759,6 +1763,7 @@ export async function dispatch(
               1,
               2046
             ),
+            run_as_user_id: num(flags['run-as-service-account']),
           });
         case 'delete':
           return client.deploy.delete({

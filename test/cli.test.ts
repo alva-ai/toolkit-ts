@@ -1329,6 +1329,25 @@ components: {}
     );
   });
 
+  it('dispatches deploy create with --run-as-service-account', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'create',
+      '--name',
+      'j',
+      '--path',
+      '~/j.js',
+      '--cron',
+      '* * * * *',
+      '--run-as-service-account',
+      '90123',
+    ]);
+    expect(client.deploy.create).toHaveBeenCalledWith(
+      expect.objectContaining({ run_as_user_id: 90123 })
+    );
+  });
+
   it('throws on unknown group with help hint', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(

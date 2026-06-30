@@ -179,6 +179,11 @@ export interface CronjobCreateRequest {
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
+  /**
+   * Run the cronjob under a restricted service-account identity (an SA id
+   * owned by the caller) instead of the owner (#602). Omitted ⇒ runs as owner.
+   */
+  run_as_user_id?: number;
 }
 
 export interface Cronjob {
@@ -191,6 +196,8 @@ export interface Cronjob {
   push_notify: boolean;
   /** Per-cronjob V8 heap cap (MB). null when using the server default. */
   max_heap_size_mb: number | null;
+  /** SA id the cronjob runs as, or 0 when it runs as the owner (#602). */
+  run_as_user_id: number;
   created_at: string;
   updated_at: string;
 }
@@ -213,6 +220,11 @@ export interface CronjobUpdateRequest {
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
+  /**
+   * Re-point the cronjob at a service-account identity, or 0 to clear it back
+   * to the owner (#602). Omitted ⇒ run_as unchanged.
+   */
+  run_as_user_id?: number;
 }
 
 export interface CronjobRunsListParams {
