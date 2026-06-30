@@ -21,6 +21,7 @@ export class ReleaseResource {
         view_json: params.view_json,
         description: params.description,
         changelog: params.changelog,
+        agent_type: params.agent_type,
       },
     }) as Promise<FeedReleaseResponse>;
   }

@@ -35,6 +35,7 @@ export const FALLBACK_BUNDLE_CSS: string = `/* ════ Tokens ════ 
     --chart-green2-main: #8fc13a;
     --chart-green2-1: #5b8513;
     --chart-green2-2: #c0d40f;
+    --chart-cyan1-main: #49a3a6; /* same as --main-m1 */
     --chart-cyan1-1: #117a7d;
     --chart-cyan1-2: #77c9c2;
     --chart-cyan2-main: #7cafad;
@@ -141,7 +142,7 @@ export const FALLBACK_BUNDLE_CSS: string = `/* ════ Tokens ════ 
     --line-l12: rgba(0, 0, 0, 0.12); /* Card Border */
     --line-l2: rgba(0, 0, 0, 0.2); /* Popup/Dropdown Border */
     --line-l3: rgba(0, 0, 0, 0.3); /* Button/Input/Select Border */
-    --line-l9: rgba(0, 0, 0, 0.9); 
+    --line-l9: rgba(0, 0, 0, 0.9); /* Hover/Active Border */
 
     /* Shadow */
     --shadow-xs: 0 4px 15px 0 rgba(0, 0, 0, 0.05);
@@ -454,7 +455,7 @@ body {
 .markdown-container code {
   display: inline-block;
   vertical-align: middle;
-  box-shadow: inset 0 0 0 1px var(--line-l07);
+  box-shadow: inset 0 0 0 0.5px var(--line-l12);
   font-size: 12px;
   line-height: 20px;
   letter-spacing: 0.12px;
@@ -462,7 +463,8 @@ body {
   margin: 0 var(--spacing-xxs);
 }
 .markdown-container pre {
-  border: 1px solid var(--line-l07);
+  border: 0.5px solid var(--line-l12);
+  border-radius: var(--radius-ct-s);
   font-size: 12px;
   line-height: 20px;
   letter-spacing: 0.12px;

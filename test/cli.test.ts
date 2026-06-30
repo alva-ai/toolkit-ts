@@ -96,6 +96,25 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ id: '42', status: 'ACTIVE' });
   client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+  client.credits.wallet = vi.fn().mockResolvedValue({
+    balance: 100,
+    totalRemaining: 100,
+    todayUsed: 3,
+  });
+  client.credits.items = vi.fn().mockResolvedValue({
+    balance: 100,
+    totalRemaining: 100,
+    todayUsed: 3,
+    items: {
+      pageInfo: {
+        hasNextPage: false,
+        hasPreviousPage: false,
+        startCursor: null,
+        endCursor: null,
+      },
+      edges: [],
+    },
+  });
   client.playbooks.trending = vi
     .fn()
     .mockResolvedValue({ playbooks: [], has_next: false });
@@ -469,6 +488,145 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches credits wallet', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, ['credits', 'wallet']);
+    expect(client.credits.wallet).toHaveBeenCalled();
+    expect(result).toEqual({
+      balance: 100,
+      totalRemaining: 100,
+      todayUsed: 3,
+    });
+  });
+
+  it('dispatches credits items with explicit ISO window and filters', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'credits',
+      'items',
+      '--start',
+      '2026-06-23T00:00:00Z',
+      '--end',
+      '2026-06-24T00:00:00Z',
+      '--session-id',
+      '2069373335591239680',
+      '--first',
+      '10',
+      '--after',
+      'cursor-1',
+    ]);
+    expect(client.credits.items).toHaveBeenCalledWith({
+      startAtMs: 1782172800000,
+      endAtMs: 1782259200000,
+      sessionId: '2069373335591239680',
+      first: 10,
+      after: 'cursor-1',
+    });
+  });
+
+  it('dispatches credits items with date-only UTC window', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'credits',
+      'items',
+      '--start',
+      '2026-06-23',
+      '--end',
+      '2026-06-24',
+    ]);
+    expect(client.credits.items).toHaveBeenCalledWith({
+      startAtMs: 1782172800000,
+      endAtMs: 1782259200000,
+      sessionId: undefined,
+      first: undefined,
+      after: undefined,
+    });
+  });
+
+  it('dispatches credits items --today as the current UTC day', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
+      const client = makeClient();
+      await dispatch(client, ['credits', 'items', '--today', '--first', '3']);
+      expect(client.credits.items).toHaveBeenCalledWith({
+        startAtMs: 1782172800000,
+        endAtMs: 1782259200000,
+        sessionId: undefined,
+        first: 3,
+        after: undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dispatches credits items --last duration from current time', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
+      const client = makeClient();
+      await dispatch(client, ['credits', 'items', '--last', '24h']);
+      expect(client.credits.items).toHaveBeenCalledWith({
+        startAtMs: 1782127353000,
+        endAtMs: 1782213753000,
+        sessionId: undefined,
+        first: undefined,
+        after: undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('throws CliUsageError when credits items window is missing', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['credits', 'items'])).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'credits'
+    );
+  });
+
+  it('throws CliUsageError when credits items windows are combined', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'credits',
+        'items',
+        '--today',
+        '--start',
+        '2026-06-23',
+        '--end',
+        '2026-06-24',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'credits'
+    );
+  });
+
+  it('throws CliUsageError when credits items --first is outside range', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['credits', 'items', '--today', '--first', '501'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'credits'
+    );
+  });
+
+  it('credits --help documents items window flags', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['credits', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--today');
+    expect(result.text).toContain('--last');
+    expect(result.text).toContain('--start');
+    expect(result.text).toContain('no --user-id');
+  });
+
   it('run --help documents --max-heap-size-mb', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['run', '--help'])) as {
@@ -599,6 +757,196 @@ describe('CLI dispatch', () => {
         err.message.includes('Use ALFS-native read/write/edit tools')
     );
     expect(client.screenshot.capture).not.toHaveBeenCalled();
+  });
+
+  it('returns a tagged _image result for screenshot --base64 (png)', async () => {
+    const client = makeClient();
+    const pngBytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(pngBytes.buffer.slice(0));
+    const result = await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ]);
+    expect(result).toEqual({
+      _image: true,
+      mimeType: 'image/png',
+      data: Buffer.from(pngBytes).toString('base64'),
+      bytes: 8,
+    });
+  });
+
+  it('sniffs jpeg mime for screenshot --base64', async () => {
+    const client = makeClient();
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(bytes.buffer.slice(0));
+    const result = (await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ])) as { mimeType: string };
+    expect(result.mimeType).toBe('image/jpeg');
+  });
+
+  it('sniffs webp mime for screenshot --base64', async () => {
+    const client = makeClient();
+    const bytes = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+    ]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(bytes.buffer.slice(0));
+    const result = (await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ])) as { mimeType: string };
+    expect(result.mimeType).toBe('image/webp');
+  });
+
+  it('falls back to image/png mime for unknown bytes (--base64)', async () => {
+    const client = makeClient();
+    const bytes = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(bytes.buffer.slice(0));
+    const result = (await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+    ])) as { mimeType: string };
+    expect(result.mimeType).toBe('image/png');
+  });
+
+  it('applies default compression for screenshot --base64', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, ['screenshot', '--url', 'u', '--base64']);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compress: true,
+        compressMaxWidth: 1280,
+        compressQuality: 70,
+      })
+    );
+  });
+
+  it('honors explicit compress overrides for screenshot --base64', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+      '--compress-quality',
+      '90',
+      '--compress-max-width',
+      '1920',
+    ]);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compress: true,
+        compressQuality: 90,
+        compressMaxWidth: 1920,
+      })
+    );
+  });
+
+  it('opts out of compression with screenshot --base64 --full', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--full']);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ compress: false })
+    );
+  });
+
+  it('honors explicit --no-compress in screenshot --base64', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    await dispatch(client, [
+      'screenshot',
+      '--url',
+      'u',
+      '--base64',
+      '--no-compress',
+    ]);
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ compress: false })
+    );
+  });
+
+  it('throws CliUsageError when screenshot has both --out and --base64', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['screenshot', '--url', 'u', '--out', 'f', '--base64'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'screenshot'
+    );
+  });
+
+  it('throws CliUsageError when screenshot has neither --out nor --base64', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['screenshot', '--url', 'u'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'screenshot'
+    );
+  });
+
+  it('writes file and returns {written,bytes} for screenshot --out', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+    const writeSpy = vi
+      .spyOn(fs, 'writeFileSync')
+      .mockImplementation(() => undefined);
+    try {
+      const result = await dispatch(client, [
+        'screenshot',
+        '--url',
+        'u',
+        '--out',
+        'f.png',
+      ]);
+      expect(result).toEqual({ written: 'f.png', bytes: 4 });
+      expect(writeSpy).toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it('throws CliUsageError for screenshot --base64 with empty bytes', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+    await expect(
+      dispatch(client, ['screenshot', '--url', 'u', '--base64'])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'screenshot'
+    );
   });
 
   it('dispatches feed delete', async () => {
@@ -2180,6 +2528,7 @@ describe('help-text drift guard', () => {
       'run-logs',
     ],
     release: ['feed', 'playbook-draft', 'playbook'],
+    credits: ['wallet', 'items'],
     playbooks: ['trending'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
     sdk: ['doc', 'partitions', 'partition-summary'],
@@ -2864,6 +3213,39 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     const client = makeClient();
     await dispatch(client, ['playbooks', 'get', '--ids', '1,2']);
     expect(client.playbooks.getByIds).toHaveBeenCalledWith(['1', '2']);
+  });
+
+  it('renders playbooks trending as readable text by default', async () => {
+    const client = makeClient();
+    client.playbooks.trending = vi.fn().mockResolvedValue({
+      playbooks: [
+        {
+          id: '1',
+          ref: 'alice/macro',
+          username: 'alice',
+          name: 'macro',
+          display_name: 'Macro',
+          description: 'Macro dashboard',
+          tags: ['macro'],
+          follow_count: 2,
+          url_path: '/u/alice/playbooks/macro',
+          url: 'https://alva.ai/u/alice/playbooks/macro',
+          cursor: 'c1',
+        },
+      ],
+      has_next: false,
+    });
+    const result = await dispatch(client, ['playbooks', 'trending']);
+    expect(typeof result).toBe('string');
+    expect(result).toContain('https://alva.ai/u/alice/playbooks/macro');
+  });
+
+  it('returns the raw envelope for playbooks trending --json', async () => {
+    const client = makeClient();
+    const envelope = { playbooks: [], has_next: false };
+    client.playbooks.trending = vi.fn().mockResolvedValue(envelope);
+    const result = await dispatch(client, ['playbooks', 'trending', '--json']);
+    expect(result).toBe(envelope);
   });
 
   it('dispatches playbooks get --ref', async () => {

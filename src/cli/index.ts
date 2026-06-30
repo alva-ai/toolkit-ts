@@ -17,12 +17,20 @@ import {
 } from './playbookSkillsFormat.js';
 import {
   PLAYBOOK_VISIBILITIES,
+  webOriginFromApiBase,
   type PlaybookVisibility,
 } from '../resources/playbooks.js';
+import {
+  formatTrendingPlaybooks,
+  formatPlaybook,
+  formatPlaybookList,
+} from './playbooksFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
 import { Agent, setGlobalDispatcher } from 'undici';
+
+export { CliUsageError } from '../error.js';
 
 declare const __VERSION__: string;
 export const CLI_VERSION: string =
@@ -68,6 +76,7 @@ Commands:
   feed        Feed lifecycle management (delete)
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
+  credits     Credit wallet and self-scoped usage history (wallet, items)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -182,6 +191,34 @@ Response fields:
 
 Examples:
   alva user me`,
+
+  credits: `Usage: alva credits <subcommand> [options]
+
+Read the authenticated user's own credit wallet and consumption history.
+
+Subcommands:
+  wallet      Show current wallet balance, total remaining, and UTC today usage
+  items       List raw credit consumption records in a time window
+
+Items window flags (choose exactly one):
+  --today                   UTC day containing the current time
+  --last <duration>         Recent window, e.g. 7d, 24h, 30m
+  --start <time> --end <time>  Explicit UTC window; accepts ISO, YYYY-MM-DD, or Unix ms
+
+Items optional flags:
+  --session-id <id>         Filter to one chat/session
+  --first <n>               Page size (1-500)
+  --after <cursor>          Opaque cursor from pageInfo.endCursor
+
+Notes:
+  - Results are viewer-scoped by the backend; there is no --user-id override.
+  - --start is inclusive and --end is exclusive.
+
+Examples:
+  alva credits wallet
+  alva credits items --today --first 20
+  alva credits items --last 7d --session-id 2069373335591239680
+  alva credits items --start 2026-06-23 --end 2026-06-24`,
 
   fs: `Usage: alva fs <subcommand> [options]
 
@@ -462,9 +499,16 @@ Set-visibility flags:
   --name <name>          Playbook name (required; owner derived from auth)
   --visibility <v>       public, private, or paid (required, case-insensitive)
 
-Response fields:
+Output:
+  trending / get / list print a readable summary (title, ref, clickable
+  URL, description, tags) by default. Pass --json for the raw envelope
+  (for scripting / jq).
+  --json                 Emit raw JSON instead of the readable rendering
+
+JSON response fields:
   playbooks[].ref          "username/name" identifier for agents
-  playbooks[].url_path     Web path: /username/playbooks/name
+  playbooks[].url_path     Relative web path: /u/username/playbooks/name
+  playbooks[].url          Absolute web URL: https://alva.ai/u/username/playbooks/name
   playbooks[].description  Short summary
   playbooks[].tags         Discovery tags
   playbooks[].follow_count Social proof signal
@@ -570,6 +614,9 @@ Feed flags:
   --view-json <json>     View configuration JSON
   --description <text>   Feed description
   --changelog <text>     Per-major changelog summary
+  --agent-type <type>    Agent kind that produces this feed, e.g. "alpi".
+                         Marks the feed as an agent feed with an editable
+                         prompt (AGENTS.md). Omit for a regular feed.
 
 Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
@@ -607,6 +654,7 @@ Display name conventions:
 Examples:
   alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
   alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
+  alva release feed --name market-pulse --version 1.0.0 --cronjob-id 44 --agent-type alpi
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --skill-id alva/screener
   alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --tags '["btc","macro"]'
@@ -929,26 +977,30 @@ Required:
 Examples:
   alva remix --child-username bob --child-name my-btc --parents '[{"username":"alice","name":"btc-signals"}]'`,
 
-  screenshot: `Usage: alva screenshot --url <url> --out <file> [--selector <css>] [--xpath <xpath>] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
+  screenshot: `Usage: alva screenshot --url <url> (--base64 | --out <file>) [--selector <css>] [--xpath <xpath>] [--full] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
 
-Capture a screenshot of an Alva page and save it as PNG. Useful for verifying
-playbook rendering before release.
+Capture a screenshot of an Alva page. Choose exactly one output mode.
 
 Required:
   --url <url>                URL or path to capture (e.g. /playbook/alice/dashboard)
-  --out <file>               Local file path to write the PNG output
+
+Output (choose one):
+  --base64                   Emit the image as base64 to stdout. Compresses by
+                             default (max-width 1280, quality 70) unless --full.
+  --out <file>               Write the image to a local file.
 
 Optional:
-  --selector <css>           CSS selector to capture a specific element
-  --xpath <xpath>            XPath selector to capture a specific element
-  --compress                 Re-encode the PNG to reduce file size
-  --compress-quality <n>     Compression quality 1-100 (gateway default applies if omitted)
+  --selector <css>           Capture a specific element by CSS selector
+  --xpath <xpath>            Capture a specific element by XPath
+  --full                     (--base64) Return the raw image, no default compression
+  --compress                 Re-encode the image to reduce file size
+  --compress-quality <n>     Compression quality 1-100
   --compress-max-width <px>  Downscale to at most this width in pixels
 
 Examples:
-  alva screenshot --url /playbook/alice/btc-dashboard --out dashboard.png
-  alva screenshot --url /playbook/alice/btc-dashboard --out chart.png --selector ".chart-container"
-  alva screenshot --url /playbook/alice/btc-dashboard --out small.png --compress --compress-quality 70 --compress-max-width 1280`,
+  alva screenshot --url /playbook/alice/dashboard --base64
+  alva screenshot --url /playbook/alice/dashboard --out dashboard.png
+  alva screenshot --url /playbook/alice/dashboard --out chart.png --selector ".chart-container"`,
 
   portfolio: `Usage: alva portfolio <subcommand> [options]
 
@@ -1143,6 +1195,9 @@ export const BOOLEAN_FLAGS = new Set([
   'bypass-lint',
   'no-browser',
   'browser',
+  'base64',
+  'full',
+  'today',
 ]);
 
 export function parseFlags(argv: string[]): Record<string, string> {
@@ -1391,6 +1446,117 @@ function playbookVisibility(val: string): PlaybookVisibility {
   );
 }
 
+function parseCreditsTimestamp(
+  value: string,
+  flag: string,
+  command: string
+): number {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const ms = Number(trimmed);
+    if (Number.isSafeInteger(ms)) return ms;
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+    ? `${trimmed}T00:00:00Z`
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(trimmed)
+      ? `${trimmed}Z`
+      : trimmed;
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) {
+    throw new CliUsageError(
+      `--${flag} must be an ISO time, YYYY-MM-DD, or Unix ms for '${command}', got '${value}'`,
+      command.split(' ')[0]
+    );
+  }
+  return parsed;
+}
+
+function parseCreditsDurationMs(value: string): number {
+  const match = /^([1-9]\d*)([mhd])$/.exec(value.trim().toLowerCase());
+  if (!match) {
+    throw new CliUsageError(
+      `--last must be a positive duration like 30m, 24h, or 7d for 'credits items', got '${value}'`,
+      'credits'
+    );
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const multiplier =
+    unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  const durationMs = amount * multiplier;
+  if (!Number.isSafeInteger(durationMs)) {
+    throw new CliUsageError(
+      `--last duration is too large for 'credits items', got '${value}'`,
+      'credits'
+    );
+  }
+  return durationMs;
+}
+
+function parseCreditsItemsParams(flags: Record<string, string>): {
+  startAtMs: number;
+  endAtMs: number;
+  sessionId?: string;
+  first?: number;
+  after?: string;
+} {
+  const command = 'credits items';
+  const hasToday = boolFlag(flags['today']) === true;
+  const hasLast = flags['last'] !== undefined;
+  const hasStart = flags['start'] !== undefined;
+  const hasEnd = flags['end'] !== undefined;
+  const windowCount =
+    (hasToday ? 1 : 0) + (hasLast ? 1 : 0) + (hasStart || hasEnd ? 1 : 0);
+
+  if (windowCount !== 1) {
+    throw new CliUsageError(
+      "Choose exactly one window for 'credits items': --today, --last, or --start with --end",
+      'credits'
+    );
+  }
+  if (hasStart !== hasEnd) {
+    throw new CliUsageError(
+      "--start and --end must be provided together for 'credits items'",
+      'credits'
+    );
+  }
+
+  let startAtMs: number;
+  let endAtMs: number;
+  if (hasToday) {
+    const now = new Date();
+    startAtMs = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    );
+    endAtMs = startAtMs + 86_400_000;
+  } else if (hasLast) {
+    const durationMs = parseCreditsDurationMs(flags['last']!);
+    endAtMs = Date.now();
+    startAtMs = endAtMs - durationMs;
+  } else {
+    startAtMs = parseCreditsTimestamp(flags['start']!, 'start', command);
+    endAtMs = parseCreditsTimestamp(flags['end']!, 'end', command);
+  }
+
+  if (endAtMs <= startAtMs) {
+    throw new CliUsageError(
+      "--end must be greater than --start for 'credits items'",
+      'credits'
+    );
+  }
+
+  return {
+    startAtMs,
+    endAtMs,
+    sessionId: flags['session-id'],
+    first: optionalBoundedIntegerFlag(flags, 'first', command, 1, 500),
+    after: flags['after'],
+  };
+}
+
 function jsonParse(val: string | undefined): unknown {
   if (val === undefined) return undefined;
   try {
@@ -1508,6 +1674,36 @@ function readLocalFileBytes(
 ): BodyInit {
   assertLocalFileAvailable(command, flag, deps);
   return fs.readFileSync(path) as unknown as BodyInit;
+}
+
+function sniffImageMime(bytes: Uint8Array | Buffer): string {
+  const b = bytes;
+  if (
+    b.length >= 4 &&
+    b[0] === 0x89 &&
+    b[1] === 0x50 &&
+    b[2] === 0x4e &&
+    b[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    b.length >= 12 &&
+    b[0] === 0x52 &&
+    b[1] === 0x49 &&
+    b[2] === 0x46 &&
+    b[3] === 0x46 &&
+    b[8] === 0x57 &&
+    b[9] === 0x45 &&
+    b[10] === 0x42 &&
+    b[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return 'image/png';
 }
 
 function writeLocalFileBytes(
@@ -1872,15 +2068,33 @@ export async function dispatch(
       }
     }
 
+    case 'credits': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for credits', 'credits');
+      switch (subcommand) {
+        case 'wallet':
+          return client.credits.wallet();
+        case 'items':
+          return client.credits.items(parseCreditsItemsParams(flags));
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: credits ${subcommand}`,
+            'credits'
+          );
+      }
+    }
+
     case 'playbooks': {
       if (!subcommand)
         throw new CliUsageError(
           'Missing subcommand for playbooks',
           'playbooks'
         );
+      const asJson = boolFlag(flags['json']) ?? false;
+      const webOrigin = webOriginFromApiBase(client.baseUrl);
       switch (subcommand) {
-        case 'trending':
-          return client.playbooks.trending({
+        case 'trending': {
+          const result = await client.playbooks.trending({
             keyword: flags['keyword'],
             tags: csvList(flags['tags'] ?? flags['tag']),
             sort: trendingPlaybooksSort(flags['sort']),
@@ -1888,6 +2102,8 @@ export async function dispatch(
             cursor: flags['cursor'],
             current: flags['current'],
           });
+          return asJson ? result : formatTrendingPlaybooks(result);
+        }
         case 'set-visibility':
           return client.playbooks.setVisibility({
             name: requireFlag(flags, 'name', 'playbooks set-visibility'),
@@ -1898,25 +2114,35 @@ export async function dispatch(
         case 'get': {
           const ids = csvList(flags['ids']);
           if (ids && ids.length > 0) {
-            return client.playbooks.getByIds(ids);
+            const result = await client.playbooks.getByIds(ids);
+            return asJson
+              ? result
+              : formatPlaybookList(result.items, webOrigin);
           }
-          if (flags['id']) {
-            return client.playbooks.get({ id: flags['id'] });
-          }
-          if (flags['ref']) {
-            return client.playbooks.get({ ref: flags['ref'] });
+          if (flags['id'] || flags['ref']) {
+            const result = await client.playbooks.get({
+              id: flags['id'],
+              ref: flags['ref'],
+            });
+            return asJson ? result : formatPlaybook(result, webOrigin);
           }
           throw new CliUsageError(
             '--id, --ids or --ref is required',
             'playbooks'
           );
         }
-        case 'list':
-          return client.playbooks.listByOwner({
+        case 'list': {
+          const result = await client.playbooks.listByOwner({
             owner: requireFlag(flags, 'owner', 'playbooks list'),
             limit: num(flags['limit']),
             cursor: flags['cursor'],
           });
+          return asJson
+            ? result
+            : formatPlaybookList(result.items, webOrigin, {
+                hasNext: result.has_next,
+              });
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: playbooks ${subcommand}`,
@@ -2061,6 +2287,7 @@ export async function dispatch(
               | undefined,
             description: flags['description'],
             changelog: flags['changelog'],
+            agent_type: flags['agent-type'],
           });
         case 'playbook-draft':
           return client.release.playbookDraft({
@@ -2642,14 +2869,80 @@ export async function dispatch(
     }
 
     case 'screenshot': {
+      const hasOut = flags['out'] !== undefined;
+      const wantBase64 = boolFlag(flags['base64']) === true;
+      if (hasOut && wantBase64) {
+        throw new CliUsageError(
+          'screenshot accepts only one of --out (local file) or --base64 (stdout); both were provided.',
+          'screenshot'
+        );
+      }
+      if (!hasOut && !wantBase64) {
+        throw new CliUsageError(
+          'one of --out/--base64 is required for screenshot',
+          'screenshot'
+        );
+      }
+
+      const url = requireFlag(flags, 'url', 'screenshot');
+      const selector = flags['selector'];
+      const xpath = flags['xpath'];
+
+      if (wantBase64) {
+        // base64 mode: no local FS — safe in jagent.
+        const full = boolFlag(flags['full']) === true;
+        const explicitQuality = flags['compress-quality'];
+        const explicitMaxWidth = flags['compress-max-width'];
+        // Disable compression when --full, or when the caller explicitly opts
+        // out via --no-compress / --compress=false (mirrors the --out path,
+        // which honors boolFlag(flags['compress'])). Otherwise compress by
+        // default to bound the base64 payload size.
+        const noCompress = full || boolFlag(flags['compress']) === false;
+        let compress: boolean;
+        let compressQuality: number | undefined;
+        let compressMaxWidth: number | undefined;
+        if (noCompress) {
+          compress = false;
+          compressQuality = undefined;
+          compressMaxWidth = undefined;
+        } else {
+          compress = true;
+          compressQuality =
+            explicitQuality !== undefined ? Number(explicitQuality) : 70;
+          compressMaxWidth =
+            explicitMaxWidth !== undefined ? Number(explicitMaxWidth) : 1280;
+        }
+        const result = await client.screenshot.capture({
+          url,
+          selector,
+          xpath,
+          compress,
+          compressQuality,
+          compressMaxWidth,
+        });
+        const buf = Buffer.from(result as ArrayBuffer);
+        if (buf.length === 0) {
+          throw new CliUsageError(
+            'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
+            'screenshot'
+          );
+        }
+        return {
+          _image: true,
+          mimeType: sniffImageMime(buf),
+          data: Buffer.from(buf).toString('base64'),
+          bytes: buf.length,
+        };
+      }
+
       const outFile = requireFlag(flags, 'out', 'screenshot');
       assertLocalFileAvailable('screenshot', 'out', deps);
       const compressQuality = flags['compress-quality'];
       const compressMaxWidth = flags['compress-max-width'];
       const result = await client.screenshot.capture({
-        url: requireFlag(flags, 'url', 'screenshot'),
-        selector: flags['selector'],
-        xpath: flags['xpath'],
+        url,
+        selector,
+        xpath,
         compress: boolFlag(flags['compress']),
         compressQuality:
           compressQuality !== undefined ? Number(compressQuality) : undefined,
@@ -2962,6 +3255,23 @@ async function main() {
     if (result && typeof result === 'object' && '_help' in result) {
       const helpResult = result as unknown as { text: string };
       process.stdout.write(helpResult.text + '\n');
+      return;
+    }
+    if (
+      result &&
+      typeof result === 'object' &&
+      (result as Record<string, unknown>)._image === true &&
+      typeof (result as Record<string, unknown>).data === 'string'
+    ) {
+      // Tagged image result (e.g. `screenshot --base64`): emit just the raw
+      // base64 to stdout so it can be piped/decoded, rather than the JSON
+      // envelope. The shape is validated narrowly (not just key presence) so an
+      // ordinary result that happens to carry an `_image` field — e.g. `fs read`
+      // of a JSON file like {"_image":false,...} — is not mistaken for one.
+      // (In-process callers like the @alva/pi tool consume the envelope directly
+      // and never reach main().)
+      const imageResult = result as unknown as { data: string };
+      process.stdout.write(imageResult.data + '\n');
       return;
     }
     if (result instanceof ArrayBuffer) {

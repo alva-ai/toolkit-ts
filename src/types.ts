@@ -27,6 +27,61 @@ export interface UserProfile {
   home_path: string;
 }
 
+// --- Credits ---
+
+export interface CreditWallet {
+  balance: number;
+  totalRemaining: number;
+  todayUsed: number;
+}
+
+export interface CreditWalletItemsParams {
+  /** Inclusive UTC lower bound, Unix milliseconds. */
+  startAtMs: number;
+  /** Exclusive UTC upper bound, Unix milliseconds. */
+  endAtMs: number;
+  /** Optional chat/session id to filter consumption records. */
+  sessionId?: string;
+  /** Page size, defaulted and capped by the gateway. */
+  first?: number;
+  /** Opaque cursor from a previous page's `pageInfo.endCursor`. */
+  after?: string;
+}
+
+export interface CreditWalletItem {
+  id: string;
+  sessionId: string | null;
+  playbookId: string | null;
+  feedId: string | null;
+  op: string;
+  source: string;
+  amount: number;
+  extras?: unknown;
+  /** Creation timestamp, Unix milliseconds. */
+  createdAtMs: number;
+}
+
+export interface CreditWalletPageInfo {
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor: string | null;
+  endCursor: string | null;
+}
+
+export interface CreditWalletItemEdge {
+  cursor: string;
+  node: CreditWalletItem;
+}
+
+export interface CreditWalletItemConnection {
+  pageInfo: CreditWalletPageInfo;
+  edges: CreditWalletItemEdge[];
+}
+
+export interface CreditWalletItemsResponse extends CreditWallet {
+  items: CreditWalletItemConnection;
+}
+
 // --- Arrays JWT ---
 
 export type SubscriptionTier =
@@ -288,6 +343,12 @@ export interface FeedReleaseRequest {
   view_json?: Record<string, unknown>;
   description?: string;
   changelog?: string;
+  /**
+   * Agent kind that produces this feed (e.g. "alpi"). Optional. Marks the feed
+   * as an agent feed whose prompt is editable; an empty/omitted value means a
+   * regular (non-agent) feed. The backend validates it against its catalog.
+   */
+  agent_type?: string;
 }
 
 export interface FeedReleaseResponse {

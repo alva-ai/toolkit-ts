@@ -14,6 +14,7 @@ import { NotificationsResource } from '../../src/resources/notifications.js';
 import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
 import { PlaybookSkillsResource } from '../../src/resources/playbookSkills.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
+import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 
@@ -31,6 +32,101 @@ describe('UserResource', () => {
     const user = new UserResource(client);
     await user.me();
     expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/me');
+  });
+});
+
+describe('CreditsResource', () => {
+  it('wallet() sends a viewer-scoped POST /query request', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      data: {
+        viewer: {
+          creditWallet: { balance: 100, totalRemaining: 100, todayUsed: 3 },
+        },
+      },
+    });
+    const credits = new CreditsResource(client);
+
+    const result = await credits.wallet();
+
+    expect(result).toEqual({ balance: 100, totalRemaining: 100, todayUsed: 3 });
+    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('viewer'),
+      },
+    });
+    const body = client._request.mock.calls[0][2]?.body as {
+      query: string;
+    };
+    expect(body.query).toContain('creditWallet');
+    expect(body.query).not.toContain('userId');
+  });
+
+  it('items() sends time-window, session, and pagination input to viewer.creditWallet.items', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      data: {
+        viewer: {
+          creditWallet: {
+            balance: 100,
+            totalRemaining: 100,
+            todayUsed: 3,
+            items: {
+              pageInfo: {
+                hasNextPage: false,
+                hasPreviousPage: false,
+                startCursor: null,
+                endCursor: null,
+              },
+              edges: [],
+            },
+          },
+        },
+      },
+    });
+    const credits = new CreditsResource(client);
+
+    await credits.items({
+      startAtMs: 1782172800000,
+      endAtMs: 1782259200000,
+      sessionId: '2069373335591239680',
+      first: 10,
+      after: 'cursor-1',
+    });
+
+    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('CreditWalletItemConnectionInput'),
+        variables: {
+          input: {
+            startAtMs: 1782172800000,
+            endAtMs: 1782259200000,
+            sessionId: '2069373335591239680',
+            first: 10,
+            after: 'cursor-1',
+          },
+        },
+      },
+    });
+    const body = client._request.mock.calls[0][2]?.body as {
+      query: string;
+    };
+    expect(body.query).toContain('items(input: $input)');
+    expect(body.query).not.toContain('userId');
+  });
+
+  it('surfaces GraphQL errors as AlvaError', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      errors: [{ message: 'endAtMs must be greater than startAtMs' }],
+    });
+    const credits = new CreditsResource(client);
+
+    await expect(credits.wallet()).rejects.toMatchObject({
+      name: 'AlvaError',
+      code: 'GRAPHQL_ERROR',
+      message: 'endAtMs must be greater than startAtMs',
+    });
   });
 });
 
@@ -121,6 +217,24 @@ describe('ReleaseResource', () => {
           description: undefined,
         },
       }
+    );
+  });
+
+  it('feed() forwards agent_type', async () => {
+    const client = makeClient();
+    const release = new ReleaseResource(client);
+    await release.feed({
+      name: 'market-pulse',
+      version: '1.0.0',
+      cronjob_id: 44,
+      agent_type: 'alpi',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/release/feed',
+      expect.objectContaining({
+        body: expect.objectContaining({ agent_type: 'alpi' }),
+      })
     );
   });
 
@@ -478,13 +592,40 @@ describe('PlaybooksResource', () => {
           description: 'Finds setups',
           tags: ['macro', 'ai'],
           follow_count: 7,
-          url_path: '/alice/playbooks/scanner',
+          url_path: '/u/alice/playbooks/scanner',
+          url: 'https://alva.ai/u/alice/playbooks/scanner',
           readme: '/alva/home/alice/playbooks/scanner/README.md',
           cursor: 'cur42',
         },
       ],
       has_next: true,
     });
+  });
+
+  it('trending() derives the web origin from a non-prd base URL', async () => {
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api-llm.stg.alva.ai',
+    }) as AlvaClient & { _request: ReturnType<typeof vi.fn> };
+    client._request = vi.fn().mockResolvedValue({
+      playbooks: [
+        {
+          id: '42',
+          name: 'scanner',
+          creator: { name: 'alice' },
+          cursor: 'cur42',
+        },
+      ],
+      has_next: false,
+    });
+    const playbooks = new PlaybooksResource(client);
+
+    const result = await playbooks.trending({ keyword: 'scanner' });
+
+    expect(result.playbooks[0].url_path).toBe('/u/alice/playbooks/scanner');
+    expect(result.playbooks[0].url).toBe(
+      'https://stg.alva.ai/u/alice/playbooks/scanner'
+    );
   });
 
   it('setVisibility() POSTs to the playbook visibility endpoint', async () => {

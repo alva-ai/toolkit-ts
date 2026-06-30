@@ -24,6 +24,7 @@ import { SubscriptionsResource } from './resources/subscriptions.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 import { FeedbackResource } from './resources/feedback.js';
 import { FunctionsResource } from './resources/functions.js';
+import { CreditsResource } from './resources/credits.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -164,6 +165,7 @@ export class AlvaClient {
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
   private _feedback?: FeedbackResource;
   private _functions?: FunctionsResource;
+  private _credits?: CreditsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -251,6 +253,9 @@ export class AlvaClient {
   }
   get functions(): FunctionsResource {
     return (this._functions ??= new FunctionsResource(this));
+  }
+  get credits(): CreditsResource {
+    return (this._credits ??= new CreditsResource(this));
   }
 
   _requireAuth(): void {
@@ -442,14 +447,25 @@ export class AlvaClient {
       return undefined;
     }
 
-    const contentType = response.headers.get('content-type') ?? '';
+    // Only parse as JSON when the server says so; everything else (PDF,
+    // octet-stream, image/*, text/*, …) is returned as raw bytes so callers
+    // like `fs.read` can handle binary files. An allowlist of binary types is
+    // never complete: e.g. a PDF served as application/pdf used to fall through
+    // to response.json() and throw a JSON parse error.
+    //
+    // Match the media type case-insensitively and accept the `+json`
+    // structured-suffix family (e.g. application/graphql-response+json from the
+    // GraphQL gateway), not just the literal application/json.
+    const contentType = (
+      response.headers.get('content-type') ?? ''
+    ).toLowerCase();
     if (
-      contentType.includes('application/octet-stream') ||
-      contentType.includes('image/')
+      contentType.includes('application/json') ||
+      contentType.includes('+json')
     ) {
-      return response.arrayBuffer();
+      return response.json();
     }
 
-    return response.json();
+    return response.arrayBuffer();
   }
 }
