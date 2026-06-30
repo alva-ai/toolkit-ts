@@ -442,15 +442,17 @@ export class AlvaClient {
       return undefined;
     }
 
+    // Only parse as JSON when the server explicitly says so. Any other
+    // content-type (application/pdf, application/octet-stream, image/*, text/*,
+    // …) is returned as raw bytes so callers like `fs.read` can handle binary
+    // files. An allowlist of binary types is never complete: e.g. a PDF served
+    // as application/pdf used to fall through to response.json() and throw a
+    // JSON parse error.
     const contentType = response.headers.get('content-type') ?? '';
-    if (
-      contentType.includes('application/octet-stream') ||
-      contentType.startsWith('text/') ||
-      contentType.includes('image/')
-    ) {
-      return response.arrayBuffer();
+    if (contentType.includes('application/json')) {
+      return response.json();
     }
 
-    return response.json();
+    return response.arrayBuffer();
   }
 }

@@ -264,6 +264,21 @@ describe('AlvaClient', () => {
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
+    it('returns ArrayBuffer for application/pdf response', async () => {
+      const bytes = new TextEncoder().encode('%PDF-1.7\n%âãÏÓ').buffer;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/pdf' },
+        arrayBuffer: () => Promise.resolve(bytes),
+        json: () => Promise.reject(new Error('not json')),
+      });
+      const client = new AlvaClient({});
+
+      const result = await client._request('GET', '/api/v1/fs/read');
+      expect(result).toBeInstanceOf(ArrayBuffer);
+    });
+
     it('wraps network error as AlvaError', async () => {
       const cause = new Error('Headers Timeout Error') as Error & {
         code?: string;
