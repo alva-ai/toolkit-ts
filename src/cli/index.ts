@@ -366,7 +366,9 @@ Create/Update flags:
   --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
   --run-as-service-account <id>  Run the cronjob under a service-account identity
                          (id from "alva service-account create"); restricts file
-                         access to the SA's grants. Omit/0 ⇒ runs as you (#602)
+                         access to the SA's grants. Omit on update ⇒ unchanged (#602)
+  --clear-run-as         Clear run_as on update — run the cronjob as yourself
+                         again (mutually exclusive with --run-as-service-account)
 
 List flags:
   --limit <n>            Max results per page (default: 20)
@@ -550,7 +552,10 @@ Register flags:
   --no-allow-charges          Explicitly register as no-charge
   --run-as-service-account <id>  Run invocations under a service-account identity
                               (id from "alva service-account create"); scopes file
-                              access to the SA's grants. Omit/0 ⇒ runs as you (#602)
+                              access to the SA's grants. Omit on re-register ⇒
+                              unchanged (#602)
+  --clear-run-as              Clear run_as on re-register — run as the owner again
+                              (mutually exclusive with --run-as-service-account)
 
 List flags:
   --playbook-id <id>          Numeric playbook id (required)
@@ -1190,6 +1195,7 @@ export const BOOLEAN_FLAGS = new Set([
   'execute-latest',
   'dry-run',
   'allow-charges',
+  'clear-run-as',
   'json',
   'compress',
   'bypass-lint',
@@ -1357,6 +1363,30 @@ function optionalServiceAccountIdFlag(
     1,
     Number.MAX_SAFE_INTEGER
   );
+}
+
+// Resolve the run_as field for create/update/register from its two flags:
+//   --run-as-service-account <id>  → set/switch to that SA (validated > 0)
+//   --clear-run-as                 → clear it (send 0; backend runs as owner)
+//   neither                        → undefined (omitted): backend PRESERVES the
+//                                    prior run_as on re-registration/update.
+// The two flags are mutually exclusive. We keep clearing on an explicit
+// --clear-run-as rather than accepting `--run-as-service-account 0`, so a typo'd
+// empty value still throws instead of silently un-scoping the job (#602).
+function resolveRunAsFlag(
+  flags: Record<string, string>,
+  command: string
+): number | undefined {
+  const clear = boolFlag(flags['clear-run-as']) ?? false;
+  const setID = optionalServiceAccountIdFlag(flags, command);
+  if (clear && setID !== undefined) {
+    throw new CliUsageError(
+      `--clear-run-as and --run-as-service-account are mutually exclusive for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (clear) return 0;
+  return setID;
 }
 
 function parsePositiveIntegerValue(
@@ -1980,7 +2010,7 @@ export async function dispatch(
               1,
               2046
             ),
-            run_as_user_id: optionalServiceAccountIdFlag(flags, 'deploy update'),
+            run_as_user_id: resolveRunAsFlag(flags, 'deploy update'),
           });
         case 'delete':
           return client.deploy.delete({
@@ -2243,7 +2273,7 @@ export async function dispatch(
               deps
             ),
             allow_charges: boolFlag(flags['allow-charges']),
-            run_as_user_id: optionalServiceAccountIdFlag(flags, 'functions register'),
+            run_as_user_id: resolveRunAsFlag(flags, 'functions register'),
           });
         case 'list':
           return client.functions.list({

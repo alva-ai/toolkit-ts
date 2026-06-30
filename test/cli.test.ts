@@ -1755,6 +1755,30 @@ components: {}
     expect(client.functions.register).not.toHaveBeenCalled();
   });
 
+  it('deploy update --clear-run-as sends run_as_user_id 0', async () => {
+    const client = makeClient();
+    await dispatch(client, ['deploy', 'update', '--id', '5', '--clear-run-as']);
+    expect(client.deploy.update).toHaveBeenCalledWith(
+      expect.objectContaining({ run_as_user_id: 0 })
+    );
+  });
+
+  it('rejects --clear-run-as together with --run-as-service-account', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'deploy',
+        'update',
+        '--id',
+        '5',
+        '--clear-run-as',
+        '--run-as-service-account',
+        '90123',
+      ])
+    ).rejects.toThrow(/mutually exclusive/);
+    expect(client.deploy.update).not.toHaveBeenCalled();
+  });
+
   it('throws on unknown group with help hint', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(
