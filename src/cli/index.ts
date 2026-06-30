@@ -504,6 +504,9 @@ Register flags:
   --params-schema-file <path> Read JSON Schema from a local file
   --allow-charges             Allow this function to charge viewer allowance
   --no-allow-charges          Explicitly register as no-charge
+  --run-as-service-account <id>  Run invocations under a service-account identity
+                              (id from "alva service-account create"); scopes file
+                              access to the SA's grants. Omit/0 ⇒ runs as you (#602)
 
 List flags:
   --playbook-id <id>          Numeric playbook id (required)
@@ -1996,6 +1999,7 @@ export async function dispatch(
               deps
             ),
             allow_charges: boolFlag(flags['allow-charges']),
+            run_as_user_id: num(flags['run-as-service-account']),
           });
         case 'list':
           return client.functions.list({

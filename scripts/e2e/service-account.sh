@@ -6,13 +6,17 @@
 #   toolkit (alva) -> gateway REST (/api/v1/...) -> backend gRPC -> jagent exec
 # and asserts the SA security model end-to-end.
 #
-# Covered cases (CTO list):
+# Covered cases (CTO list) — BOTH execution entry points:
 #   1. SA lifecycle: create / list / grant / (delete)
-#   2. Deploy a cronjob that runs under the SA (--run-as-service-account)
+#   2. CRONJOB that runs under the SA (deploy --run-as-service-account)
+#   2b. UDF / service function that runs under the SA (functions register
+#       --run-as-service-account), asserted via the invoke result/logs.
+#       Gated on E2E_PLAYBOOK_ID (the CLI has no `playbooks create`).
 #   3. Execution identity == SA            (env.userId == SA id)
 #   4. File access is SCOPED to grants     (granted path read OK; ungranted DENIED)
 #   5. Secrets resolve to the OWNER        (SA reads the owner's secret)  [decision 2026-06-30]
-#   6. Billing/attribution stays the owner (env.callerUserId == owner)
+#   6. Billing/attribution stays the owner (env.callerUserId == owner; UDF also
+#      checks credits_charged_consumer == 0 at the ledger level)
 #   7. Fail-closed on a deleted SA         (run is refused, NOT silently run-as-owner)
 #
 # ---------------------------------------------------------------------------
@@ -61,6 +65,8 @@ assert_absent()   { printf '%s' "$1" | grep -qF -- "$2" && fail "must NOT contai
 
 cleanup() {
   step "Cleanup (best-effort)"
+  [ -n "${E2E_PLAYBOOK_ID:-}" ] && [ -n "${FN_NAME:-}" ] && {
+    $ALVA functions delete --playbook-id "$E2E_PLAYBOOK_ID" --function-name "$FN_NAME" >/dev/null 2>&1 || true; }
   [ -n "$CRON_ID" ] && { $ALVA deploy delete --id "$CRON_ID" >/dev/null 2>&1 || true; }
   [ -n "$SA_ID" ]   && { $ALVA service-account delete --id "$SA_ID" >/dev/null 2>&1 || true; }
   $ALVA secrets delete --name "$SECRET_NAME" >/dev/null 2>&1 || true
@@ -156,6 +162,47 @@ assert_absent   "$LOG" "E2E_DENIED=LEAK"     "ungranted path did not leak"
 assert_contains "$LOG" "E2E_SECRET=got:$SECRET_VALUE" "SA reads the OWNER's secret (#602 decision)"
 # Billing/attribution identity is the owner, not the SA.
 assert_absent   "$LOG" "E2E_CALLER_UID=$SA_ID" "payer/attribution (env.callerUserId) is NOT the SA"
+
+# ===========================================================================
+# UDF (service function) run_as — the SECOND execution entry point. Gated on a
+# pre-existing playbook id (the CLI has no `playbooks create`), so set
+# E2E_PLAYBOOK_ID to a playbook you own to exercise it. The function reuses the
+# same entry script (it self-reports via E2E_* in its run log) and the same SA.
+if [ -n "${E2E_PLAYBOOK_ID:-}" ]; then
+  FN_NAME="e2e_sa_fn_${SUFFIX//[^0-9a-zA-Z_]/_}"
+
+  step "6b. Register a UDF that runs AS the SA, then invoke it"
+  run $ALVA functions register \
+    --playbook-id "$E2E_PLAYBOOK_ID" \
+    --function-name "$FN_NAME" \
+    --entry-script-path "$ENTRY" \
+    --run-as-service-account "$SA_ID" >/dev/null
+  pass "registered UDF $FN_NAME run_as=$SA_ID"
+
+  INVOKE_JSON=$(run $ALVA functions invoke \
+    --playbook-id "$E2E_PLAYBOOK_ID" --function-name "$FN_NAME")
+  ULOG=$(printf '%s' "$INVOKE_JSON" | jqget '.logs')
+  printf '%s--- udf invoke logs ---\n%s\n-----------------------%s\n' "$c_dim" "$ULOG" "$c_rst" >&2
+
+  step "6c. Assert the SA model on the UDF invoke (same checks, via invoke logs)"
+  assert_contains "$ULOG" "E2E_EXEC_UID=$SA_ID" "UDF exec identity == SA"
+  assert_contains "$ULOG" "E2E_ALLOWED=ok"      "UDF: granted path readable"
+  assert_contains "$ULOG" "E2E_DENIED=denied"   "UDF: ungranted path DENIED"
+  assert_absent   "$ULOG" "E2E_DENIED=LEAK"     "UDF: ungranted path did not leak"
+  assert_contains "$ULOG" "E2E_SECRET=got:$SECRET_VALUE" "UDF: SA reads the OWNER's secret"
+  assert_absent   "$ULOG" "E2E_CALLER_UID=$SA_ID" "UDF: attribution is NOT the SA"
+  # Ledger-level billing: invoke exposes the charge split. SAs have no economic
+  # identity → nothing is charged to a separate "consumer" account; the cost
+  # lands on the owner (parent). credits_charged_consumer must be 0.
+  CHARGED_CONSUMER=$(printf '%s' "$INVOKE_JSON" | jqget '.credits_charged_consumer')
+  assert_eq "${CHARGED_CONSUMER:-0}" "0" "no charge to a separate consumer (SA bills to owner/parent)"
+
+  # cleanup the function (delete is by playbook+name)
+  $ALVA functions delete --playbook-id "$E2E_PLAYBOOK_ID" --function-name "$FN_NAME" >/dev/null 2>&1 || true
+else
+  step "6b. UDF (service function) run_as — SKIPPED"
+  printf '%s  ~ set E2E_PLAYBOOK_ID=<a playbook you own> to also test the UDF path%s\n' "$c_dim" "$c_rst"
+fi
 
 step "7. Fail-closed: delete the SA, re-trigger, the run must REFUSE (not run as owner)"
 run $ALVA service-account delete --id "$SA_ID" >/dev/null

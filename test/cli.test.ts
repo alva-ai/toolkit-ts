@@ -698,6 +698,25 @@ describe('CLI dispatch', () => {
     });
   });
 
+  it('dispatches functions register with --run-as-service-account', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'functions',
+      'register',
+      '--playbook-id',
+      '123',
+      '--function-name',
+      'analyze',
+      '--entry-script-path',
+      '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      '--run-as-service-account',
+      '90123',
+    ]);
+    expect(client.functions.register).toHaveBeenCalledWith(
+      expect.objectContaining({ run_as_user_id: 90123 })
+    );
+  });
+
   it('dispatches functions register with params schema file', async () => {
     const mock = vi
       .mocked(fs.readFileSync)
