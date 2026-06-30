@@ -1341,6 +1341,24 @@ function optionalBoundedIntegerFlag(
   return n;
 }
 
+// Validate an optional service-account id flag (--run-as-service-account).
+// Returns undefined when absent, but THROWS on a non-positive / non-integer
+// value instead of silently dropping it: this is a security-sensitive flag, and
+// a typo (e.g. `90123x` → undefined, or `=` → 0) must NOT fail open and run the
+// job with the owner's full privileges instead of the scoped SA (#602, Codex P1).
+function optionalServiceAccountIdFlag(
+  flags: Record<string, string>,
+  command: string
+): number | undefined {
+  return optionalBoundedIntegerFlag(
+    flags,
+    'run-as-service-account',
+    command,
+    1,
+    Number.MAX_SAFE_INTEGER
+  );
+}
+
 function parsePositiveIntegerValue(
   val: string,
   label: string,
@@ -1935,7 +1953,7 @@ export async function dispatch(
               1,
               2046
             ),
-            run_as_user_id: num(flags['run-as-service-account']),
+            run_as_user_id: optionalServiceAccountIdFlag(flags, 'deploy create'),
           });
         case 'list':
           return client.deploy.list({
@@ -1962,7 +1980,7 @@ export async function dispatch(
               1,
               2046
             ),
-            run_as_user_id: num(flags['run-as-service-account']),
+            run_as_user_id: optionalServiceAccountIdFlag(flags, 'deploy update'),
           });
         case 'delete':
           return client.deploy.delete({
@@ -2225,7 +2243,7 @@ export async function dispatch(
               deps
             ),
             allow_charges: boolFlag(flags['allow-charges']),
-            run_as_user_id: num(flags['run-as-service-account']),
+            run_as_user_id: optionalServiceAccountIdFlag(flags, 'functions register'),
           });
         case 'list':
           return client.functions.list({

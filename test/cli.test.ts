@@ -1715,6 +1715,46 @@ components: {}
     );
   });
 
+  // Security: a malformed --run-as-service-account must FAIL, not silently drop
+  // the flag and run the job with the owner's full privileges (Codex #113 P1).
+  it('rejects a non-numeric --run-as-service-account (deploy create)', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'deploy',
+        'create',
+        '--name',
+        'j',
+        '--path',
+        '~/j.js',
+        '--cron',
+        '* * * * *',
+        '--run-as-service-account',
+        '90123x',
+      ])
+    ).rejects.toThrow(/run-as-service-account/);
+    expect(client.deploy.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty --run-as-service-account (functions register)', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'functions',
+        'register',
+        '--playbook-id',
+        '123',
+        '--function-name',
+        'analyze',
+        '--entry-script-path',
+        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+        '--run-as-service-account',
+        '',
+      ])
+    ).rejects.toThrow(/run-as-service-account/);
+    expect(client.functions.register).not.toHaveBeenCalled();
+  });
+
   it('throws on unknown group with help hint', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['unknown'])).rejects.toThrow(

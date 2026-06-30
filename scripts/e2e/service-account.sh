@@ -63,6 +63,25 @@ assert_eq()       { [ "$1" = "$2" ] || fail "expected [$2], got [$1] — $3"; pa
 assert_contains() { printf '%s' "$1" | grep -qF -- "$2" || fail "expected to contain [$2] — $3"; pass "$3"; }
 assert_absent()   { printf '%s' "$1" | grep -qF -- "$2" && fail "must NOT contain [$2] — $3"; pass "$3"; }
 
+# wait_for_run_log <cron_id> <workflow_run_id> — poll `deploy runs` until the row
+# for THIS trigger is persisted, matched by workflow_run_id (the cronjob_runs row
+# only appears after the worker finishes — DeployResource.trigger), then echo its
+# run log. Matching by workflow_run_id is essential: the cronjob fires every
+# minute, so runs[0] could be a prior or natural-tick run (Codex #113 P2).
+wait_for_run_log() {
+  local cron_id="$1" wf_id="$2" run_id
+  for _ in $(seq 1 40); do
+    run_id=$($ALVA deploy runs --id "$cron_id" --first 10 2>/dev/null \
+      | jq -r --arg w "$wf_id" '.runs[]? | select(.workflow_run_id==$w) | .id' 2>/dev/null | head -1)
+    if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+      $ALVA deploy run-logs --id "$cron_id" --run-id "$run_id" 2>/dev/null || true
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 cleanup() {
   step "Cleanup (best-effort)"
   [ -n "${E2E_PLAYBOOK_ID:-}" ] && [ -n "${FN_NAME:-}" ] && {
@@ -139,19 +158,12 @@ CRON_ID=$(printf '%s' "$CRON_JSON" | jqget '.id')
 RUN_AS=$(printf '%s' "$CRON_JSON" | jqget '.run_as_user_id')
 assert_eq "$RUN_AS" "$SA_ID" "cronjob persisted run_as_user_id == SA id"
 
-step "5. Trigger + collect the run log"
-run $ALVA deploy trigger --id "$CRON_ID" >/dev/null
-LOG=""
-for i in $(seq 1 30); do
-  RUNS_JSON=$($ALVA deploy runs --id "$CRON_ID" --first 1 2>/dev/null || true)
-  RUN_ID=$(printf '%s' "$RUNS_JSON" | jqget '.runs[0].id // .[0].id // .runs[0].run_id')
-  if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-    LOG=$($ALVA deploy run-logs --id "$CRON_ID" --run-id "$RUN_ID" 2>/dev/null || true)
-    printf '%s' "$LOG" | grep -q "E2E_EXEC_UID=" && break
-  fi
-  sleep 2
-done
-[ -n "$LOG" ] || fail "no run log captured after triggering cronjob $CRON_ID"
+step "5. Trigger + collect THIS run's log (matched by workflow_run_id)"
+WF_ID=$(run $ALVA deploy trigger --id "$CRON_ID" | jqget '.workflow_run_id')
+[ -n "$WF_ID" ] && [ "$WF_ID" != "null" ] || fail "deploy trigger did not return a workflow_run_id"
+LOG=$(wait_for_run_log "$CRON_ID" "$WF_ID") \
+  || fail "this trigger's run never appeared (workflow_run_id=$WF_ID) on cronjob $CRON_ID"
+[ -n "$LOG" ] || fail "empty run log for workflow_run_id=$WF_ID"
 printf '%s--- run log ---\n%s\n---------------%s\n' "$c_dim" "$LOG" "$c_rst" >&2
 
 step "6. Assert the SA security model from the run log"
@@ -207,27 +219,14 @@ fi
 step "7. Fail-closed: delete the SA, re-trigger, the run must REFUSE (not run as owner)"
 run $ALVA service-account delete --id "$SA_ID" >/dev/null
 SA_ID=""   # already deleted; don't re-delete in cleanup
-run $ALVA deploy trigger --id "$CRON_ID" >/dev/null
-REFUSED=""
-for i in $(seq 1 30); do
-  RUNS_JSON=$($ALVA deploy runs --id "$CRON_ID" --first 1 2>/dev/null || true)
-  RUN_ID=$(printf '%s' "$RUNS_JSON" | jqget '.runs[0].id // .[0].id // .runs[0].run_id')
-  if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-    LOG2=$($ALVA deploy run-logs --id "$CRON_ID" --run-id "$RUN_ID" 2>/dev/null || true)
-    # A fail-closed run must NOT have executed the script as the owner.
-    if printf '%s' "$LOG2" | grep -qE "run_as|service.account|refus|PermissionDenied|inactive|deleted" \
-       && ! printf '%s' "$LOG2" | grep -q "E2E_EXEC_UID="; then
-      REFUSED="yes"; break
-    fi
-    # Hard failure: the script ran anyway as the OWNER → privilege escalation.
-    printf '%s' "$LOG2" | grep -q "E2E_EXEC_UID=" \
-      && fail "ESCALATION: deleted-SA run executed (as owner) instead of failing closed"
-  fi
-  sleep 2
-done
-[ "$REFUSED" = "yes" ] \
-  && pass "deleted-SA run failed closed (refused, never ran as owner)" \
-  || printf '%s  ~ could not positively confirm refusal log; verify run status is failed/refused%s\n' "$c_dim" "$c_rst"
+WF_ID2=$(run $ALVA deploy trigger --id "$CRON_ID" | jqget '.workflow_run_id')
+[ -n "$WF_ID2" ] && [ "$WF_ID2" != "null" ] || fail "deploy trigger did not return a workflow_run_id"
+# Match THIS trigger's run (not the still-present step-5 run) before judging.
+LOG2=$(wait_for_run_log "$CRON_ID" "$WF_ID2") \
+  || fail "deleted-SA trigger's run never appeared (workflow_run_id=$WF_ID2)"
+# The deleted-SA run must NOT have executed the script as the owner.
+assert_absent "$LOG2" "E2E_EXEC_UID=" \
+  "deleted-SA run failed closed (the script never executed — no fallback to owner)"
 
 step "DONE"
 pass "service-account E2E passed"
