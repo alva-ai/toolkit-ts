@@ -1061,7 +1061,28 @@ describe('CLI dispatch', () => {
       '90123',
     ]);
     expect(client.functions.register).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: 90123 })
+      expect.objectContaining({ run_as_user_id: '90123' })
+    );
+  });
+
+  it('preserves a snowflake (>2^53) --run-as-service-account id as a string', async () => {
+    const client = makeClient();
+    // 19-digit snowflake id; would round to ...3776 if parsed as a JS number.
+    const snowflake = '1234567890123456789';
+    await dispatch(client, [
+      'functions',
+      'register',
+      '--playbook-id',
+      '123',
+      '--function-name',
+      'analyze',
+      '--entry-script-path',
+      '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      '--run-as-service-account',
+      snowflake,
+    ]);
+    expect(client.functions.register).toHaveBeenCalledWith(
+      expect.objectContaining({ run_as_user_id: snowflake })
     );
   });
 
@@ -1711,7 +1732,7 @@ components: {}
       '90123',
     ]);
     expect(client.deploy.create).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: 90123 })
+      expect.objectContaining({ run_as_user_id: '90123' })
     );
   });
 
@@ -1759,7 +1780,7 @@ components: {}
     const client = makeClient();
     await dispatch(client, ['deploy', 'update', '--id', '5', '--clear-run-as']);
     expect(client.deploy.update).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: 0 })
+      expect.objectContaining({ run_as_user_id: '0' })
     );
   });
 

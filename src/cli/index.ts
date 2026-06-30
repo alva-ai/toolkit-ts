@@ -1350,33 +1350,41 @@ function optionalBoundedIntegerFlag(
 // Validate an optional service-account id flag (--run-as-service-account).
 // Returns undefined when absent, but THROWS on a non-positive / non-integer
 // value instead of silently dropping it: this is a security-sensitive flag, and
-// a typo (e.g. `90123x` → undefined, or `=` → 0) must NOT fail open and run the
-// job with the owner's full privileges instead of the scoped SA (#602, Codex P1).
+// a typo (e.g. `90123x` or `=`) must NOT fail open and run the job with the
+// owner's full privileges instead of the scoped SA (#602, Codex P1).
+//
+// The id is kept as a STRING, not parsed to a number: user ids are snowflake
+// int64s that routinely exceed Number.MAX_SAFE_INTEGER, so coercing to a JS
+// number would round a valid id (or reject it under a MAX_SAFE_INTEGER bound),
+// making real service accounts unusable as run-as targets (Codex P2).
 function optionalServiceAccountIdFlag(
   flags: Record<string, string>,
   command: string
-): number | undefined {
-  return optionalBoundedIntegerFlag(
-    flags,
-    'run-as-service-account',
-    command,
-    1,
-    Number.MAX_SAFE_INTEGER
-  );
+): string | undefined {
+  const raw = flags['run-as-service-account'];
+  if (raw === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new CliUsageError(
+      `--run-as-service-account must be a positive service-account id for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return raw;
 }
 
 // Resolve the run_as field for create/update/register from its two flags:
 //   --run-as-service-account <id>  → set/switch to that SA (validated > 0)
-//   --clear-run-as                 → clear it (send 0; backend runs as owner)
+//   --clear-run-as                 → clear it (send "0"; backend runs as owner)
 //   neither                        → undefined (omitted): backend PRESERVES the
 //                                    prior run_as on re-registration/update.
 // The two flags are mutually exclusive. We keep clearing on an explicit
 // --clear-run-as rather than accepting `--run-as-service-account 0`, so a typo'd
-// empty value still throws instead of silently un-scoping the job (#602).
+// empty value still throws instead of silently un-scoping the job (#602). The
+// returned value is a string (snowflake-safe id, or "0" to clear).
 function resolveRunAsFlag(
   flags: Record<string, string>,
   command: string
-): number | undefined {
+): string | undefined {
   const clear = boolFlag(flags['clear-run-as']) ?? false;
   const setID = optionalServiceAccountIdFlag(flags, command);
   if (clear && setID !== undefined) {
@@ -1385,8 +1393,32 @@ function resolveRunAsFlag(
       command.split(' ')[0]
     );
   }
-  if (clear) return 0;
+  if (clear) return '0';
   return setID;
+}
+
+// Require a service-account id flag (--id) as a snowflake-safe string. Like
+// optionalServiceAccountIdFlag but mandatory (grant/revoke/delete): SA ids are
+// int64 snowflakes, so validate the shape and keep the string rather than
+// parsing to a number, which would round a large id.
+function requireServiceAccountIdFlag(
+  flags: Record<string, string>,
+  command: string
+): string {
+  const raw = flags['id'];
+  if (raw === undefined || raw === '') {
+    throw new CliUsageError(
+      `Missing required flag --id for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new CliUsageError(
+      `--id must be a positive service-account id for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return raw;
 }
 
 function parsePositiveIntegerValue(
@@ -1983,7 +2015,10 @@ export async function dispatch(
               1,
               2046
             ),
-            run_as_user_id: optionalServiceAccountIdFlag(flags, 'deploy create'),
+            run_as_user_id: optionalServiceAccountIdFlag(
+              flags,
+              'deploy create'
+            ),
           });
         case 'list':
           return client.deploy.list({
@@ -2062,11 +2097,11 @@ export async function dispatch(
           return client.serviceAccount.list();
         case 'delete':
           return client.serviceAccount.delete({
-            id: requireNumericFlag(flags, 'id', 'service-account delete'),
+            id: requireServiceAccountIdFlag(flags, 'service-account delete'),
           });
         case 'grant':
           return client.serviceAccount.grant({
-            id: requireNumericFlag(flags, 'id', 'service-account grant'),
+            id: requireServiceAccountIdFlag(flags, 'service-account grant'),
             path: requireFlag(flags, 'path', 'service-account grant'),
             permission: requireFlag(
               flags,
@@ -2076,7 +2111,7 @@ export async function dispatch(
           });
         case 'revoke':
           return client.serviceAccount.revoke({
-            id: requireNumericFlag(flags, 'id', 'service-account revoke'),
+            id: requireServiceAccountIdFlag(flags, 'service-account revoke'),
             path: requireFlag(flags, 'path', 'service-account revoke'),
             permission: requireFlag(
               flags,

@@ -34,9 +34,12 @@ export class ServiceAccountResource {
     ) as Promise<ServiceAccountListResponse>;
   }
 
-  async delete(params: { id: number }): Promise<void> {
+  async delete(params: { id: string }): Promise<void> {
     this.client._requireAuth();
-    await this.client._request('DELETE', `/api/v1/service-account/${params.id}`);
+    await this.client._request(
+      'DELETE',
+      `/api/v1/service-account/${params.id}`
+    );
   }
 
   async grant(params: ServiceAccountGrantRequest): Promise<void> {

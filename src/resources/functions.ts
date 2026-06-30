@@ -21,9 +21,10 @@ export interface RegisterFunctionParams {
   /**
    * Run invocations of this function under a restricted service-account
    * identity (an SA id owned by the caller) instead of the owner (#602).
-   * Omitted ⇒ runs as the owner.
+   * Omitted ⇒ runs as the owner. A string: SA ids are snowflake int64s that
+   * overflow JS number precision.
    */
-  run_as_user_id?: number;
+  run_as_user_id?: string;
 }
 
 export interface RegisterFunctionResponse {
