@@ -442,14 +442,22 @@ export class AlvaClient {
       return undefined;
     }
 
-    // Only parse as JSON when the server explicitly says so. Any other
-    // content-type (application/pdf, application/octet-stream, image/*, text/*,
-    // …) is returned as raw bytes so callers like `fs.read` can handle binary
-    // files. An allowlist of binary types is never complete: e.g. a PDF served
-    // as application/pdf used to fall through to response.json() and throw a
-    // JSON parse error.
-    const contentType = response.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
+    // Only parse as JSON when the server says so; everything else (PDF,
+    // octet-stream, image/*, text/*, …) is returned as raw bytes so callers
+    // like `fs.read` can handle binary files. An allowlist of binary types is
+    // never complete: e.g. a PDF served as application/pdf used to fall through
+    // to response.json() and throw a JSON parse error.
+    //
+    // Match the media type case-insensitively and accept the `+json`
+    // structured-suffix family (e.g. application/graphql-response+json from the
+    // GraphQL gateway), not just the literal application/json.
+    const contentType = (
+      response.headers.get('content-type') ?? ''
+    ).toLowerCase();
+    if (
+      contentType.includes('application/json') ||
+      contentType.includes('+json')
+    ) {
       return response.json();
     }
 
