@@ -7,6 +7,8 @@ export const VERSION: string =
 export { AlvaClient } from './client.js';
 export { AlvaError, CliUsageError } from './error.js';
 export * from './playbookRuntime.js';
+export { AutomationResource } from './resources/automation.js';
+export { AlertsResource } from './resources/alerts.js';
 export type {
   AlvaClientConfig,
   FsReadParams,
