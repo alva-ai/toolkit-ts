@@ -243,7 +243,6 @@ body {
   width: 100%;
   margin: 0 auto;
   padding: var(--spacing-s) var(--spacing-xxl) var(--spacing-xxxxl);
-  /* max-width: 2048px; */
 }
 
 @media (max-width: 768px) {
@@ -1549,13 +1548,13 @@ body {
   width: 0.5px;
   flex-shrink: 0;
   margin-block: var(--spacing-l);
-  background-color: var(--line-l07);
+  background-color: var(--line-l12);
 }
 
 .divider-h {
   height: 0.5px;
   margin-inline: var(--spacing-l);
-  background-color: var(--line-l07);
+  background-color: var(--line-l12);
 }
 
 /* ── Equal Height Fill ── */
@@ -1780,7 +1779,7 @@ body {
   left: var(--spacing-m);
   right: var(--spacing-m);
   height: 0.5px;
-  background: var(--line-l07);
+  background: var(--line-l12);
 }
 
 .feed-item:last-child::after {
@@ -1976,7 +1975,7 @@ body {
   width: 88px;
   height: 70px;
   border-radius: var(--radius-ct-s);
-  border: 1px solid var(--line-l07);
+  border: 0.5px solid var(--line-l12);
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
