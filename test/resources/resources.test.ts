@@ -314,6 +314,24 @@ describe('ReleaseResource', () => {
 });
 
 describe('FeedResource', () => {
+  it('list() sends GET /api/v1/feed with filters', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.list({ limit: 20, cursor: 'abc', status: 'all' });
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/feed', {
+      query: { limit: 20, cursor: 'abc', status: 'all' },
+    });
+  });
+
+  it('list() sends GET /api/v1/feed with default params', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.list();
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/feed', {
+      query: { limit: undefined, cursor: undefined, status: undefined },
+    });
+  });
+
   it('stop() sends POST /api/v1/feed/:id/stop', async () => {
     const client = makeClient();
     const feed = new FeedResource(client);

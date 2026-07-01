@@ -73,7 +73,7 @@ Commands:
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
-  feed        Feed lifecycle management (delete)
+  feed        Feed lifecycle management (list, stop, resume, delete)
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   credits     Credit wallet and self-scoped usage history (wallet, items)
@@ -448,12 +448,18 @@ Examples:
 Feed lifecycle management.
 
 Subcommands:
+  list      List feeds owned by the caller
   stop      Stop a feed's producer cronjob
   resume    Resume a stopped feed's producer cronjob
   delete    Soft-delete a feed and all its active majors
 
 Flags:
-  --id <feed_id>   Numeric feed id (required, positive integer)
+  --id <feed_id>   Numeric feed id (required for stop/resume/delete)
+
+List flags:
+  --limit <n>      Max results per page (default 50, max 100 server-side)
+  --cursor <token> Pagination cursor from previous response
+  --status <s>     active | paused | all (default: active)
 
 Notes:
   - stop/resume affect future scheduled runs; existing feed data remains.
@@ -463,6 +469,8 @@ Notes:
   - Auth: caller must own the feed (uid match), enforced by the backend.
 
 Examples:
+  alva feed list
+  alva feed list --status all --limit 20
   alva feed stop --id 42
   alva feed resume --id 42
   alva feed delete --id 42`,
@@ -2131,6 +2139,12 @@ export async function dispatch(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for feed', 'feed');
       switch (subcommand) {
+        case 'list':
+          return client.feed.list({
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+            status: flags['status'] as 'active' | 'paused' | 'all' | undefined,
+          });
         case 'stop':
           return client.feed.stop({
             id: requireNumericFlag(flags, 'id', 'feed stop'),

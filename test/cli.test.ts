@@ -91,6 +91,7 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.feed.list = vi.fn().mockResolvedValue({ feeds: [], has_more: false });
   client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
   client.feed.resume = vi
     .fn()
@@ -953,6 +954,25 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);
     expect(client.feed.delete).toHaveBeenCalledWith({ id: 42 });
+  });
+
+  it('dispatches feed list with filters', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'feed',
+      'list',
+      '--status',
+      'all',
+      '--limit',
+      '20',
+      '--cursor',
+      'abc',
+    ]);
+    expect(client.feed.list).toHaveBeenCalledWith({
+      status: 'all',
+      limit: 20,
+      cursor: 'abc',
+    });
   });
 
   it('dispatches feed stop', async () => {

@@ -369,6 +369,34 @@ export interface FeedDeleteRequest {
   id: number;
 }
 
+export type FeedListStatus = 'active' | 'paused' | 'all';
+
+export interface FeedListParams {
+  /** Page size, default 50, max 100 server-side. */
+  limit?: number;
+  /** Opaque cursor token from the previous page. */
+  cursor?: string;
+  /** Runtime status filter; defaults to active on the gateway. */
+  status?: FeedListStatus;
+}
+
+export interface FeedListItem {
+  /** Numeric feed id encoded as a string, matching the gateway response. */
+  id: string;
+  name: string;
+  /** Feed runtime status. */
+  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | string;
+  cron_expression?: string;
+  total_runs: number;
+  used_by_total: number;
+}
+
+export interface FeedListResponse {
+  feeds: FeedListItem[];
+  next_cursor?: string;
+  has_more: boolean;
+}
+
 export interface FeedStatusUpdateRequest {
   /** Numeric feed id to stop/resume. */
   id: number;
