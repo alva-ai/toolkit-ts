@@ -6,6 +6,7 @@ import { DeployResource } from './resources/deploy.js';
 import { ServiceAccountResource } from './resources/serviceAccount.js';
 import { ReleaseResource } from './resources/release.js';
 import { FeedResource } from './resources/feed.js';
+import { AutomationResource } from './resources/automation.js';
 import { PlaybooksResource } from './resources/playbooks.js';
 import { SecretsResource } from './resources/secrets.js';
 import { SdkDocsResource } from './resources/sdkDocs.js';
@@ -21,6 +22,7 @@ import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { NotificationPreferencesResource } from './resources/notificationPreferences.js';
 import { SubscriptionsResource } from './resources/subscriptions.js';
+import { AlertsResource } from './resources/alerts.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 import { FeedbackResource } from './resources/feedback.js';
 import { FunctionsResource } from './resources/functions.js';
@@ -147,6 +149,7 @@ export class AlvaClient {
   private _serviceAccount?: ServiceAccountResource;
   private _release?: ReleaseResource;
   private _feed?: FeedResource;
+  private _automation?: AutomationResource;
   private _playbooks?: PlaybooksResource;
   private _secrets?: SecretsResource;
   private _sdk?: SdkDocsResource;
@@ -162,6 +165,7 @@ export class AlvaClient {
   private _notifications?: NotificationsResource;
   private _notificationPreferences?: NotificationPreferencesResource;
   private _subscriptions?: SubscriptionsResource;
+  private _alerts?: AlertsResource;
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
   private _feedback?: FeedbackResource;
   private _functions?: FunctionsResource;
@@ -197,6 +201,9 @@ export class AlvaClient {
   }
   get feed(): FeedResource {
     return (this._feed ??= new FeedResource(this));
+  }
+  get automation(): AutomationResource {
+    return (this._automation ??= new AutomationResource(this));
   }
   get playbooks(): PlaybooksResource {
     return (this._playbooks ??= new PlaybooksResource(this));
@@ -243,6 +250,9 @@ export class AlvaClient {
   }
   get subscriptions(): SubscriptionsResource {
     return (this._subscriptions ??= new SubscriptionsResource(this));
+  }
+  get alerts(): AlertsResource {
+    return (this._alerts ??= new AlertsResource(this));
   }
   get channelGroupSubscriptions(): ChannelGroupSubscriptionsResource {
     return (this._channelGroupSubscriptions ??=

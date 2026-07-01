@@ -25,6 +25,7 @@ import {
   formatPlaybook,
   formatPlaybookList,
 } from './playbooksFormat.js';
+import { formatAlertList, formatAutomationList } from './productFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -73,7 +74,9 @@ Commands:
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
-  feed        Feed lifecycle management (delete)
+  automation  Automation management (list, publish, stop, resume, delete)
+  alert       Alert management (list, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
+  feed        Legacy automation alias (list, stop, resume, delete)
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   credits     Credit wallet and self-scoped usage history (wallet, items)
@@ -85,7 +88,7 @@ Commands:
   notification-history  Notification delivery history (list-playbook, list-feed)
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
-  subscriptions       Follows + push alerts (subscribe-playbook, unsubscribe-playbook, subscribe-feed, unsubscribe-feed, unsubscribe, list, follows)
+  subscriptions       Legacy alert/follow operations (subscribe-playbook, subscribe-feed, list, follows)
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
@@ -443,17 +446,102 @@ Examples:
   alva service-account revoke --id 90123 --path '~/feeds/x/v1/' --permission read
   alva service-account delete --id 90123`,
 
-  feed: `Usage: alva feed <subcommand> [options]
+  automation: `Usage: alva automation <subcommand> [options]
 
-Feed lifecycle management.
+Manage automations. This is the product-facing surface for what older CLI
+commands called "feeds"; ids are currently the same underlying feed ids.
 
 Subcommands:
+  list      List automations owned by the caller
+  publish   Publish/register an automation after deploying its cronjob
+  stop      Stop an automation's producer cronjob
+  resume    Resume a stopped automation's producer cronjob
+  delete    Soft-delete an automation
+
+List flags:
+  --limit <n>      Max results per page (default 50, max 100 server-side)
+  --cursor <token> Pagination cursor from previous response
+  --status <s>     active | paused | all (default: active)
+  --json           Print raw JSON instead of a human-readable summary
+
+Publish flags:
+  --name <name>          Automation name, unique per user (required)
+  --version <version>    Semantic version, e.g. "1.0.0" (required)
+  --cronjob-id <id>      ID of the backing cronjob (required)
+  --view-json <json>     View configuration JSON
+  --description <text>   Automation description
+  --changelog <text>     Per-major changelog summary
+  --agent-type <type>    Agent kind that produces this automation, e.g. "alpi"
+
+Lifecycle flags:
+  --id <automation_id>   Numeric automation id (required for stop/resume/delete)
+
+Examples:
+  alva automation list
+  alva automation list --status all --limit 20
+  alva automation publish --name btc-ema --version 1.0.0 --cronjob-id 42
+  alva automation stop --id 42
+  alva automation resume --id 42
+  alva automation delete --id 42`,
+
+  alert: `Usage: alva alert <subcommand> [options]
+
+Manage alerts. Alerts are personal notification opt-ins for automations or
+playbooks. Delivery history and global alert preferences live here too.
+
+Subcommands:
+  list          List the caller's active alerts
+  enable        Enable an alert for an automation or playbook
+  disable       Disable alerts by automation/playbook name or id
+  history       List alert delivery history for an automation or playbook
+  preferences   List global alert preferences
+  enable-session-completed
+  disable-session-completed
+
+Target flags:
+  --automation <owner/name>  Automation target
+  --playbook <owner/name>    Playbook target
+
+Disable-by-id flags:
+  --automation-ids <a,b>     Comma-separated automation target ids
+  --playbook-ids <a,b>       Comma-separated playbook target ids
+
+List flags:
+  --first <n>      Optional page size
+  --cursor <token> Optional cursor from previous response
+  --json           Print raw JSON instead of a human-readable summary
+
+History flags:
+  --channel <name>   Optional delivery channel filter
+  --status <status>  Optional status filter (sent, failed, filtered)
+  --since <seconds>  Optional Unix seconds lower bound
+
+Examples:
+  alva alert list
+  alva alert enable --automation alice/btc-ema
+  alva alert disable --automation alice/btc-ema
+  alva alert enable --playbook alice/btc-dashboard
+  alva alert disable --automation-ids 13292
+  alva alert history --automation alice/btc-ema --status sent
+  alva alert preferences`,
+
+  feed: `Usage: alva feed <subcommand> [options]
+
+Legacy alias for automation lifecycle management. Prefer "alva automation".
+
+Subcommands:
+  list      List feeds owned by the caller
   stop      Stop a feed's producer cronjob
   resume    Resume a stopped feed's producer cronjob
   delete    Soft-delete a feed and all its active majors
 
 Flags:
-  --id <feed_id>   Numeric feed id (required, positive integer)
+  --id <feed_id>   Numeric feed id (required for stop/resume/delete)
+
+List flags:
+  --limit <n>      Max results per page (default 50, max 100 server-side)
+  --cursor <token> Pagination cursor from previous response
+  --status <s>     active | paused | all (default: active)
 
 Notes:
   - stop/resume affect future scheduled runs; existing feed data remains.
@@ -463,6 +551,8 @@ Notes:
   - Auth: caller must own the feed (uid match), enforced by the backend.
 
 Examples:
+  alva feed list
+  alva feed list --status all --limit 20
   alva feed stop --id 42
   alva feed resume --id 42
   alva feed delete --id 42`,
@@ -1503,6 +1593,63 @@ function csvList(val: string | undefined): string[] | undefined {
   return values.length > 0 ? values : undefined;
 }
 
+function parseOwnerNameTarget(
+  value: string,
+  flag: string,
+  command: string
+): { username: string; name: string } {
+  const [username, ...rest] = value.split('/');
+  const name = rest.join('/');
+  if (!username || !name || name.includes('/')) {
+    throw new CliUsageError(
+      `--${flag} must be in owner/name form for '${command}', got '${value}'`,
+      command.split(' ')[0]
+    );
+  }
+  return { username, name };
+}
+
+function requireSingleAlertTarget(
+  flags: Record<string, string>,
+  command: string
+): {
+  kind: 'automation' | 'playbook';
+  target: { username: string; name: string };
+} {
+  const automation = flags['automation'];
+  const playbook = flags['playbook'];
+  if ((automation ? 1 : 0) + (playbook ? 1 : 0) !== 1) {
+    throw new CliUsageError(
+      `Provide exactly one of --automation or --playbook for '${command}'`,
+      'alert'
+    );
+  }
+  if (automation) {
+    return {
+      kind: 'automation',
+      target: parseOwnerNameTarget(automation, 'automation', command),
+    };
+  }
+  return {
+    kind: 'playbook',
+    target: parseOwnerNameTarget(playbook!, 'playbook', command),
+  };
+}
+
+function feedReleaseParams(flags: Record<string, string>, command: string) {
+  return {
+    name: requireFlag(flags, 'name', command),
+    version: requireFlag(flags, 'version', command),
+    cronjob_id: requireNumericFlag(flags, 'cronjob-id', command),
+    view_json: jsonParse(flags['view-json']) as
+      | Record<string, unknown>
+      | undefined,
+    description: flags['description'],
+    changelog: flags['changelog'],
+    agent_type: flags['agent-type'],
+  };
+}
+
 function trendingPlaybooksSort(
   val: string | undefined
 ): 'FOLLOWS' | 'RECENT' | undefined {
@@ -2131,6 +2278,12 @@ export async function dispatch(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for feed', 'feed');
       switch (subcommand) {
+        case 'list':
+          return client.feed.list({
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+            status: flags['status'] as 'active' | 'paused' | 'all' | undefined,
+          });
         case 'stop':
           return client.feed.stop({
             id: requireNumericFlag(flags, 'id', 'feed stop'),
@@ -2147,6 +2300,47 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: feed ${subcommand}`,
             'feed'
+          );
+      }
+    }
+
+    case 'automation': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for automation',
+          'automation'
+        );
+      switch (subcommand) {
+        case 'list': {
+          const result = await client.automation.list({
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+            status: flags['status'] as 'active' | 'paused' | 'all' | undefined,
+          });
+          return boolFlag(flags['json'])
+            ? result
+            : formatAutomationList(result);
+        }
+        case 'publish':
+          return client.automation.publish(
+            feedReleaseParams(flags, 'automation publish')
+          );
+        case 'stop':
+          return client.automation.stop({
+            id: requireNumericFlag(flags, 'id', 'automation stop'),
+          });
+        case 'resume':
+          return client.automation.resume({
+            id: requireNumericFlag(flags, 'id', 'automation resume'),
+          });
+        case 'delete':
+          return client.automation.delete({
+            id: requireNumericFlag(flags, 'id', 'automation delete'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: automation ${subcommand}`,
+            'automation'
           );
       }
     }
@@ -2361,17 +2555,7 @@ export async function dispatch(
         throw new CliUsageError('Missing subcommand for release', 'release');
       switch (subcommand) {
         case 'feed':
-          return client.release.feed({
-            name: requireFlag(flags, 'name', 'release feed'),
-            version: requireFlag(flags, 'version', 'release feed'),
-            cronjob_id: requireNumericFlag(flags, 'cronjob-id', 'release feed'),
-            view_json: jsonParse(flags['view-json']) as
-              | Record<string, unknown>
-              | undefined,
-            description: flags['description'],
-            changelog: flags['changelog'],
-            agent_type: flags['agent-type'],
-          });
+          return client.release.feed(feedReleaseParams(flags, 'release feed'));
         case 'playbook-draft':
           return client.release.playbookDraft({
             name: requireFlag(flags, 'name', 'release playbook-draft'),
@@ -2835,6 +3019,75 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: subscriptions ${subcommand}`,
             'subscriptions'
+          );
+      }
+    }
+
+    case 'alert': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for alert', 'alert');
+      switch (subcommand) {
+        case 'list': {
+          const result = await client.alerts.list({
+            first: num(flags['first']),
+            cursor: flags['cursor'],
+          });
+          return boolFlag(flags['json']) ? result : formatAlertList(result);
+        }
+        case 'enable': {
+          const target = requireSingleAlertTarget(flags, 'alert enable');
+          return target.kind === 'automation'
+            ? client.alerts.enableAutomation(target.target)
+            : client.alerts.enablePlaybook(target.target);
+        }
+        case 'disable': {
+          const automationIds =
+            csvList(flags['automation-ids']) ??
+            csvList(flags['feed-ids']) ??
+            [];
+          const playbookIds = csvList(flags['playbook-ids']) ?? [];
+          if (automationIds.length > 0 || playbookIds.length > 0) {
+            return client.alerts.disableBatch({
+              playbookIds,
+              feedIds: automationIds,
+            });
+          }
+          const target = requireSingleAlertTarget(flags, 'alert disable');
+          return target.kind === 'automation'
+            ? client.alerts.disableAutomation(target.target)
+            : client.alerts.disablePlaybook(target.target);
+        }
+        case 'history': {
+          const target = requireSingleAlertTarget(flags, 'alert history');
+          const params = {
+            username: target.target.username,
+            name: target.target.name,
+            channel: flags['channel'],
+            status: flags['status'],
+            since_time: num(flags['since']),
+            first: num(flags['first']),
+            cursor: flags['cursor'],
+          };
+          return target.kind === 'automation'
+            ? client.alerts.historyAutomation(params)
+            : client.alerts.historyPlaybook(params);
+        }
+        case 'preferences':
+          return client.alerts.preferences();
+        case 'enable-session-completed':
+          return client.alerts.updatePreference({
+            key: 'session_completed',
+            enabled: true,
+          });
+        case 'disable-session-completed':
+          return client.alerts.updatePreference({
+            key: 'session_completed',
+            enabled: false,
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: alert ${subcommand}`,
+            'alert'
           );
       }
     }

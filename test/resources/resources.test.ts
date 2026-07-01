@@ -3,6 +3,8 @@ import { UserResource } from '../../src/resources/user.js';
 import { RunResource } from '../../src/resources/run.js';
 import { ReleaseResource } from '../../src/resources/release.js';
 import { FeedResource } from '../../src/resources/feed.js';
+import { AutomationResource } from '../../src/resources/automation.js';
+import { AlertsResource } from '../../src/resources/alerts.js';
 import { PlaybooksResource } from '../../src/resources/playbooks.js';
 import { SubscriptionsResource } from '../../src/resources/subscriptions.js';
 import { SdkDocsResource } from '../../src/resources/sdkDocs.js';
@@ -314,6 +316,24 @@ describe('ReleaseResource', () => {
 });
 
 describe('FeedResource', () => {
+  it('list() sends GET /api/v1/feed with filters', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.list({ limit: 20, cursor: 'abc', status: 'all' });
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/feed', {
+      query: { limit: 20, cursor: 'abc', status: 'all' },
+    });
+  });
+
+  it('list() sends GET /api/v1/feed with default params', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.list();
+    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/feed', {
+      query: { limit: undefined, cursor: undefined, status: undefined },
+    });
+  });
+
   it('stop() sends POST /api/v1/feed/:id/stop', async () => {
     const client = makeClient();
     const feed = new FeedResource(client);
@@ -356,6 +376,58 @@ describe('FeedResource', () => {
       );
     }
     expect(client._request).not.toHaveBeenCalled();
+  });
+});
+
+describe('AutomationResource', () => {
+  it('list() delegates to feed.list()', async () => {
+    const client = makeClient();
+    client.feed.list = vi
+      .fn()
+      .mockResolvedValue({ feeds: [], has_more: false });
+    const automation = new AutomationResource(client);
+    await automation.list({ limit: 20, cursor: 'abc', status: 'all' });
+    expect(client.feed.list).toHaveBeenCalledWith({
+      limit: 20,
+      cursor: 'abc',
+      status: 'all',
+    });
+  });
+
+  it('publish() delegates to release.feed()', async () => {
+    const client = makeClient();
+    client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+    const automation = new AutomationResource(client);
+    await automation.publish({
+      name: 'btc-ema',
+      version: '1.0.0',
+      cronjob_id: 42,
+    });
+    expect(client.release.feed).toHaveBeenCalledWith({
+      name: 'btc-ema',
+      version: '1.0.0',
+      cronjob_id: 42,
+    });
+  });
+
+  it('lifecycle methods delegate to feed lifecycle methods', async () => {
+    const client = makeClient();
+    client.feed.stop = vi
+      .fn()
+      .mockResolvedValue({ id: '42', status: 'PAUSED' });
+    client.feed.resume = vi
+      .fn()
+      .mockResolvedValue({ id: '42', status: 'ACTIVE' });
+    client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+    const automation = new AutomationResource(client);
+
+    await automation.stop({ id: 42 });
+    await automation.resume({ id: 43 });
+    await automation.delete({ id: 44 });
+
+    expect(client.feed.stop).toHaveBeenCalledWith({ id: 42 });
+    expect(client.feed.resume).toHaveBeenCalledWith({ id: 43 });
+    expect(client.feed.delete).toHaveBeenCalledWith({ id: 44 });
   });
 });
 
@@ -1017,6 +1089,117 @@ describe('SubscriptionsResource — agent surface (mono-meta#584 W3)', () => {
       '/api/v1/subscriptions/unsubscribe-batch',
       { body: { playbook_ids: ['8009'], feed_ids: ['13292'] } }
     );
+  });
+});
+
+describe('AlertsResource', () => {
+  it('list() delegates to subscriptions.list()', async () => {
+    const client = makeClient();
+    client.subscriptions.list = vi.fn().mockResolvedValue({ items: [] });
+    const alerts = new AlertsResource(client);
+    await alerts.list({ first: 20, cursor: 'c1' });
+    expect(client.subscriptions.list).toHaveBeenCalledWith({
+      first: 20,
+      cursor: 'c1',
+    });
+  });
+
+  it('automation alert methods delegate to feed subscription methods', async () => {
+    const client = makeClient();
+    client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({});
+    client.subscriptions.unsubscribeFeed = vi
+      .fn()
+      .mockResolvedValue({ ok: true });
+    const alerts = new AlertsResource(client);
+
+    await alerts.enableAutomation({ username: 'alice', name: 'btc-ema' });
+    await alerts.disableAutomation({ username: 'alice', name: 'btc-ema' });
+
+    expect(client.subscriptions.subscribeFeed).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+    });
+    expect(client.subscriptions.unsubscribeFeed).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+    });
+  });
+
+  it('playbook alert methods delegate to playbook subscription methods', async () => {
+    const client = makeClient();
+    client.subscriptions.subscribePlaybook = vi.fn().mockResolvedValue({});
+    client.subscriptions.unsubscribePlaybook = vi
+      .fn()
+      .mockResolvedValue({ ok: true });
+    const alerts = new AlertsResource(client);
+
+    await alerts.enablePlaybook({ username: 'alice', name: 'btc-dashboard' });
+    await alerts.disablePlaybook({ username: 'alice', name: 'btc-dashboard' });
+
+    expect(client.subscriptions.subscribePlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+    });
+    expect(client.subscriptions.unsubscribePlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+    });
+  });
+
+  it('disableBatch() delegates to subscriptions.unsubscribeBatch()', async () => {
+    const client = makeClient();
+    client.subscriptions.unsubscribeBatch = vi
+      .fn()
+      .mockResolvedValue({ results: [], ok_count: 0 });
+    const alerts = new AlertsResource(client);
+    await alerts.disableBatch({ feedIds: ['42'], playbookIds: ['7'] });
+    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
+      feedIds: ['42'],
+      playbookIds: ['7'],
+    });
+  });
+
+  it('history methods delegate to notification history resources', async () => {
+    const client = makeClient();
+    client.notifications.listFeed = vi
+      .fn()
+      .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
+    client.notifications.listPlaybook = vi
+      .fn()
+      .mockResolvedValue({ items: [], next_cursor: '', playbook_path: '~/p' });
+    const alerts = new AlertsResource(client);
+
+    await alerts.historyAutomation({ username: 'alice', name: 'btc-ema' });
+    await alerts.historyPlaybook({ username: 'alice', name: 'btc-dashboard' });
+
+    expect(client.notifications.listFeed).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+    });
+    expect(client.notifications.listPlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+    });
+  });
+
+  it('preference methods delegate to notification preferences', async () => {
+    const client = makeClient();
+    client.notificationPreferences.list = vi
+      .fn()
+      .mockResolvedValue({ settings: [] });
+    client.notificationPreferences.update = vi.fn().mockResolvedValue({
+      setting: { key: 'session_completed', enabled: false },
+    });
+    const alerts = new AlertsResource(client);
+
+    await alerts.preferences();
+    await alerts.updatePreference({ key: 'session_completed', enabled: false });
+
+    expect(client.notificationPreferences.list).toHaveBeenCalled();
+    expect(client.notificationPreferences.update).toHaveBeenCalledWith({
+      key: 'session_completed',
+      enabled: false,
+    });
   });
 });
 

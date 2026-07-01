@@ -91,11 +91,34 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.feed.list = vi.fn().mockResolvedValue({ feeds: [], has_more: false });
   client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
   client.feed.resume = vi
     .fn()
     .mockResolvedValue({ id: '42', status: 'ACTIVE' });
   client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+  client.automation.list = vi.fn().mockResolvedValue({
+    feeds: [
+      {
+        id: '42',
+        name: 'btc-ema',
+        status: 'ACTIVE',
+        cron_expression: '0 * * * *',
+        total_runs: 3,
+        used_by_total: 1,
+      },
+    ],
+    next_cursor: 'next',
+    has_more: true,
+  });
+  client.automation.publish = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.automation.stop = vi
+    .fn()
+    .mockResolvedValue({ id: '42', status: 'PAUSED' });
+  client.automation.resume = vi
+    .fn()
+    .mockResolvedValue({ id: '42', status: 'ACTIVE' });
+  client.automation.delete = vi.fn().mockResolvedValue({ id: '42' });
   client.credits.wallet = vi.fn().mockResolvedValue({
     balance: 100,
     totalRemaining: 100,
@@ -126,9 +149,102 @@ function makeClient(): AlvaClient {
   client.subscriptions.follows = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
+  client.subscriptions.subscribePlaybook = vi.fn().mockResolvedValue({
+    follow: {
+      id: '1',
+      user_id: '2',
+      playbook_id: '3',
+      created_at_ms: 1700000000000,
+      updated_at_ms: 1700000000000,
+    },
+    subscribed_feed_ids: ['42'],
+    playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
+  });
+  client.subscriptions.unsubscribePlaybook = vi
+    .fn()
+    .mockResolvedValue({ ok: true });
+  client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({
+    subscription: {
+      target: { type: 'FEED', id: '42' },
+      created_at_ms: 1700000000000,
+      updated_at_ms: 1700000000000,
+    },
+    feed_path: '/alva/home/alice/feeds/btc-ema',
+  });
+  client.subscriptions.unsubscribeFeed = vi
+    .fn()
+    .mockResolvedValue({ ok: true });
+  client.subscriptions.list = vi.fn().mockResolvedValue({
+    items: [
+      {
+        target: { type: 'FEED', id: '42' },
+        created_at_ms: 1700000000000,
+        updated_at_ms: 1700000000000,
+        feed_name: 'btc-ema',
+        feed_status: 'ACTIVE',
+        kind: 'FEED_ALERT',
+        target_status: 'ACTIVE',
+        used_by_total: 1,
+        last_pushed_at_ms: 1700000000000,
+      },
+    ],
+    next_cursor: 'next',
+    total_count: 2,
+  });
   client.subscriptions.unsubscribeBatch = vi
     .fn()
     .mockResolvedValue({ results: [], ok_count: 0 });
+  client.alerts.list = vi.fn().mockResolvedValue({
+    items: [
+      {
+        target: { type: 'FEED', id: '42' },
+        created_at_ms: 1700000000000,
+        updated_at_ms: 1700000000000,
+        feed_name: 'btc-ema',
+        feed_status: 'ACTIVE',
+        kind: 'FEED_ALERT',
+        target_status: 'ACTIVE',
+        used_by_total: 1,
+        last_pushed_at_ms: 1700000000000,
+      },
+    ],
+    next_cursor: 'next',
+    total_count: 2,
+  });
+  client.alerts.enableAutomation = vi.fn().mockResolvedValue({
+    subscription: {
+      target: { type: 'FEED', id: '42' },
+      created_at_ms: 1700000000000,
+      updated_at_ms: 1700000000000,
+    },
+    feed_path: '/alva/home/alice/feeds/btc-ema',
+  });
+  client.alerts.disableAutomation = vi.fn().mockResolvedValue({ ok: true });
+  client.alerts.enablePlaybook = vi.fn().mockResolvedValue({
+    follow: {
+      id: '1',
+      user_id: '2',
+      playbook_id: '3',
+      created_at_ms: 1700000000000,
+      updated_at_ms: 1700000000000,
+    },
+    subscribed_feed_ids: ['42'],
+    playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
+  });
+  client.alerts.disablePlaybook = vi.fn().mockResolvedValue({ ok: true });
+  client.alerts.disableBatch = vi
+    .fn()
+    .mockResolvedValue({ results: [], ok_count: 0 });
+  client.alerts.historyAutomation = vi
+    .fn()
+    .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
+  client.alerts.historyPlaybook = vi
+    .fn()
+    .mockResolvedValue({ items: [], next_cursor: '', playbook_path: '~/p' });
+  client.alerts.preferences = vi.fn().mockResolvedValue({ settings: [] });
+  client.alerts.updatePreference = vi.fn().mockResolvedValue({
+    setting: { key: 'session_completed', enabled: false },
+  });
   client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
@@ -955,6 +1071,25 @@ describe('CLI dispatch', () => {
     expect(client.feed.delete).toHaveBeenCalledWith({ id: 42 });
   });
 
+  it('dispatches feed list with filters', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'feed',
+      'list',
+      '--status',
+      'all',
+      '--limit',
+      '20',
+      '--cursor',
+      'abc',
+    ]);
+    expect(client.feed.list).toHaveBeenCalledWith({
+      status: 'all',
+      limit: 20,
+      cursor: 'abc',
+    });
+  });
+
   it('dispatches feed stop', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'stop', '--id', '42']);
@@ -993,6 +1128,88 @@ describe('CLI dispatch', () => {
     await expect(
       dispatch(client, ['feed', 'delete', '--id', 'abc'])
     ).rejects.toThrow("--id must be a number for 'feed delete', got 'abc'");
+  });
+
+  it('renders automation list as readable text by default', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'automation',
+      'list',
+      '--status',
+      'all',
+      '--limit',
+      '20',
+      '--cursor',
+      'abc',
+    ]);
+    expect(client.automation.list).toHaveBeenCalledWith({
+      status: 'all',
+      limit: 20,
+      cursor: 'abc',
+    });
+    expect(result).toEqual(expect.stringContaining('1 automation(s):'));
+    expect(result).toEqual(expect.stringContaining('btc-ema'));
+    expect(result).toEqual(expect.stringContaining('next_cursor: next'));
+  });
+
+  it('returns raw automation list with --json', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, ['automation', 'list', '--json']);
+    expect(result).toEqual({
+      feeds: [
+        {
+          id: '42',
+          name: 'btc-ema',
+          status: 'ACTIVE',
+          cron_expression: '0 * * * *',
+          total_runs: 3,
+          used_by_total: 1,
+        },
+      ],
+      next_cursor: 'next',
+      has_more: true,
+    });
+  });
+
+  it('dispatches automation publish', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'automation',
+      'publish',
+      '--name',
+      'btc',
+      '--version',
+      '1.0',
+      '--cronjob-id',
+      '5',
+      '--view-json',
+      '{"chart":"line"}',
+      '--description',
+      'BTC signal',
+      '--changelog',
+      'Initial',
+      '--agent-type',
+      'alpi',
+    ]);
+    expect(client.automation.publish).toHaveBeenCalledWith({
+      name: 'btc',
+      version: '1.0',
+      cronjob_id: 5,
+      view_json: { chart: 'line' },
+      description: 'BTC signal',
+      changelog: 'Initial',
+      agent_type: 'alpi',
+    });
+  });
+
+  it('dispatches automation lifecycle commands', async () => {
+    const client = makeClient();
+    await dispatch(client, ['automation', 'stop', '--id', '42']);
+    await dispatch(client, ['automation', 'resume', '--id', '43']);
+    await dispatch(client, ['automation', 'delete', '--id', '44']);
+    expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.resume).toHaveBeenCalledWith({ id: 43 });
+    expect(client.automation.delete).toHaveBeenCalledWith({ id: 44 });
   });
 
   it('dispatches playbooks trending with agent-friendly filters', async () => {
@@ -2398,6 +2615,28 @@ describe('help text', () => {
     expect(result.text).toContain('Display name');
   });
 
+  it('returns per-command help for automation --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['automation', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('alva automation list');
+    expect(result.text).toContain('publish');
+    expect(result.text).toContain('--json');
+  });
+
+  it('returns per-command help for alert --help', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['alert', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('alva alert list');
+    expect(result.text).toContain('--automation <owner/name>');
+    expect(result.text).toContain('preferences');
+  });
+
   // --- Cases 3-21: targeted help-text assertions ---
 
   it('case 3: user line lists (me) inline', async () => {
@@ -2613,6 +2852,17 @@ describe('help-text drift guard', () => {
       'run-logs',
     ],
     release: ['feed', 'playbook-draft', 'playbook'],
+    automation: ['list', 'publish', 'stop', 'resume', 'delete'],
+    alert: [
+      'list',
+      'enable',
+      'disable',
+      'history',
+      'preferences',
+      'enable-session-completed',
+      'disable-session-completed',
+    ],
+    feed: ['list', 'stop', 'resume', 'delete'],
     credits: ['wallet', 'items'],
     playbooks: ['trending'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
@@ -2657,7 +2907,9 @@ describe('help-text drift guard', () => {
     };
     const lines = result.text.split('\n');
     for (const [group, subs] of Object.entries(DISPATCHABLE_SUBCOMMANDS)) {
-      const groupLine = lines.find((line) => line.includes(group));
+      const groupLine = lines.find((line) =>
+        line.trimStart().startsWith(`${group} `)
+      );
       expect(groupLine).toBeDefined();
       for (const sub of subs) {
         expect(groupLine!.includes(sub)).toBe(true);
@@ -3292,6 +3544,192 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
       dispatch(client, ['subscriptions', 'unsubscribe'])
     ).rejects.toThrow(/playbook-ids or --feed-ids/);
     expect(client.subscriptions.unsubscribeBatch).not.toHaveBeenCalled();
+  });
+
+  it('renders alert list as readable text by default', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'alert',
+      'list',
+      '--first',
+      '20',
+      '--cursor',
+      'c1',
+    ]);
+    expect(client.alerts.list).toHaveBeenCalledWith({
+      first: 20,
+      cursor: 'c1',
+    });
+    expect(result).toEqual(expect.stringContaining('1 alert(s):'));
+    expect(result).toEqual(expect.stringContaining('btc-ema'));
+    expect(result).toEqual(expect.stringContaining('next_cursor: next'));
+  });
+
+  it('returns raw alert list with --json', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, ['alert', 'list', '--json']);
+    expect(result).toEqual({
+      items: [
+        {
+          target: { type: 'FEED', id: '42' },
+          created_at_ms: 1700000000000,
+          updated_at_ms: 1700000000000,
+          feed_name: 'btc-ema',
+          feed_status: 'ACTIVE',
+          kind: 'FEED_ALERT',
+          target_status: 'ACTIVE',
+          used_by_total: 1,
+          last_pushed_at_ms: 1700000000000,
+        },
+      ],
+      next_cursor: 'next',
+      total_count: 2,
+    });
+  });
+
+  it('dispatches alert enable and disable for automation targets', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'alert',
+      'enable',
+      '--automation',
+      'alice/btc-ema',
+    ]);
+    await dispatch(client, [
+      'alert',
+      'disable',
+      '--automation',
+      'alice/btc-ema',
+    ]);
+    expect(client.alerts.enableAutomation).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+    });
+    expect(client.alerts.disableAutomation).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+    });
+  });
+
+  it('dispatches alert enable and disable for playbook targets', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'alert',
+      'enable',
+      '--playbook',
+      'alice/btc-dashboard',
+    ]);
+    await dispatch(client, [
+      'alert',
+      'disable',
+      '--playbook',
+      'alice/btc-dashboard',
+    ]);
+    expect(client.alerts.enablePlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+    });
+    expect(client.alerts.disablePlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+    });
+  });
+
+  it('dispatches alert disable by automation and playbook target ids', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'alert',
+      'disable',
+      '--automation-ids',
+      '42,43',
+      '--playbook-ids',
+      '7',
+    ]);
+    expect(client.alerts.disableBatch).toHaveBeenCalledWith({
+      feedIds: ['42', '43'],
+      playbookIds: ['7'],
+    });
+  });
+
+  it('dispatches alert history for automation targets', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'alert',
+      'history',
+      '--automation',
+      'alice/btc-ema',
+      '--channel',
+      'telegram',
+      '--status',
+      'sent',
+      '--since',
+      '1777355703',
+      '--first',
+      '5',
+      '--cursor',
+      'c1',
+    ]);
+    expect(client.alerts.historyAutomation).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+      channel: 'telegram',
+      status: 'sent',
+      since_time: 1777355703,
+      first: 5,
+      cursor: 'c1',
+    });
+  });
+
+  it('dispatches alert history for playbook targets', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'alert',
+      'history',
+      '--playbook',
+      'alice/btc-dashboard',
+    ]);
+    expect(client.alerts.historyPlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+      channel: undefined,
+      status: undefined,
+      since_time: undefined,
+      first: undefined,
+      cursor: undefined,
+    });
+  });
+
+  it('dispatches alert preferences', async () => {
+    const client = makeClient();
+    await dispatch(client, ['alert', 'preferences']);
+    await dispatch(client, ['alert', 'enable-session-completed']);
+    await dispatch(client, ['alert', 'disable-session-completed']);
+    expect(client.alerts.preferences).toHaveBeenCalled();
+    expect(client.alerts.updatePreference).toHaveBeenNthCalledWith(1, {
+      key: 'session_completed',
+      enabled: true,
+    });
+    expect(client.alerts.updatePreference).toHaveBeenNthCalledWith(2, {
+      key: 'session_completed',
+      enabled: false,
+    });
+  });
+
+  it('requires exactly one alert target flag for name-addressed commands', async () => {
+    const client = makeClient();
+    await expect(dispatch(client, ['alert', 'enable'])).rejects.toThrow(
+      'Provide exactly one of --automation or --playbook'
+    );
+    await expect(
+      dispatch(client, [
+        'alert',
+        'enable',
+        '--automation',
+        'alice/btc-ema',
+        '--playbook',
+        'alice/btc-dashboard',
+      ])
+    ).rejects.toThrow('Provide exactly one of --automation or --playbook');
   });
 
   it('dispatches playbooks get --ids as a batch', async () => {
