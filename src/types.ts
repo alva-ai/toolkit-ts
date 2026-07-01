@@ -234,6 +234,12 @@ export interface CronjobCreateRequest {
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
+  /**
+   * Run the cronjob under a restricted service-account identity (an SA id
+   * owned by the caller) instead of the owner (#602). Omitted ⇒ runs as owner.
+   * A string: SA ids are snowflake int64s that overflow JS number precision.
+   */
+  run_as_user_id?: string;
 }
 
 export interface Cronjob {
@@ -246,6 +252,11 @@ export interface Cronjob {
   push_notify: boolean;
   /** Per-cronjob V8 heap cap (MB). null when using the server default. */
   max_heap_size_mb: number | null;
+  /**
+   * SA id the cronjob runs as, or "0" when it runs as the owner (#602).
+   * A string: snowflake int64 ids overflow JS number precision.
+   */
+  run_as_user_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -268,6 +279,12 @@ export interface CronjobUpdateRequest {
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
+  /**
+   * Re-point the cronjob at a service-account identity, or "0" to clear it back
+   * to the owner (#602). Omitted ⇒ run_as unchanged.
+   * A string: SA ids are snowflake int64s that overflow JS number precision.
+   */
+  run_as_user_id?: string;
 }
 
 export interface CronjobRunsListParams {
@@ -1011,4 +1028,35 @@ export interface ChannelGroupSubscriptionMutationResponse {
   caller: ChannelGroupCallerInfo;
   admin: ChannelGroupAdminInfo | null;
   subscriptions: ChannelGroupSubscription[];
+}
+
+// --- Service accounts (restricted run-as identities, issue #602) ---
+
+export interface ServiceAccount {
+  // id and parent_user_id are snowflake int64 user ids that overflow JS number
+  // precision, so they are strings (the gateway emits them string-encoded) and
+  // round-trip safely back into --run-as-service-account (#602).
+  id: string;
+  display_name: string;
+  username: string;
+  parent_user_id: string;
+  created_at?: number;
+}
+
+export interface ServiceAccountCreateRequest {
+  display_name: string;
+}
+
+export interface ServiceAccountCreateResponse {
+  service_account: ServiceAccount;
+}
+
+export interface ServiceAccountListResponse {
+  service_accounts: ServiceAccount[];
+}
+
+export interface ServiceAccountGrantRequest {
+  id: string; // snowflake int64 SA id, kept as a string (overflows JS number)
+  path: string;
+  permission: string; // read | write | import
 }

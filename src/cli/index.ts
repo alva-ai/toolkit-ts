@@ -70,6 +70,7 @@ Commands:
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
+  service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
   feed        Feed lifecycle management (delete)
@@ -363,6 +364,11 @@ Create/Update flags:
   --push-notify          Enable Telegram push notifications on completion
   --no-push-notify       Disable push notifications
   --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
+  --run-as-service-account <id>  Run the cronjob under a service-account identity
+                         (id from "alva service-account create"); restricts file
+                         access to the SA's grants. Omit on update ⇒ unchanged (#602)
+  --clear-run-as         Clear run_as on update — run the cronjob as yourself
+                         again (mutually exclusive with --run-as-service-account)
 
 List flags:
   --limit <n>            Max results per page (default: 20)
@@ -413,6 +419,29 @@ Build-time verify (fire once, then poll until your run completes):
   STATUS=$(echo "$ROW" | jq -r .status)
   [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
                                   --run-id "$(echo "$ROW" | jq -r .id)"`,
+
+  'service-account': `Usage: alva service-account <subcommand> [options]
+
+Manage restricted run-as identities. A service account executes a UDF or
+cronjob with only the ALFS paths you grant it; billing/audit stay with you.
+Set the resulting id as --run-as-service-account on a UDF/cronjob. Opt-in:
+no run-as = run as owner. See the service-accounts skill reference.
+
+Subcommands:
+  create     Create a service account (--name <label>)
+  list       List the service accounts you own
+  delete     Delete a service account (--id <id>); referencing jobs fail-close
+  grant      Grant an ALFS path (--id <id> --path <path> --permission read|write|import)
+  revoke     Revoke an ALFS path (--id <id> --path <path> --permission ...)
+
+Examples:
+  alva service-account create --name fintwit-bot
+  alva service-account grant --id 90123 --path '~/feeds/x/v1/src/index.js' --permission read
+  alva service-account grant --id 90123 --path '~/feeds/x/v1/' --permission read
+  alva deploy create --name x-update --path '~/feeds/x/v1/src/index.js' \\
+    --cron "0 */4 * * *" --run-as-service-account 90123
+  alva service-account revoke --id 90123 --path '~/feeds/x/v1/' --permission read
+  alva service-account delete --id 90123`,
 
   feed: `Usage: alva feed <subcommand> [options]
 
@@ -521,6 +550,12 @@ Register flags:
   --params-schema-file <path> Read JSON Schema from a local file
   --allow-charges             Allow this function to charge viewer allowance
   --no-allow-charges          Explicitly register as no-charge
+  --run-as-service-account <id>  Run invocations under a service-account identity
+                              (id from "alva service-account create"); scopes file
+                              access to the SA's grants. Omit on re-register ⇒
+                              unchanged (#602)
+  --clear-run-as              Clear run_as on re-register — run as the owner again
+                              (mutually exclusive with --run-as-service-account)
 
 List flags:
   --playbook-id <id>          Numeric playbook id (required)
@@ -1160,6 +1195,7 @@ export const BOOLEAN_FLAGS = new Set([
   'execute-latest',
   'dry-run',
   'allow-charges',
+  'clear-run-as',
   'json',
   'compress',
   'bypass-lint',
@@ -1309,6 +1345,80 @@ function optionalBoundedIntegerFlag(
     );
   }
   return n;
+}
+
+// Validate an optional service-account id flag (--run-as-service-account).
+// Returns undefined when absent, but THROWS on a non-positive / non-integer
+// value instead of silently dropping it: this is a security-sensitive flag, and
+// a typo (e.g. `90123x` or `=`) must NOT fail open and run the job with the
+// owner's full privileges instead of the scoped SA (#602, Codex P1).
+//
+// The id is kept as a STRING, not parsed to a number: user ids are snowflake
+// int64s that routinely exceed Number.MAX_SAFE_INTEGER, so coercing to a JS
+// number would round a valid id (or reject it under a MAX_SAFE_INTEGER bound),
+// making real service accounts unusable as run-as targets (Codex P2).
+function optionalServiceAccountIdFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  const raw = flags['run-as-service-account'];
+  if (raw === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new CliUsageError(
+      `--run-as-service-account must be a positive service-account id for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return raw;
+}
+
+// Resolve the run_as field for create/update/register from its two flags:
+//   --run-as-service-account <id>  → set/switch to that SA (validated > 0)
+//   --clear-run-as                 → clear it (send "0"; backend runs as owner)
+//   neither                        → undefined (omitted): backend PRESERVES the
+//                                    prior run_as on re-registration/update.
+// The two flags are mutually exclusive. We keep clearing on an explicit
+// --clear-run-as rather than accepting `--run-as-service-account 0`, so a typo'd
+// empty value still throws instead of silently un-scoping the job (#602). The
+// returned value is a string (snowflake-safe id, or "0" to clear).
+function resolveRunAsFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  const clear = boolFlag(flags['clear-run-as']) ?? false;
+  const setID = optionalServiceAccountIdFlag(flags, command);
+  if (clear && setID !== undefined) {
+    throw new CliUsageError(
+      `--clear-run-as and --run-as-service-account are mutually exclusive for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (clear) return '0';
+  return setID;
+}
+
+// Require a service-account id flag (--id) as a snowflake-safe string. Like
+// optionalServiceAccountIdFlag but mandatory (grant/revoke/delete): SA ids are
+// int64 snowflakes, so validate the shape and keep the string rather than
+// parsing to a number, which would round a large id.
+function requireServiceAccountIdFlag(
+  flags: Record<string, string>,
+  command: string
+): string {
+  const raw = flags['id'];
+  if (raw === undefined || raw === '') {
+    throw new CliUsageError(
+      `Missing required flag --id for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new CliUsageError(
+      `--id must be a positive service-account id for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return raw;
 }
 
 function parsePositiveIntegerValue(
@@ -1905,6 +2015,10 @@ export async function dispatch(
               1,
               2046
             ),
+            run_as_user_id: optionalServiceAccountIdFlag(
+              flags,
+              'deploy create'
+            ),
           });
         case 'list':
           return client.deploy.list({
@@ -1931,6 +2045,7 @@ export async function dispatch(
               1,
               2046
             ),
+            run_as_user_id: resolveRunAsFlag(flags, 'deploy update'),
           });
         case 'delete':
           return client.deploy.delete({
@@ -1963,6 +2078,51 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: deploy ${subcommand}`,
             'deploy'
+          );
+      }
+    }
+
+    case 'service-account': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for service-account',
+          'service-account'
+        );
+      switch (subcommand) {
+        case 'create':
+          return client.serviceAccount.create({
+            display_name: requireFlag(flags, 'name', 'service-account create'),
+          });
+        case 'list':
+          return client.serviceAccount.list();
+        case 'delete':
+          return client.serviceAccount.delete({
+            id: requireServiceAccountIdFlag(flags, 'service-account delete'),
+          });
+        case 'grant':
+          return client.serviceAccount.grant({
+            id: requireServiceAccountIdFlag(flags, 'service-account grant'),
+            path: requireFlag(flags, 'path', 'service-account grant'),
+            permission: requireFlag(
+              flags,
+              'permission',
+              'service-account grant'
+            ),
+          });
+        case 'revoke':
+          return client.serviceAccount.revoke({
+            id: requireServiceAccountIdFlag(flags, 'service-account revoke'),
+            path: requireFlag(flags, 'path', 'service-account revoke'),
+            permission: requireFlag(
+              flags,
+              'permission',
+              'service-account revoke'
+            ),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: service-account ${subcommand}`,
+            'service-account'
           );
       }
     }
@@ -2148,6 +2308,7 @@ export async function dispatch(
               deps
             ),
             allow_charges: boolFlag(flags['allow-charges']),
+            run_as_user_id: resolveRunAsFlag(flags, 'functions register'),
           });
         case 'list':
           return client.functions.list({

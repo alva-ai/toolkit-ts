@@ -18,6 +18,13 @@ export interface RegisterFunctionParams {
   entry_script_path: string;
   params_schema?: string;
   allow_charges?: boolean;
+  /**
+   * Run invocations of this function under a restricted service-account
+   * identity (an SA id owned by the caller) instead of the owner (#602).
+   * Omitted ⇒ runs as the owner. A string: SA ids are snowflake int64s that
+   * overflow JS number precision.
+   */
+  run_as_user_id?: string;
 }
 
 export interface RegisterFunctionResponse {
@@ -132,6 +139,7 @@ export class FunctionsResource {
         entry_script_path: params.entry_script_path,
         params_schema: params.params_schema,
         allow_charges: params.allow_charges,
+        run_as_user_id: params.run_as_user_id,
       },
     }) as Promise<RegisterFunctionResponse>;
   }
