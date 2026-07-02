@@ -2,6 +2,8 @@ import type { AlvaClient } from '../client.js';
 import type {
   FeedDeleteRequest,
   FeedDeleteResponse,
+  FeedListParams,
+  FeedListResponse,
   FeedStatusUpdateRequest,
   FeedStatusUpdateResponse,
 } from '../types.js';
@@ -12,6 +14,20 @@ import type {
  */
 export class FeedResource {
   constructor(private client: AlvaClient) {}
+
+  /**
+   * List feeds owned by the caller. Backed by GET /api/v1/feed.
+   */
+  async list(params: FeedListParams = {}): Promise<FeedListResponse> {
+    this.client._requireAuth();
+    return this.client._request('GET', '/api/v1/feed', {
+      query: {
+        limit: params.limit,
+        cursor: params.cursor,
+        status: params.status,
+      },
+    }) as Promise<FeedListResponse>;
+  }
 
   /**
    * Stop a feed's producer cronjob. This pauses future scheduled runs while
