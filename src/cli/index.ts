@@ -505,6 +505,7 @@ Target flags:
 Disable-by-id flags:
   --automation-ids <a,b>     Comma-separated automation target ids
   --playbook-ids <a,b>       Comma-separated playbook target ids
+  --feed-ids <a,b>           Legacy alias for --automation-ids
 
 List flags:
   --first <n>      Optional page size
@@ -522,6 +523,7 @@ Examples:
   alva alert disable --automation alice/btc-ema
   alva alert enable --playbook alice/btc-dashboard
   alva alert disable --automation-ids 13292
+  alva alert disable --feed-ids 13292
   alva alert history --automation alice/btc-ema --status sent
   alva alert preferences`,
 
@@ -544,6 +546,8 @@ List flags:
   --status <s>     active | paused | all (default: active)
 
 Notes:
+  - list returns the raw JSON envelope. Prefer "alva automation list" for
+    human-readable output or "alva automation list --json" for explicit JSON.
   - stop/resume affect future scheduled runs; existing feed data remains.
   - delete cascades to all active feed_majors in the same DB transaction.
   - delete removes producer cronjobs best-effort; the cronjob scavenger

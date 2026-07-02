@@ -1090,6 +1090,39 @@ describe('CLI dispatch', () => {
     });
   });
 
+  it('returns raw feed list for legacy feed list', async () => {
+    const client = makeClient();
+    client.feed.list = vi.fn().mockResolvedValue({
+      feeds: [
+        {
+          id: '42',
+          name: 'btc-ema',
+          status: 'ACTIVE',
+          cron_expression: '0 * * * *',
+          total_runs: 3,
+          used_by_total: 1,
+        },
+      ],
+      next_cursor: 'next',
+      has_more: true,
+    });
+    const result = await dispatch(client, ['feed', 'list']);
+    expect(result).toEqual({
+      feeds: [
+        {
+          id: '42',
+          name: 'btc-ema',
+          status: 'ACTIVE',
+          cron_expression: '0 * * * *',
+          total_runs: 3,
+          used_by_total: 1,
+        },
+      ],
+      next_cursor: 'next',
+      has_more: true,
+    });
+  });
+
   it('dispatches feed stop', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'stop', '--id', '42']);
@@ -2634,6 +2667,8 @@ describe('help text', () => {
     };
     expect(result.text).toContain('alva alert list');
     expect(result.text).toContain('--automation <owner/name>');
+    expect(result.text).toContain('--feed-ids <a,b>');
+    expect(result.text).toContain('Legacy alias for --automation-ids');
     expect(result.text).toContain('preferences');
   });
 
@@ -3648,6 +3683,15 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     expect(client.alerts.disableBatch).toHaveBeenCalledWith({
       feedIds: ['42', '43'],
       playbookIds: ['7'],
+    });
+  });
+
+  it('dispatches alert disable by legacy feed target ids', async () => {
+    const client = makeClient();
+    await dispatch(client, ['alert', 'disable', '--feed-ids', '42,43']);
+    expect(client.alerts.disableBatch).toHaveBeenCalledWith({
+      feedIds: ['42', '43'],
+      playbookIds: [],
     });
   });
 

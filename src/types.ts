@@ -385,7 +385,7 @@ export interface FeedListItem {
   id: string;
   name: string;
   /** Feed runtime status. */
-  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | string;
+  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
   cron_expression?: string;
   total_runs: number;
   used_by_total: number;
@@ -406,7 +406,7 @@ export interface FeedStatusUpdateResponse {
   /** Echoed feed id (string form, matching gateway response). */
   id: string;
   /** Feed runtime status after the update. */
-  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | string;
+  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
 }
 
 export interface FeedDeleteResponse {
