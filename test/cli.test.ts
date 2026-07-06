@@ -3350,6 +3350,61 @@ describe('CLI dispatch — broker', () => {
     expect(argv2[argv2.indexOf('--intent-id') + 1]).toBe('mine');
   });
 
+  it('does not double-mint when the handle is in equals-form', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    await dispatch(
+      client,
+      [
+        'broker',
+        'order',
+        'place',
+        '--account',
+        '7',
+        '--venue',
+        'binance',
+        '--symbol',
+        'BTC/USDT',
+        '--side',
+        'buy',
+        '--amount',
+        '0.01',
+        '--intent-id=mine',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    expect(argv.filter((a) => a.startsWith('--intent-id'))).toHaveLength(1);
+    expect(argv).toContain('--intent-id=mine');
+  });
+
+  it('forwards a broker-native valueless flag (--open) without a parse error', async () => {
+    // --open is not in toolkit's BOOLEAN_FLAGS, so parseFlags would reject it
+    // ("--open requires a value"). broker must bypass parseFlags entirely and
+    // forward the flag verbatim. (order list, not stdin — no blocking read.)
+    const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
+    const env = await dispatch(
+      client,
+      [
+        'broker',
+        'order',
+        'list',
+        '--venue',
+        'binance',
+        '--account',
+        '7',
+        '--open',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    expect(env).toEqual({ status: 'ok' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    expect(argv).toContain('--open');
+  });
+
   it('synthesizes a network error envelope on transport failure', async () => {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

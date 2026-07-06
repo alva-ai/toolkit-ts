@@ -1714,10 +1714,13 @@ async function handleBroker(
 ): Promise<unknown> {
   let argv = brokerArgv;
   const isOrderPlace = brokerArgv[0] === 'order' && brokerArgv[1] === 'place';
-  const hasHandle =
-    brokerArgv.includes('--intent-id') ||
-    brokerArgv.includes('--client-order-id');
-  const isDryRun = brokerArgv.includes('--dry-run');
+  // Detect a retry handle in either form: `--intent-id x` or `--intent-id=x`
+  // (same for --client-order-id). Missing the equals-form would append a
+  // SECOND minted handle and break the idempotency key the operator intended.
+  const hasFlag = (name: string): boolean =>
+    brokerArgv.some((a) => a === name || a.startsWith(`${name}=`));
+  const hasHandle = hasFlag('--intent-id') || hasFlag('--client-order-id');
+  const isDryRun = hasFlag('--dry-run');
   if (isOrderPlace && !hasHandle && !isDryRun) {
     const intentId = crypto.randomUUID();
     // stderr BEFORE the request: if we die mid-flight, the operator still has
@@ -1727,7 +1730,7 @@ async function handleBroker(
   }
 
   let stdin: string | undefined;
-  if (brokerArgv.includes('--stdin')) {
+  if (hasFlag('--stdin')) {
     stdin = await readAllStdin();
   }
 
@@ -1757,7 +1760,12 @@ async function handleBroker(
     // preserves the full contract for the caller to inspect.
     return envelope;
   }
-  process.stdout.write(JSON.stringify(envelope) + '\n');
+  // Exit only AFTER stdout has flushed — process.exit() right after write()
+  // can truncate on a pipe (agents pipe stdout), corrupting the envelope. The
+  // write callback fires once the data is handed to the OS.
+  await new Promise<void>((resolve) => {
+    process.stdout.write(JSON.stringify(envelope) + '\n', () => resolve());
+  });
   process.exit(exit);
 }
 
@@ -1814,6 +1822,13 @@ export async function dispatch(
     return result;
   }
 
+  // broker is a raw argv passthrough — it must NOT go through parseFlags
+  // (which would reject broker-native valueless flags like --stdin and any
+  // future flag toolkit doesn't know about). Intercept before parsing.
+  if (group === 'broker') {
+    return handleBroker(client, args.slice(1), deps);
+  }
+
   const subcommand = args[1];
   const flags = parseFlags(
     args.slice(
@@ -1828,9 +1843,6 @@ export async function dispatch(
   }
 
   switch (group) {
-    case 'broker':
-      return handleBroker(client, args.slice(1), deps);
-
     case 'user':
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for user', 'user');
