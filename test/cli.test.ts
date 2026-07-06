@@ -3889,3 +3889,191 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     });
   });
 });
+
+describe('CLI dispatch — broker', () => {
+  function brokerClient(resp: unknown) {
+    const client = makeClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (client as any)._request = vi.fn().mockResolvedValue(resp);
+    return client;
+  }
+
+  it('passes argv through verbatim to /api/v1/broker/invoke', async () => {
+    const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
+    const env = await dispatch(
+      client,
+      ['broker', 'quote', '--venue', 'binance', '--symbol', 'BTC/USDT'],
+      undefined,
+      { mode: 'jagent' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((client as any)._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/broker/invoke',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          argv: ['quote', '--venue', 'binance', '--symbol', 'BTC/USDT'],
+        }),
+      })
+    );
+    expect(env).toEqual({ status: 'filled' });
+  });
+
+  it('mints an --intent-id for a live order place', async () => {
+    const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
+    await dispatch(
+      client,
+      [
+        'broker',
+        'order',
+        'place',
+        '--account',
+        '7',
+        '--venue',
+        'binance',
+        '--symbol',
+        'BTC/USDT',
+        '--side',
+        'buy',
+        '--amount',
+        '0.01',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const call = (client as any)._request.mock.calls[0];
+    const argv: string[] = call[2].body.argv;
+    const idx = argv.indexOf('--intent-id');
+    expect(idx).toBeGreaterThan(-1);
+    expect(argv[idx + 1]).toMatch(/^[0-9a-f-]{36}$/); // a UUID
+  });
+
+  it('does NOT mint an intent-id for a dry-run or when one is supplied', async () => {
+    const client = brokerClient({ envelope: { dryRun: true }, exit: 0 });
+    await dispatch(
+      client,
+      [
+        'broker',
+        'order',
+        'place',
+        '--account',
+        '7',
+        '--venue',
+        'binance',
+        '--symbol',
+        'BTC/USDT',
+        '--side',
+        'buy',
+        '--amount',
+        '0.01',
+        '--dry-run',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    expect(argv).not.toContain('--intent-id');
+
+    const client2 = brokerClient({ envelope: {}, exit: 0 });
+    await dispatch(
+      client2,
+      [
+        'broker',
+        'order',
+        'place',
+        '--account',
+        '7',
+        '--venue',
+        'binance',
+        '--symbol',
+        'BTC/USDT',
+        '--side',
+        'buy',
+        '--amount',
+        '0.01',
+        '--intent-id',
+        'mine',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const argv2: string[] = (client2 as any)._request.mock.calls[0][2].body
+      .argv;
+    expect(argv2.filter((a) => a === '--intent-id')).toHaveLength(1);
+    expect(argv2[argv2.indexOf('--intent-id') + 1]).toBe('mine');
+  });
+
+  it('does not double-mint when the handle is in equals-form', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    await dispatch(
+      client,
+      [
+        'broker',
+        'order',
+        'place',
+        '--account',
+        '7',
+        '--venue',
+        'binance',
+        '--symbol',
+        'BTC/USDT',
+        '--side',
+        'buy',
+        '--amount',
+        '0.01',
+        '--intent-id=mine',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    expect(argv.filter((a) => a.startsWith('--intent-id'))).toHaveLength(1);
+    expect(argv).toContain('--intent-id=mine');
+  });
+
+  it('forwards a broker-native valueless flag (--open) without a parse error', async () => {
+    // --open is not in toolkit's BOOLEAN_FLAGS, so parseFlags would reject it
+    // ("--open requires a value"). broker must bypass parseFlags entirely and
+    // forward the flag verbatim. (order list, not stdin — no blocking read.)
+    const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
+    const env = await dispatch(
+      client,
+      [
+        'broker',
+        'order',
+        'list',
+        '--venue',
+        'binance',
+        '--account',
+        '7',
+        '--open',
+      ],
+      undefined,
+      { mode: 'jagent' }
+    );
+    expect(env).toEqual({ status: 'ok' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    expect(argv).toContain('--open');
+  });
+
+  it('synthesizes a network error envelope on transport failure', async () => {
+    const client = makeClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (client as any)._request = vi
+      .fn()
+      .mockRejectedValue(new Error('econnrefused'));
+    const env = (await dispatch(
+      client,
+      ['broker', 'balance', '--venue', 'binance', '--account', '7'],
+      undefined,
+      { mode: 'jagent' }
+    )) as { status: string; reason: { code: string } };
+    expect(env.status).toBe('error');
+    expect(env.reason.code).toBe('network');
+  });
+});

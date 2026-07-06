@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import { AlvaClient } from '../client.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import { loadConfig, writeConfig } from './config.js';
@@ -1954,6 +1955,87 @@ function writeLocalFileBytes(
   fs.writeFileSync(path, data);
 }
 
+/** Read all of stdin as a UTF-8 string (for `broker order place --stdin`). */
+async function readAllStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * `alva broker` — a thin passthrough to trex's BrokerService.Invoke via the
+ * gateway. argv goes through untouched (the command grammar IS the contract:
+ * `alva broker describe`); the envelope comes back and is written to stdout
+ * verbatim, the process exits with its exit code. No DTO, no per-command
+ * knowledge — with ONE exception: a live `order place` gets a client-minted
+ * `--intent-id` (printed to stderr BEFORE the request) so the idempotency
+ * retry handle survives even if this process dies before the response
+ * arrives (design §2.5.1 / §2.6).
+ */
+async function handleBroker(
+  client: AlvaClient,
+  brokerArgv: string[],
+  deps?: DispatchRuntimeDeps
+): Promise<unknown> {
+  let argv = brokerArgv;
+  const isOrderPlace = brokerArgv[0] === 'order' && brokerArgv[1] === 'place';
+  // Detect a retry handle in either form: `--intent-id x` or `--intent-id=x`
+  // (same for --client-order-id). Missing the equals-form would append a
+  // SECOND minted handle and break the idempotency key the operator intended.
+  const hasFlag = (name: string): boolean =>
+    brokerArgv.some((a) => a === name || a.startsWith(`${name}=`));
+  const hasHandle = hasFlag('--intent-id') || hasFlag('--client-order-id');
+  const isDryRun = hasFlag('--dry-run');
+  if (isOrderPlace && !hasHandle && !isDryRun) {
+    const intentId = crypto.randomUUID();
+    // stderr BEFORE the request: if we die mid-flight, the operator still has
+    // the retry handle. stdout stays the pure JSON envelope.
+    process.stderr.write(`alva broker: intent-id ${intentId}\n`);
+    argv = [...brokerArgv, '--intent-id', intentId];
+  }
+
+  let stdin: string | undefined;
+  if (hasFlag('--stdin')) {
+    stdin = await readAllStdin();
+  }
+
+  let envelope: unknown;
+  let exit = 2;
+  try {
+    const resp = (await client._request('POST', '/api/v1/broker/invoke', {
+      body: { argv, stdin },
+    })) as { envelope: unknown; exit: number };
+    envelope = resp.envelope;
+    exit = resp.exit ?? 2;
+  } catch (e) {
+    // Transport failure: synthesize a contract-shaped error envelope so the
+    // agent's stdout parse never breaks; exit 2 = unknown outcome.
+    const message = e instanceof Error ? e.message : String(e);
+    envelope = {
+      schemaVersion: 2,
+      status: 'error',
+      reason: { code: 'network', message },
+    };
+    exit = 2;
+  }
+
+  if (deps?.mode === 'jagent') {
+    // Programmatic callers get the envelope regardless of outcome; the exit
+    // code is encoded in the envelope's status, so returning it (not throwing)
+    // preserves the full contract for the caller to inspect.
+    return envelope;
+  }
+  // Exit only AFTER stdout has flushed — process.exit() right after write()
+  // can truncate on a pipe (agents pipe stdout), corrupting the envelope. The
+  // write callback fires once the data is handed to the OS.
+  await new Promise<void>((resolve) => {
+    process.stdout.write(JSON.stringify(envelope) + '\n', () => resolve());
+  });
+  process.exit(exit);
+}
+
 export async function dispatch(
   client: AlvaClient,
   args: string[],
@@ -2005,6 +2087,13 @@ export async function dispatch(
         `Please upgrade: npm install -g @alva-ai/toolkit`;
     }
     return result;
+  }
+
+  // broker is a raw argv passthrough — it must NOT go through parseFlags
+  // (which would reject broker-native valueless flags like --stdin and any
+  // future flag toolkit doesn't know about). Intercept before parsing.
+  if (group === 'broker') {
+    return handleBroker(client, args.slice(1), deps);
   }
 
   const subcommand = args[1];
