@@ -397,6 +397,34 @@ export interface FeedListResponse {
   has_more: boolean;
 }
 
+export interface AutomationInspectRequest {
+  /** Numeric automation id. Currently the same underlying feed id. */
+  id: number;
+}
+
+export interface AutomationInspectResponse {
+  /** Numeric automation id encoded as a string, matching the gateway response. */
+  id: string;
+  /** Backing feed id encoded as a string. */
+  feed_id: string;
+  name: string;
+  description?: string;
+  /** Automation runtime status. */
+  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
+  cron_expression?: string;
+  total_runs: number;
+  /**
+   * Backend product-flow registry id. Null for ordinary non-flow automations.
+   */
+  flow_id: string | null;
+  /**
+   * Absolute ALFS config path for caller-owned product-flow automations.
+   * Null for ordinary automations and product-flow automations not owned by
+   * the caller.
+   */
+  flow_config_path: string | null;
+}
+
 export interface FeedStatusUpdateRequest {
   /** Numeric feed id to stop/resume. */
   id: number;

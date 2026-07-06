@@ -25,7 +25,11 @@ import {
   formatPlaybook,
   formatPlaybookList,
 } from './playbooksFormat.js';
-import { formatAlertList, formatAutomationList } from './productFormat.js';
+import {
+  formatAlertList,
+  formatAutomationDetail,
+  formatAutomationList,
+} from './productFormat.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as fsPromises from 'fs/promises';
@@ -74,7 +78,7 @@ Commands:
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
-  automation  Automation management (list, publish, stop, resume, delete)
+  automation  Automation management (list, inspect, publish, stop, resume, delete)
   alert       Alert management (list, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
   feed        Legacy automation alias (list, stop, resume, delete)
   playbooks   Playbook discovery (trending, get, list) and visibility
@@ -453,6 +457,7 @@ commands called "feeds"; ids are currently the same underlying feed ids.
 
 Subcommands:
   list      List automations owned by the caller
+  inspect   Inspect one automation and show its flow config path when available
   publish   Publish/register an automation after deploying its cronjob
   stop      Stop an automation's producer cronjob
   resume    Resume a stopped automation's producer cronjob
@@ -474,11 +479,12 @@ Publish flags:
   --agent-type <type>    Agent kind that produces this automation, e.g. "alpi"
 
 Lifecycle flags:
-  --id <automation_id>   Numeric automation id (required for stop/resume/delete)
+  --id <automation_id>   Numeric automation id (required for inspect/stop/resume/delete)
 
 Examples:
   alva automation list
   alva automation list --status all --limit 20
+  alva automation inspect --id 42
   alva automation publish --name btc-ema --version 1.0.0 --cronjob-id 42
   alva automation stop --id 42
   alva automation resume --id 42
@@ -2324,6 +2330,14 @@ export async function dispatch(
           return boolFlag(flags['json'])
             ? result
             : formatAutomationList(result);
+        }
+        case 'inspect': {
+          const result = await client.automation.inspect({
+            id: requireNumericFlag(flags, 'id', 'automation inspect'),
+          });
+          return boolFlag(flags['json'])
+            ? result
+            : formatAutomationDetail(result);
         }
         case 'publish':
           return client.automation.publish(

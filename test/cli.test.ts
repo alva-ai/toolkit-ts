@@ -111,6 +111,17 @@ function makeClient(): AlvaClient {
     next_cursor: 'next',
     has_more: true,
   });
+  client.automation.inspect = vi.fn().mockResolvedValue({
+    id: '42',
+    feed_id: '42',
+    name: 'portfolio-watch',
+    status: 'ACTIVE',
+    cron_expression: '0 9 * * *',
+    total_runs: 5,
+    flow_id: 'portfolio_watch',
+    flow_config_path:
+      '/alva/home/alice/memory/profile/portfolio_watch/portfolio-watch.yaml',
+  });
   client.automation.publish = vi.fn().mockResolvedValue({ feed_id: 1 });
   client.automation.stop = vi
     .fn()
@@ -1201,6 +1212,46 @@ describe('CLI dispatch', () => {
       ],
       next_cursor: 'next',
       has_more: true,
+    });
+  });
+
+  it('renders automation inspect as readable text by default', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'automation',
+      'inspect',
+      '--id',
+      '42',
+    ]);
+    expect(client.automation.inspect).toHaveBeenCalledWith({ id: 42 });
+    expect(result).toEqual(expect.stringContaining('portfolio-watch'));
+    expect(result).toEqual(expect.stringContaining('flow id: portfolio_watch'));
+    expect(result).toEqual(
+      expect.stringContaining(
+        'flow config path: /alva/home/alice/memory/profile/portfolio_watch/portfolio-watch.yaml'
+      )
+    );
+  });
+
+  it('returns raw automation inspect with --json', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'automation',
+      'inspect',
+      '--id',
+      '42',
+      '--json',
+    ]);
+    expect(result).toEqual({
+      id: '42',
+      feed_id: '42',
+      name: 'portfolio-watch',
+      status: 'ACTIVE',
+      cron_expression: '0 9 * * *',
+      total_runs: 5,
+      flow_id: 'portfolio_watch',
+      flow_config_path:
+        '/alva/home/alice/memory/profile/portfolio_watch/portfolio-watch.yaml',
     });
   });
 
@@ -2887,7 +2938,7 @@ describe('help-text drift guard', () => {
       'run-logs',
     ],
     release: ['feed', 'playbook-draft', 'playbook'],
-    automation: ['list', 'publish', 'stop', 'resume', 'delete'],
+    automation: ['list', 'inspect', 'publish', 'stop', 'resume', 'delete'],
     alert: [
       'list',
       'enable',

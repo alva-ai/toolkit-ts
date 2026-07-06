@@ -1,4 +1,5 @@
 import type {
+  AutomationInspectResponse,
   FeedListResponse,
   PushSubscriptionListResponse,
 } from '../types.js';
@@ -25,6 +26,26 @@ export function formatAutomationList(result: FeedListResponse): string {
     lines.push('');
   }
   return lines.join('\n');
+}
+
+export function formatAutomationDetail(
+  result: AutomationInspectResponse
+): string {
+  const status = result.status ? `  [${result.status}]` : '';
+  const lines: string[] = [
+    `${result.name || '(unnamed)'}${status}`,
+    `  id: ${result.id}`,
+  ];
+  if (result.feed_id && result.feed_id !== result.id) {
+    lines.push(`  feed id: ${result.feed_id}`);
+  }
+  if (result.cron_expression) {
+    lines.push(`  schedule: ${result.cron_expression}`);
+  }
+  lines.push(`  runs: ${result.total_runs ?? 0}`);
+  lines.push(`  flow id: ${result.flow_id ?? '(none)'}`);
+  lines.push(`  flow config path: ${result.flow_config_path ?? '(none)'}`);
+  return `${lines.join('\n')}\n`;
 }
 
 export function formatAlertList(result: PushSubscriptionListResponse): string {

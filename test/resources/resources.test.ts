@@ -410,6 +410,16 @@ describe('AutomationResource', () => {
     });
   });
 
+  it('inspect() sends GET /api/v1/automation/:id', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+    await automation.inspect({ id: 42 });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/automation/42'
+    );
+  });
+
   it('lifecycle methods delegate to feed lifecycle methods', async () => {
     const client = makeClient();
     client.feed.stop = vi
@@ -428,6 +438,17 @@ describe('AutomationResource', () => {
     expect(client.feed.stop).toHaveBeenCalledWith({ id: 42 });
     expect(client.feed.resume).toHaveBeenCalledWith({ id: 43 });
     expect(client.feed.delete).toHaveBeenCalledWith({ id: 44 });
+  });
+
+  it('inspect() rejects non-positive id without calling _request', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+
+    await expect(automation.inspect({ id: 0 })).rejects.toThrow(
+      'automation id must be a positive integer'
+    );
+
+    expect(client._request).not.toHaveBeenCalled();
   });
 });
 
