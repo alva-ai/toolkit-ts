@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
 import type {
+  AutomationInspectRequest,
+  AutomationInspectResponse,
   FeedDeleteRequest,
   FeedDeleteResponse,
   FeedListParams,
@@ -21,6 +23,20 @@ export class AutomationResource {
     return this.client.feed.list(params);
   }
 
+  /**
+   * Inspect one automation. Backed by GET /api/v1/automation/:id.
+   */
+  async inspect(
+    params: AutomationInspectRequest
+  ): Promise<AutomationInspectResponse> {
+    this.client._requireAuth();
+    const id = requireAutomationID(params.id);
+    return this.client._request(
+      'GET',
+      `/api/v1/automation/${encodeURIComponent(String(id))}`
+    ) as Promise<AutomationInspectResponse>;
+  }
+
   stop(params: FeedStatusUpdateRequest): Promise<FeedStatusUpdateResponse> {
     return this.client.feed.stop(params);
   }
@@ -36,4 +52,11 @@ export class AutomationResource {
   publish(params: FeedReleaseRequest): Promise<FeedReleaseResponse> {
     return this.client.release.feed(params);
   }
+}
+
+function requireAutomationID(id: number): number {
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('automation id must be a positive integer');
+  }
+  return id;
 }
