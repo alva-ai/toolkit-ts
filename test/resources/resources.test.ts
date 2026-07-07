@@ -1125,6 +1125,19 @@ describe('AlertsResource', () => {
     });
   });
 
+  it('follows() delegates to subscriptions.follows()', async () => {
+    const client = makeClient();
+    client.subscriptions.follows = vi
+      .fn()
+      .mockResolvedValue({ items: [], has_next: false });
+    const alerts = new AlertsResource(client);
+    await alerts.follows({ limit: 20, cursor: 'c1' });
+    expect(client.subscriptions.follows).toHaveBeenCalledWith({
+      limit: 20,
+      cursor: 'c1',
+    });
+  });
+
   it('automation alert methods delegate to feed subscription methods', async () => {
     const client = makeClient();
     client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({});

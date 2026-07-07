@@ -222,6 +222,9 @@ function makeClient(): AlvaClient {
     next_cursor: 'next',
     total_count: 2,
   });
+  client.alerts.follows = vi
+    .fn()
+    .mockResolvedValue({ items: [], has_next: false });
   client.alerts.enableAutomation = vi.fn().mockResolvedValue({
     subscription: {
       target: { type: 'FEED', id: '42' },
@@ -2717,6 +2720,7 @@ describe('help text', () => {
       text: string;
     };
     expect(result.text).toContain('alva alert list');
+    expect(result.text).toContain('alva alert follows');
     expect(result.text).toContain('--automation <owner/name>');
     expect(result.text).toContain('--feed-ids <a,b>');
     expect(result.text).toContain('Legacy alias for --automation-ids');
@@ -2941,6 +2945,7 @@ describe('help-text drift guard', () => {
     automation: ['list', 'inspect', 'publish', 'stop', 'resume', 'delete'],
     alert: [
       'list',
+      'follows',
       'enable',
       'disable',
       'history',
@@ -3699,6 +3704,22 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
       ],
       next_cursor: 'next',
       total_count: 2,
+    });
+  });
+
+  it('dispatches alert follows with pagination flags', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'alert',
+      'follows',
+      '--limit',
+      '20',
+      '--cursor',
+      'c1',
+    ]);
+    expect(client.alerts.follows).toHaveBeenCalledWith({
+      limit: 20,
+      cursor: 'c1',
     });
   });
 
