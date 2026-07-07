@@ -3275,6 +3275,35 @@ describe('stripGlobalFlags', () => {
       'list',
     ]);
   });
+
+  it('strips leading globals before broker but passes broker argv verbatim', () => {
+    // Globals precede the command group; everything after `broker` is a raw
+    // passthrough and must survive even when a venue flag collides with a CLI
+    // global (adversarial review).
+    expect(
+      stripGlobalFlags([
+        '--base-url',
+        'https://api-llm.stg.alva.ai',
+        'broker',
+        'order',
+        'place',
+        '--api-key',
+        'venue-native-value',
+        '--base-url=venue',
+        '--profile',
+        'x',
+      ])
+    ).toEqual([
+      'broker',
+      'order',
+      'place',
+      '--api-key',
+      'venue-native-value',
+      '--base-url=venue',
+      '--profile',
+      'x',
+    ]);
+  });
 });
 
 describe('CLI_VERSION', () => {
