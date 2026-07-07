@@ -3586,6 +3586,16 @@ export function stripGlobalFlags(argv: string[]): string[] {
   const result: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    // `broker` is a raw argv passthrough to trex: once the broker command
+    // begins, every remaining token is venue-native and must be forwarded
+    // verbatim. Global flags are positional — they precede the command group —
+    // so stop stripping here, otherwise a venue flag that happens to collide
+    // with a CLI global (--api-key/--base-url/--profile/--arrays-endpoint) is
+    // silently dropped with its value (adversarial review).
+    if (a === 'broker') {
+      result.push(...argv.slice(i));
+      break;
+    }
     if (GLOBAL_FLAGS.includes(a)) {
       i++; // skip the value
       continue;
