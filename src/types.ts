@@ -1086,6 +1086,36 @@ export interface ChannelGroupSubscriptionMutationResponse {
   subscriptions: ChannelGroupSubscription[];
 }
 
+/** Params for reading a group's buffered chat history (group-chat digest). */
+export interface ChannelGroupHistoryParams {
+  /** Platform: "telegram" | "discord" | "slack". */
+  channel: string;
+  /** Platform group/channel id. */
+  remote_chat_id: string;
+  /** Window start, message-origin timestamp in microseconds (inclusive). */
+  from_micros: number | string;
+  /** Window end, message-origin timestamp in microseconds (inclusive). */
+  to_micros: number | string;
+}
+
+/** One buffered group message, projected for the digest. */
+export interface GroupChatMessage {
+  sender_username: string;
+  content: string;
+  /** "[photo]" etc. when the message carried media. */
+  media_summary: string;
+  ts_micros: number;
+  /** Deep link back to the original message; empty when unavailable. */
+  permalink: string;
+  /** "user" | "assistant" (bot replies). */
+  role: string;
+}
+
+export interface ChannelGroupHistoryResponse {
+  /** Chronological (ts ascending). */
+  messages: GroupChatMessage[];
+}
+
 // --- Service accounts (restricted run-as identities, issue #602) ---
 
 export interface ServiceAccount {

@@ -1,6 +1,8 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 import type {
+  ChannelGroupHistoryParams,
+  ChannelGroupHistoryResponse,
   ChannelGroupSubscriptionContextResponse,
   ChannelGroupSubscriptionListResponse,
   ChannelGroupSubscriptionMutationParams,
@@ -60,6 +62,27 @@ export class ChannelGroupSubscriptionsResource {
         jsonBody: mutationBody(params),
       }
     ) as Promise<ChannelGroupSubscriptionMutationResponse>;
+  }
+
+  /**
+   * Read a group's buffered chat messages in a time window, for the group-chat
+   * digest automation. Admin-gated: the authenticated caller must be that
+   * group's Alva admin (a digest feed runs as that admin). Each message carries
+   * a `permalink` deep-link back to the original message for "jump to original".
+   * `from_micros`/`to_micros` are message-origin timestamps in microseconds.
+   */
+  async getGroupChatHistory(
+    params: ChannelGroupHistoryParams
+  ): Promise<ChannelGroupHistoryResponse> {
+    this.client._requireAuth();
+    return this.client._request('GET', '/api/v1/channel/group-history', {
+      query: {
+        channel: params.channel,
+        remote_chat_id: params.remote_chat_id,
+        from_micros: String(params.from_micros),
+        to_micros: String(params.to_micros),
+      },
+    }) as Promise<ChannelGroupHistoryResponse>;
   }
 }
 
