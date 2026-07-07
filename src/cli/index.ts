@@ -81,7 +81,7 @@ Commands:
   lint        Design-system lint (playbook)
   automation  Automation management (list, inspect, publish, stop, resume, delete)
   alert       Alert management (list, follows, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
-  feed        Legacy automation alias (list, stop, resume, delete)
+  feed        Legacy automation alias (list, stop, resume, delete, set-visibility)
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   credits     Credit wallet and self-scoped usage history (wallet, items)
@@ -545,13 +545,15 @@ Examples:
 Legacy alias for automation lifecycle management. Prefer "alva automation".
 
 Subcommands:
-  list      List feeds owned by the caller
-  stop      Stop a feed's producer cronjob
-  resume    Resume a stopped feed's producer cronjob
-  delete    Soft-delete a feed and all its active majors
+  list        List feeds owned by the caller
+  stop        Stop a feed's producer cronjob
+  resume      Resume a stopped feed's producer cronjob
+  delete      Soft-delete a feed and all its active majors
+  set-visibility  Publish or unpublish a feed (--visibility public|private)
 
 Flags:
-  --id <feed_id>   Numeric feed id (required for stop/resume/delete)
+  --id <feed_id>       Numeric feed id (required for stop/resume/delete/set-visibility)
+  --visibility <level> public | private (required for set-visibility)
 
 List flags:
   --limit <n>      Max results per page (default 50, max 100 server-side)
@@ -565,6 +567,10 @@ Notes:
   - delete cascades to all active feed_majors in the same DB transaction.
   - delete removes producer cronjobs best-effort; the cronjob scavenger
     reconciles any leftover rows on its next sweep.
+  - set-visibility publishes (public) or unpublishes (private) a feed; the
+    backend sets feeds.is_public and projects the ALFS public read grant
+    together. Prefer this over "alva fs grant" on the feed path, which causes
+    drift.
   - Auth: caller must own the feed (uid match), enforced by the backend.
 
 Examples:
@@ -572,7 +578,9 @@ Examples:
   alva feed list --status all --limit 20
   alva feed stop --id 42
   alva feed resume --id 42
-  alva feed delete --id 42`,
+  alva feed delete --id 42
+  alva feed set-visibility --id 42 --visibility public
+  alva feed set-visibility --id 42 --visibility private`,
 
   playbooks: `Usage: alva playbooks <subcommand> [options]
 
@@ -1690,6 +1698,17 @@ function playbookVisibility(val: string): PlaybookVisibility {
   );
 }
 
+function feedVisibility(val: string): 'public' | 'private' {
+  const normalized = val.trim().toLowerCase();
+  if (normalized === 'public' || normalized === 'private') {
+    return normalized;
+  }
+  throw new CliUsageError(
+    `--visibility must be one of public, private for 'feed set-visibility', got '${val}'`,
+    'feed'
+  );
+}
+
 function parseCreditsTimestamp(
   value: string,
   flag: string,
@@ -2400,6 +2419,13 @@ export async function dispatch(
         case 'delete':
           return client.feed.delete({
             id: requireNumericFlag(flags, 'id', 'feed delete'),
+          });
+        case 'set-visibility':
+          return client.feed.setVisibility({
+            id: requireNumericFlag(flags, 'id', 'feed set-visibility'),
+            visibility: feedVisibility(
+              requireFlag(flags, 'visibility', 'feed set-visibility')
+            ),
           });
         default:
           throw new CliUsageError(

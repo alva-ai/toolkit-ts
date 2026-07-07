@@ -361,6 +361,49 @@ describe('FeedResource', () => {
     expect(client._request).toHaveBeenCalledWith('DELETE', '/api/v1/feed/42');
   });
 
+  it('setVisibility() sends POST /api/v1/feed/:id/visibility with visibility body', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.setVisibility({ id: 42, visibility: 'public' });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/feed/42/visibility',
+      { body: { visibility: 'public' } }
+    );
+  });
+
+  it('setVisibility() sends private visibility body', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await feed.setVisibility({ id: 42, visibility: 'private' });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/feed/42/visibility',
+      { body: { visibility: 'private' } }
+    );
+  });
+
+  it('setVisibility() rejects an invalid visibility value without calling _request', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await expect(
+      feed.setVisibility({
+        id: 42,
+        visibility: 'world' as unknown as 'public' | 'private',
+      })
+    ).rejects.toThrow("visibility must be 'public' or 'private'");
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it('setVisibility() rejects non-positive id without calling _request', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    await expect(
+      feed.setVisibility({ id: 0, visibility: 'public' })
+    ).rejects.toThrow('feed id must be a positive integer');
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
   it('feed lifecycle methods reject non-positive id without calling _request', async () => {
     const client = makeClient();
     const feed = new FeedResource(client);

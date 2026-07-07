@@ -97,6 +97,9 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ id: '42', status: 'ACTIVE' });
   client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+  client.feed.setVisibility = vi
+    .fn()
+    .mockResolvedValue({ id: '42', visibility: 'public' });
   client.automation.list = vi.fn().mockResolvedValue({
     feeds: [
       {
@@ -1175,6 +1178,70 @@ describe('CLI dispatch', () => {
     await expect(
       dispatch(client, ['feed', 'delete', '--id', 'abc'])
     ).rejects.toThrow("--id must be a number for 'feed delete', got 'abc'");
+  });
+
+  it('dispatches feed set-visibility public', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'feed',
+      'set-visibility',
+      '--id',
+      '42',
+      '--visibility',
+      'public',
+    ]);
+    expect(client.feed.setVisibility).toHaveBeenCalledWith({
+      id: 42,
+      visibility: 'public',
+    });
+  });
+
+  it('dispatches feed set-visibility private', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'feed',
+      'set-visibility',
+      '--id',
+      '42',
+      '--visibility',
+      'private',
+    ]);
+    expect(client.feed.setVisibility).toHaveBeenCalledWith({
+      id: 42,
+      visibility: 'private',
+    });
+  });
+
+  it('feed set-visibility requires --id', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['feed', 'set-visibility', '--visibility', 'public'])
+    ).rejects.toThrow("--id is required for 'feed set-visibility'");
+  });
+
+  it('feed set-visibility requires --visibility', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['feed', 'set-visibility', '--id', '42'])
+    ).rejects.toThrow("--visibility is required for 'feed set-visibility'");
+    expect(client.feed.setVisibility).not.toHaveBeenCalled();
+  });
+
+  it('feed set-visibility rejects an invalid --visibility value', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'feed',
+        'set-visibility',
+        '--id',
+        '42',
+        '--visibility',
+        'publc',
+      ])
+    ).rejects.toThrow(
+      "--visibility must be one of public, private for 'feed set-visibility', got 'publc'"
+    );
+    expect(client.feed.setVisibility).not.toHaveBeenCalled();
   });
 
   it('renders automation list as readable text by default', async () => {
@@ -2953,7 +3020,7 @@ describe('help-text drift guard', () => {
       'enable-session-completed',
       'disable-session-completed',
     ],
-    feed: ['list', 'stop', 'resume', 'delete'],
+    feed: ['list', 'stop', 'resume', 'delete', 'set-visibility'],
     credits: ['wallet', 'items'],
     playbooks: ['trending'],
     secrets: ['create', 'list', 'get', 'update', 'delete'],
