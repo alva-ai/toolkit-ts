@@ -80,16 +80,20 @@ jobs:
           if [ -n "$NUMBER" ]; then
             gh pr edit "$NUMBER" --body-file audit-report.md
             gh pr comment "$NUMBER" --body "Drift still present as of $(date -u +%FT%TZ). Branch force-updated; body refreshed."
+          elif gh pr create --title "$TITLE" --body-file audit-report.md \
+              --head "$BRANCH" --base main; then
+            echo "Opened fix PR on $BRANCH"
           else
-            gh pr create --title "$TITLE" --body-file audit-report.md \
-              --head "$BRANCH" --base main
+            echo "::warning::Could not open PR (org may block Actions from creating PRs). Branch $BRANCH was pushed — open a PR manually."
           fi
 
           # GITHUB_TOKEN-driven pushes do NOT trigger pull_request / push
           # workflows on the fix branch, so required checks would never run.
           # workflow_dispatch IS the documented exception that fires even
           # when caused by GITHUB_TOKEN, so explicitly dispatch CI here.
-          gh workflow run ci.yml --ref "$BRANCH"
+          if ! gh workflow run ci.yml --ref "$BRANCH"; then
+            echo "::warning::Could not dispatch CI on $BRANCH — run it manually if needed."
+          fi
 
       - name: Fail if drift
         if: steps.audit.outputs.exit_code != '0'
