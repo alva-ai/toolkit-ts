@@ -1,6 +1,8 @@
 import type { AlvaClient } from '../client.js';
 import type {
   FeedNotificationListResponse,
+  FollowsListParams,
+  FollowsListResponse,
   NotificationListParams,
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateParams,
@@ -28,6 +30,10 @@ export class AlertsResource {
     params: PushSubscriptionListParams = {}
   ): Promise<PushSubscriptionListResponse> {
     return this.client.subscriptions.list(params);
+  }
+
+  follows(params: FollowsListParams = {}): Promise<FollowsListResponse> {
+    return this.client.subscriptions.follows(params);
   }
 
   enableAutomation(

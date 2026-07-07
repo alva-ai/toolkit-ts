@@ -80,7 +80,7 @@ Commands:
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
   automation  Automation management (list, inspect, publish, stop, resume, delete)
-  alert       Alert management (list, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
+  alert       Alert management (list, follows, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
   feed        Legacy automation alias (list, stop, resume, delete)
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
@@ -498,6 +498,7 @@ playbooks. Delivery history and global alert preferences live here too.
 
 Subcommands:
   list          List the caller's active alerts
+  follows       List the playbooks the caller follows
   enable        Enable an alert for an automation or playbook
   disable       Disable alerts by automation/playbook name or id
   history       List alert delivery history for an automation or playbook
@@ -519,6 +520,10 @@ List flags:
   --cursor <token> Optional cursor from previous response
   --json           Print raw JSON instead of a human-readable summary
 
+Follows flags:
+  --limit <n>      Optional page size
+  --cursor <token> Optional cursor from previous response
+
 History flags:
   --channel <name>   Optional delivery channel filter
   --status <status>  Optional status filter (sent, failed, filtered)
@@ -526,6 +531,7 @@ History flags:
 
 Examples:
   alva alert list
+  alva alert follows --limit 20
   alva alert enable --automation alice/btc-ema
   alva alert disable --automation alice/btc-ema
   alva alert enable --playbook alice/btc-dashboard
@@ -3141,6 +3147,11 @@ export async function dispatch(
           });
           return boolFlag(flags['json']) ? result : formatAlertList(result);
         }
+        case 'follows':
+          return client.alerts.follows({
+            limit: num(flags['limit']),
+            cursor: flags['cursor'],
+          });
         case 'enable': {
           const target = requireSingleAlertTarget(flags, 'alert enable');
           return target.kind === 'automation'
