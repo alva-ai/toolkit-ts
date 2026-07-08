@@ -4,6 +4,8 @@ import type {
   FeedDeleteResponse,
   FeedListParams,
   FeedListResponse,
+  FeedSetVisibilityRequest,
+  FeedSetVisibilityResponse,
   FeedStatusUpdateRequest,
   FeedStatusUpdateResponse,
 } from '../types.js';
@@ -77,6 +79,32 @@ export class FeedResource {
       'DELETE',
       `/api/v1/feed/${encodeURIComponent(String(id))}`
     ) as Promise<FeedDeleteResponse>;
+  }
+
+  /**
+   * Publish or unpublish a feed. Backed by POST /api/v1/feed/:id/visibility.
+   *
+   * Setting visibility to 'public' publishes the feed (the backend sets
+   * feeds.is_public and projects the ALFS public read grant in the same
+   * transaction); 'private' unpublishes it. Prefer this over granting the
+   * ALFS public read subject directly (e.g. `alva fs grant`), which bypasses
+   * the is_public flag and causes drift.
+   *
+   * Auth: caller must own the feed (uid match), enforced by the backend.
+   */
+  async setVisibility(
+    params: FeedSetVisibilityRequest
+  ): Promise<FeedSetVisibilityResponse> {
+    this.client._requireAuth();
+    const id = requireFeedID(params.id);
+    if (params.visibility !== 'public' && params.visibility !== 'private') {
+      throw new Error("visibility must be 'public' or 'private'");
+    }
+    return this.client._request(
+      'POST',
+      `/api/v1/feed/${encodeURIComponent(String(id))}/visibility`,
+      { body: { visibility: params.visibility } }
+    ) as Promise<FeedSetVisibilityResponse>;
   }
 }
 

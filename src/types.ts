@@ -442,6 +442,23 @@ export interface FeedDeleteResponse {
   id: string;
 }
 
+/** Feed visibility: 'public' publishes the feed, 'private' unpublishes it. */
+export type FeedVisibility = 'public' | 'private';
+
+export interface FeedSetVisibilityRequest {
+  /** Numeric feed id to publish/unpublish. */
+  id: number;
+  /** Target visibility. */
+  visibility: FeedVisibility;
+}
+
+export interface FeedSetVisibilityResponse {
+  /** Echoed feed id (string form, matching gateway response). */
+  id: string;
+  /** Feed visibility after the update. */
+  visibility: FeedVisibility;
+}
+
 export interface PlaybookDraftRequest {
   name: string;
   display_name: string;
