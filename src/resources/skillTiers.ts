@@ -1203,6 +1203,10 @@ export function listSkillEndpointMetadata(
   return SKILL_ENDPOINT_METADATA.filter((item) => item.skill === skill);
 }
 
+export function listAllSkillEndpointMetadata(): SkillEndpointMetadata[] {
+  return [...SKILL_ENDPOINT_METADATA];
+}
+
 export function countSkillEndpointMetadata(): Record<
   SkillEndpointTier,
   number
