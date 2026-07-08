@@ -12,6 +12,21 @@ const ARRAYS_DATA_API_PREFIX = 'arrays-data-api-';
 
 type Envelope<T> = { success: boolean; data: T; request_id?: string };
 type SkillTierCounts = Partial<Record<SkillEndpointTier, number>>;
+type SkillNameSuggestion =
+  | { kind: 'skill'; name: string }
+  | { kind: 'endpoint'; skill: string; file: string };
+
+const ENDPOINT_ALIAS_SUGGESTIONS: {
+  aliases: readonly string[];
+  skill: string;
+  file: string;
+}[] = [
+  {
+    aliases: ['company-profile', 'company-profiles'],
+    skill: 'arrays-data-api-equity-fundamentals',
+    file: 'company-detail',
+  },
+];
 
 export type { SkillEndpointMetadata, SkillEndpointTier };
 
@@ -97,21 +112,56 @@ export class DataSkillsResource {
   }
 
   private async requireKnownSkill(name: string): Promise<void> {
-    const skillNames = await this.loadSkillCatalog();
+    const skillNames = await this.tryLoadSkillCatalog();
+    if (!skillNames) return;
     if (skillNames.has(name)) return;
+    const refreshedSkillNames = await this.tryRefreshSkillCatalog();
+    if (!refreshedSkillNames) return;
+    if (refreshedSkillNames.has(name)) return;
     throw new AlvaError(
       'NOT_FOUND',
-      formatSkillNotFoundMessage(name, skillNames),
+      formatSkillNotFoundMessage(name, refreshedSkillNames),
       404,
       { name }
     );
   }
 
+  private async tryLoadSkillCatalog(): Promise<Set<string> | undefined> {
+    try {
+      return await this.loadSkillCatalog();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async tryRefreshSkillCatalog(): Promise<Set<string> | undefined> {
+    try {
+      return await this.refreshSkillCatalog();
+    } catch {
+      this.skillCatalogPromise = undefined;
+      return undefined;
+    }
+  }
+
   private async loadSkillCatalog(): Promise<Set<string>> {
     if (this.skillCatalog) return this.skillCatalog;
-    return (this.skillCatalogPromise ??= this.fetchList().then(({ skills }) =>
-      this.cacheSkillCatalog(skills)
-    ));
+    if (!this.skillCatalogPromise) {
+      const promise = this.fetchList()
+        .then(({ skills }) => this.cacheSkillCatalog(skills))
+        .catch((err: unknown) => {
+          if (this.skillCatalogPromise === promise) {
+            this.skillCatalogPromise = undefined;
+          }
+          throw err;
+        });
+      this.skillCatalogPromise = promise;
+    }
+    return this.skillCatalogPromise;
+  }
+
+  private async refreshSkillCatalog(): Promise<Set<string>> {
+    const { skills } = await this.fetchList();
+    return this.cacheSkillCatalog(skills);
   }
 
   private async fetchList(): Promise<{ skills: SkillSummary[] }> {
@@ -137,19 +187,21 @@ export class DataSkillsResource {
 
 function formatSkillNotFoundMessage(name: string, skillNames: Set<string>) {
   const suggestion = suggestSkillName(name, skillNames);
-  return suggestion
-    ? `skill "${name}" not found; did you mean "${suggestion}"?`
-    : `skill "${name}" not found`;
+  if (!suggestion) return `skill "${name}" not found`;
+  if (suggestion.kind === 'endpoint') {
+    return `skill "${name}" not found; did you mean skill "${suggestion.skill}" endpoint "${suggestion.file}"?`;
+  }
+  return `skill "${name}" not found; did you mean "${suggestion.name}"?`;
 }
 
 function suggestSkillName(
   name: string,
   skillNames: Set<string>
-): string | undefined {
+): SkillNameSuggestion | undefined {
   const candidates = [...skillNames].sort();
   const prefixed = `${ARRAYS_DATA_API_PREFIX}${name}`;
   if (!name.startsWith(ARRAYS_DATA_API_PREFIX) && skillNames.has(prefixed)) {
-    return prefixed;
+    return { kind: 'skill', name: prefixed };
   }
 
   return (
@@ -162,16 +214,20 @@ function bestSuffixOrTokenOverlap(
   name: string,
   candidates: string[],
   skillNames: Set<string>
-): string | undefined {
+): SkillNameSuggestion | undefined {
+  const aliasSuggestion = explicitEndpointAliasSuggestion(name, skillNames);
+  if (aliasSuggestion) return aliasSuggestion;
+
+  const normalizedName = stripArraysDataApiPrefix(name);
   const queryTokens = tokenSet(name);
-  let best: { suggestion: string; score: number } | undefined;
+  let best: { suggestion: SkillNameSuggestion; score: number } | undefined;
   for (const candidate of candidates) {
     const normalizedCandidate = stripArraysDataApiPrefix(candidate);
     const candidateTokens = tokenSet(normalizedCandidate);
     let score = 0;
     if (
-      normalizedCandidate.endsWith(name) ||
-      name.endsWith(normalizedCandidate)
+      normalizedCandidate.endsWith(normalizedName) ||
+      normalizedName.endsWith(normalizedCandidate)
     ) {
       score += 100;
     }
@@ -181,7 +237,7 @@ function bestSuffixOrTokenOverlap(
       score += overlap / candidateTokens.size;
     }
     if (score > 0 && (!best || score > best.score)) {
-      best = { suggestion: candidate, score };
+      best = { suggestion: { kind: 'skill', name: candidate }, score };
     }
   }
   for (const endpoint of listAllSkillEndpointMetadata()) {
@@ -192,7 +248,11 @@ function bestSuffixOrTokenOverlap(
     const score = overlap * 10 + overlap / endpointTokens.size;
     if (!best || score > best.score) {
       best = {
-        suggestion: `${endpoint.skill} / ${endpoint.file}`,
+        suggestion: {
+          kind: 'endpoint',
+          skill: endpoint.skill,
+          file: endpoint.file,
+        },
         score,
       };
     }
@@ -200,21 +260,34 @@ function bestSuffixOrTokenOverlap(
   return best?.suggestion;
 }
 
+function explicitEndpointAliasSuggestion(
+  name: string,
+  skillNames: Set<string>
+): SkillNameSuggestion | undefined {
+  const normalizedName = stripArraysDataApiPrefix(name).toLowerCase();
+  const alias = ENDPOINT_ALIAS_SUGGESTIONS.find((item) =>
+    item.aliases.includes(normalizedName)
+  );
+  if (!alias || !skillNames.has(alias.skill)) return undefined;
+  return { kind: 'endpoint', skill: alias.skill, file: alias.file };
+}
+
 function bestEditDistance(
   name: string,
   candidates: string[]
-): string | undefined {
+): SkillNameSuggestion | undefined {
+  const normalizedName = stripArraysDataApiPrefix(name);
   let best: { candidate: string; distance: number } | undefined;
   for (const candidate of candidates) {
     const normalizedCandidate = stripArraysDataApiPrefix(candidate);
-    const distance = levenshteinDistance(name, normalizedCandidate);
-    const maxLen = Math.max(name.length, normalizedCandidate.length);
+    const distance = levenshteinDistance(normalizedName, normalizedCandidate);
+    const maxLen = Math.max(normalizedName.length, normalizedCandidate.length);
     if (distance > Math.max(3, Math.floor(maxLen * 0.4))) continue;
     if (!best || distance < best.distance) {
       best = { candidate, distance };
     }
   }
-  return best?.candidate;
+  return best ? { kind: 'skill', name: best.candidate } : undefined;
 }
 
 function stripArraysDataApiPrefix(value: string): string {
@@ -224,17 +297,12 @@ function stripArraysDataApiPrefix(value: string): string {
 }
 
 function tokenSet(value: string): Set<string> {
-  const tokens = stripArraysDataApiPrefix(value)
-    .split(/[^a-z0-9]+/i)
-    .map((token) => token.toLowerCase())
-    .filter(Boolean);
-  const expanded = [...tokens];
-  for (const token of tokens) {
-    if (token === 'profiles' || token === 'profile') {
-      expanded.push('detail');
-    }
-  }
-  return new Set(expanded);
+  return new Set(
+    stripArraysDataApiPrefix(value)
+      .split(/[^a-z0-9]+/i)
+      .map((token) => token.toLowerCase())
+      .filter(Boolean)
+  );
 }
 
 function countIntersection(left: Set<string>, right: Set<string>): number {
