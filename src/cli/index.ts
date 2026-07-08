@@ -98,6 +98,7 @@ Commands:
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
+  broker      Agentic order execution — venue-native passthrough to trex (accounts, quote, order, balance, positions, ...; run 'alva broker describe')
   auth        Authentication (login)
   screenshot  Capture a web screenshot as PNG
   arrays      Arrays backend operations (token ensure, token status)
