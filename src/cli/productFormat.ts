@@ -59,6 +59,14 @@ export function formatAlertList(result: PushSubscriptionListResponse): string {
     lines.push(`• ${alertTitle(alert)}${status}`);
     lines.push(`    target: ${targetType} ${alert.target?.id ?? ''}`.trimEnd());
     if (alert.kind) lines.push(`    kind: ${alert.kind}`);
+    if (alert.kind === 'FEED_ALERT' && alert.target_status === 'ACTIVE') {
+      lines.push('    alert: enabled');
+    }
+    if (alert.playbook_followed !== undefined) {
+      lines.push(`    playbook followed: ${alert.playbook_followed}`);
+    } else if (alert.following !== undefined && alert.kind !== 'FEED_ALERT') {
+      lines.push(`    playbook followed: ${alert.following}`);
+    }
     if (alert.feed_status)
       lines.push(`    automation status: ${alert.feed_status}`);
     if (alert.used_by_total !== undefined) {

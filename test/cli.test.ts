@@ -2791,6 +2791,7 @@ describe('help text', () => {
     expect(result.text).toContain('--automation <owner/name>');
     expect(result.text).toContain('--feed-ids <a,b>');
     expect(result.text).toContain('Legacy alias for --automation-ids');
+    expect(result.text).toContain('FEED_ALERT rows omit it');
     expect(result.text).toContain('preferences');
   });
 
@@ -3749,6 +3750,8 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     });
     expect(result).toEqual(expect.stringContaining('1 alert(s):'));
     expect(result).toEqual(expect.stringContaining('btc-ema'));
+    expect(result).toEqual(expect.stringContaining('alert: enabled'));
+    expect(result).not.toEqual(expect.stringContaining('playbook followed:'));
     expect(result).toEqual(expect.stringContaining('next_cursor: next'));
   });
 
