@@ -543,7 +543,7 @@ Examples:
 
   feed: `Usage: alva feed <subcommand> [options]
 
-Legacy alias for automation lifecycle management. Prefer "alva automation".
+Manage feeds and write feed output data.
 
 Subcommands:
   list        List feeds owned by the caller
@@ -551,10 +551,16 @@ Subcommands:
   resume      Resume a stopped feed's producer cronjob
   delete      Soft-delete a feed and all its active majors
   set-visibility  Publish or unpublish a feed (--visibility public|private)
+  write       Append flat records to a feed output time series
+  typedoc     Write the typedoc schema for a feed output time series
 
 Flags:
   --id <feed_id>       Numeric feed id (required for stop/resume/delete/set-visibility)
   --visibility <level> public | private (required for set-visibility)
+  --path <path>        Feed output path for write/typedoc, e.g.
+                       "~/feeds/name/v1/data/group/output"
+  --data <json>        Inline JSON payload for write/typedoc
+  --file <path>        Local JSON file payload for write/typedoc
 
 List flags:
   --limit <n>      Max results per page (default 50, max 100 server-side)
@@ -562,8 +568,10 @@ List flags:
   --status <s>     active | paused | all (default: active)
 
 Notes:
-  - list returns the raw JSON envelope. Prefer "alva automation list" for
-    human-readable output or "alva automation list --json" for explicit JSON.
+  - write accepts Feed SDK-style flat records: a non-empty JSON array of
+    objects, each with numeric "date". The CLI converts them into synth write
+    points and writes <path>/@append.
+  - typedoc accepts a TypeSeriesTypeDoc JSON object and writes <path>/@typedoc.
   - stop/resume affect future scheduled runs; existing feed data remains.
   - delete cascades to all active feed_majors in the same DB transaction.
   - delete removes producer cronjobs best-effort; the cronjob scavenger
@@ -581,7 +589,9 @@ Examples:
   alva feed resume --id 42
   alva feed delete --id 42
   alva feed set-visibility --id 42 --visibility public
-  alva feed set-visibility --id 42 --visibility private`,
+  alva feed set-visibility --id 42 --visibility private
+  alva feed write --path "~/feeds/memory/v1/data/journal/notes" --data '[{"date":1783555200000,"id":"n1","summary":"opened thesis"}]'
+  alva feed typedoc --path "~/feeds/memory/v1/data/journal/notes" --data '{"name":"Journal Notes","description":"Alvest notes","fields":[{"name":"id","type":"string"}]}'`,
 
   playbooks: `Usage: alva playbooks <subcommand> [options]
 
@@ -1855,6 +1865,110 @@ function jsonObjectFlag(
   return parsed as Record<string, unknown>;
 }
 
+function jsonDataOrFileFlag(
+  flags: Record<string, string>,
+  command: string,
+  deps?: DispatchRuntimeDeps
+): unknown {
+  const inlineData = flags['data'];
+  const file = flags['file'];
+  if (inlineData !== undefined && file !== undefined) {
+    throw new CliUsageError(
+      '--data and --file are mutually exclusive',
+      command.split(' ')[0]
+    );
+  }
+  if (inlineData === undefined && file === undefined) {
+    throw new CliUsageError(
+      `--data or --file is required for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  const raw =
+    file !== undefined
+      ? readLocalTextFile(file, command, 'file', deps)
+      : inlineData;
+  try {
+    return JSON.parse(raw ?? '');
+  } catch {
+    throw new CliUsageError(
+      `${file !== undefined ? '--file' : '--data'} must contain valid JSON for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+}
+
+function feedWriteRecordsFlag(
+  flags: Record<string, string>,
+  command: string,
+  deps?: DispatchRuntimeDeps
+): Array<{ date: number; [key: string]: unknown }> {
+  const parsed = jsonDataOrFileFlag(flags, command, deps);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new CliUsageError(
+      `feed write payload must be a non-empty JSON array for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return parsed.map((record, index) => {
+    if (
+      record === null ||
+      typeof record !== 'object' ||
+      Array.isArray(record)
+    ) {
+      throw new CliUsageError(
+        `feed write record at index ${index} must be a JSON object for '${command}'`,
+        command.split(' ')[0]
+      );
+    }
+    const date = (record as Record<string, unknown>).date;
+    if (!Number.isFinite(date)) {
+      throw new CliUsageError(
+        `feed write record at index ${index} must include numeric date for '${command}'`,
+        command.split(' ')[0]
+      );
+    }
+    return record as { date: number; [key: string]: unknown };
+  });
+}
+
+function feedTypedocFlag(
+  flags: Record<string, string>,
+  command: string,
+  deps?: DispatchRuntimeDeps
+): Record<string, unknown> {
+  const parsed = jsonDataOrFileFlag(flags, command, deps);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new CliUsageError(
+      `feed typedoc payload must be a JSON object for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  const typedoc = parsed as Record<string, unknown>;
+  if (typeof typedoc.name !== 'string' || typedoc.name.trim() === '') {
+    throw new CliUsageError(
+      `feed typedoc.name must be a non-empty string for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (
+    typeof typedoc.description !== 'string' ||
+    typedoc.description.trim() === ''
+  ) {
+    throw new CliUsageError(
+      `feed typedoc.description must be a non-empty string for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  if (!Array.isArray(typedoc.fields)) {
+    throw new CliUsageError(
+      `feed typedoc.fields must be an array for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return typedoc;
+}
+
 function jsonRequiredFlag(
   flags: Record<string, string>,
   name: string,
@@ -2427,6 +2541,16 @@ export async function dispatch(
             visibility: feedVisibility(
               requireFlag(flags, 'visibility', 'feed set-visibility')
             ),
+          });
+        case 'write':
+          return client.feed.write({
+            path: requireFlag(flags, 'path', 'feed write'),
+            records: feedWriteRecordsFlag(flags, 'feed write', deps),
+          });
+        case 'typedoc':
+          return client.feed.typedoc({
+            path: requireFlag(flags, 'path', 'feed typedoc'),
+            typedoc: feedTypedocFlag(flags, 'feed typedoc', deps),
           });
         default:
           throw new CliUsageError(

@@ -459,6 +459,44 @@ export interface FeedSetVisibilityResponse {
   visibility: FeedVisibility;
 }
 
+export interface FeedWriteRecord {
+  /** Unix milliseconds timestamp. */
+  date: number;
+  [key: string]: unknown;
+}
+
+export interface FeedWriteRequest {
+  /**
+   * Feed output path, e.g. `~/feeds/my-feed/v1/data/group/output`.
+   * May also already end with `/@append`.
+   */
+  path: string;
+  /** Flat Feed SDK-style records. Each record must include numeric `date`. */
+  records: FeedWriteRecord[];
+}
+
+export interface FeedWriteResponse extends FsWriteResponse {
+  /** Normalized ALFS write path ending in `/@append`. */
+  path: string;
+  /** Number of flat records submitted. */
+  records_written: number;
+}
+
+export interface FeedTypedocRequest {
+  /**
+   * Feed output path, e.g. `~/feeds/my-feed/v1/data/group/output`.
+   * May also already end with `/@typedoc`.
+   */
+  path: string;
+  /** Feed TypeSeriesTypeDoc-compatible schema object. */
+  typedoc: Record<string, unknown>;
+}
+
+export interface FeedTypedocResponse extends FsWriteResponse {
+  /** Normalized ALFS write path ending in `/@typedoc`. */
+  path: string;
+}
+
 export interface PlaybookDraftRequest {
   name: string;
   display_name: string;

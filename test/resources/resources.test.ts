@@ -420,6 +420,119 @@ describe('FeedResource', () => {
     }
     expect(client._request).not.toHaveBeenCalled();
   });
+
+  it('write() appends flat records to a feed output path', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({ bytes_written: 123 });
+    const feed = new FeedResource(client);
+
+    const result = await feed.write({
+      path: '~/feeds/alvest-memory/v1/data/journal/notes',
+      records: [{ date: 1783555200000, id: 'n1', summary: 'opened thesis' }],
+    });
+
+    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/fs/write', {
+      body: {
+        path: '~/feeds/alvest-memory/v1/data/journal/notes/@append',
+        data: JSON.stringify([
+          {
+            date: 1783555200000,
+            value: {
+              date: 1783555200000,
+              id: 'n1',
+              summary: 'opened thesis',
+            },
+          },
+        ]),
+        mkdir_parents: undefined,
+      },
+    });
+    expect(result).toEqual({
+      bytes_written: 123,
+      path: '~/feeds/alvest-memory/v1/data/journal/notes/@append',
+      records_written: 1,
+    });
+  });
+
+  it('write() accepts an already suffixed append path', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+
+    await feed.write({
+      path: '~/feeds/f/v1/data/g/o/@append',
+      records: [{ date: 1, value: 'x' }],
+    });
+
+    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/fs/write', {
+      body: {
+        path: '~/feeds/f/v1/data/g/o/@append',
+        data: JSON.stringify([{ date: 1, value: { date: 1, value: 'x' } }]),
+        mkdir_parents: undefined,
+      },
+    });
+  });
+
+  it('write() rejects invalid records before writing', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+
+    await expect(
+      feed.write({
+        path: '~/feeds/f/v1/data/g/o',
+        records: [{ id: 'missing-date' } as unknown as { date: number }],
+      })
+    ).rejects.toThrow('must include numeric date');
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it('write() rejects virtual read paths before writing', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+
+    await expect(
+      feed.write({
+        path: '~/feeds/f/v1/data/g/o/@last/10',
+        records: [{ date: 1 }],
+      })
+    ).rejects.toThrow('feed output path must be an output root');
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it('typedoc() writes typedoc JSON to a feed output path', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+    const typedoc = {
+      name: 'Journal Notes',
+      description: 'Alvest notes',
+      fields: [{ name: 'id', type: 'string' }],
+    };
+
+    await feed.typedoc({
+      path: '~/feeds/alvest-memory/v1/data/journal/notes',
+      typedoc,
+    });
+
+    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/fs/write', {
+      body: {
+        path: '~/feeds/alvest-memory/v1/data/journal/notes/@typedoc',
+        data: JSON.stringify(typedoc),
+        mkdir_parents: undefined,
+      },
+    });
+  });
+
+  it('typedoc() rejects invalid typedoc before writing', async () => {
+    const client = makeClient();
+    const feed = new FeedResource(client);
+
+    await expect(
+      feed.typedoc({
+        path: '~/feeds/f/v1/data/g/o',
+        typedoc: { name: 'Missing fields', description: 'bad' },
+      })
+    ).rejects.toThrow('feed typedoc.fields must be an array');
+    expect(client._request).not.toHaveBeenCalled();
+  });
 });
 
 describe('AutomationResource', () => {

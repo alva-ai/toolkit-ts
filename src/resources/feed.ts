@@ -8,6 +8,11 @@ import type {
   FeedSetVisibilityResponse,
   FeedStatusUpdateRequest,
   FeedStatusUpdateResponse,
+  FeedTypedocRequest,
+  FeedTypedocResponse,
+  FeedWriteRecord,
+  FeedWriteRequest,
+  FeedWriteResponse,
 } from '../types.js';
 
 /**
@@ -106,6 +111,41 @@ export class FeedResource {
       { body: { visibility: params.visibility } }
     ) as Promise<FeedSetVisibilityResponse>;
   }
+
+  /**
+   * Append Feed SDK-style flat records to a feed output time series.
+   *
+   * This is a convenience wrapper over ALFS synth writes. Callers pass records
+   * shaped like `ctx.self.ts(...).append(records)`, and the resource converts
+   * them into synth write points before writing `<path>/@append`.
+   */
+  async write(params: FeedWriteRequest): Promise<FeedWriteResponse> {
+    const path = normalizeFeedOutputPath(params.path, '@append');
+    const records = requireFeedWriteRecords(params.records);
+    const response = await this.client.fs.write({
+      path,
+      data: JSON.stringify(
+        records.map((record) => ({
+          date: record.date,
+          value: record,
+        }))
+      ),
+    });
+    return { ...response, path, records_written: records.length };
+  }
+
+  /**
+   * Write the typedoc schema for a feed output time series.
+   */
+  async typedoc(params: FeedTypedocRequest): Promise<FeedTypedocResponse> {
+    const path = normalizeFeedOutputPath(params.path, '@typedoc');
+    const typedoc = requireFeedTypedoc(params.typedoc);
+    const response = await this.client.fs.write({
+      path,
+      data: JSON.stringify(typedoc),
+    });
+    return { ...response, path };
+  }
 }
 
 function requireFeedID(id: number): number {
@@ -113,4 +153,65 @@ function requireFeedID(id: number): number {
     throw new Error('feed id must be a positive integer');
   }
   return id;
+}
+
+function normalizeFeedOutputPath(path: string, suffix: '@append' | '@typedoc') {
+  if (typeof path !== 'string' || path.trim() === '') {
+    throw new Error('feed output path must be a non-empty string');
+  }
+  const trimmed = path.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith(`/${suffix}`)) return trimmed;
+  if (containsVirtualSuffix(trimmed)) {
+    throw new Error(
+      `feed output path must be an output root or end with /${suffix}`
+    );
+  }
+  return `${trimmed}/${suffix}`;
+}
+
+function containsVirtualSuffix(path: string): boolean {
+  const parts = path.split('/');
+  return parts.slice(1).some((part) => part.startsWith('@'));
+}
+
+function requireFeedWriteRecords(
+  records: FeedWriteRecord[]
+): FeedWriteRecord[] {
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error('feed write records must be a non-empty array');
+  }
+  return records.map((record, index) => {
+    if (!isRecord(record)) {
+      throw new Error(`feed write record at index ${index} must be an object`);
+    }
+    if (!Number.isFinite(record.date)) {
+      throw new Error(
+        `feed write record at index ${index} must include numeric date`
+      );
+    }
+    return record as FeedWriteRecord;
+  });
+}
+
+function requireFeedTypedoc(typedoc: Record<string, unknown>) {
+  if (!isRecord(typedoc)) {
+    throw new Error('feed typedoc must be a JSON object');
+  }
+  if (typeof typedoc.name !== 'string' || typedoc.name.trim() === '') {
+    throw new Error('feed typedoc.name must be a non-empty string');
+  }
+  if (
+    typeof typedoc.description !== 'string' ||
+    typedoc.description.trim() === ''
+  ) {
+    throw new Error('feed typedoc.description must be a non-empty string');
+  }
+  if (!Array.isArray(typedoc.fields)) {
+    throw new Error('feed typedoc.fields must be an array');
+  }
+  return typedoc;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

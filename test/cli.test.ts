@@ -100,6 +100,12 @@ function makeClient(): AlvaClient {
   client.feed.setVisibility = vi
     .fn()
     .mockResolvedValue({ id: '42', visibility: 'public' });
+  client.feed.write = vi
+    .fn()
+    .mockResolvedValue({ path: '~/feeds/f/v1/data/g/o/@append' });
+  client.feed.typedoc = vi
+    .fn()
+    .mockResolvedValue({ path: '~/feeds/f/v1/data/g/o/@typedoc' });
   client.automation.list = vi.fn().mockResolvedValue({
     feeds: [
       {
@@ -1225,6 +1231,166 @@ describe('CLI dispatch', () => {
       dispatch(client, ['feed', 'set-visibility', '--id', '42'])
     ).rejects.toThrow("--visibility is required for 'feed set-visibility'");
     expect(client.feed.setVisibility).not.toHaveBeenCalled();
+  });
+
+  it('dispatches feed write with inline JSON records', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'feed',
+      'write',
+      '--path',
+      '~/feeds/alvest-memory/v1/data/journal/notes',
+      '--data',
+      '[{"date":1783555200000,"id":"n1","summary":"opened thesis"}]',
+    ]);
+    expect(client.feed.write).toHaveBeenCalledWith({
+      path: '~/feeds/alvest-memory/v1/data/journal/notes',
+      records: [{ date: 1783555200000, id: 'n1', summary: 'opened thesis' }],
+    });
+  });
+
+  it('dispatches feed write with a local JSON file', async () => {
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue('[{"date":1783555200000,"id":"n1"}]');
+    const client = makeClient();
+
+    await dispatch(client, [
+      'feed',
+      'write',
+      '--path',
+      '~/feeds/alvest-memory/v1/data/journal/notes',
+      '--file',
+      './records.json',
+    ]);
+
+    expect(mock).toHaveBeenCalledWith('./records.json', 'utf-8');
+    expect(client.feed.write).toHaveBeenCalledWith({
+      path: '~/feeds/alvest-memory/v1/data/journal/notes',
+      records: [{ date: 1783555200000, id: 'n1' }],
+    });
+    mock.mockReset();
+  });
+
+  it('dispatches feed typedoc with inline JSON object', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'feed',
+      'typedoc',
+      '--path',
+      '~/feeds/alvest-memory/v1/data/journal/notes',
+      '--data',
+      '{"name":"Journal Notes","description":"Alvest notes","fields":[{"name":"id","type":"string"}]}',
+    ]);
+    expect(client.feed.typedoc).toHaveBeenCalledWith({
+      path: '~/feeds/alvest-memory/v1/data/journal/notes',
+      typedoc: {
+        name: 'Journal Notes',
+        description: 'Alvest notes',
+        fields: [{ name: 'id', type: 'string' }],
+      },
+    });
+  });
+
+  it('feed write rejects missing and mutually exclusive payload flags', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'feed',
+        'write',
+        '--path',
+        '~/feeds/alvest-memory/v1/data/journal/notes',
+      ])
+    ).rejects.toThrow("--data or --file is required for 'feed write'");
+    await expect(
+      dispatch(client, [
+        'feed',
+        'write',
+        '--path',
+        '~/feeds/alvest-memory/v1/data/journal/notes',
+        '--data',
+        '[]',
+        '--file',
+        './records.json',
+      ])
+    ).rejects.toThrow('--data and --file are mutually exclusive');
+    expect(client.feed.write).not.toHaveBeenCalled();
+  });
+
+  it('feed write rejects malformed record payloads before dispatching', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'feed',
+        'write',
+        '--path',
+        '~/feeds/alvest-memory/v1/data/journal/notes',
+        '--data',
+        '{"date":1783555200000}',
+      ])
+    ).rejects.toThrow('feed write payload must be a non-empty JSON array');
+    await expect(
+      dispatch(client, [
+        'feed',
+        'write',
+        '--path',
+        '~/feeds/alvest-memory/v1/data/journal/notes',
+        '--data',
+        '[{"id":"missing-date"}]',
+      ])
+    ).rejects.toThrow('must include numeric date');
+    expect(client.feed.write).not.toHaveBeenCalled();
+  });
+
+  it('feed typedoc rejects malformed typedoc payloads before dispatching', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'feed',
+        'typedoc',
+        '--path',
+        '~/feeds/alvest-memory/v1/data/journal/notes',
+        '--data',
+        '[{"name":"not-object"}]',
+      ])
+    ).rejects.toThrow('feed typedoc payload must be a JSON object');
+    await expect(
+      dispatch(client, [
+        'feed',
+        'typedoc',
+        '--path',
+        '~/feeds/alvest-memory/v1/data/journal/notes',
+        '--data',
+        '{"name":"Journal Notes","description":"missing fields"}',
+      ])
+    ).rejects.toThrow('feed typedoc.fields must be an array');
+    expect(client.feed.typedoc).not.toHaveBeenCalled();
+  });
+
+  it('feed write rejects --file in jagent mode before dispatching', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatch(
+        client,
+        [
+          'feed',
+          'write',
+          '--path',
+          '~/feeds/alvest-memory/v1/data/journal/notes',
+          '--file',
+          './records.json',
+        ],
+        undefined,
+        { mode: 'jagent' }
+      )
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError &&
+        err.message.includes('local file') &&
+        err.message.includes('Use ALFS-native read/write/edit tools')
+    );
+    expect(client.feed.write).not.toHaveBeenCalled();
   });
 
   it('feed set-visibility rejects an invalid --visibility value', async () => {
