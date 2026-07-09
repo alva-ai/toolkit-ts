@@ -361,8 +361,9 @@ Subcommands:
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
   trigger    Fire the cronjob once, immediately, bypassing the schedule
-             (returns workflow_run_id; poll 'runs' to verify completion)
+             (returns workflow_run_id; poll 'run-status' with a timeout)
   runs       List runs for a cronjob (cursor-paginated)
+  run-status Get one triggered run's pollable status by workflow_run_id
   run-logs   Get stdout/stderr logs for a single cronjob run
 
 Create/Update flags:
@@ -391,6 +392,10 @@ Runs flags:
   --first <n>            Max results per page
   --cursor <cursor>      Pagination cursor from previous response
 
+Run-status flags:
+  --id <id>              Cronjob ID (required)
+  --workflow-run-id <id> Workflow run ID returned by deploy trigger
+
 Run-logs flags:
   --id <id>              Cronjob ID (required)
   --run-id <id>          Run ID (required)
@@ -417,17 +422,22 @@ Examples:
   alva deploy delete --id 42
   alva deploy runs --id 42
   alva deploy runs --id 42 --first 10
+  alva deploy run-status --id 42 --workflow-run-id hatchet-run-id
   alva deploy run-logs --id 42 --run-id 123
 
-Build-time verify (fire once, then poll until your run completes):
+Build-time verify (fire once, then poll up to 5 minutes):
   WF=$(alva deploy trigger --id 42 | jq -r .workflow_run_id)
-  while ! ROW=$(alva deploy runs --id 42 --first 5 \\
-                 | jq -e ".runs[] | select(.workflow_run_id==\\"$WF\\")"); do
+  for _ in {1..60}; do
+    STATUS_JSON=$(alva deploy run-status --id 42 --workflow-run-id "$WF")
+    STATE=$(echo "$STATUS_JSON" | jq -r .state)
+    case "$STATE" in PENDING|DISPATCHED|RUNNING) ;; *) break ;; esac
     sleep 5
   done
-  STATUS=$(echo "$ROW" | jq -r .status)
-  [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
-                                  --run-id "$(echo "$ROW" | jq -r .id)"`,
+  case "$STATE" in
+    PENDING|DISPATCHED|RUNNING) echo "Timed out waiting for run completion" >&2; exit 1 ;;
+  esac
+  [ "$STATE" = COMPLETED ] || alva deploy run-logs --id 42 \\
+                                  --run-id "$(echo "$STATUS_JSON" | jq -r .run.id)"`,
 
   'service-account': `Usage: alva service-account <subcommand> [options]
 
@@ -1046,7 +1056,6 @@ Follows flags:
 
 List response notes:
   items[].kind           PLAYBOOK_ALERTS (playbook-level wildcard) | FEED_ALERT
-  items[].following      Whether the caller also FOLLOWS the playbook
   items[].target_status  ACTIVE | TARGET_DELETED (ghost — clear via
                          unsubscribe --playbook-ids/--feed-ids) | PAUSED
   items[].playbook       {owner_username, name, display_name} for PLAYBOOK rows
@@ -2340,6 +2349,15 @@ export async function dispatch(
             cronjob_id: requireNumericFlag(flags, 'id', 'deploy runs'),
             first: num(flags['first']),
             cursor: flags['cursor'],
+          });
+        case 'run-status':
+          return client.deploy.getRunStatus({
+            cronjob_id: requireNumericFlag(flags, 'id', 'deploy run-status'),
+            workflow_run_id: requireFlag(
+              flags,
+              'workflow-run-id',
+              'deploy run-status'
+            ),
           });
         case 'run-logs':
           return client.deploy.getRunLogs({

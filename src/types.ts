@@ -325,6 +325,32 @@ export interface CronjobRunsListResponse {
   next_cursor?: number;
 }
 
+export interface CronjobRunStatusParams {
+  cronjob_id: number;
+  workflow_run_id: string;
+}
+
+export interface CronjobRunStatusResponse {
+  workflow_run_id: string;
+  /**
+   * PENDING means no cronjob_runs row exists yet. It is not falsifiable:
+   * a mistyped workflow_run_id, a workflow_run_id from another cronjob, or
+   * a workflow that failed before persistence can remain PENDING forever.
+   * DISPATCHED and RUNNING mean an in-flight row exists. Pollers must stop
+   * on their own deadline if the run never reaches a terminal state.
+   */
+  state:
+    | 'PENDING'
+    | 'DISPATCHED'
+    | 'RUNNING'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'SKIPPED'
+    | 'UNSPECIFIED'
+    | string;
+  run?: CronjobRun;
+}
+
 export interface CronjobRunLogsResponse {
   logs: string;
 }
@@ -333,8 +359,9 @@ export interface CronjobTriggerResponse {
   /**
    * Hatchet workflow run id at enqueue. Async — the persisted
    * `cronjob_runs` row appears only after the worker finishes the run.
-   * Callers verify completion by polling `deploy.listRuns({cronjob_id})`
-   * and matching `runs[].workflow_run_id` against this value.
+   * Callers verify completion by polling
+   * `deploy.getRunStatus({cronjob_id, workflow_run_id})` with their own
+   * timeout/deadline.
    */
   workflow_run_id: string;
 }
@@ -916,8 +943,8 @@ export interface PushSubscription {
    */
   kind?: 'PLAYBOOK_ALERTS' | 'FEED_ALERT' | 'UNSPECIFIED' | string;
   /**
-   * Whether the caller also FOLLOWS the target playbook — the social
-   * relation, distinct from this alert row. Always false for FEED targets.
+   * Legacy social playbook-follow signal. Do not use this to decide whether
+   * alert delivery is enabled; use kind + target_status instead.
    */
   following?: boolean;
   /**
