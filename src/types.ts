@@ -240,6 +240,13 @@ export interface CronjobCreateRequest {
    * A string: SA ids are snowflake int64s that overflow JS number precision.
    */
   run_as_user_id?: string;
+  /**
+   * Lifetime ceiling (RFC3339 timestamp). Once now >= end_at the runner
+   * self-terminates the cronjob before running (backend#1799). Omitted ⇒ no
+   * expiry. The `alva loop create` sugar sets this to now + (expires_in ?? 7d);
+   * feeds and other crons leave it unset.
+   */
+  end_at?: string;
 }
 
 export interface Cronjob {
@@ -257,6 +264,11 @@ export interface Cronjob {
    * A string: snowflake int64 ids overflow JS number precision.
    */
   run_as_user_id: string;
+  /**
+   * Lifetime ceiling (RFC3339), or null/omitted when the cronjob has no expiry.
+   * Set by `alva loop create`; unset for feeds and other crons.
+   */
+  end_at?: string | null;
   created_at: string;
   updated_at: string;
 }
