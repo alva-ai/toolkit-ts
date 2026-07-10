@@ -451,6 +451,85 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('loop create seeds the runner and creates a cron (default 7d end_at)', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'loop',
+      'create',
+      '--channel-id',
+      '7284',
+      '--goal',
+      'Watch NVDA pre-market',
+      '--cron',
+      '0 * * * *',
+    ]);
+    // Runner is seeded before the cron is created.
+    expect(client.fs.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: '~/loops/_runner/index.js',
+        mkdir_parents: true,
+      })
+    );
+    const call = (client.deploy.create as ReturnType<typeof vi.fn>).mock
+      .calls[0][0];
+    expect(call).toMatchObject({
+      name: 'loop-watch-nvda-pre-market',
+      path: '~/loops/_runner/index.js',
+      cron_expression: '0 * * * *',
+      args: { goal: 'Watch NVDA pre-market', channelId: '7284' },
+    });
+    // Default 7-day ceiling → an RFC3339 end_at is set.
+    expect(call.end_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('loop create without --channel-id omits channelId from args', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'loop',
+      'create',
+      '--goal',
+      'daily digest',
+      '--cron',
+      '0 8 * * *',
+    ]);
+    const call = (client.deploy.create as ReturnType<typeof vi.fn>).mock
+      .calls[0][0];
+    expect(call.args).toEqual({ goal: 'daily digest' });
+  });
+
+  it('loop create --expires-in never sets no end_at', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'loop',
+      'create',
+      '--goal',
+      'forever',
+      '--cron',
+      '0 * * * *',
+      '--expires-in',
+      'never',
+    ]);
+    const call = (client.deploy.create as ReturnType<typeof vi.fn>).mock
+      .calls[0][0];
+    expect(call.end_at).toBeUndefined();
+  });
+
+  it('loop create rejects a bad --expires-in', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'loop',
+        'create',
+        '--goal',
+        'x',
+        '--cron',
+        '0 * * * *',
+        '--expires-in',
+        'soon',
+      ])
+    ).rejects.toThrow(/expires-in/);
+  });
+
   it('dispatches secrets create with --name and --value', async () => {
     const client = makeClient();
     await dispatch(client, [

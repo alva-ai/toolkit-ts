@@ -76,6 +76,7 @@ Commands:
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
+  loop        Self-scheduled in-channel goal loops (create)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -428,6 +429,31 @@ Build-time verify (fire once, then poll until your run completes):
   STATUS=$(echo "$ROW" | jq -r .status)
   [ "$STATUS" = completed ] || alva deploy run-logs --id 42 \\
                                   --run-id "$(echo "$ROW" | jq -r .id)"`,
+
+  loop: `Usage: alva loop <subcommand> [options]
+
+Create a self-scheduled, in-channel goal loop: a cronjob that each tick runs
+one fire-and-forget agent turn on a channel's stable main session (via the
+@alva/loop SDK), continuing that channel's conversation toward a goal. Every
+loop gets a lifetime ceiling (default 7 days) so a self-scheduled loop always
+terminates. Sugar over 'alva deploy create' — it seeds a shared loop-runner
+script and packs the goal/channel into the cronjob's args.
+
+Subcommands:
+  create     Create a loop (seeds the shared loop-runner + a cronjob)
+
+Create flags:
+  --goal <text>          Instruction run each tick (required)
+  --cron <expression>    Cron schedule (required, e.g. "0 * * * *")
+  --channel-id <id>      Target channel id. Omit ⇒ your DM/agent channel
+  --expires-in <dur>     Lifetime: 30m | 24h | 7d, or 'never' (unbounded —
+                         discouraged). Default: 7d
+  --name <name>          Cronjob name (default: derived from --goal;
+                         1-63 lowercase alphanumeric/hyphens)
+
+Examples:
+  alva loop create --channel-id 7284... --goal "watch NVDA pre-market, alert on setup" --cron "0 * * * *"
+  alva loop create --goal "summarize my unread channels" --cron "0 8 * * *" --expires-in 30d`,
 
   'service-account': `Usage: alva service-account <subcommand> [options]
 
@@ -1758,6 +1784,62 @@ function parseCreditsDurationMs(value: string): number {
   return durationMs;
 }
 
+// The per-user loop-runner: one shared script serves every one of a user's
+// loops. It reads its goal/channel from the cronjob's args (require('env').args)
+// and dispatches a fire-and-forget turn via @alva/loop. Home-relative — the
+// gateway resolves it against the caller's home, so no username is needed here.
+const LOOP_RUNNER_PATH = '~/loops/_runner/index.js';
+const LOOP_RUNNER_SRC = [
+  "const { loop } = require('@alva/loop');",
+  "const { goal, channelId } = require('env').args;",
+  'loop(goal, channelId ? { channelId } : {});',
+  '',
+].join('\n');
+
+// parseExpiresInToEndAt converts a relative --expires-in (30m|24h|7d, default
+// 7d, or 'never') into an absolute RFC3339 end_at for the cronjob's lifetime
+// ceiling. 'never' ⇒ undefined (no ceiling — unbounded, discouraged). The
+// client clock is fine here: skew is negligible against a multi-day lifetime.
+function parseExpiresInToEndAt(
+  value: string | undefined,
+  command: string
+): string | undefined {
+  const raw = (value ?? '7d').trim().toLowerCase();
+  if (raw === 'never') return undefined;
+  const match = /^([1-9]\d*)([mhd])$/.exec(raw);
+  if (!match) {
+    throw new CliUsageError(
+      `--expires-in must be a positive duration like 30m, 24h, 7d, or 'never', got '${value}'`,
+      command.split(' ')[0]
+    );
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const durationMs =
+    amount * (unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000);
+  if (!Number.isSafeInteger(durationMs)) {
+    throw new CliUsageError(
+      `--expires-in is too large, got '${value}'`,
+      command.split(' ')[0]
+    );
+  }
+  return new Date(Date.now() + durationMs).toISOString();
+}
+
+// loopCronjobName derives a valid cronjob name (1-63 lowercase alphanumeric or
+// hyphens, no leading/trailing hyphen) from the goal, unless --name is given.
+function loopCronjobName(flags: Record<string, string>, goal: string): string {
+  if (flags['name'] !== undefined) return flags['name']; // backend validates
+  const base = goal
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const slug = (base ? `loop-${base}` : 'loop')
+    .slice(0, 63)
+    .replace(/-+$/g, '');
+  return slug || 'loop';
+}
+
 function parseCreditsItemsParams(flags: Record<string, string>): {
   startAtMs: number;
   endAtMs: number;
@@ -2350,6 +2432,41 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: deploy ${subcommand}`,
             'deploy'
+          );
+      }
+    }
+
+    case 'loop': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for loop', 'loop');
+      switch (subcommand) {
+        case 'create': {
+          const goal = requireFlag(flags, 'goal', 'loop create');
+          const cron = requireFlag(flags, 'cron', 'loop create');
+          const channelId = flags['channel-id'];
+          const endAt = parseExpiresInToEndAt(
+            flags['expires-in'],
+            'loop create'
+          );
+          // Seed the shared loop-runner first (idempotent — stable content).
+          // Aborting here beats creating a cron that points at a missing script.
+          await client.fs.write({
+            path: LOOP_RUNNER_PATH,
+            data: LOOP_RUNNER_SRC,
+            mkdir_parents: true,
+          });
+          return client.deploy.create({
+            name: loopCronjobName(flags, goal),
+            path: LOOP_RUNNER_PATH,
+            cron_expression: cron,
+            args: channelId ? { goal, channelId } : { goal },
+            end_at: endAt,
+          });
+        }
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: loop ${subcommand}`,
+            'loop'
           );
       }
     }
