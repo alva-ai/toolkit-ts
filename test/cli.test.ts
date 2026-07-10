@@ -81,6 +81,9 @@ function makeClient(): AlvaClient {
     .fn()
     .mockResolvedValue({ workflow_run_id: 'wf-test' });
   client.deploy.listRuns = vi.fn().mockResolvedValue({ runs: [] });
+  client.deploy.getRunStatus = vi
+    .fn()
+    .mockResolvedValue({ workflow_run_id: 'wf-test', state: 'PENDING' });
   client.deploy.getRunLogs = vi.fn().mockResolvedValue({ logs: '' });
   client.secrets.create = vi.fn().mockResolvedValue(undefined);
   client.secrets.list = vi.fn().mockResolvedValue({ secrets: [] });
@@ -197,6 +200,7 @@ function makeClient(): AlvaClient {
         feed_name: 'btc-ema',
         feed_status: 'ACTIVE',
         kind: 'FEED_ALERT',
+        following: false,
         target_status: 'ACTIVE',
         used_by_total: 1,
         last_pushed_at_ms: 1700000000000,
@@ -217,6 +221,7 @@ function makeClient(): AlvaClient {
         feed_name: 'btc-ema',
         feed_status: 'ACTIVE',
         kind: 'FEED_ALERT',
+        following: false,
         target_status: 'ACTIVE',
         used_by_total: 1,
         last_pushed_at_ms: 1700000000000,
@@ -434,6 +439,23 @@ describe('CLI dispatch', () => {
     const result = await dispatch(client, ['deploy', 'trigger', '--id', '42']);
     expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 42 });
     expect(result).toEqual({ workflow_run_id: 'wf-test' });
+  });
+
+  it('dispatches deploy run-status with --id and --workflow-run-id', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'deploy',
+      'run-status',
+      '--id',
+      '42',
+      '--workflow-run-id',
+      'wf-test',
+    ]);
+    expect(client.deploy.getRunStatus).toHaveBeenCalledWith({
+      cronjob_id: 42,
+      workflow_run_id: 'wf-test',
+    });
+    expect(result).toEqual({ workflow_run_id: 'wf-test', state: 'PENDING' });
   });
 
   it('dispatches deploy run-logs with --id and --run-id', async () => {
@@ -3843,6 +3865,7 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
           feed_name: 'btc-ema',
           feed_status: 'ACTIVE',
           kind: 'FEED_ALERT',
+          following: false,
           target_status: 'ACTIVE',
           used_by_total: 1,
           last_pushed_at_ms: 1700000000000,

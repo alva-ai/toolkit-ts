@@ -143,6 +143,19 @@ describe('DeployResource', () => {
     );
   });
 
+  it('getRunStatus sends GET /api/v1/deploy/cronjob/:id/runs/by-workflow/:workflowRunId', async () => {
+    const client = makeClient();
+    const deploy = new DeployResource(client);
+    await deploy.getRunStatus({
+      cronjob_id: 42,
+      workflow_run_id: 'hatchet-wf/abc',
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/deploy/cronjob/42/runs/by-workflow/hatchet-wf%2Fabc'
+    );
+  });
+
   it('getRunLogs sends GET /api/v1/deploy/cronjob/:id/runs/:runId/logs', async () => {
     const client = makeClient();
     const deploy = new DeployResource(client);
