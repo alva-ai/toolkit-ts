@@ -929,9 +929,16 @@ export interface PushSubscription {
   kind?: 'PLAYBOOK_ALERTS' | 'FEED_ALERT' | 'UNSPECIFIED' | string;
   /**
    * Whether the caller also FOLLOWS the target playbook — the social
-   * relation, distinct from this alert row. Always false for FEED targets.
+   * relation, distinct from this alert row. Present only for PLAYBOOK_ALERTS
+   * rows; FEED_ALERT rows omit it because alert enablement is represented by
+   * the row itself plus `target_status`.
    */
   following?: boolean;
+  /**
+   * Unambiguous alias for `following` on PLAYBOOK_ALERTS rows. This is a
+   * social playbook-follow relation, not alert delivery state.
+   */
+  playbook_followed?: boolean;
   /**
    * Target lifecycle: TARGET_DELETED marks a ghost row (the playbook/feed
    * was deleted) — clear it with unsubscribeBatch by target id.

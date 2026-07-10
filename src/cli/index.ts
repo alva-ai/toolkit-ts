@@ -547,6 +547,14 @@ List flags:
   --cursor <token> Optional cursor from previous response
   --json           Print raw JSON instead of a human-readable summary
 
+List response notes:
+  items[].kind           PLAYBOOK_ALERTS (playbook-level wildcard) | FEED_ALERT
+  items[].target_status  ACTIVE | TARGET_DELETED | PAUSED
+  items[].playbook_followed / following
+                         Social playbook follow only; present on PLAYBOOK_ALERTS.
+                         FEED_ALERT rows omit it. Do not use it as alert
+                         enablement or delivery state.
+
 Follows flags:
   --limit <n>      Optional page size
   --cursor <token> Optional cursor from previous response
@@ -1072,7 +1080,9 @@ Follows flags:
 
 List response notes:
   items[].kind           PLAYBOOK_ALERTS (playbook-level wildcard) | FEED_ALERT
-  items[].following      Whether the caller also FOLLOWS the playbook
+  items[].playbook_followed / following
+                         Whether the caller also FOLLOWS the playbook. Present
+                         only on PLAYBOOK_ALERTS; FEED_ALERT rows omit it.
   items[].target_status  ACTIVE | TARGET_DELETED (ghost — clear via
                          unsubscribe --playbook-ids/--feed-ids) | PAUSED
   items[].playbook       {owner_username, name, display_name} for PLAYBOOK rows
