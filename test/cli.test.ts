@@ -56,6 +56,14 @@ function makeClient(): AlvaClient {
     id: '9007199254740993',
     username: 'alice',
     subscription_tier: 'free',
+    telegram_username: 'alice_tg',
+    discord_username: 'alice_discord',
+    slack_username: 'Alice',
+    whatsapp_username: '+15555550123',
+    imessage_username: 'alice@example.com',
+    active_channel: 'slack',
+    toolkit_min_version: '0.1.0',
+    home_path: '/alva/home/alice',
   });
   client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
   client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
@@ -388,6 +396,14 @@ describe('CLI dispatch', () => {
       id: '9007199254740993',
       username: 'alice',
       subscription_tier: 'free',
+      telegram_username: 'alice_tg',
+      discord_username: 'alice_discord',
+      slack_username: 'Alice',
+      whatsapp_username: '+15555550123',
+      imessage_username: 'alice@example.com',
+      active_channel: 'slack',
+      toolkit_min_version: '0.1.0',
+      home_path: '/alva/home/alice',
     });
   });
 
