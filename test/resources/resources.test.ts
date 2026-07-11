@@ -29,10 +29,25 @@ function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
 }
 
 describe('UserResource', () => {
-  it('me() sends GET /api/v1/me', async () => {
+  it('me() returns all IM binding display fields from GET /api/v1/me', async () => {
     const client = makeClient();
+    const profile = {
+      id: '42',
+      username: 'alice',
+      subscription_tier: 'pro',
+      telegram_username: 'alice_tg',
+      discord_username: 'alice_discord',
+      slack_username: 'Alice',
+      whatsapp_username: '+15555550123',
+      imessage_username: 'alice@example.com',
+      active_channel: 'slack',
+      toolkit_min_version: '0.1.0',
+      home_path: '/alva/home/alice',
+    };
+    client._request.mockResolvedValue(profile);
     const user = new UserResource(client);
-    await user.me();
+    const result = await user.me();
+    expect(result).toEqual(profile);
     expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/me');
   });
 });

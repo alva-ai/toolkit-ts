@@ -20,9 +20,14 @@ export interface AlvaClientConfig {
 export interface UserProfile {
   id: string;
   username: string;
-  subscription_tier: 'free' | 'pro';
-  telegram_username: string | null;
-  slack_username: string | null;
+  subscription_tier: 'free' | 'pro' | 'max';
+  telegram_username: string;
+  discord_username: string;
+  slack_username: string;
+  whatsapp_username: string;
+  imessage_username: string;
+  active_channel: string;
+  toolkit_min_version: string;
   /** Caller's alfs home directory, e.g. `/alva/home/<username>`. */
   home_path: string;
 }

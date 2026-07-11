@@ -195,9 +195,13 @@ Subcommands:
 Response fields:
   id                  User ID
   username            Username (used in ALFS paths and playbook URLs)
-  subscription_tier   "free" or "pro" — determines release flow and feature gates
-  telegram_username   Telegram username if connected, null otherwise
-  slack_username      Slack display name if connected, null otherwise
+  subscription_tier   "free", "pro", or "max" — determines release flow and feature gates
+  telegram_username   Telegram display name if connected, empty otherwise
+  discord_username    Discord display name if connected, empty otherwise
+  slack_username      Slack display name if connected, empty otherwise
+  whatsapp_username   WhatsApp display name if connected, empty otherwise
+  imessage_username   iMessage display name if connected, empty otherwise
+  active_channel      Currently selected IM delivery channel
 
 Examples:
   alva user me`,
