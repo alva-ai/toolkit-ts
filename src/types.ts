@@ -245,13 +245,14 @@ export interface CronjobCreateRequest {
    * A string: SA ids are snowflake int64s that overflow JS number precision.
    */
   run_as_user_id?: string;
+  /** Inclusive RFC3339 lower bound. Omitted means start now (server clock). */
+  start_at?: string;
   /**
-   * Lifetime ceiling (RFC3339 timestamp). Once now >= end_at the runner
-   * self-terminates the cronjob before running (backend#1799). Omitted ⇒ no
-   * expiry. The `alva loop create` sugar sets this to now + (expires_in ?? 7d);
-   * feeds and other crons leave it unset.
+   * Exclusive RFC3339 upper bound. A run is admitted only while now < end_at.
    */
   end_at?: string;
+  /** Maximum number of admitted runs. */
+  max_runs?: number;
 }
 
 export interface Cronjob {
@@ -269,11 +270,17 @@ export interface Cronjob {
    * A string: snowflake int64 ids overflow JS number precision.
    */
   run_as_user_id: string;
+  /** Inclusive eligibility lower bound, resolved by the server on create. */
+  start_at?: string | null;
   /**
    * Lifetime ceiling (RFC3339), or null/omitted when the cronjob has no expiry.
    * Set by `alva loop create`; unset for feeds and other crons.
    */
   end_at?: string | null;
+  /** Maximum admitted runs, or null when unbounded by count. */
+  max_runs?: number | null;
+  /** Number of runs admitted so far. */
+  run_count: number;
   created_at: string;
   updated_at: string;
 }

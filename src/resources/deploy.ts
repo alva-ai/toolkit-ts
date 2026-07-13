@@ -27,7 +27,9 @@ export class DeployResource {
         push_notify: params.push_notify,
         max_heap_size_mb: params.max_heap_size_mb,
         run_as_user_id: params.run_as_user_id,
+        start_at: params.start_at,
         end_at: params.end_at,
+        max_runs: params.max_runs,
       },
     }) as Promise<Cronjob>;
   }
