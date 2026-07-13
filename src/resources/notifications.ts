@@ -2,27 +2,10 @@ import type { AlvaClient } from '../client.js';
 import type {
   FeedNotificationListResponse,
   NotificationListParams,
-  PlaybookNotificationListResponse,
 } from '../types.js';
 
 export class NotificationsResource {
   constructor(private client: AlvaClient) {}
-
-  /**
-   * List the caller's notification history for one playbook
-   * `(username, name)`. Returns `NOT_FOUND` when the playbook is
-   * private or does not exist (the two cases are deliberately
-   * indistinguishable to prevent namespace enumeration).
-   */
-  async listPlaybook(
-    params: NotificationListParams
-  ): Promise<PlaybookNotificationListResponse> {
-    this.client._requireAuth();
-    const path = `/api/v1/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}/notifications`;
-    return this.client._request('GET', path, {
-      query: buildQuery(params),
-    }) as Promise<PlaybookNotificationListResponse>;
-  }
 
   /**
    * List the caller's notification history for one feed

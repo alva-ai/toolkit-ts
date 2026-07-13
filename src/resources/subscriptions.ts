@@ -2,19 +2,22 @@ import type { AlvaClient } from '../client.js';
 import type {
   FollowsListParams,
   FollowsListResponse,
+  FollowPlaybookResponse,
+  PlaybookFollowParams,
   PushSubscriptionFeedParams,
   PushSubscriptionListParams,
   PushSubscriptionListResponse,
-  PushSubscriptionPlaybookParams,
+  SubscribeBatchParams,
+  SubscribeBatchResponse,
   SubscribeFeedResponse,
-  SubscribePlaybookResponse,
   UnsubscribeBatchParams,
   UnsubscribeBatchResponse,
   UnsubscribeResponse,
+  UnfollowPlaybookResponse,
 } from '../types.js';
 
 /**
- * Subscriptions — subscribe the caller to playbooks and feeds.
+ * Playbook follows and FEED alert subscriptions.
  *
  * Three DISTINCT concepts share the word "subscribe" in the product; this
  * resource touches the first two and never the third:
@@ -25,48 +28,44 @@ import type {
  *   - **purchase** — paid playbook access / the SaaS plan. NOT this resource.
  *
  * Operations:
- *   - `subscribePlaybook` is a CASCADE: it follows the playbook AND enables
- *     personal push for every push-enabled automation of its latest release,
- *     in one call. `unsubscribePlaybook` reverses both (unfollow + disable
- *     the playbook-level alert) and reports exactly what it changed.
+ *   - `followPlaybook` / `unfollowPlaybook` change only the social follow.
  *   - `subscribeFeed` / `unsubscribeFeed` toggle personal push for ONE feed
  *     (a single automation's alert) without touching the playbook follow.
- *   - `unsubscribeBatch` disables alerts by TARGET ID — bulk, idempotent,
- *     and the only way to clear ghost rows whose target was deleted
- *     (name-addressed unsubscribe 404s on deleted playbooks).
+ *   - `subscribeBatch` / `unsubscribeBatch` toggle FEED alerts by target id.
  *
- * Backed by alva-gateway REST under `/api/v1/subscriptions/...`.
+ * Backed by alva-gateway REST under `/api/v1/follows/...` and
+ * `/api/v1/subscriptions/...`.
  */
 export class SubscriptionsResource {
   constructor(private client: AlvaClient) {}
 
   /**
-   * Subscribe to a playbook `(username, name)`: follow it and enable alerts
-   * on all its push-enabled automations. Idempotent. Auth: the caller must be
-   * able to read the playbook — public passes; paid requires an active unlock;
-   * private requires owner/admin.
+   * Follow a playbook `(username, name)`. Alerts are independent and require
+   * explicit FEED subscriptions. Idempotent.
    */
-  async subscribePlaybook(
-    params: PushSubscriptionPlaybookParams
-  ): Promise<SubscribePlaybookResponse> {
+  async followPlaybook(
+    params: PlaybookFollowParams
+  ): Promise<FollowPlaybookResponse> {
     this.client._requireAuth();
-    const path = `/api/v1/subscriptions/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
+    const path = `/api/v1/follows/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
     return this.client._request(
       'POST',
       path
-    ) as Promise<SubscribePlaybookResponse>;
+    ) as Promise<FollowPlaybookResponse>;
   }
 
   /**
-   * Unsubscribe from a playbook `(username, name)`: unfollow it and disable
-   * all of its push alerts for the caller. Idempotent.
+   * Unfollow a playbook `(username, name)` without changing FEED alerts.
    */
-  async unsubscribePlaybook(
-    params: PushSubscriptionPlaybookParams
-  ): Promise<UnsubscribeResponse> {
+  async unfollowPlaybook(
+    params: PlaybookFollowParams
+  ): Promise<UnfollowPlaybookResponse> {
     this.client._requireAuth();
-    const path = `/api/v1/subscriptions/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
-    return this.client._request('DELETE', path) as Promise<UnsubscribeResponse>;
+    const path = `/api/v1/follows/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
+    return this.client._request(
+      'DELETE',
+      path
+    ) as Promise<UnfollowPlaybookResponse>;
   }
 
   /**
@@ -129,12 +128,26 @@ export class SubscriptionsResource {
     }) as Promise<FollowsListResponse>;
   }
 
+  /** Atomically enable alerts for FEED target ids (max 100). */
+  async subscribeBatch(
+    params: SubscribeBatchParams
+  ): Promise<SubscribeBatchResponse> {
+    this.client._requireAuth();
+    return this.client._request(
+      'POST',
+      '/api/v1/subscriptions/subscribe-batch',
+      {
+        body: {
+          feed_ids: params.feedIds,
+          channel_id: params.channelId,
+        },
+      }
+    ) as Promise<SubscribeBatchResponse>;
+  }
+
   /**
-   * Disable alerts for many playbook/feed targets BY TARGET ID in one
-   * idempotent call (max 100 ids). Ids are strings (snowflake-safe). Works
-   * for ghost rows (deleted targets) because no name resolution happens —
-   * the per-id results report `INVALID_ID` for malformed entries while
-   * valid ones proceed. Safe to re-run: already-gone rows are no-ops.
+   * Disable alerts for many FEED targets by id in one idempotent call (max
+   * 100 ids). The per-id results report `INVALID_ID` for malformed entries.
    */
   async unsubscribeBatch(
     params: UnsubscribeBatchParams
@@ -145,8 +158,7 @@ export class SubscriptionsResource {
       '/api/v1/subscriptions/unsubscribe-batch',
       {
         body: {
-          playbook_ids: params.playbookIds ?? [],
-          feed_ids: params.feedIds ?? [],
+          feed_ids: params.feedIds,
         },
       }
     ) as Promise<UnsubscribeBatchResponse>;

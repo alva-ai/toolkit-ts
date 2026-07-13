@@ -946,33 +946,6 @@ describe('CommentsResource', () => {
 });
 
 describe('NotificationsResource', () => {
-  it('listPlaybook() sends GET /api/v1/playbook/:username/:name/notifications', async () => {
-    const client = makeClient();
-    const notifications = new NotificationsResource(client);
-    await notifications.listPlaybook({
-      username: 'alice',
-      name: 'btc-dashboard',
-      channel: 'telegram',
-      status: 'sent',
-      since_time: 1777355703,
-      first: 5,
-      cursor: 'abc',
-    });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/playbook/alice/btc-dashboard/notifications',
-      {
-        query: {
-          channel: 'telegram',
-          status: 'sent',
-          since_time: '1777355703',
-          first: '5',
-          cursor: 'abc',
-        },
-      }
-    );
-  });
-
   it('listFeed() sends GET /api/v1/feed/:username/:name/notifications', async () => {
     const client = makeClient();
     const notifications = new NotificationsResource(client);
@@ -1063,7 +1036,7 @@ describe('ChannelGroupSubscriptionsResource', () => {
     const groups = new ChannelGroupSubscriptionsResource(client);
     await groups.unsubscribe({
       session_id: '2047213140224270336',
-      target_type: 'playbook',
+      target_type: 'feed',
       target_id: '42',
     });
     expect(client._request).toHaveBeenCalledWith(
@@ -1071,7 +1044,7 @@ describe('ChannelGroupSubscriptionsResource', () => {
       '/api/v1/channel/group-subscriptions',
       {
         jsonBody:
-          '{"session_id":2047213140224270336,"target_type":"playbook","target_id":42}',
+          '{"session_id":2047213140224270336,"target_type":"feed","target_id":42}',
       }
     );
   });
@@ -1147,6 +1120,23 @@ describe('ScreenshotResource', () => {
 });
 
 describe('SubscriptionsResource — agent surface (mono-meta#584 W3)', () => {
+  it('followPlaybook() and unfollowPlaybook() use follow-only playbook routes', async () => {
+    const client = makeClient();
+    const subs = new SubscriptionsResource(client);
+    await subs.followPlaybook({ username: 'alice', name: 'btc-dashboard' });
+    await subs.unfollowPlaybook({ username: 'alice', name: 'btc-dashboard' });
+    expect(client._request).toHaveBeenNthCalledWith(
+      1,
+      'POST',
+      '/api/v1/follows/playbook/alice/btc-dashboard'
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'DELETE',
+      '/api/v1/follows/playbook/alice/btc-dashboard'
+    );
+  });
+
   it('follows() sends GET /api/v1/me/follows with pagination', async () => {
     const client = makeClient();
     const subs = new SubscriptionsResource(client);
@@ -1156,17 +1146,25 @@ describe('SubscriptionsResource — agent surface (mono-meta#584 W3)', () => {
     });
   });
 
-  it('unsubscribeBatch() posts string ids to unsubscribe-batch', async () => {
+  it('subscribeBatch() posts feed ids and channel id', async () => {
     const client = makeClient();
     const subs = new SubscriptionsResource(client);
-    await subs.unsubscribeBatch({
-      playbookIds: ['8009'],
-      feedIds: ['13292'],
-    });
+    await subs.subscribeBatch({ feedIds: ['13292'], channelId: '42' });
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/subscriptions/subscribe-batch',
+      { body: { feed_ids: ['13292'], channel_id: '42' } }
+    );
+  });
+
+  it('unsubscribeBatch() posts feed ids to unsubscribe-batch', async () => {
+    const client = makeClient();
+    const subs = new SubscriptionsResource(client);
+    await subs.unsubscribeBatch({ feedIds: ['13292'] });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
       '/api/v1/subscriptions/unsubscribe-batch',
-      { body: { playbook_ids: ['8009'], feed_ids: ['13292'] } }
+      { body: { feed_ids: ['13292'] } }
     );
   });
 });
@@ -1217,24 +1215,16 @@ describe('AlertsResource', () => {
     });
   });
 
-  it('playbook alert methods delegate to playbook subscription methods', async () => {
+  it('enableBatch() delegates to subscriptions.subscribeBatch()', async () => {
     const client = makeClient();
-    client.subscriptions.subscribePlaybook = vi.fn().mockResolvedValue({});
-    client.subscriptions.unsubscribePlaybook = vi
+    client.subscriptions.subscribeBatch = vi
       .fn()
-      .mockResolvedValue({ ok: true });
+      .mockResolvedValue({ subscriptions: [] });
     const alerts = new AlertsResource(client);
-
-    await alerts.enablePlaybook({ username: 'alice', name: 'btc-dashboard' });
-    await alerts.disablePlaybook({ username: 'alice', name: 'btc-dashboard' });
-
-    expect(client.subscriptions.subscribePlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-    });
-    expect(client.subscriptions.unsubscribePlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
+    await alerts.enableBatch({ feedIds: ['42'], channelId: '7' });
+    expect(client.subscriptions.subscribeBatch).toHaveBeenCalledWith({
+      feedIds: ['42'],
+      channelId: '7',
     });
   });
 
@@ -1244,33 +1234,24 @@ describe('AlertsResource', () => {
       .fn()
       .mockResolvedValue({ results: [], ok_count: 0 });
     const alerts = new AlertsResource(client);
-    await alerts.disableBatch({ feedIds: ['42'], playbookIds: ['7'] });
+    await alerts.disableBatch({ feedIds: ['42'] });
     expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
       feedIds: ['42'],
-      playbookIds: ['7'],
     });
   });
 
-  it('history methods delegate to notification history resources', async () => {
+  it('historyAutomation delegates to feed notification history', async () => {
     const client = makeClient();
     client.notifications.listFeed = vi
       .fn()
       .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
-    client.notifications.listPlaybook = vi
-      .fn()
-      .mockResolvedValue({ items: [], next_cursor: '', playbook_path: '~/p' });
     const alerts = new AlertsResource(client);
 
     await alerts.historyAutomation({ username: 'alice', name: 'btc-ema' });
-    await alerts.historyPlaybook({ username: 'alice', name: 'btc-dashboard' });
 
     expect(client.notifications.listFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
-    });
-    expect(client.notifications.listPlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
     });
   });
 
