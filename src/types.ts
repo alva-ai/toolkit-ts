@@ -119,6 +119,8 @@ export interface FsWriteParams {
   path: string;
   data: string;
   mkdir_parents?: boolean;
+  /** Append to the existing file instead of overwriting it. */
+  append?: boolean;
 }
 
 export interface FsRawWriteParams {
@@ -126,6 +128,8 @@ export interface FsRawWriteParams {
   /** Raw file content: string, ArrayBuffer, Uint8Array, Blob, etc. */
   body: BodyInit;
   mkdir_parents?: boolean;
+  /** Append to the existing file instead of overwriting it. */
+  append?: boolean;
 }
 
 export interface FsWriteResponse {

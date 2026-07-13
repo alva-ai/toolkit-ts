@@ -69,6 +69,7 @@ function makeClient(): AlvaClient {
   client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
   client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
   client.fs.write = vi.fn().mockResolvedValue({ bytes_written: 2 });
+  client.fs.rawWrite = vi.fn().mockResolvedValue({ bytes_written: 2 });
   client.fs.mkdir = vi.fn().mockResolvedValue(undefined);
   client.fs.remove = vi.fn().mockResolvedValue(undefined);
   client.fs.rename = vi.fn().mockResolvedValue(undefined);
@@ -413,6 +414,48 @@ describe('CLI dispatch', () => {
     expect(client.fs.read).toHaveBeenCalledWith(
       expect.objectContaining({ path: '~/f' })
     );
+  });
+
+  it('dispatches fs write --append for text data', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'fs',
+      'write',
+      '--path',
+      '~/f',
+      '--data',
+      'next',
+      '--append',
+    ]);
+    expect(client.fs.write).toHaveBeenCalledWith({
+      path: '~/f',
+      data: 'next',
+      mkdir_parents: true,
+      append: true,
+    });
+  });
+
+  it('dispatches fs write --append for local file data', async () => {
+    const mock = vi
+      .mocked(fs.readFileSync)
+      .mockReturnValue(Buffer.from('next'));
+    const client = makeClient();
+    await dispatch(client, [
+      'fs',
+      'write',
+      '--path',
+      '~/f',
+      '--file',
+      '/tmp/next.txt',
+      '--append',
+    ]);
+    expect(client.fs.rawWrite).toHaveBeenCalledWith({
+      path: '~/f',
+      body: Buffer.from('next'),
+      mkdir_parents: true,
+      append: true,
+    });
+    mock.mockReset();
   });
 
   it('dispatches deploy list with --limit', async () => {
@@ -3005,6 +3048,7 @@ describe('help text', () => {
     };
     expect(result.text).toContain('--data');
     expect(result.text).toContain('--file');
+    expect(result.text).toContain('--append');
   });
 
   it('case 13: fs --help per-sub flags for rename', async () => {

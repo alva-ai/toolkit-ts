@@ -113,6 +113,20 @@ describe('FsResource', () => {
       });
     });
 
+    it('maps append to the ALFS append write flag', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      await fs.write({ path: '~/f', data: 'next', append: true });
+      expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/fs/write', {
+        body: {
+          path: '~/f',
+          data: 'next',
+          mkdir_parents: undefined,
+          flags: 1,
+        },
+      });
+    });
+
     it('requires auth', async () => {
       const client = makeClient();
       const fs = new FsResource(client);
@@ -145,6 +159,16 @@ describe('FsResource', () => {
       expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/fs/write', {
         query: { path: '~/f', mkdir_parents: true },
         rawBody: 'raw text',
+      });
+    });
+
+    it('maps append to the ALFS append query flag', async () => {
+      const client = makeClient('key');
+      const fsRes = new FsResource(client);
+      await fsRes.rawWrite({ path: '~/f', body: 'next', append: true });
+      expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/fs/write', {
+        query: { path: '~/f', mkdir_parents: undefined, flags: 1 },
+        rawBody: 'next',
       });
     });
 

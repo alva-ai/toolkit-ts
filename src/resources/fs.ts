@@ -18,6 +18,9 @@ import type {
   FsRevokeParams,
 } from '../types.js';
 
+// Fixed bit value from ALFS WriteFlag; Gateway accepts it as a uint32 bitmask.
+const WRITE_FLAG_APPEND = 1 << 0;
+
 function isValidUtf8(bytes: Uint8Array): boolean {
   let i = 0;
   while (i < bytes.length) {
@@ -92,6 +95,7 @@ export class FsResource {
         path: params.path,
         data: params.data,
         mkdir_parents: params.mkdir_parents,
+        ...(params.append ? { flags: WRITE_FLAG_APPEND } : {}),
       },
     }) as Promise<FsWriteResponse>;
   }
@@ -103,6 +107,7 @@ export class FsResource {
       query: {
         path: params.path,
         mkdir_parents: params.mkdir_parents,
+        ...(params.append ? { flags: WRITE_FLAG_APPEND } : {}),
       },
       rawBody: params.body,
     }) as Promise<FsWriteResponse>;
