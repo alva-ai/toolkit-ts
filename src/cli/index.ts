@@ -3100,9 +3100,12 @@ export async function dispatch(
                   ref: sourceRef,
                 }
               : undefined;
+          const packageName = requireFlag(flags, 'package', 'sdk publish');
+          const version = requireFlag(flags, 'version', 'sdk publish');
+          const refs = (boolFlag(flags['latest']) ?? true) ? ['latest'] : [];
           const result = await client.artifacts.publishSDK({
-            package: requireFlag(flags, 'package', 'sdk publish'),
-            version: requireFlag(flags, 'version', 'sdk publish'),
+            package: packageName,
+            version,
             files: [
               {
                 path: entrypoint,
@@ -3111,9 +3114,27 @@ export async function dispatch(
             ],
             entrypoints: { main: entrypoint },
             source,
-            refs: (boolFlag(flags['latest']) ?? true) ? ['latest'] : [],
+            refs,
             verify_readback: boolFlag(flags['verify-readback']) ?? true,
           });
+          const expectedTarget = `/alva/registry/sdk/${packageName}/releases/${version}`;
+          const expectedRefs = refs.map(
+            (ref) => `/alva/registry/sdk/${packageName}/refs/${ref}`
+          );
+          const missingRefs = expectedRefs.filter(
+            (ref) => !result.response.updated_refs.includes(ref)
+          );
+          if (
+            result.response.target_path !== expectedTarget ||
+            missingRefs.length > 0
+          ) {
+            throw new AlvaError(
+              'PUBLISH_RESPONSE_MISMATCH',
+              'Artifact was published, but the gateway response did not confirm the requested target and refs.',
+              200,
+              result
+            );
+          }
           if (result.verification?.verified === false) {
             throw new AlvaError(
               'READBACK_FAILED',

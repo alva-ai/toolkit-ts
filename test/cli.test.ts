@@ -2125,7 +2125,7 @@ components: {}
         manifest_path:
           '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
         bundle_hash: 'sha256:bundle',
-        updated_refs: [],
+        updated_refs: ['/alva/registry/sdk/fintwit-digest/refs/latest'],
         existed: false,
       },
       verification: {
@@ -2149,6 +2149,41 @@ components: {}
       ])
     ).rejects.toMatchObject({
       code: 'READBACK_FAILED',
+      status: 200,
+      message: expect.stringContaining('was published'),
+    });
+  });
+
+  it('rejects a success response that omits the requested latest ref', async () => {
+    const client = makeClient();
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
+    vi.mocked(client.artifacts.publishSDK).mockResolvedValueOnce({
+      response: {
+        target_path: '/alva/registry/sdk/fintwit-digest/releases/v2.3.0',
+        manifest_path:
+          '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
+        bundle_hash: 'sha256:bundle',
+        updated_refs: [],
+        existed: false,
+      },
+      verification: { verified: true },
+    });
+
+    await expect(
+      dispatch(client, [
+        'sdk',
+        'publish',
+        '--package',
+        'fintwit-digest',
+        '--version',
+        'v2.3.0',
+        '--file',
+        'bundle.cjs',
+        '--entrypoint',
+        'dist/cjs/index.js',
+      ])
+    ).rejects.toMatchObject({
+      code: 'PUBLISH_RESPONSE_MISMATCH',
       status: 200,
       message: expect.stringContaining('was published'),
     });
