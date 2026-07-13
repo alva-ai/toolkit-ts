@@ -887,7 +887,7 @@ Subcommands:
   doc                 Get documentation for a specific SDK module
   partitions          List all available data partitions
   partition-summary   Get a summary of modules in a partition
-  publish             Publish a built CommonJS SDK artifact (admin API key required)
+  publish             Publish a built CommonJS SDK artifact to your username scope
 
 Flags:
   --name <module>        Module name for 'doc' (required)
@@ -900,6 +900,7 @@ Publish flags:
   --entrypoint <path>    Artifact path for entrypoints.main (required)
   --source-repository <repo>  Source repository, for example alva-ai/backtest-js
   --source-ref <ref>     Source commit, tag, or branch
+  --platform             Publish under @alva (admin API key required)
   --no-latest           Do not update the latest ref
   --no-verify-readback  Skip post-publish consumer-path verification
 
@@ -1380,6 +1381,7 @@ export const BOOLEAN_FLAGS = new Set([
   'today',
   'latest',
   'verify-readback',
+  'platform',
 ]);
 
 export function parseFlags(argv: string[]): Record<string, string> {
@@ -3103,28 +3105,38 @@ export async function dispatch(
           const packageName = requireFlag(flags, 'package', 'sdk publish');
           const version = requireFlag(flags, 'version', 'sdk publish');
           const refs = (boolFlag(flags['latest']) ?? true) ? ['latest'] : [];
-          const result = await client.artifacts.publishSDK({
-            package: packageName,
-            version,
-            files: [
-              {
-                path: entrypoint,
-                data_base64: fs.readFileSync(file).toString('base64'),
-              },
-            ],
-            entrypoints: { main: entrypoint },
-            source,
-            refs,
-            verify_readback: boolFlag(flags['verify-readback']) ?? true,
-          });
-          const expectedTarget = `/alva/registry/sdk/${packageName}/releases/${version}`;
+          const platform = boolFlag(flags['platform']) ?? false;
+          const result = await client.artifacts.publishSDK(
+            {
+              package: packageName,
+              version,
+              files: [
+                {
+                  path: entrypoint,
+                  data_base64: fs.readFileSync(file).toString('base64'),
+                },
+              ],
+              entrypoints: { main: entrypoint },
+              source,
+              refs,
+              verify_readback: boolFlag(flags['verify-readback']) ?? true,
+            },
+            { platform }
+          );
+          const expectedScope = platform ? 'alva' : result.response.scope;
+          const expectedPackage = `@${expectedScope}/${packageName}`;
+          const expectedTarget = `/alva/registry/sdk/${expectedScope}/${packageName}/releases/${version}`;
           const expectedRefs = refs.map(
-            (ref) => `/alva/registry/sdk/${packageName}/refs/${ref}`
+            (ref) =>
+              `/alva/registry/sdk/${expectedScope}/${packageName}/refs/${ref}`
           );
           const missingRefs = expectedRefs.filter(
             (ref) => !result.response.updated_refs.includes(ref)
           );
           if (
+            !expectedScope ||
+            result.response.scope !== expectedScope ||
+            result.response.canonical_package !== expectedPackage ||
             result.response.target_path !== expectedTarget ||
             missingRefs.length > 0
           ) {

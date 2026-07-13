@@ -283,11 +283,13 @@ function makeClient(): AlvaClient {
   client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
   client.artifacts.publishSDK = vi.fn().mockResolvedValue({
     response: {
-      target_path: '/alva/registry/sdk/fintwit-digest/releases/v2.3.0',
+      scope: 'alice',
+      canonical_package: '@alice/fintwit-digest',
+      target_path: '/alva/registry/sdk/alice/fintwit-digest/releases/v2.3.0',
       manifest_path:
-        '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
+        '/alva/registry/sdk/alice/fintwit-digest/releases/v2.3.0/manifest.json',
       bundle_hash: 'sha256:bundle',
-      updated_refs: ['/alva/registry/sdk/fintwit-digest/refs/latest'],
+      updated_refs: ['/alva/registry/sdk/alice/fintwit-digest/refs/latest'],
       existed: false,
     },
     verification: { verified: true },
@@ -2068,24 +2070,27 @@ components: {}
       'abc123',
     ]);
 
-    expect(client.artifacts.publishSDK).toHaveBeenCalledWith({
-      package: 'fintwit-digest',
-      version: 'v2.3.0',
-      files: [
-        {
-          path: 'dist/cjs/index.js',
-          data_base64: Buffer.from('bundle').toString('base64'),
+    expect(client.artifacts.publishSDK).toHaveBeenCalledWith(
+      {
+        package: 'fintwit-digest',
+        version: 'v2.3.0',
+        files: [
+          {
+            path: 'dist/cjs/index.js',
+            data_base64: Buffer.from('bundle').toString('base64'),
+          },
+        ],
+        entrypoints: { main: 'dist/cjs/index.js' },
+        source: {
+          type: 'github',
+          repository: 'alva-ai/backtest-js',
+          ref: 'abc123',
         },
-      ],
-      entrypoints: { main: 'dist/cjs/index.js' },
-      source: {
-        type: 'github',
-        repository: 'alva-ai/backtest-js',
-        ref: 'abc123',
+        refs: ['latest'],
+        verify_readback: true,
       },
-      refs: ['latest'],
-      verify_readback: true,
-    });
+      { platform: false }
+    );
   });
 
   it('supports publishing without latest or readback verification', async () => {
@@ -2112,7 +2117,45 @@ components: {}
         refs: [],
         verify_readback: false,
         source: undefined,
-      })
+      }),
+      { platform: false }
+    );
+  });
+
+  it('publishes to the @alva platform scope only when --platform is set', async () => {
+    const client = makeClient();
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
+    vi.mocked(client.artifacts.publishSDK).mockResolvedValueOnce({
+      response: {
+        scope: 'alva',
+        canonical_package: '@alva/signals',
+        target_path: '/alva/registry/sdk/alva/signals/releases/v1.0.0',
+        manifest_path:
+          '/alva/registry/sdk/alva/signals/releases/v1.0.0/manifest.json',
+        bundle_hash: 'sha256:bundle',
+        updated_refs: ['/alva/registry/sdk/alva/signals/refs/latest'],
+        existed: false,
+      },
+      verification: { verified: true },
+    });
+
+    await dispatch(client, [
+      'sdk',
+      'publish',
+      '--package',
+      'signals',
+      '--version',
+      'v1.0.0',
+      '--file',
+      'bundle.cjs',
+      '--entrypoint',
+      'index.js',
+      '--platform',
+    ]);
+
+    expect(client.artifacts.publishSDK).toHaveBeenCalledWith(
+      expect.objectContaining({ package: 'signals', version: 'v1.0.0' }),
+      { platform: true }
     );
   });
 
@@ -2121,11 +2164,13 @@ components: {}
     vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
     vi.mocked(client.artifacts.publishSDK).mockResolvedValueOnce({
       response: {
-        target_path: '/alva/registry/sdk/fintwit-digest/releases/v2.3.0',
+        scope: 'alice',
+        canonical_package: '@alice/fintwit-digest',
+        target_path: '/alva/registry/sdk/alice/fintwit-digest/releases/v2.3.0',
         manifest_path:
-          '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
+          '/alva/registry/sdk/alice/fintwit-digest/releases/v2.3.0/manifest.json',
         bundle_hash: 'sha256:bundle',
-        updated_refs: ['/alva/registry/sdk/fintwit-digest/refs/latest'],
+        updated_refs: ['/alva/registry/sdk/alice/fintwit-digest/refs/latest'],
         existed: false,
       },
       verification: {
@@ -2159,9 +2204,11 @@ components: {}
     vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
     vi.mocked(client.artifacts.publishSDK).mockResolvedValueOnce({
       response: {
-        target_path: '/alva/registry/sdk/fintwit-digest/releases/v2.3.0',
+        scope: 'alice',
+        canonical_package: '@alice/fintwit-digest',
+        target_path: '/alva/registry/sdk/alice/fintwit-digest/releases/v2.3.0',
         manifest_path:
-          '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
+          '/alva/registry/sdk/alice/fintwit-digest/releases/v2.3.0/manifest.json',
         bundle_hash: 'sha256:bundle',
         updated_refs: [],
         existed: false,

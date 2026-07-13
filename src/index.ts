@@ -12,6 +12,7 @@ export { AlertsResource } from './resources/alerts.js';
 export { ArtifactsResource } from './resources/artifacts.js';
 export type {
   PublishSDKArtifactParams,
+  PublishSDKArtifactOptions,
   PublishSDKArtifactResponse,
   SDKArtifactFile,
   SDKArtifactSource,

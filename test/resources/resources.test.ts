@@ -878,6 +878,25 @@ describe('ArtifactsResource', () => {
       { body: params }
     );
   });
+
+  it('publishSDK() uses the admin-only platform route when requested', async () => {
+    const client = makeClient();
+    const artifacts = new ArtifactsResource(client);
+    const params = {
+      package: 'signals',
+      version: 'v1.0.0',
+      files: [{ path: 'index.js', data_base64: 'YnVuZGxl' }],
+      entrypoints: { main: 'index.js' },
+    };
+
+    await artifacts.publishSDK(params, { platform: true });
+
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/artifacts/sdk/platform/publish',
+      { body: params }
+    );
+  });
 });
 
 describe('PlaybookSkillsResource', () => {

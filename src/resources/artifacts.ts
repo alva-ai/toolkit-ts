@@ -23,6 +23,8 @@ export interface PublishSDKArtifactParams {
 
 export interface PublishSDKArtifactResponse {
   response: {
+    scope: string;
+    canonical_package: string;
     target_path: string;
     manifest_path: string;
     bundle_hash: string;
@@ -41,14 +43,22 @@ export interface PublishSDKArtifactResponse {
   };
 }
 
+export interface PublishSDKArtifactOptions {
+  platform?: boolean;
+}
+
 export class ArtifactsResource {
   constructor(private client: AlvaClient) {}
 
   async publishSDK(
-    params: PublishSDKArtifactParams
+    params: PublishSDKArtifactParams,
+    options: PublishSDKArtifactOptions = {}
   ): Promise<PublishSDKArtifactResponse> {
     this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/artifacts/sdk/publish', {
+    const path = options.platform
+      ? '/api/v1/artifacts/sdk/platform/publish'
+      : '/api/v1/artifacts/sdk/publish';
+    return this.client._request('POST', path, {
       body: params,
     }) as Promise<PublishSDKArtifactResponse>;
   }
