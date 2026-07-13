@@ -91,10 +91,10 @@ Commands:
   skillhub    Playbook skills (list, tags, get, file)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
-  notification-history  Notification delivery history (list-playbook, list-feed)
+  notification-history  Feed notification delivery history (list-feed)
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
-  subscriptions       Legacy alert/follow operations (subscribe-playbook, subscribe-feed, list, follows)
+  subscriptions       Playbook follows and feed alert subscriptions
   channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
@@ -538,27 +538,25 @@ Examples:
 
   alert: `Usage: alva alert <subcommand> [options]
 
-Manage alerts. Alerts are personal notification opt-ins for automations or
-playbooks. Delivery history and global alert preferences live here too.
+Manage alerts. Alert subscriptions target automations (feeds) only. Playbook
+follows are independent; delivery history and global preferences live here too.
 
 Subcommands:
   list          List the caller's active alerts
   follows       List the playbooks the caller follows
-  enable        Enable an alert for an automation or playbook
-  disable       Disable alerts by automation/playbook name or id
-  history       List alert delivery history for an automation or playbook
+  enable        Enable alerts by automation name or ids
+  disable       Disable alerts by automation name or ids
+  history       List alert delivery history for an automation
   preferences   List global alert preferences
   enable-session-completed
   disable-session-completed
 
 Target flags:
   --automation <owner/name>  Automation target
-  --playbook <owner/name>    Playbook target
 
-Disable-by-id flags:
+Enable/disable-by-id flags:
   --automation-ids <a,b>     Comma-separated automation target ids
-  --playbook-ids <a,b>       Comma-separated playbook target ids
-  --feed-ids <a,b>           Legacy alias for --automation-ids
+  --channel-id <id>          Delivery channel for batch enable (optional)
 
 List flags:
   --first <n>      Optional page size
@@ -579,9 +577,8 @@ Examples:
   alva alert follows --limit 20
   alva alert enable --automation alice/btc-ema
   alva alert disable --automation alice/btc-ema
-  alva alert enable --playbook alice/btc-dashboard
+  alva alert enable --automation-ids 13292,13293
   alva alert disable --automation-ids 13292
-  alva alert disable --feed-ids 13292
   alva alert history --automation alice/btc-ema --status sent
   alva alert preferences`,
 
@@ -986,16 +983,15 @@ Examples:
 
   'notification-history': `Usage: alva notification-history <subcommand> [options]
 
-Read the caller's delivered notification history scoped to a playbook or feed.
+Read the caller's delivered notification history scoped to a feed.
 This is an audit/history surface, not a subscription toggle.
 
 Subcommands:
-  list-playbook      List notification history for a playbook
   list-feed          List notification history for a feed
 
 Common flags:
   --username <user>  Owner's username (required)
-  --name <name>      URL-safe playbook or feed name (required)
+  --name <name>      URL-safe feed name (required)
   --channel <name>   Optional delivery channel filter (telegram, web, ...)
   --status <status>  Optional status filter (sent, failed, filtered)
   --since <seconds>  Optional Unix seconds lower bound
@@ -1003,7 +999,6 @@ Common flags:
   --cursor <token>   Optional cursor from the previous page
 
 Examples:
-  alva notification-history list-playbook --username alice --name btc-dashboard --first 5
   alva notification-history list-feed --username alice --name btc-ema --status sent`,
 
   'notification-preferences': `Usage: alva notification-preferences <subcommand>
@@ -1051,33 +1046,28 @@ Three DISTINCT concepts share the word "subscribe" in the product:
   - PURCHASE — paid playbook access / the SaaS plan. NOT this command.
 
 Operations:
-  - subscribe-playbook is a CASCADE: follows the playbook AND enables alerts
-    on all its push-enabled automations (one call). unsubscribe-playbook
-    reverses both and reports exactly what it changed
-    ({unfollowed, wildcard_disabled}).
-  - subscribe-feed / unsubscribe-feed toggle ONE feed's alert (a single
-    automation) without touching the playbook follow.
-  - unsubscribe disables alerts BY TARGET ID — bulk, idempotent, and the
-    only way to clear ghost rows whose playbook/feed was deleted
-    (name-addressed unsubscribe 404s on deleted targets).
+  - follow-playbook / unfollow-playbook change only the social follow.
+  - subscribe-feed / unsubscribe-feed toggle one feed's alert.
+  - subscribe / unsubscribe toggle alerts for FEED ids in a batch. They never
+    follow or unfollow a playbook.
 
 Subcommands:
-  subscribe-playbook     Subscribe a playbook (follow + enable all its alerts)
-  unsubscribe-playbook   Unsubscribe a playbook (unfollow + disable its alerts)
+  follow-playbook        Follow a playbook without changing alerts
+  unfollow-playbook      Unfollow a playbook without changing alerts
   subscribe-feed         Enable alerts for a single feed
   unsubscribe-feed       Disable alerts for a single feed
-  unsubscribe            Bulk disable alerts by target id (handles ghosts)
+  subscribe              Bulk enable alerts by feed id
+  unsubscribe            Bulk disable alerts by feed id
   list                   List the caller's active alert subscriptions
   follows                List the playbooks the caller follows
 
-Subscribe/unsubscribe flags (playbook + feed, name-addressed):
+Name-addressed flags:
   --username <user>      Owner's username (required)
   --name <name>          URL-safe playbook or feed name (required)
 
-Unsubscribe (by id) flags:
-  --playbook-ids <a,b>   Comma-separated playbook target ids
+Batch flags:
   --feed-ids <a,b>       Comma-separated feed target ids
-                         (at least one of the two; max 100 ids total)
+  --channel-id <id>      Delivery channel for subscribe (optional)
 
 List flags:
   --first <n>            Optional page size (response carries total_count —
@@ -1089,43 +1079,42 @@ Follows flags:
   --cursor <token>       Optional cursor from the previous page
 
 List response notes:
-  items[].kind           PLAYBOOK_ALERTS (playbook-level wildcard) | FEED_ALERT
-  items[].target_status  ACTIVE | TARGET_DELETED (ghost — clear via
-                         unsubscribe --playbook-ids/--feed-ids) | PAUSED
-  items[].playbook       {owner_username, name, display_name} for PLAYBOOK rows
+  items[].kind           FEED_ALERT
+  items[].target_status  ACTIVE | TARGET_DELETED | PAUSED
 
 Examples:
-  alva subscriptions subscribe-playbook --username alice --name btc-dashboard
+  alva subscriptions follow-playbook    --username alice --name btc-dashboard
   alva subscriptions subscribe-feed     --username alice --name btc-ema-cross
-  alva subscriptions unsubscribe --playbook-ids 8009,8010 --feed-ids 13292
+  alva subscriptions subscribe   --feed-ids 13292,13293
+  alva subscriptions unsubscribe --feed-ids 13292,13293
   alva subscriptions list --first 200
   alva subscriptions follows`,
 
   channel: `Usage: alva channel group-subscriptions <subcommand> [options]
 
 Manage push notifications delivered into the external group chat attached
-to a channel session. The group can subscribe to public feeds and playbooks.
+to a channel session. The group can subscribe to public feeds.
 Subscribe/unsubscribe are idempotent no-ops unless the authenticated caller
 is that group's Alva admin.
 
 Subcommands:
   context       Show group admin status and current subscriptions
   list          List active subscriptions for the group
-  subscribe     Subscribe the group to a public feed or playbook
-  unsubscribe   Unsubscribe the group from a feed or playbook
+  subscribe     Subscribe the group to a public feed
+  unsubscribe   Unsubscribe the group from a feed
 
 Common flags:
   --session-id <id>      Channel session id for the group (required)
 
 Subscribe/unsubscribe flags:
-  --target-type <type>   feed or playbook (required)
-  --target-id <id>       Numeric feed_id or playbook_id (required)
+  --target-type <type>   feed (required)
+  --target-id <id>       Numeric feed_id (required)
 
 Examples:
   alva channel group-subscriptions context --session-id 123
   alva channel group-subscriptions list --session-id 123
   alva channel group-subscriptions subscribe --session-id 123 --target-type feed --target-id 8169
-  alva channel group-subscriptions unsubscribe --session-id 123 --target-type playbook --target-id 42`,
+  alva channel group-subscriptions unsubscribe --session-id 123 --target-type feed --target-id 8169`,
 
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
@@ -1639,11 +1628,11 @@ function configureRunFetchTimeout(
 function requireGroupSubscriptionTargetType(
   flags: Record<string, string>,
   command: string
-): 'feed' | 'playbook' {
+): 'feed' {
   const val = requireFlag(flags, 'target-type', command).trim().toLowerCase();
-  if (val === 'feed' || val === 'playbook') return val;
+  if (val === 'feed') return val;
   throw new CliUsageError(
-    `--target-type must be feed or playbook for '${command}', got '${val}'`,
+    `--target-type must be feed for '${command}', got '${val}'`,
     command.split(' ')[0]
   );
 }
@@ -1679,31 +1668,27 @@ function parseOwnerNameTarget(
   return { username, name };
 }
 
-function requireSingleAlertTarget(
+function rejectPlaybookAlertTarget(
   flags: Record<string, string>,
   command: string
-): {
-  kind: 'automation' | 'playbook';
-  target: { username: string; name: string };
-} {
-  const automation = flags['automation'];
-  const playbook = flags['playbook'];
-  if ((automation ? 1 : 0) + (playbook ? 1 : 0) !== 1) {
+): void {
+  if (flags['playbook'] !== undefined || flags['playbook-ids'] !== undefined) {
     throw new CliUsageError(
-      `Provide exactly one of --automation or --playbook for '${command}'`,
+      `Playbook alert targets are unsupported for '${command}'; use --automation or --automation-ids`,
       'alert'
     );
   }
-  if (automation) {
-    return {
-      kind: 'automation',
-      target: parseOwnerNameTarget(automation, 'automation', command),
-    };
-  }
-  return {
-    kind: 'playbook',
-    target: parseOwnerNameTarget(playbook!, 'playbook', command),
-  };
+}
+
+function requireAutomationAlertTarget(
+  flags: Record<string, string>,
+  command: string
+): { username: string; name: string } {
+  return parseOwnerNameTarget(
+    requireFlag(flags, 'automation', command),
+    'automation',
+    command
+  );
 }
 
 function feedReleaseParams(flags: Record<string, string>, command: string) {
@@ -3231,8 +3216,6 @@ export async function dispatch(
         cursor: flags['cursor'],
       };
       switch (subcommand) {
-        case 'list-playbook':
-          return client.notifications.listPlaybook(params);
         case 'list-feed':
           return client.notifications.listFeed(params);
         default:
@@ -3305,31 +3288,23 @@ export async function dispatch(
           'subscriptions'
         );
       switch (subcommand) {
-        case 'subscribe-playbook':
-          return client.subscriptions.subscribePlaybook({
+        case 'follow-playbook':
+          return client.subscriptions.followPlaybook({
             username: requireFlag(
               flags,
               'username',
-              'subscriptions subscribe-playbook'
+              `subscriptions ${subcommand}`
             ),
-            name: requireFlag(
-              flags,
-              'name',
-              'subscriptions subscribe-playbook'
-            ),
+            name: requireFlag(flags, 'name', `subscriptions ${subcommand}`),
           });
-        case 'unsubscribe-playbook':
-          return client.subscriptions.unsubscribePlaybook({
+        case 'unfollow-playbook':
+          return client.subscriptions.unfollowPlaybook({
             username: requireFlag(
               flags,
               'username',
-              'subscriptions unsubscribe-playbook'
+              `subscriptions ${subcommand}`
             ),
-            name: requireFlag(
-              flags,
-              'name',
-              'subscriptions unsubscribe-playbook'
-            ),
+            name: requireFlag(flags, 'name', `subscriptions ${subcommand}`),
           });
         case 'subscribe-feed':
           return client.subscriptions.subscribeFeed({
@@ -3359,19 +3334,41 @@ export async function dispatch(
             limit: num(flags['limit']),
             cursor: flags['cursor'],
           });
-        case 'unsubscribe': {
-          const playbookIds = csvList(flags['playbook-ids']) ?? [];
-          const feedIds = csvList(flags['feed-ids']) ?? [];
-          if (playbookIds.length === 0 && feedIds.length === 0) {
+        case 'subscribe': {
+          if (flags['playbook-ids'] !== undefined) {
             throw new CliUsageError(
-              '--playbook-ids or --feed-ids is required',
+              'Playbook alert targets are unsupported; use --feed-ids',
               'subscriptions'
             );
           }
-          return client.subscriptions.unsubscribeBatch({
-            playbookIds,
+          const feedIds = csvList(flags['feed-ids']) ?? [];
+          if (feedIds.length === 0) {
+            throw new CliUsageError('--feed-ids is required', 'subscriptions');
+          }
+          return client.subscriptions.subscribeBatch({
             feedIds,
+            channelId:
+              flags['channel-id'] === undefined
+                ? undefined
+                : requirePositiveIntegerStringFlag(
+                    flags,
+                    'channel-id',
+                    'subscriptions subscribe'
+                  ),
           });
+        }
+        case 'unsubscribe': {
+          if (flags['playbook-ids'] !== undefined) {
+            throw new CliUsageError(
+              'Playbook alert targets are unsupported; use --feed-ids',
+              'subscriptions'
+            );
+          }
+          const feedIds = csvList(flags['feed-ids']) ?? [];
+          if (feedIds.length === 0) {
+            throw new CliUsageError('--feed-ids is required', 'subscriptions');
+          }
+          return client.subscriptions.unsubscribeBatch({ feedIds });
         }
         default:
           throw new CliUsageError(
@@ -3398,42 +3395,60 @@ export async function dispatch(
             cursor: flags['cursor'],
           });
         case 'enable': {
-          const target = requireSingleAlertTarget(flags, 'alert enable');
-          return target.kind === 'automation'
-            ? client.alerts.enableAutomation(target.target)
-            : client.alerts.enablePlaybook(target.target);
-        }
-        case 'disable': {
-          const automationIds =
-            csvList(flags['automation-ids']) ??
-            csvList(flags['feed-ids']) ??
-            [];
-          const playbookIds = csvList(flags['playbook-ids']) ?? [];
-          if (automationIds.length > 0 || playbookIds.length > 0) {
-            return client.alerts.disableBatch({
-              playbookIds,
+          rejectPlaybookAlertTarget(flags, 'alert enable');
+          const automationIds = csvList(flags['automation-ids']) ?? [];
+          if (automationIds.length > 0) {
+            if (flags['automation'] !== undefined) {
+              throw new CliUsageError(
+                "Provide either --automation or --automation-ids for 'alert enable'",
+                'alert'
+              );
+            }
+            return client.alerts.enableBatch({
               feedIds: automationIds,
+              channelId:
+                flags['channel-id'] === undefined
+                  ? undefined
+                  : requirePositiveIntegerStringFlag(
+                      flags,
+                      'channel-id',
+                      'alert enable'
+                    ),
             });
           }
-          const target = requireSingleAlertTarget(flags, 'alert disable');
-          return target.kind === 'automation'
-            ? client.alerts.disableAutomation(target.target)
-            : client.alerts.disablePlaybook(target.target);
+          return client.alerts.enableAutomation(
+            requireAutomationAlertTarget(flags, 'alert enable')
+          );
+        }
+        case 'disable': {
+          rejectPlaybookAlertTarget(flags, 'alert disable');
+          const automationIds = csvList(flags['automation-ids']) ?? [];
+          if (automationIds.length > 0) {
+            if (flags['automation'] !== undefined) {
+              throw new CliUsageError(
+                "Provide either --automation or --automation-ids for 'alert disable'",
+                'alert'
+              );
+            }
+            return client.alerts.disableBatch({ feedIds: automationIds });
+          }
+          return client.alerts.disableAutomation(
+            requireAutomationAlertTarget(flags, 'alert disable')
+          );
         }
         case 'history': {
-          const target = requireSingleAlertTarget(flags, 'alert history');
+          rejectPlaybookAlertTarget(flags, 'alert history');
+          const target = requireAutomationAlertTarget(flags, 'alert history');
           const params = {
-            username: target.target.username,
-            name: target.target.name,
+            username: target.username,
+            name: target.name,
             channel: flags['channel'],
             status: flags['status'],
             since_time: num(flags['since']),
             first: num(flags['first']),
             cursor: flags['cursor'],
           };
-          return target.kind === 'automation'
-            ? client.alerts.historyAutomation(params)
-            : client.alerts.historyPlaybook(params);
+          return client.alerts.historyAutomation(params);
         }
         case 'preferences':
           return client.alerts.preferences();

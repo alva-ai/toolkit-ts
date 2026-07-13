@@ -7,13 +7,12 @@ import type {
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateParams,
   NotificationPreferenceUpdateResponse,
-  PlaybookNotificationListResponse,
   PushSubscriptionFeedParams,
   PushSubscriptionListParams,
   PushSubscriptionListResponse,
-  PushSubscriptionPlaybookParams,
+  SubscribeBatchParams,
+  SubscribeBatchResponse,
   SubscribeFeedResponse,
-  SubscribePlaybookResponse,
   UnsubscribeBatchParams,
   UnsubscribeBatchResponse,
   UnsubscribeResponse,
@@ -48,16 +47,8 @@ export class AlertsResource {
     return this.client.subscriptions.unsubscribeFeed(params);
   }
 
-  enablePlaybook(
-    params: PushSubscriptionPlaybookParams
-  ): Promise<SubscribePlaybookResponse> {
-    return this.client.subscriptions.subscribePlaybook(params);
-  }
-
-  disablePlaybook(
-    params: PushSubscriptionPlaybookParams
-  ): Promise<UnsubscribeResponse> {
-    return this.client.subscriptions.unsubscribePlaybook(params);
+  enableBatch(params: SubscribeBatchParams): Promise<SubscribeBatchResponse> {
+    return this.client.subscriptions.subscribeBatch(params);
   }
 
   disableBatch(
@@ -70,12 +61,6 @@ export class AlertsResource {
     params: NotificationListParams
   ): Promise<FeedNotificationListResponse> {
     return this.client.notifications.listFeed(params);
-  }
-
-  historyPlaybook(
-    params: NotificationListParams
-  ): Promise<PlaybookNotificationListResponse> {
-    return this.client.notifications.listPlaybook(params);
   }
 
   preferences(): Promise<NotificationPreferencesResponse> {

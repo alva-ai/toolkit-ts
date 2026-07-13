@@ -82,9 +82,6 @@ export function formatAlertList(result: PushSubscriptionListResponse): string {
 type AlertItem = PushSubscriptionListResponse['items'][number];
 
 function alertTitle(alert: AlertItem): string {
-  if (alert.playbook) {
-    return `${alert.playbook.owner_username}/${alert.playbook.name}`;
-  }
   if (alert.feed_name) return alert.feed_name;
   return alert.target?.id ? `target ${alert.target.id}` : '(unknown target)';
 }

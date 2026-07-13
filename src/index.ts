@@ -63,6 +63,13 @@ export type {
   CreditWalletItemEdge,
   CreditWalletItemConnection,
   CreditWalletItemsResponse,
+  FollowPlaybookResponse,
+  PlaybookFollowParams,
+  SubscribeBatchParams,
+  SubscribeBatchResponse,
+  UnsubscribeBatchParams,
+  UnsubscribeBatchResponse,
+  UnfollowPlaybookResponse,
 } from './types.js';
 export type {
   SkillDoc,

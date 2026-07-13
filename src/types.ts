@@ -860,18 +860,7 @@ export interface NotificationEvent {
   created_at: number;
   message?: string;
   error_msg?: string;
-  /** Present when notification is playbook-scoped. */
-  playbook_id?: string;
-  /** Present when notification is feed-scoped. */
-  feed_id?: string;
-}
-
-export interface PlaybookNotificationListResponse {
-  items: NotificationEvent[];
-  /** Empty when there is no next page. */
-  next_cursor: string;
-  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
-  playbook_path: string;
+  feed_id: string;
 }
 
 export interface FeedNotificationListResponse {
@@ -936,13 +925,8 @@ export interface SubmitFeedbackResponse {
 
 // --- Push Subscriptions ---
 
-/**
- * Identifies the asset a personal push subscription is keyed to.
- * `PLAYBOOK` is the only target supported today; `FEED` is reserved for
- * a future phase where users can subscribe to a feed independent of any
- * playbook that consumes it.
- */
-export type PushTargetType = 'PLAYBOOK' | 'FEED' | 'UNSPECIFIED';
+/** Personal alert subscriptions are keyed only to feeds. */
+export type PushTargetType = 'FEED';
 
 export interface PushTarget {
   type: PushTargetType;
@@ -964,20 +948,11 @@ export interface PushSubscription {
   /** Playbooks whose latest release currently references this feed. */
   used_by?: PushSubscriptionUsedBy[];
   used_by_total?: number;
+  /** Row-shape discriminator. */
+  kind?: 'FEED_ALERT';
   /**
-   * Row-shape discriminator: PLAYBOOK_ALERTS = a playbook-level wildcard
-   * (alerts for every push-enabled automation of the playbook);
-   * FEED_ALERT = a single feed's alert.
-   */
-  kind?: 'PLAYBOOK_ALERTS' | 'FEED_ALERT' | 'UNSPECIFIED' | string;
-  /**
-   * Legacy social playbook-follow signal. Do not use this to decide whether
-   * alert delivery is enabled; use kind + target_status instead.
-   */
-  following?: boolean;
-  /**
-   * Target lifecycle: TARGET_DELETED marks a ghost row (the playbook/feed
-   * was deleted) — clear it with unsubscribeBatch by target id.
+   * Target lifecycle. TARGET_DELETED marks a feed row whose target was
+   * deleted; clear it with unsubscribeBatch by target id.
    */
   target_status?:
     | 'ACTIVE'
@@ -985,14 +960,6 @@ export interface PushSubscription {
     | 'PAUSED'
     | 'UNSPECIFIED'
     | string;
-  /** Playbook identity, present for PLAYBOOK targets on list responses. */
-  playbook?: PushSubscriptionPlaybookInfo;
-}
-
-export interface PushSubscriptionPlaybookInfo {
-  owner_username: string;
-  name: string;
-  display_name: string;
 }
 
 export interface PushSubscriptionUsedBy {
@@ -1003,7 +970,7 @@ export interface PushSubscriptionUsedBy {
   owner_avatar_url: string;
 }
 
-export interface PushSubscriptionPlaybookParams {
+export interface PlaybookFollowParams {
   username: string;
   name: string;
 }
@@ -1054,15 +1021,24 @@ export interface FollowsListResponse {
 }
 
 export interface UnsubscribeBatchParams {
-  /** Playbook target ids (strings — snowflake ids exceed JS safe integers). */
-  playbookIds?: string[];
-  /** Feed target ids (strings). */
-  feedIds?: string[];
+  /** Feed target ids (strings — snowflake ids exceed JS safe integers). */
+  feedIds: string[];
+}
+
+export interface SubscribeBatchParams {
+  /** Feed target ids (strings — snowflake ids exceed JS safe integers). */
+  feedIds: string[];
+  /** Delivery channel id. Omit for the user's agent/home channel. */
+  channelId?: string;
+}
+
+export interface SubscribeBatchResponse {
+  subscriptions: PushSubscription[];
 }
 
 export interface UnsubscribeBatchResult {
   id: string;
-  kind: 'PLAYBOOK' | 'FEED' | string;
+  kind: 'FEED';
   ok: boolean;
   status: 'UNSUBSCRIBED' | 'INVALID_ID' | string;
 }
@@ -1080,13 +1056,16 @@ export interface PlaybookFollow {
   updated_at_ms: number;
 }
 
-export interface SubscribePlaybookResponse {
-  /** The follow row created (or confirmed) by the cascade subscribe. */
+export interface FollowPlaybookResponse {
+  /** The social follow row created or confirmed by this operation. */
   follow: PlaybookFollow;
-  /** Feed ids whose alert this subscribe enabled (push-enabled automations). */
-  subscribed_feed_ids: string[];
   /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
   playbook_path: string;
+}
+
+export interface UnfollowPlaybookResponse {
+  ok: true;
+  unfollowed: boolean;
 }
 
 export interface SubscribeFeedResponse {
@@ -1101,10 +1080,10 @@ export interface UnsubscribeResponse {
 
 // --- Channel Group Subscriptions ---
 
-export type ChannelGroupSubscriptionTargetType = 'feed' | 'playbook';
+export type ChannelGroupSubscriptionTargetType = 'feed';
 
 export interface ChannelGroupSubscriptionTarget {
-  type: ChannelGroupSubscriptionTargetType | '';
+  type: ChannelGroupSubscriptionTargetType;
   id: number;
 }
 
@@ -1134,7 +1113,7 @@ export interface ChannelGroupSubscriptionSessionParams {
 }
 
 export interface ChannelGroupSubscriptionMutationParams extends ChannelGroupSubscriptionSessionParams {
-  target_type: ChannelGroupSubscriptionTargetType;
+  target_type: 'feed';
   target_id: number | string;
 }
 

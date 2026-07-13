@@ -175,7 +175,7 @@ function makeClient(): AlvaClient {
   client.subscriptions.follows = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
-  client.subscriptions.subscribePlaybook = vi.fn().mockResolvedValue({
+  client.subscriptions.followPlaybook = vi.fn().mockResolvedValue({
     follow: {
       id: '1',
       user_id: '2',
@@ -183,12 +183,11 @@ function makeClient(): AlvaClient {
       created_at_ms: 1700000000000,
       updated_at_ms: 1700000000000,
     },
-    subscribed_feed_ids: ['42'],
     playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
   });
-  client.subscriptions.unsubscribePlaybook = vi
+  client.subscriptions.unfollowPlaybook = vi
     .fn()
-    .mockResolvedValue({ ok: true });
+    .mockResolvedValue({ ok: true, unfollowed: true });
   client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({
     subscription: {
       target: { type: 'FEED', id: '42' },
@@ -200,6 +199,9 @@ function makeClient(): AlvaClient {
   client.subscriptions.unsubscribeFeed = vi
     .fn()
     .mockResolvedValue({ ok: true });
+  client.subscriptions.subscribeBatch = vi
+    .fn()
+    .mockResolvedValue({ subscriptions: [] });
   client.subscriptions.list = vi.fn().mockResolvedValue({
     items: [
       {
@@ -209,7 +211,6 @@ function makeClient(): AlvaClient {
         feed_name: 'btc-ema',
         feed_status: 'ACTIVE',
         kind: 'FEED_ALERT',
-        following: false,
         target_status: 'ACTIVE',
         used_by_total: 1,
         last_pushed_at_ms: 1700000000000,
@@ -230,7 +231,6 @@ function makeClient(): AlvaClient {
         feed_name: 'btc-ema',
         feed_status: 'ACTIVE',
         kind: 'FEED_ALERT',
-        following: false,
         target_status: 'ACTIVE',
         used_by_total: 1,
         last_pushed_at_ms: 1700000000000,
@@ -251,27 +251,13 @@ function makeClient(): AlvaClient {
     feed_path: '/alva/home/alice/feeds/btc-ema',
   });
   client.alerts.disableAutomation = vi.fn().mockResolvedValue({ ok: true });
-  client.alerts.enablePlaybook = vi.fn().mockResolvedValue({
-    follow: {
-      id: '1',
-      user_id: '2',
-      playbook_id: '3',
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-    subscribed_feed_ids: ['42'],
-    playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
-  });
-  client.alerts.disablePlaybook = vi.fn().mockResolvedValue({ ok: true });
+  client.alerts.enableBatch = vi.fn().mockResolvedValue({ subscriptions: [] });
   client.alerts.disableBatch = vi
     .fn()
     .mockResolvedValue({ results: [], ok_count: 0 });
   client.alerts.historyAutomation = vi
     .fn()
     .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
-  client.alerts.historyPlaybook = vi
-    .fn()
-    .mockResolvedValue({ items: [], next_cursor: '', playbook_path: '~/p' });
   client.alerts.preferences = vi.fn().mockResolvedValue({ settings: [] });
   client.alerts.updatePreference = vi.fn().mockResolvedValue({
     setting: { key: 'session_completed', enabled: false },
@@ -316,9 +302,6 @@ function makeClient(): AlvaClient {
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
-  client.notifications.listPlaybook = vi
-    .fn()
-    .mockResolvedValue({ items: [], next_cursor: '', playbook_path: '~/p' });
   client.notifications.listFeed = vi
     .fn()
     .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
@@ -2043,37 +2026,6 @@ components: {}
     );
   });
 
-  it('dispatches notification-history list-playbook', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'notification-history',
-      'list-playbook',
-      '--username',
-      'alice',
-      '--name',
-      'btc-dashboard',
-      '--channel',
-      'telegram',
-      '--status',
-      'sent',
-      '--since',
-      '1777355703',
-      '--first',
-      '5',
-      '--cursor',
-      'abc',
-    ]);
-    expect(client.notifications.listPlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-      channel: 'telegram',
-      status: 'sent',
-      since_time: 1777355703,
-      first: 5,
-      cursor: 'abc',
-    });
-  });
-
   it('dispatches notification-history list-feed', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -2232,7 +2184,7 @@ components: {}
     });
   });
 
-  it('dispatches channel group-subscriptions unsubscribe', async () => {
+  it('dispatches channel group-subscriptions unsubscribe for feeds', async () => {
     const client = makeClient();
     await dispatch(client, [
       'channel',
@@ -2241,13 +2193,13 @@ components: {}
       '--session-id',
       '123',
       '--target-type',
-      'playbook',
+      'feed',
       '--target-id',
       '42',
     ]);
     expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
       session_id: '123',
-      target_type: 'playbook',
+      target_type: 'feed',
       target_id: '42',
     });
   });
@@ -2270,6 +2222,24 @@ components: {}
       (err: unknown) =>
         err instanceof CliUsageError && err.command === 'channel'
     );
+  });
+
+  it('rejects playbook channel group mutation targets', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'channel',
+        'group-subscriptions',
+        'subscribe',
+        '--session-id',
+        '123',
+        '--target-type',
+        'playbook',
+        '--target-id',
+        '42',
+      ])
+    ).rejects.toThrow(/target-type must be feed/);
+    expect(client.channelGroupSubscriptions.subscribe).not.toHaveBeenCalled();
   });
 
   it('dispatches remix', async () => {
@@ -2948,7 +2918,6 @@ describe('help text', () => {
       text: string;
     };
     expect(result.text).toContain('audit/history');
-    expect(result.text).toContain('list-playbook');
     expect(result.text).toContain('list-feed');
   });
 
@@ -3008,8 +2977,7 @@ describe('help text', () => {
     expect(result.text).toContain('alva alert list');
     expect(result.text).toContain('alva alert follows');
     expect(result.text).toContain('--automation <owner/name>');
-    expect(result.text).toContain('--feed-ids <a,b>');
-    expect(result.text).toContain('Legacy alias for --automation-ids');
+    expect(result.text).toContain('--automation-ids <a,b>');
     expect(result.text).toContain('preferences');
   });
 
@@ -3912,7 +3880,24 @@ components: {}
   });
 });
 
-describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 W3)', () => {
+describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)', () => {
+  it('dispatches playbook follow without changing alerts', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'subscriptions',
+      'follow-playbook',
+      '--username',
+      'alice',
+      '--name',
+      'btc-dashboard',
+    ]);
+    expect(client.subscriptions.followPlaybook).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-dashboard',
+    });
+    expect(client.subscriptions.subscribeBatch).not.toHaveBeenCalled();
+  });
+
   it('dispatches subscriptions follows with pagination flags', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -3929,18 +3914,27 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     });
   });
 
-  it('dispatches subscriptions unsubscribe with comma-separated ids', async () => {
+  it('dispatches subscriptions batch subscribe and unsubscribe for feed ids', async () => {
     const client = makeClient();
     await dispatch(client, [
       'subscriptions',
+      'subscribe',
+      '--feed-ids',
+      '13292,13293',
+      '--channel-id',
+      '42',
+    ]);
+    await dispatch(client, [
+      'subscriptions',
       'unsubscribe',
-      '--playbook-ids',
-      '8009,8010',
       '--feed-ids',
       '13292',
     ]);
+    expect(client.subscriptions.subscribeBatch).toHaveBeenCalledWith({
+      feedIds: ['13292', '13293'],
+      channelId: '42',
+    });
     expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
-      playbookIds: ['8009', '8010'],
       feedIds: ['13292'],
     });
   });
@@ -3949,7 +3943,23 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     const client = makeClient();
     await expect(
       dispatch(client, ['subscriptions', 'unsubscribe'])
-    ).rejects.toThrow(/playbook-ids or --feed-ids/);
+    ).rejects.toThrow(/feed-ids/);
+    expect(client.subscriptions.unsubscribeBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects playbook ids for subscriptions batch mutations', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['subscriptions', 'subscribe', '--playbook-ids', '8009'])
+    ).rejects.toThrow(/Playbook alert targets are unsupported/);
+    await expect(
+      dispatch(client, [
+        'subscriptions',
+        'unsubscribe',
+        '--playbook-ids',
+        '8009',
+      ])
+    ).rejects.toThrow(/Playbook alert targets are unsupported/);
     expect(client.subscriptions.unsubscribeBatch).not.toHaveBeenCalled();
   });
 
@@ -3984,7 +3994,6 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
           feed_name: 'btc-ema',
           feed_status: 'ACTIVE',
           kind: 'FEED_ALERT',
-          following: false,
           target_status: 'ACTIVE',
           used_by_total: 1,
           last_pushed_at_ms: 1700000000000,
@@ -4035,53 +4044,47 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     });
   });
 
-  it('dispatches alert enable and disable for playbook targets', async () => {
+  it('rejects alert enable and disable for playbook targets', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['alert', 'enable', '--playbook', 'alice/btc-dashboard'])
+    ).rejects.toThrow(/Playbook alert targets are unsupported/);
+    await expect(
+      dispatch(client, [
+        'alert',
+        'disable',
+        '--playbook',
+        'alice/btc-dashboard',
+      ])
+    ).rejects.toThrow(/Playbook alert targets are unsupported/);
+  });
+
+  it('dispatches alert batch enable and disable by automation ids', async () => {
     const client = makeClient();
     await dispatch(client, [
       'alert',
       'enable',
-      '--playbook',
-      'alice/btc-dashboard',
-    ]);
-    await dispatch(client, [
-      'alert',
-      'disable',
-      '--playbook',
-      'alice/btc-dashboard',
-    ]);
-    expect(client.alerts.enablePlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-    });
-    expect(client.alerts.disablePlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-    });
-  });
-
-  it('dispatches alert disable by automation and playbook target ids', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'alert',
-      'disable',
       '--automation-ids',
       '42,43',
-      '--playbook-ids',
+      '--channel-id',
       '7',
     ]);
+    await dispatch(client, ['alert', 'disable', '--automation-ids', '42,43']);
+    expect(client.alerts.enableBatch).toHaveBeenCalledWith({
+      feedIds: ['42', '43'],
+      channelId: '7',
+    });
     expect(client.alerts.disableBatch).toHaveBeenCalledWith({
       feedIds: ['42', '43'],
-      playbookIds: ['7'],
     });
   });
 
-  it('dispatches alert disable by legacy feed target ids', async () => {
+  it('rejects playbook ids for alert batch mutations', async () => {
     const client = makeClient();
-    await dispatch(client, ['alert', 'disable', '--feed-ids', '42,43']);
-    expect(client.alerts.disableBatch).toHaveBeenCalledWith({
-      feedIds: ['42', '43'],
-      playbookIds: [],
-    });
+    await expect(
+      dispatch(client, ['alert', 'disable', '--playbook-ids', '7'])
+    ).rejects.toThrow(/Playbook alert targets are unsupported/);
+    expect(client.alerts.disableBatch).not.toHaveBeenCalled();
   });
 
   it('dispatches alert history for automation targets', async () => {
@@ -4113,25 +4116,6 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     });
   });
 
-  it('dispatches alert history for playbook targets', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'alert',
-      'history',
-      '--playbook',
-      'alice/btc-dashboard',
-    ]);
-    expect(client.alerts.historyPlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-      channel: undefined,
-      status: undefined,
-      since_time: undefined,
-      first: undefined,
-      cursor: undefined,
-    });
-  });
-
   it('dispatches alert preferences', async () => {
     const client = makeClient();
     await dispatch(client, ['alert', 'preferences']);
@@ -4148,10 +4132,10 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
     });
   });
 
-  it('requires exactly one alert target flag for name-addressed commands', async () => {
+  it('requires an automation target for alert mutations', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['alert', 'enable'])).rejects.toThrow(
-      'Provide exactly one of --automation or --playbook'
+      "--automation is required for 'alert enable'"
     );
     await expect(
       dispatch(client, [
@@ -4162,7 +4146,7 @@ describe('CLI dispatch — subscriptions/playbooks agent surface (mono-meta#584 
         '--playbook',
         'alice/btc-dashboard',
       ])
-    ).rejects.toThrow('Provide exactly one of --automation or --playbook');
+    ).rejects.toThrow('Playbook alert targets are unsupported');
   });
 
   it('dispatches playbooks get --ids as a batch', async () => {
