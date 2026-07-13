@@ -281,6 +281,17 @@ function makeClient(): AlvaClient {
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
   client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
   client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
+  client.artifacts.publishSDK = vi.fn().mockResolvedValue({
+    response: {
+      target_path: '/alva/registry/sdk/fintwit-digest/releases/v2.3.0',
+      manifest_path:
+        '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
+      bundle_hash: 'sha256:bundle',
+      updated_refs: ['/alva/registry/sdk/fintwit-digest/refs/latest'],
+      existed: false,
+    },
+    verification: { verified: true },
+  });
   client.dataSkills.list = vi.fn().mockResolvedValue({ skills: [] });
   client.dataSkills.summary = vi
     .fn()
@@ -1078,6 +1089,20 @@ describe('CLI dispatch', () => {
         ],
       },
       { argv: ['screenshot', '--url', '/playbook/alice/p', '--out', 'p.png'] },
+      {
+        argv: [
+          'sdk',
+          'publish',
+          '--package',
+          'fintwit-digest',
+          '--version',
+          'v2.3.0',
+          '--file',
+          './bundle.cjs',
+          '--entrypoint',
+          'dist/cjs/index.js',
+        ],
+      },
     ];
 
     for (const { argv } of cases) {
@@ -2020,6 +2045,113 @@ components: {}
     const client = makeClient();
     await dispatch(client, ['sdk', 'doc', '--name', 'ohlcv']);
     expect(client.sdk.doc).toHaveBeenCalledWith({ name: 'ohlcv' });
+  });
+
+  it('publishes a local SDK bundle with latest and readback verification', async () => {
+    const client = makeClient();
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
+
+    await dispatch(client, [
+      'sdk',
+      'publish',
+      '--package',
+      'fintwit-digest',
+      '--version',
+      'v2.3.0',
+      '--file',
+      'dist/cjs/index.js',
+      '--entrypoint',
+      'dist/cjs/index.js',
+      '--source-repository',
+      'alva-ai/backtest-js',
+      '--source-ref',
+      'abc123',
+    ]);
+
+    expect(client.artifacts.publishSDK).toHaveBeenCalledWith({
+      package: 'fintwit-digest',
+      version: 'v2.3.0',
+      files: [
+        {
+          path: 'dist/cjs/index.js',
+          data_base64: Buffer.from('bundle').toString('base64'),
+        },
+      ],
+      entrypoints: { main: 'dist/cjs/index.js' },
+      source: {
+        type: 'github',
+        repository: 'alva-ai/backtest-js',
+        ref: 'abc123',
+      },
+      refs: ['latest'],
+      verify_readback: true,
+    });
+  });
+
+  it('supports publishing without latest or readback verification', async () => {
+    const client = makeClient();
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
+
+    await dispatch(client, [
+      'sdk',
+      'publish',
+      '--package',
+      'fintwit-digest',
+      '--version',
+      'v2.3.0',
+      '--file',
+      'bundle.cjs',
+      '--entrypoint',
+      'dist/cjs/index.js',
+      '--no-latest',
+      '--no-verify-readback',
+    ]);
+
+    expect(client.artifacts.publishSDK).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refs: [],
+        verify_readback: false,
+        source: undefined,
+      })
+    );
+  });
+
+  it('reports readback failure without implying the publish was rolled back', async () => {
+    const client = makeClient();
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bundle'));
+    vi.mocked(client.artifacts.publishSDK).mockResolvedValueOnce({
+      response: {
+        target_path: '/alva/registry/sdk/fintwit-digest/releases/v2.3.0',
+        manifest_path:
+          '/alva/registry/sdk/fintwit-digest/releases/v2.3.0/manifest.json',
+        bundle_hash: 'sha256:bundle',
+        updated_refs: [],
+        existed: false,
+      },
+      verification: {
+        verified: false,
+        error: { code: 'READBACK_FAILED', message: 'verification failed' },
+      },
+    });
+
+    await expect(
+      dispatch(client, [
+        'sdk',
+        'publish',
+        '--package',
+        'fintwit-digest',
+        '--version',
+        'v2.3.0',
+        '--file',
+        'bundle.cjs',
+        '--entrypoint',
+        'dist/cjs/index.js',
+      ])
+    ).rejects.toMatchObject({
+      code: 'READBACK_FAILED',
+      status: 200,
+      message: expect.stringContaining('was published'),
+    });
   });
 
   it('dispatches comments create', async () => {

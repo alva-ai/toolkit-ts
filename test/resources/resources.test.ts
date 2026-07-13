@@ -17,6 +17,7 @@ import { NotificationPreferencesResource } from '../../src/resources/notificatio
 import { PlaybookSkillsResource } from '../../src/resources/playbookSkills.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
+import { ArtifactsResource } from '../../src/resources/artifacts.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 
@@ -852,6 +853,29 @@ describe('SdkDocsResource', () => {
     expect(client._request).toHaveBeenCalledWith(
       'GET',
       '/api/v1/sdk/partitions/spot_market_price_and_volume/summary'
+    );
+  });
+});
+
+describe('ArtifactsResource', () => {
+  it('publishSDK() sends the artifact contract to the gateway', async () => {
+    const client = makeClient();
+    const artifacts = new ArtifactsResource(client);
+    const params = {
+      package: 'fintwit-digest',
+      version: 'v2.3.0',
+      files: [{ path: 'dist/cjs/index.js', data_base64: 'YnVuZGxl' }],
+      entrypoints: { main: 'dist/cjs/index.js' },
+      refs: ['latest'],
+      verify_readback: true,
+    };
+
+    await artifacts.publishSDK(params);
+
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/artifacts/sdk/publish',
+      { body: params }
     );
   });
 });

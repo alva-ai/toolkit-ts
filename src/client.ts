@@ -27,6 +27,7 @@ import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubsc
 import { FeedbackResource } from './resources/feedback.js';
 import { FunctionsResource } from './resources/functions.js';
 import { CreditsResource } from './resources/credits.js';
+import { ArtifactsResource } from './resources/artifacts.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -170,6 +171,7 @@ export class AlvaClient {
   private _feedback?: FeedbackResource;
   private _functions?: FunctionsResource;
   private _credits?: CreditsResource;
+  private _artifacts?: ArtifactsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -213,6 +215,9 @@ export class AlvaClient {
   }
   get sdk(): SdkDocsResource {
     return (this._sdk ??= new SdkDocsResource(this));
+  }
+  get artifacts(): ArtifactsResource {
+    return (this._artifacts ??= new ArtifactsResource(this));
   }
   get dataSkills(): DataSkillsResource {
     return (this._dataSkills ??= new DataSkillsResource(this));
