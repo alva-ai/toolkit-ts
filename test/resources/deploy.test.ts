@@ -18,6 +18,9 @@ describe('DeployResource', () => {
       name: 'my-job',
       path: '~/scripts/job.js',
       cron_expression: '*/5 * * * *',
+      start_at: '2026-07-15T12:00:00Z',
+      end_at: '2026-07-15T14:00:00Z',
+      max_runs: 12,
     });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
@@ -29,6 +32,11 @@ describe('DeployResource', () => {
           cron_expression: '*/5 * * * *',
           args: undefined,
           push_notify: undefined,
+          max_heap_size_mb: undefined,
+          run_as_user_id: undefined,
+          start_at: '2026-07-15T12:00:00Z',
+          end_at: '2026-07-15T14:00:00Z',
+          max_runs: 12,
         },
       }
     );

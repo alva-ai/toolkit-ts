@@ -446,12 +446,11 @@ Build-time verify (fire once, then poll up to 5 minutes):
 
   loop: `Usage: alva loop <subcommand> [options]
 
-Create a self-scheduled, in-channel goal loop: a cronjob that each tick runs
+Create a bounded, self-scheduled in-channel goal loop: a cronjob that each tick runs
 one fire-and-forget agent turn on a channel's stable main session (via the
-@alva/loop SDK), continuing that channel's conversation toward a goal. Every
-loop gets a lifetime ceiling (default 7 days) so a self-scheduled loop always
-terminates. Sugar over 'alva deploy create' — it seeds a shared loop-runner
-script and packs the goal/channel into the cronjob's args.
+@alva/loop SDK), continuing that channel's conversation toward a goal. Sugar
+over 'alva deploy create' — it seeds a shared loop-runner script and packs the
+goal/channel into the cronjob's args.
 
 Subcommands:
   create     Create a loop (seeds the shared loop-runner + a cronjob)
@@ -460,14 +459,18 @@ Create flags:
   --goal <text>          Instruction run each tick (required)
   --cron <expression>    Cron schedule (required, e.g. "0 * * * *")
   --channel-id <id>      Target channel id. Omit ⇒ your DM/agent channel
-  --expires-in <dur>     Lifetime: 30m | 24h | 7d, or 'never' (unbounded —
-                         discouraged). Default: 7d
+  --start <time>         First eligible time: 'now' (default) or RFC3339
+  --until <time>         Exclusive RFC3339 cutoff
+  --runs <count>         Maximum admitted runs after --start
   --name <name>          Cronjob name (default: derived from --goal;
                          1-63 lowercase alphanumeric/hyphens)
 
+At least one of --until or --runs is required. RFC3339 timestamps must include
+a timezone (Z or ±HH:MM).
+
 Examples:
-  alva loop create --channel-id 7284... --goal "watch NVDA pre-market, alert on setup" --cron "0 * * * *"
-  alva loop create --goal "summarize my unread channels" --cron "0 8 * * *" --expires-in 30d`,
+  alva loop create --channel-id 7284... --goal "watch NVDA pre-market, alert on setup" --cron "*/5 * * * *" --until "2026-07-15T09:30:00-04:00"
+  alva loop create --goal "check the next 12 intervals" --cron "0 * * * *" --start now --runs 12`,
 
   'service-account': `Usage: alva service-account <subcommand> [options]
 
@@ -1809,34 +1812,77 @@ const LOOP_RUNNER_SRC = [
   '',
 ].join('\n');
 
-// parseExpiresInToEndAt converts a relative --expires-in (30m|24h|7d, default
-// 7d, or 'never') into an absolute RFC3339 end_at for the cronjob's lifetime
-// ceiling. 'never' ⇒ undefined (no ceiling — unbounded, discouraged). The
-// client clock is fine here: skew is negligible against a multi-day lifetime.
-function parseExpiresInToEndAt(
-  value: string | undefined,
-  command: string
-): string | undefined {
-  const raw = (value ?? '7d').trim().toLowerCase();
-  if (raw === 'never') return undefined;
-  const match = /^([1-9]\d*)([mhd])$/.exec(raw);
+function parseLoopTimestamp(value: string, flag: 'start' | 'until'): string {
+  const raw = value.trim();
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})[tT](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[zZ]|([+-])(\d{2}):(\d{2}))$/.exec(
+      raw
+    );
   if (!match) {
     throw new CliUsageError(
-      `--expires-in must be a positive duration like 30m, 24h, 7d, or 'never', got '${value}'`,
-      command.split(' ')[0]
+      `--${flag} must be an RFC3339 timestamp with a timezone (Z or ±HH:MM), got '${value}'`,
+      'loop'
     );
   }
-  const amount = Number(match[1]);
-  const unit = match[2];
-  const durationMs =
-    amount * (unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000);
-  if (!Number.isSafeInteger(durationMs)) {
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = Number(match[8] ?? 0);
+  const offsetMinute = Number(match[9] ?? 0);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > monthDays[month - 1] ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
     throw new CliUsageError(
-      `--expires-in is too large, got '${value}'`,
-      command.split(' ')[0]
+      `--${flag} must be a valid RFC3339 timestamp, got '${value}'`,
+      'loop'
     );
   }
-  return new Date(Date.now() + durationMs).toISOString();
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) {
+    throw new CliUsageError(
+      `--${flag} must be a valid RFC3339 timestamp, got '${value}'`,
+      'loop'
+    );
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function parseLoopRuns(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new CliUsageError('--runs must be a positive integer', 'loop');
+  }
+  const runs = Number(value);
+  if (!Number.isSafeInteger(runs) || runs > 2_147_483_647) {
+    throw new CliUsageError('--runs is too large', 'loop');
+  }
+  return runs;
 }
 
 // loopCronjobName derives a valid cronjob name (1-63 lowercase alphanumeric or
@@ -2463,13 +2509,40 @@ export async function dispatch(
         throw new CliUsageError('Missing subcommand for loop', 'loop');
       switch (subcommand) {
         case 'create': {
+          if (flags['expires-in'] !== undefined) {
+            throw new CliUsageError(
+              'Unknown flag --expires-in; use --until and/or --runs',
+              'loop'
+            );
+          }
           const goal = requireFlag(flags, 'goal', 'loop create');
           const cron = requireFlag(flags, 'cron', 'loop create');
           const channelId = flags['channel-id'];
-          const endAt = parseExpiresInToEndAt(
-            flags['expires-in'],
-            'loop create'
-          );
+          const startRaw = (flags['start'] ?? 'now').trim();
+          const startAt =
+            startRaw.toLowerCase() === 'now'
+              ? undefined
+              : parseLoopTimestamp(startRaw, 'start');
+          const endAt = flags['until']
+            ? parseLoopTimestamp(flags['until'], 'until')
+            : undefined;
+          const maxRuns = parseLoopRuns(flags['runs']);
+          if (endAt === undefined && maxRuns === undefined) {
+            throw new CliUsageError(
+              'loop create requires at least one of --until or --runs',
+              'loop'
+            );
+          }
+          if (
+            startAt !== undefined &&
+            endAt !== undefined &&
+            endAt <= startAt
+          ) {
+            throw new CliUsageError(
+              '--until must be later than --start',
+              'loop'
+            );
+          }
           // Seed the shared loop-runner first (idempotent — stable content).
           // Aborting here beats creating a cron that points at a missing script.
           await client.fs.write({
@@ -2482,7 +2555,9 @@ export async function dispatch(
             path: LOOP_RUNNER_PATH,
             cron_expression: cron,
             args: channelId ? { goal, channelId } : { goal },
+            start_at: startAt,
             end_at: endAt,
+            max_runs: maxRuns,
           });
         }
         default:
