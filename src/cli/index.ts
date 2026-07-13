@@ -254,7 +254,7 @@ Subcommands:
 Subcommand flags:
   read       --path (required), [--offset <n>], [--size <n>]
   write      --path (required), --data <text> OR --file <local-path> (one required),
-             [--mkdir-parents | --no-mkdir-parents]
+             [--append], [--mkdir-parents | --no-mkdir-parents]
   stat       --path (required)
   readdir    --path (required), [--recursive | --no-recursive]
   mkdir      --path (required)
@@ -292,6 +292,7 @@ Examples:
   alva fs read --path "~/feeds/btc-ema/v1/data/metrics/prices/@last/100"
   alva fs read --path /alva/home/alice/feeds/btc-ema/v1/data/metrics/prices/@last/10
   alva fs write --path "~/hello.txt" --data "Hello, world!"
+  alva fs write --path "~/journal.md" --data "New entry" --append
   alva fs write --path "~/feeds/my-feed/v1/src/index.js" --file ./local-script.js --mkdir-parents
   alva fs stat --path "~/hello.txt"
   alva fs mkdir --path "~/feeds/my-feed/v1/src"
@@ -1348,6 +1349,7 @@ export async function handleConfigure(
 export const BOOLEAN_FLAGS = new Set([
   'recursive',
   'mkdir-parents',
+  'append',
   'push-notify',
   'help',
   'execute-latest',
@@ -2305,12 +2307,14 @@ export async function dispatch(
               path: requireFlag(flags, 'path', 'fs write'),
               body: fileData,
               mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
+              append: boolFlag(flags['append']),
             });
           }
           return client.fs.write({
             path: requireFlag(flags, 'path', 'fs write'),
             data: requireFlag(flags, 'data', 'fs write'),
             mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
+            append: boolFlag(flags['append']),
           });
         case 'stat':
           return client.fs.stat({
