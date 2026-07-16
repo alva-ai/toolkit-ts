@@ -478,6 +478,31 @@ describe('AutomationResource', () => {
     );
   });
 
+  it('update() sends an ID-scoped PATCH and preserves explicit empty fields', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+    await automation.update({
+      id: 42,
+      version: '1.0.1',
+      description: '',
+      trigger: true,
+    });
+    expect(client._request).toHaveBeenCalledWith(
+      'PATCH',
+      '/api/v1/automation/42',
+      {
+        body: {
+          version: '1.0.1',
+          cronjob_id: undefined,
+          description: '',
+          changelog: undefined,
+          agent_type: undefined,
+          trigger: true,
+        },
+      }
+    );
+  });
+
   it('lifecycle methods delegate to feed lifecycle methods', async () => {
     const client = makeClient();
     client.feed.stop = vi
@@ -506,6 +531,19 @@ describe('AutomationResource', () => {
       'automation id must be a positive integer'
     );
 
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it('update() rejects non-positive id and no-op requests', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+
+    await expect(
+      automation.update({ id: 0, description: 'x' })
+    ).rejects.toThrow('automation id must be a positive integer');
+    await expect(automation.update({ id: 42 })).rejects.toThrow(
+      'automation update requires at least one field or trigger=true'
+    );
     expect(client._request).not.toHaveBeenCalled();
   });
 });

@@ -80,7 +80,7 @@ Commands:
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
-  automation  Automation management (list, inspect, publish, stop, resume, delete)
+  automation  Automation management (list, inspect, publish, update, stop, resume, delete)
   alert       Alert management (list, follows, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
   feed        Legacy automation alias (list, stop, resume, delete, set-visibility)
   playbooks   Playbook discovery (trending, get, list) and visibility
@@ -504,7 +504,8 @@ commands called "feeds"; ids are currently the same underlying feed ids.
 Subcommands:
   list      List automations owned by the caller
   inspect   Inspect one automation and show its flow config path when available
-  publish   Publish/register an automation after deploying its cronjob
+  publish   First-publish/register a new automation after deploying its cronjob
+  update    Partially update an existing automation by numeric id
   stop      Stop an automation's producer cronjob
   resume    Resume a stopped automation's producer cronjob
   delete    Soft-delete an automation
@@ -524,14 +525,25 @@ Publish flags:
   --changelog <text>     Per-major changelog summary
   --agent-type <type>    Agent kind that produces this automation, e.g. "alpi"
 
+Update flags:
+  --id <automation_id>   Existing automation id (required)
+  --version <version>    New semantic version; omitted preserves the current one
+  --cronjob-id <id>      Replacement producer; omitted preserves the current one
+  --description <text>   Replace description; explicit empty string clears it
+  --changelog <text>     Replace per-major changelog; explicit empty clears it
+  --agent-type <type>    Replace agent kind; explicit empty clears it
+  --trigger              Trigger one run after the update commits
+
 Lifecycle flags:
-  --id <automation_id>   Numeric automation id (required for inspect/stop/resume/delete)
+  --id <automation_id>   Numeric automation id (required for inspect/update/stop/resume/delete)
 
 Examples:
   alva automation list
   alva automation list --status all --limit 20
   alva automation inspect --id 42
   alva automation publish --name btc-ema --version 1.0.0 --cronjob-id 42
+  alva automation update --id 42 --description "Updated BTC EMA"
+  alva automation update --id 42 --version 2.0.0 --trigger
   alva automation stop --id 42
   alva automation resume --id 42
   alva automation delete --id 42`,
@@ -1353,6 +1365,7 @@ export const BOOLEAN_FLAGS = new Set([
   'base64',
   'full',
   'today',
+  'trigger',
 ]);
 
 export function parseFlags(argv: string[]): Record<string, string> {
@@ -1703,6 +1716,44 @@ function feedReleaseParams(flags: Record<string, string>, command: string) {
     changelog: flags['changelog'],
     agent_type: flags['agent-type'],
   };
+}
+
+function automationUpdateParams(flags: Record<string, string>) {
+  const command = 'automation update';
+  const cronjobID =
+    flags['cronjob-id'] === undefined
+      ? undefined
+      : optionalBoundedIntegerFlag(
+          flags,
+          'cronjob-id',
+          command,
+          1,
+          Number.MAX_SAFE_INTEGER
+        );
+  const trigger = boolFlag(flags['trigger']);
+  const params = {
+    id: requirePositiveIntegerFlag(flags, 'id', command),
+    version: flags['version'],
+    cronjob_id: cronjobID,
+    description: flags['description'],
+    changelog: flags['changelog'],
+    agent_type: flags['agent-type'],
+    trigger: trigger === true ? true : undefined,
+  };
+  if (
+    params.version === undefined &&
+    params.cronjob_id === undefined &&
+    params.description === undefined &&
+    params.changelog === undefined &&
+    params.agent_type === undefined &&
+    params.trigger !== true
+  ) {
+    throw new CliUsageError(
+      'automation update requires at least one field or --trigger',
+      'automation'
+    );
+  }
+  return params;
 }
 
 function trendingPlaybooksSort(
@@ -2668,6 +2719,8 @@ export async function dispatch(
           return client.automation.publish(
             feedReleaseParams(flags, 'automation publish')
           );
+        case 'update':
+          return client.automation.update(automationUpdateParams(flags));
         case 'stop':
           return client.automation.stop({
             id: requireNumericFlag(flags, 'id', 'automation stop'),

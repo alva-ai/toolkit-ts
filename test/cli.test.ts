@@ -138,6 +138,14 @@ function makeClient(): AlvaClient {
       '/alva/home/alice/memory/profile/portfolio_watch/portfolio-watch.yaml',
   });
   client.automation.publish = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.automation.update = vi.fn().mockResolvedValue({
+    id: '42',
+    feed_id: '42',
+    name: 'btc',
+    feed_major: 1,
+    version: '1.0.1',
+    cronjob_id: 5,
+  });
   client.automation.stop = vi
     .fn()
     .mockResolvedValue({ id: '42', status: 'PAUSED' });
@@ -1556,6 +1564,44 @@ describe('CLI dispatch', () => {
       changelog: 'Initial',
       agent_type: 'alpi',
     });
+  });
+
+  it('dispatches an ID-scoped automation update', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'automation',
+      'update',
+      '--id',
+      '42',
+      '--version',
+      '1.0.1',
+      '--cronjob-id',
+      '5',
+      '--description=updated',
+      '--changelog=republished',
+      '--agent-type',
+      'alpi',
+      '--trigger',
+    ]);
+    expect(client.automation.update).toHaveBeenCalledWith({
+      id: 42,
+      version: '1.0.1',
+      cronjob_id: 5,
+      description: 'updated',
+      changelog: 'republished',
+      agent_type: 'alpi',
+      trigger: true,
+    });
+  });
+
+  it('rejects a no-op automation update', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['automation', 'update', '--id', '42'])
+    ).rejects.toThrow(
+      'automation update requires at least one field or --trigger'
+    );
+    expect(client.automation.update).not.toHaveBeenCalled();
   });
 
   it('dispatches automation lifecycle commands', async () => {
@@ -3197,7 +3243,15 @@ describe('help-text drift guard', () => {
       'run-logs',
     ],
     release: ['feed', 'playbook-draft', 'playbook'],
-    automation: ['list', 'inspect', 'publish', 'stop', 'resume', 'delete'],
+    automation: [
+      'list',
+      'inspect',
+      'publish',
+      'update',
+      'stop',
+      'resume',
+      'delete',
+    ],
     alert: [
       'list',
       'follows',

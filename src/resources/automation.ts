@@ -2,6 +2,8 @@ import type { AlvaClient } from '../client.js';
 import type {
   AutomationInspectRequest,
   AutomationInspectResponse,
+  AutomationUpdateRequest,
+  AutomationUpdateResponse,
   FeedDeleteRequest,
   FeedDeleteResponse,
   FeedListParams,
@@ -37,6 +39,33 @@ export class AutomationResource {
     ) as Promise<AutomationInspectResponse>;
   }
 
+  /** Partially update one existing automation by immutable numeric id. */
+  async update(
+    params: AutomationUpdateRequest
+  ): Promise<AutomationUpdateResponse> {
+    this.client._requireAuth();
+    const id = requireAutomationID(params.id);
+    if (!hasAutomationUpdate(params)) {
+      throw new Error(
+        'automation update requires at least one field or trigger=true'
+      );
+    }
+    return this.client._request(
+      'PATCH',
+      `/api/v1/automation/${encodeURIComponent(String(id))}`,
+      {
+        body: {
+          version: params.version,
+          cronjob_id: params.cronjob_id,
+          description: params.description,
+          changelog: params.changelog,
+          agent_type: params.agent_type,
+          trigger: params.trigger,
+        },
+      }
+    ) as Promise<AutomationUpdateResponse>;
+  }
+
   stop(params: FeedStatusUpdateRequest): Promise<FeedStatusUpdateResponse> {
     return this.client.feed.stop(params);
   }
@@ -59,4 +88,15 @@ function requireAutomationID(id: number): number {
     throw new Error('automation id must be a positive integer');
   }
   return id;
+}
+
+function hasAutomationUpdate(params: AutomationUpdateRequest): boolean {
+  return (
+    params.version !== undefined ||
+    params.cronjob_id !== undefined ||
+    params.description !== undefined ||
+    params.changelog !== undefined ||
+    params.agent_type !== undefined ||
+    params.trigger === true
+  );
 }
