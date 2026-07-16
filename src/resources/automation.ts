@@ -39,12 +39,12 @@ export class AutomationResource {
     ) as Promise<AutomationInspectResponse>;
   }
 
-  /** Partially update one existing automation by immutable numeric id. */
+  /** Partially update one existing automation by immutable decimal-string id. */
   async update(
     params: AutomationUpdateRequest
   ): Promise<AutomationUpdateResponse> {
     this.client._requireAuth();
-    const id = requireAutomationID(params.id);
+    const id = requireAutomationIDString(params.id);
     if (!hasAutomationUpdate(params)) {
       throw new Error(
         'automation update requires at least one field or trigger=true'
@@ -86,6 +86,13 @@ export class AutomationResource {
 function requireAutomationID(id: number): number {
   if (!Number.isInteger(id) || id <= 0) {
     throw new Error('automation id must be a positive integer');
+  }
+  return id;
+}
+
+function requireAutomationIDString(id: string): string {
+  if (!/^[1-9]\d*$/.test(id)) {
+    throw new Error('automation id must be a positive integer string');
   }
   return id;
 }
