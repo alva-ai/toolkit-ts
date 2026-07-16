@@ -196,6 +196,17 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'agent-type',
     ],
   }),
+  command('automation update', {
+    values: [
+      'id',
+      'version',
+      'cronjob-id',
+      'description',
+      'changelog',
+      'agent-type',
+    ],
+    booleans: ['trigger'],
+  }),
   command('automation stop', { values: ['id'] }),
   command('automation resume', { values: ['id'] }),
   command('automation delete', { values: ['id'] }),
