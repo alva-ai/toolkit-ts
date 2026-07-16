@@ -481,8 +481,8 @@ export interface AutomationInspectResponse {
 }
 
 export interface AutomationUpdateRequest {
-  /** Numeric automation id. Currently the same underlying feed id. */
-  id: number;
+  /** Positive decimal automation id kept as a string to preserve int64 precision. */
+  id: string;
   /** Contract version to republish. Omitted preserves the current version. */
   version?: string;
   /** Replacement producer cronjob. Omitted preserves the current producer. */

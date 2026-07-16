@@ -1572,7 +1572,7 @@ describe('CLI dispatch', () => {
       'automation',
       'update',
       '--id',
-      '42',
+      '2077624515435917312',
       '--version',
       '1.0.1',
       '--cronjob-id',
@@ -1584,7 +1584,7 @@ describe('CLI dispatch', () => {
       '--trigger',
     ]);
     expect(client.automation.update).toHaveBeenCalledWith({
-      id: 42,
+      id: '2077624515435917312',
       version: '1.0.1',
       cronjob_id: 5,
       description: 'updated',

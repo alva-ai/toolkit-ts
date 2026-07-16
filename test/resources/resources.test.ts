@@ -482,14 +482,14 @@ describe('AutomationResource', () => {
     const client = makeClient();
     const automation = new AutomationResource(client);
     await automation.update({
-      id: 42,
+      id: '2077624515435917312',
       version: '1.0.1',
       description: '',
       trigger: true,
     });
     expect(client._request).toHaveBeenCalledWith(
       'PATCH',
-      '/api/v1/automation/42',
+      '/api/v1/automation/2077624515435917312',
       {
         body: {
           version: '1.0.1',
@@ -539,9 +539,9 @@ describe('AutomationResource', () => {
     const automation = new AutomationResource(client);
 
     await expect(
-      automation.update({ id: 0, description: 'x' })
-    ).rejects.toThrow('automation id must be a positive integer');
-    await expect(automation.update({ id: 42 })).rejects.toThrow(
+      automation.update({ id: '0', description: 'x' })
+    ).rejects.toThrow('automation id must be a positive integer string');
+    await expect(automation.update({ id: '42' })).rejects.toThrow(
       'automation update requires at least one field or trigger=true'
     );
     expect(client._request).not.toHaveBeenCalled();

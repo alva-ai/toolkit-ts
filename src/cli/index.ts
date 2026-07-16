@@ -1732,7 +1732,7 @@ function automationUpdateParams(flags: Record<string, string>) {
         );
   const trigger = boolFlag(flags['trigger']);
   const params = {
-    id: requirePositiveIntegerFlag(flags, 'id', command),
+    id: requirePositiveIntegerStringFlag(flags, 'id', command),
     version: flags['version'],
     cronjob_id: cronjobID,
     description: flags['description'],
