@@ -447,14 +447,14 @@ Build-time verify (fire once, then poll up to 5 minutes):
 
   loop: `Usage: alva loop <subcommand> [options]
 
-Create a bounded, self-scheduled in-channel goal loop: a cronjob that each tick runs
-one fire-and-forget agent turn on a channel's stable main session (via the
-@alva/loop SDK), continuing that channel's conversation toward a goal. Sugar
-over 'alva deploy create' — it seeds a shared loop-runner script and packs the
-goal/channel into the cronjob's args.
+Create a bounded, self-scheduled in-channel goal loop. Each tick runs one
+fire-and-forget agent turn on a channel's stable main session (via the
+@alva/loop SDK), continuing that channel's conversation toward a goal. Creation
+seeds a shared runner, creates its cronjob, and registers the cronjob as an
+Automation without starting an extra publish-time run.
 
 Subcommands:
-  create     Create a loop (seeds the shared loop-runner + a cronjob)
+  create     Create a loop and its visible Automation
 
 Create flags:
   --goal <text>          Instruction run each tick (required)
@@ -467,7 +467,9 @@ Create flags:
                          1-63 lowercase alphanumeric/hyphens)
 
 At least one of --until or --runs is required. RFC3339 timestamps must include
-a timezone (Z or ±HH:MM).
+a timezone (Z or ±HH:MM). The result includes automation_id and cronjob_id.
+Use 'alva automation inspect/stop/resume/delete --id <automation_id>' for
+lifecycle management; deletion also removes the Automation's producer cronjob.
 
 Examples:
   alva loop create --channel-id 7284... --goal "watch NVDA pre-market, alert on setup" --cron "*/5 * * * *" --until "2026-07-15T09:30:00-04:00"
@@ -1886,6 +1888,13 @@ function loopCronjobName(flags: Record<string, string>, goal: string): string {
   return slug || 'loop';
 }
 
+function loopAutomationDescription(goal: string): string {
+  const prefix = 'Channel loop: ';
+  const maxDescriptionRunes = 4096;
+  const availableGoalRunes = maxDescriptionRunes - Array.from(prefix).length;
+  return prefix + Array.from(goal).slice(0, availableGoalRunes).join('');
+}
+
 function parseCreditsItemsParams(flags: Record<string, string>): {
   startAtMs: number;
   endAtMs: number;
@@ -2532,6 +2541,7 @@ export async function dispatch(
               'loop'
             );
           }
+          const name = loopCronjobName(flags, goal);
           // Seed the shared loop-runner first (idempotent — stable content).
           // Aborting here beats creating a cron that points at a missing script.
           await client.fs.write({
@@ -2539,8 +2549,8 @@ export async function dispatch(
             data: LOOP_RUNNER_SRC,
             mkdir_parents: true,
           });
-          return client.deploy.create({
-            name: loopCronjobName(flags, goal),
+          const cronjob = await client.deploy.create({
+            name,
             path: LOOP_RUNNER_PATH,
             cron_expression: cron,
             args: channelId ? { goal, channelId } : { goal },
@@ -2548,6 +2558,39 @@ export async function dispatch(
             end_at: endAt,
             max_runs: maxRuns,
           });
+          try {
+            const automation = await client.automation.publish({
+              name,
+              version: '1.0.0',
+              cronjob_id: cronjob.id,
+              description: loopAutomationDescription(goal),
+              skip_auto_trigger: true,
+            });
+            return {
+              name,
+              automation_id: String(automation.feed_id),
+              cronjob_id: cronjob.id,
+            };
+          } catch (publishError) {
+            const publishMessage =
+              publishError instanceof Error
+                ? publishError.message
+                : String(publishError);
+            try {
+              await client.deploy.delete({ id: cronjob.id });
+            } catch (rollbackError) {
+              const rollbackMessage =
+                rollbackError instanceof Error
+                  ? rollbackError.message
+                  : String(rollbackError);
+              throw new Error(
+                `failed to publish loop "${name}" as an automation after creating cronjob ${cronjob.id}: ${publishMessage}; automatic rollback failed: ${rollbackMessage}; cronjob ${cronjob.id} may still exist; run \`alva deploy delete --id ${cronjob.id}\``
+              );
+            }
+            throw new Error(
+              `failed to publish loop "${name}" as an automation; rolled back cronjob ${cronjob.id}: ${publishMessage}`
+            );
+          }
         }
         default:
           throw new CliUsageError(

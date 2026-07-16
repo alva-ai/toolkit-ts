@@ -221,6 +221,7 @@ describe('ReleaseResource', () => {
       name: 'btc-ema',
       version: '1.0.0',
       cronjob_id: 123,
+      skip_auto_trigger: true,
     });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
@@ -232,6 +233,9 @@ describe('ReleaseResource', () => {
           cronjob_id: 123,
           view_json: undefined,
           description: undefined,
+          changelog: undefined,
+          agent_type: undefined,
+          skip_auto_trigger: true,
         },
       }
     );

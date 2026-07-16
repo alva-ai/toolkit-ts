@@ -22,6 +22,7 @@ export class ReleaseResource {
         description: params.description,
         changelog: params.changelog,
         agent_type: params.agent_type,
+        skip_auto_trigger: params.skip_auto_trigger,
       },
     }) as Promise<FeedReleaseResponse>;
   }

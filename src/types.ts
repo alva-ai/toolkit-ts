@@ -409,6 +409,8 @@ export interface FeedReleaseRequest {
    * regular (non-agent) feed. The backend validates it against its catalog.
    */
   agent_type?: string;
+  /** Suppress ReleaseFeed's default publish-time first run. */
+  skip_auto_trigger?: boolean;
 }
 
 export interface FeedReleaseResponse {

@@ -517,7 +517,7 @@ describe('CLI dispatch', () => {
 
   it('loop create seeds the runner and creates a run-bounded cron starting now', async () => {
     const client = makeClient();
-    await dispatch(client, [
+    const result = await dispatch(client, [
       'loop',
       'create',
       '--channel-id',
@@ -548,6 +548,19 @@ describe('CLI dispatch', () => {
     // `now` is resolved by the server, so the client omits start_at.
     expect(call.start_at).toBeUndefined();
     expect(call.end_at).toBeUndefined();
+    expect(client.automation.publish).toHaveBeenCalledWith({
+      name: 'loop-watch-nvda-pre-market',
+      version: '1.0.0',
+      cronjob_id: 1,
+      description: 'Channel loop: Watch NVDA pre-market',
+      skip_auto_trigger: true,
+    });
+    expect(client.deploy.delete).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      name: 'loop-watch-nvda-pre-market',
+      automation_id: '1',
+      cronjob_id: 1,
+    });
   });
 
   it('loop create accepts explicit start/until and omits channelId from args', async () => {
@@ -569,6 +582,54 @@ describe('CLI dispatch', () => {
     expect(call.args).toEqual({ goal: 'daily digest' });
     expect(call.start_at).toBe('2026-07-15T12:00:00.000Z');
     expect(call.end_at).toBe('2026-07-15T14:00:00.000Z');
+  });
+
+  it('loop create rolls back its cronjob when automation publish fails', async () => {
+    const client = makeClient();
+    client.automation.publish = vi
+      .fn()
+      .mockRejectedValue(new Error('feed name already exists'));
+
+    await expect(
+      dispatch(client, [
+        'loop',
+        'create',
+        '--goal',
+        'watch BTC',
+        '--cron',
+        '*/5 * * * *',
+        '--runs',
+        '2',
+      ])
+    ).rejects.toThrow(
+      'failed to publish loop "loop-watch-btc" as an automation; rolled back cronjob 1: feed name already exists'
+    );
+    expect(client.deploy.delete).toHaveBeenCalledWith({ id: 1 });
+  });
+
+  it('loop create reports the orphan id when publish rollback also fails', async () => {
+    const client = makeClient();
+    client.automation.publish = vi
+      .fn()
+      .mockRejectedValue(new Error('publish unavailable'));
+    client.deploy.delete = vi
+      .fn()
+      .mockRejectedValue(new Error('delete unavailable'));
+
+    await expect(
+      dispatch(client, [
+        'loop',
+        'create',
+        '--goal',
+        'watch ETH',
+        '--cron',
+        '*/5 * * * *',
+        '--runs',
+        '2',
+      ])
+    ).rejects.toThrow(
+      'cronjob 1 may still exist; run `alva deploy delete --id 1`'
+    );
   });
 
   it('loop create requires --until or --runs', async () => {
