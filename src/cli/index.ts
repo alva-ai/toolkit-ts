@@ -1105,18 +1105,16 @@ Subcommands:
   subscribe     Subscribe the group to a public feed
   unsubscribe   Unsubscribe the group from a feed
 
-Common flags:
-  --session-id <id>      Channel session id for the group (required)
-
 Subscribe/unsubscribe flags:
-  --target-type <type>   feed (required)
-  --target-id <id>       Numeric feed_id (required)
+  --feed-id <id>         Numeric feed_id (required)
 
 Examples:
-  alva channel group-subscriptions context --session-id 123
-  alva channel group-subscriptions list --session-id 123
-  alva channel group-subscriptions subscribe --session-id 123 --target-type feed --target-id 8169
-  alva channel group-subscriptions unsubscribe --session-id 123 --target-type feed --target-id 8169`,
+  alva channel group-subscriptions context
+  alva channel group-subscriptions list
+  alva channel group-subscriptions subscribe --feed-id 8169
+  alva channel group-subscriptions unsubscribe --feed-id 8169
+
+These commands use the current sandbox session from ALVA_SESSION_ID.`,
 
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
@@ -1631,12 +1629,53 @@ function requireGroupSubscriptionTargetType(
   flags: Record<string, string>,
   command: string
 ): 'feed' {
-  const val = requireFlag(flags, 'target-type', command).trim().toLowerCase();
+  const val = flags['target-type']?.trim().toLowerCase() ?? 'feed';
   if (val === 'feed') return val;
   throw new CliUsageError(
     `--target-type must be feed for '${command}', got '${val}'`,
     command.split(' ')[0]
   );
+}
+
+function requireGroupSubscriptionSessionID(
+  client: AlvaClient,
+  flags: Record<string, string>,
+  command: string
+): string {
+  const val = flags['session-id'] ?? client.originSessionId;
+  if (val === undefined) {
+    throw new CliUsageError(
+      `current group session is unavailable for '${command}'; run inside an Alva sandbox with ALVA_SESSION_ID`,
+      'channel'
+    );
+  }
+  if (!/^[1-9]\d*$/.test(val)) {
+    throw new CliUsageError(
+      `current group session must be a positive integer for '${command}', got '${val}'`,
+      'channel'
+    );
+  }
+  return val;
+}
+
+function requireGroupSubscriptionFeedID(
+  flags: Record<string, string>,
+  command: string
+): string {
+  const val = flags['feed-id'] ?? flags['target-id'];
+  if (val === undefined) {
+    throw new CliUsageError(
+      `--feed-id is required for '${command}'`,
+      'channel'
+    );
+  }
+  if (!/^[1-9]\d*$/.test(val)) {
+    throw new CliUsageError(
+      `--feed-id must be a positive integer for '${command}', got '${val}'`,
+      'channel'
+    );
+  }
+  return val;
 }
 
 function num(val: string | undefined): number | undefined {
@@ -3565,51 +3604,49 @@ export async function dispatch(
       switch (leaf) {
         case 'context':
           return client.channelGroupSubscriptions.context({
-            session_id: requirePositiveIntegerStringFlag(
+            session_id: requireGroupSubscriptionSessionID(
+              client,
               channelFlags,
-              'session-id',
               commandName
             ),
           });
         case 'list':
           return client.channelGroupSubscriptions.list({
-            session_id: requirePositiveIntegerStringFlag(
+            session_id: requireGroupSubscriptionSessionID(
+              client,
               channelFlags,
-              'session-id',
               commandName
             ),
           });
         case 'subscribe':
           return client.channelGroupSubscriptions.subscribe({
-            session_id: requirePositiveIntegerStringFlag(
+            session_id: requireGroupSubscriptionSessionID(
+              client,
               channelFlags,
-              'session-id',
               commandName
             ),
             target_type: requireGroupSubscriptionTargetType(
               channelFlags,
               commandName
             ),
-            target_id: requirePositiveIntegerStringFlag(
+            target_id: requireGroupSubscriptionFeedID(
               channelFlags,
-              'target-id',
               commandName
             ),
           });
         case 'unsubscribe':
           return client.channelGroupSubscriptions.unsubscribe({
-            session_id: requirePositiveIntegerStringFlag(
+            session_id: requireGroupSubscriptionSessionID(
+              client,
               channelFlags,
-              'session-id',
               commandName
             ),
             target_type: requireGroupSubscriptionTargetType(
               channelFlags,
               commandName
             ),
-            target_id: requirePositiveIntegerStringFlag(
+            target_id: requireGroupSubscriptionFeedID(
               channelFlags,
-              'target-id',
               commandName
             ),
           });

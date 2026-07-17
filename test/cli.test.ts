@@ -50,8 +50,8 @@ afterEach(() => {
   }
 });
 
-function makeClient(): AlvaClient {
-  const client = new AlvaClient({ apiKey: 'test-key' });
+function makeClient(originSessionId?: string): AlvaClient {
+  const client = new AlvaClient({ apiKey: 'test-key', originSessionId });
   // Mock all resource methods
   client.user.me = vi.fn().mockResolvedValue({
     id: '9007199254740993',
@@ -2226,6 +2226,14 @@ components: {}
     });
   });
 
+  it('uses the sandbox origin session for group-subscriptions context', async () => {
+    const client = makeClient('123');
+    await dispatch(client, ['channel', 'group-subscriptions', 'context']);
+    expect(client.channelGroupSubscriptions.context).toHaveBeenCalledWith({
+      session_id: '123',
+    });
+  });
+
   it('dispatches channel group-subscriptions subscribe', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -2237,6 +2245,22 @@ components: {}
       '--target-type',
       'feed',
       '--target-id',
+      '8169',
+    ]);
+    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
+      session_id: '123',
+      target_type: 'feed',
+      target_id: '8169',
+    });
+  });
+
+  it('subscribes the current sandbox group by feed id', async () => {
+    const client = makeClient('123');
+    await dispatch(client, [
+      'channel',
+      'group-subscriptions',
+      'subscribe',
+      '--feed-id',
       '8169',
     ]);
     expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
@@ -2264,6 +2288,29 @@ components: {}
       target_type: 'feed',
       target_id: '42',
     });
+  });
+
+  it('unsubscribes the current sandbox group by feed id', async () => {
+    const client = makeClient('123');
+    await dispatch(client, [
+      'channel',
+      'group-subscriptions',
+      'unsubscribe',
+      '--feed-id',
+      '42',
+    ]);
+    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
+      session_id: '123',
+      target_type: 'feed',
+      target_id: '42',
+    });
+  });
+
+  it('requires sandbox session context when no legacy session id is passed', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['channel', 'group-subscriptions', 'list'])
+    ).rejects.toThrow(/ALVA_SESSION_ID/);
   });
 
   it('throws CliUsageError when channel group target type is invalid', async () => {
@@ -2966,8 +3013,9 @@ describe('help text', () => {
       text: string;
     };
     expect(result.text).toContain('group-subscriptions');
-    expect(result.text).toContain('--session-id');
-    expect(result.text).toContain('--target-type');
+    expect(result.text).toContain('--feed-id');
+    expect(result.text).not.toContain('--session-id');
+    expect(result.text).not.toContain('--target-type');
   });
 
   it('returns per-command help for notification-history --help', async () => {
