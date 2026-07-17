@@ -13,6 +13,8 @@ export interface AlvaClientConfig {
   signal?: AbortSignal;
   /** Alva chat session owning produced artifacts; sent as X-Alva-Origin-Session-Id. */
   originSessionId?: string;
+  /** Session profile kind used to gate attached-context CLI commands. */
+  originSessionKind?: string;
 }
 
 // --- User ---

@@ -142,6 +142,8 @@ export class AlvaClient {
    * from `gaSessionId` (browser analytics).
    */
   readonly originSessionId?: string;
+  /** Session profile kind associated with originSessionId. */
+  readonly originSessionKind?: string;
 
   private _fs?: FsResource;
   private _run?: RunResource;
@@ -182,6 +184,7 @@ export class AlvaClient {
     this.utmParams = config.utmParams;
     this.signal = config.signal;
     this.originSessionId = config.originSessionId;
+    this.originSessionKind = config.originSessionKind;
   }
 
   get fs(): FsResource {

@@ -14,8 +14,8 @@ import type {
  * Group push subscriptions for an external channel session.
  *
  * These APIs subscribe the Telegram/Discord group attached to `session_id`
- * to public feed push events. Mutations are idempotent no-ops unless
- * the authenticated caller is that group's Alva admin.
+ * to feed push events the group admin may read. Mutations are idempotent no-ops
+ * unless the authenticated caller is that group's Alva admin.
  */
 export class ChannelGroupSubscriptionsResource {
   constructor(private client: AlvaClient) {}

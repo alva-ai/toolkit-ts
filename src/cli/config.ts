@@ -9,6 +9,7 @@ export interface CliConfig {
   gaSessionId?: string;
   utmParams?: string;
   originSessionId?: string;
+  originSessionKind?: string;
 }
 
 interface ProfileData {
@@ -175,6 +176,8 @@ export function loadConfig(deps: ConfigDeps): CliConfig {
   const utmParamsEnv = env.ALVA_UTM_PARAMS;
   // Origin session for artifact attribution (sandbox sets ALVA_SESSION_ID per turn).
   const originSessionIdEnv = env.ALVA_SESSION_ID;
+  // Session profile kind gates commands that operate on the attached group.
+  const originSessionKindEnv = env.ALVA_SESSION_KIND;
 
   // Read config file
   let fileProfile: ProfileData = {};
@@ -205,5 +208,6 @@ export function loadConfig(deps: ConfigDeps): CliConfig {
     gaSessionId: gaSessionIdEnv,
     utmParams: utmParamsEnv,
     originSessionId: originSessionIdEnv,
+    originSessionKind: originSessionKindEnv,
   };
 }

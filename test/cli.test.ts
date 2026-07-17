@@ -50,8 +50,15 @@ afterEach(() => {
   }
 });
 
-function makeClient(originSessionId?: string): AlvaClient {
-  const client = new AlvaClient({ apiKey: 'test-key', originSessionId });
+function makeClient(
+  originSessionId?: string,
+  originSessionKind?: string
+): AlvaClient {
+  const client = new AlvaClient({
+    apiKey: 'test-key',
+    originSessionId,
+    originSessionKind,
+  });
   // Mock all resource methods
   client.user.me = vi.fn().mockResolvedValue({
     id: '9007199254740993',
@@ -2824,14 +2831,15 @@ describe('auth help', () => {
     expect(result.text).toContain('auth');
   });
 
-  it('top-level help mentions channel group subscriptions', async () => {
+  it('top-level help presents alert as canonical and channel as deprecated', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['--help'])) as {
       _help: boolean;
       text: string;
     };
     expect(result.text).toContain('channel');
-    expect(result.text).toContain('group-subscriptions');
+    expect(result.text).toContain('Deprecated group-alert compatibility');
+    expect(result.text).toContain('alert');
   });
 
   it('auth --help returns help text', async () => {
@@ -4114,6 +4122,35 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     });
   });
 
+  it('lists current group alerts through the explicit group subcommand', async () => {
+    const client = makeClient('123', 'channel_group');
+    vi.mocked(client.channelGroupSubscriptions.list).mockResolvedValueOnce({
+      subscriptions: [
+        {
+          event_type: 'feed_alert_ready',
+          target: { type: 'feed', id: 42 },
+          subscribed_by_user_id: 7,
+          enabled: true,
+          created_at_ms: 1,
+          updated_at_ms: 1,
+        },
+      ],
+    });
+    const result = await dispatch(client, ['alert', 'group', 'list']);
+    expect(client.channelGroupSubscriptions.list).toHaveBeenCalledWith({
+      session_id: '123',
+    });
+    expect(client.alerts.list).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.stringContaining('1 group alert(s):'));
+  });
+
+  it('keeps the regular alert command personal inside a group session', async () => {
+    const client = makeClient('123', 'channel_group');
+    await dispatch(client, ['alert', 'list']);
+    expect(client.alerts.list).toHaveBeenCalled();
+    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+  });
+
   it('dispatches alert follows with pagination flags', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -4187,6 +4224,84 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     expect(client.alerts.disableBatch).toHaveBeenCalledWith({
       feedIds: ['42', '43'],
     });
+  });
+
+  it('enables and disables current group alerts by automation id', async () => {
+    const client = makeClient('123', 'channel_group');
+    await dispatch(client, [
+      'alert',
+      'group',
+      'enable',
+      '--automation-ids',
+      '42',
+    ]);
+    await dispatch(client, [
+      'alert',
+      'group',
+      'disable',
+      '--automation-ids',
+      '42',
+    ]);
+    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
+      session_id: '123',
+      target_type: 'feed',
+      target_id: '42',
+    });
+    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
+      session_id: '123',
+      target_type: 'feed',
+      target_id: '42',
+    });
+    expect(client.alerts.enableBatch).not.toHaveBeenCalled();
+    expect(client.alerts.disableBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous group alert targets', async () => {
+    const client = makeClient('123', 'channel_group');
+    await expect(
+      dispatch(client, [
+        'alert',
+        'group',
+        'enable',
+        '--automation-ids',
+        '42,43',
+      ])
+    ).rejects.toThrow(/exactly one positive/);
+    await expect(
+      dispatch(client, [
+        'alert',
+        'group',
+        'enable',
+        '--automation-ids',
+        '42',
+        '--channel-id',
+        '7',
+      ])
+    ).rejects.toThrow(/personal Alva channel/);
+  });
+
+  it('requires alert group commands to run in a channel-group session', async () => {
+    const client = makeClient('123', 'chat');
+    await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
+      /only available inside a channel-group sandbox/
+    );
+    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+  });
+
+  it('requires the attached group session id without accepting it as input', async () => {
+    const client = makeClient(undefined, 'channel_group');
+    await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
+      /current group session is unavailable/
+    );
+    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+  });
+
+  it('does not accept an explicit session id for alert group commands', async () => {
+    const client = makeClient('123', 'channel_group');
+    await expect(
+      dispatch(client, ['alert', 'group', 'list', '--session-id', '456'])
+    ).rejects.toThrow(/does not accept --session-id/);
+    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('rejects playbook ids for alert batch mutations', async () => {

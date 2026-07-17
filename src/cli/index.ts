@@ -28,6 +28,7 @@ import {
 } from './playbooksFormat.js';
 import {
   formatAlertList,
+  formatGroupAlertList,
   formatAutomationDetail,
   formatAutomationList,
 } from './productFormat.js';
@@ -95,7 +96,7 @@ Commands:
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
   subscriptions       Playbook follows and feed alert subscriptions
-  channel     Channel group operations (group-subscriptions context, list, subscribe, unsubscribe)
+  channel     Deprecated group-alert compatibility commands
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
@@ -542,12 +543,15 @@ Examples:
 
 Manage alerts. Alert subscriptions target automations (feeds) only. Playbook
 follows are independent; delivery history and global preferences live here too.
+Personal alerts may be routed to different Alva delivery channels. Group alerts
+are managed explicitly through "alert group" and target the current group.
 
 Subcommands:
   list          List the caller's active alerts
   follows       List the playbooks the caller follows
   enable        Enable alerts by automation name or ids
   disable       Disable alerts by automation name or ids
+  group         Manage alerts delivered to the current external group
   history       List alert delivery history for an automation
   preferences   List global alert preferences
   enable-session-completed
@@ -559,6 +563,14 @@ Target flags:
 Enable/disable-by-id flags:
   --automation-ids <a,b>     Comma-separated automation target ids
   --channel-id <id>          Delivery channel for batch enable (optional)
+
+Group subcommands:
+  alva alert group list
+  alva alert group enable --automation-ids <id>
+  alva alert group disable --automation-ids <id>
+
+Group commands must run inside the attached channel-group sandbox. The current
+group is inferred automatically; there is no session-id argument.
 
 List flags:
   --first <n>      Optional page size
@@ -581,6 +593,7 @@ Examples:
   alva alert disable --automation alice/btc-ema
   alva alert enable --automation-ids 13292,13293
   alva alert disable --automation-ids 13292
+  alva alert group enable --automation-ids 13292
   alva alert history --automation alice/btc-ema --status sent
   alva alert preferences`,
 
@@ -1094,15 +1107,20 @@ Examples:
 
   channel: `Usage: alva channel group-subscriptions <subcommand> [options]
 
-Manage push notifications delivered into the external group chat attached
-to a channel session. The group can subscribe to public feeds.
+Deprecated compatibility surface. Normal alva alert list/enable/disable
+commands remain personal-channel operations. Use alva alert group
+list/enable/disable for the current external group. This alias remains available
+for existing scripts.
+
+Manage alerts delivered into the external group chat attached to a channel
+session. The group can subscribe to feeds the group admin may read.
 Subscribe/unsubscribe are idempotent no-ops unless the authenticated caller
 is that group's Alva admin.
 
 Subcommands:
   context       Show group admin status and current subscriptions
   list          List active subscriptions for the group
-  subscribe     Subscribe the group to a public feed
+  subscribe     Subscribe the group to a feed the admin may read
   unsubscribe   Unsubscribe the group from a feed
 
 Subscribe/unsubscribe flags:
@@ -1676,6 +1694,58 @@ function requireGroupSubscriptionFeedID(
     );
   }
   return val;
+}
+
+function requireCurrentGroupAlertSessionID(
+  client: AlvaClient,
+  command: string
+): string {
+  if (client.originSessionKind !== 'channel_group') {
+    throw new CliUsageError(
+      `'${command}' is only available inside a channel-group sandbox`,
+      'alert'
+    );
+  }
+  const sessionID = client.originSessionId;
+  if (sessionID === undefined) {
+    throw new CliUsageError(
+      `current group session is unavailable for '${command}'`,
+      'alert'
+    );
+  }
+  if (!/^[1-9]\d*$/.test(sessionID)) {
+    throw new CliUsageError(
+      `current group session must be a positive integer for '${command}', got '${sessionID}'`,
+      'alert'
+    );
+  }
+  return sessionID;
+}
+
+function requireSingleGroupAlertFeedID(
+  flags: Record<string, string>,
+  command: string
+): string {
+  if (flags.automation !== undefined) {
+    throw new CliUsageError(
+      `Group alerts require --automation-ids for '${command}'`,
+      'alert'
+    );
+  }
+  if (flags['channel-id'] !== undefined) {
+    throw new CliUsageError(
+      `--channel-id selects a personal Alva channel; omit it for '${command}'`,
+      'alert'
+    );
+  }
+  const ids = csvList(flags['automation-ids']) ?? [];
+  if (ids.length !== 1 || !/^[1-9]\d*$/.test(ids[0]!)) {
+    throw new CliUsageError(
+      `Group alerts require exactly one positive --automation-ids value for '${command}'`,
+      'alert'
+    );
+  }
+  return ids[0]!;
 }
 
 function num(val: string | undefined): number | undefined {
@@ -3551,6 +3621,47 @@ export async function dispatch(
             requireAutomationAlertTarget(flags, 'alert disable')
           );
         }
+        case 'group': {
+          const leaf = args[2];
+          if (!leaf || leaf === '--help' || leaf === '-h') {
+            return { _help: true, text: COMMAND_HELP.alert };
+          }
+          const command = `alert group ${leaf}`;
+          if (flags['session-id'] !== undefined) {
+            throw new CliUsageError(
+              `'${command}' uses the attached group and does not accept --session-id`,
+              'alert'
+            );
+          }
+          const sessionID = requireCurrentGroupAlertSessionID(client, command);
+          switch (leaf) {
+            case 'list': {
+              const result = await client.channelGroupSubscriptions.list({
+                session_id: sessionID,
+              });
+              return boolFlag(flags['json'])
+                ? result
+                : formatGroupAlertList(result);
+            }
+            case 'enable':
+              return client.channelGroupSubscriptions.subscribe({
+                session_id: sessionID,
+                target_type: 'feed',
+                target_id: requireSingleGroupAlertFeedID(flags, command),
+              });
+            case 'disable':
+              return client.channelGroupSubscriptions.unsubscribe({
+                session_id: sessionID,
+                target_type: 'feed',
+                target_id: requireSingleGroupAlertFeedID(flags, command),
+              });
+            default:
+              throw new CliUsageError(
+                `Unknown subcommand: alert group ${leaf}`,
+                'alert'
+              );
+          }
+        }
         case 'history': {
           rejectPlaybookAlertTarget(flags, 'alert history');
           const target = requireAutomationAlertTarget(flags, 'alert history');
@@ -4074,6 +4185,7 @@ async function main() {
       gaSessionId: config.gaSessionId,
       utmParams: config.utmParams,
       originSessionId: config.originSessionId,
+      originSessionKind: config.originSessionKind,
     });
 
     const cleanArgs = stripGlobalFlags(rawArgs);
