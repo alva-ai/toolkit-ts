@@ -15,6 +15,7 @@ import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGr
 import { NotificationsResource } from '../../src/resources/notifications.js';
 import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
 import { PlaybookSkillsResource } from '../../src/resources/playbookSkills.js';
+import { DataSkillsResource } from '../../src/resources/dataSkills.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
@@ -856,6 +857,318 @@ describe('SdkDocsResource', () => {
     expect(client._request).toHaveBeenCalledWith(
       'GET',
       '/api/v1/sdk/partitions/spot_market_price_and_volume/summary'
+    );
+  });
+});
+
+describe('DataSkillsResource', () => {
+  const liveSkills = [
+    { name: 'arrays-data-api-news', description: 'Market news' },
+    {
+      name: 'arrays-data-api-crypto-exchange-flow',
+      description: 'Crypto exchange flow',
+    },
+    {
+      name: 'arrays-data-api-spot-market-price-and-volume',
+      description: 'Spot market price and volume',
+    },
+    {
+      name: 'arrays-data-api-equity-fundamentals',
+      description: 'Equity fundamentals',
+    },
+  ];
+
+  it('summary() rejects unknown shorthand with a prefix suggestion before fetching detail', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({ success: true, data: liveSkills });
+    const skills = new DataSkillsResource(client);
+
+    await expect(skills.summary({ name: 'news' })).rejects.toMatchObject({
+      name: 'AlvaError',
+      code: 'NOT_FOUND',
+      status: 404,
+      message: 'skill "news" not found; did you mean "arrays-data-api-news"?',
+    });
+
+    expect(client._request).toHaveBeenCalledTimes(2);
+    expect(client._request).not.toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/skills/news',
+      expect.anything()
+    );
+  });
+
+  it('endpoint() rejects unknown shorthand with a prefix suggestion before fetching detail', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({ success: true, data: liveSkills });
+    const skills = new DataSkillsResource(client);
+
+    await expect(
+      skills.endpoint({ name: 'crypto-exchange-flow', file: 'exchange-flows' })
+    ).rejects.toMatchObject({
+      message:
+        'skill "crypto-exchange-flow" not found; did you mean "arrays-data-api-crypto-exchange-flow"?',
+    });
+
+    expect(client._request).toHaveBeenCalledTimes(2);
+    expect(client._request).not.toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/skills/crypto-exchange-flow',
+      expect.anything()
+    );
+  });
+
+  it('suggests live skill names via suffix and token overlap before edit distance', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({ success: true, data: liveSkills });
+    const skills = new DataSkillsResource(client);
+
+    await expect(
+      skills.summary({ name: 'arrays-data-api-spot-market-data' })
+    ).rejects.toMatchObject({
+      message:
+        'skill "arrays-data-api-spot-market-data" not found; did you mean "arrays-data-api-spot-market-price-and-volume"?',
+    });
+
+    expect(client._request).toHaveBeenCalledTimes(2);
+  });
+
+  it('can suggest an endpoint alias for legacy company profile wording', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({ success: true, data: liveSkills });
+    const skills = new DataSkillsResource(client);
+
+    await expect(
+      skills.summary({ name: 'company-profiles' })
+    ).rejects.toMatchObject({
+      message:
+        'skill "company-profiles" not found; did you mean skill "arrays-data-api-equity-fundamentals" endpoint "company-detail"?',
+    });
+  });
+
+  it('falls through to summary detail when the live catalog request fails', async () => {
+    const client = makeClient();
+    client._request
+      .mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            name: 'arrays-data-api-news',
+            description: 'Market news',
+            content: 'news docs',
+          },
+        ],
+      });
+    const skills = new DataSkillsResource(client);
+
+    const result = await skills.summary({ name: 'arrays-data-api-news' });
+
+    expect(result.content).toBe('news docs');
+    expect(client._request).toHaveBeenNthCalledWith(
+      1,
+      'GET',
+      '/api/v1/skills',
+      {
+        baseUrl: client.arraysBaseUrl,
+        noAuth: true,
+      }
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'GET',
+      '/api/v1/skills/arrays-data-api-news',
+      {
+        baseUrl: client.arraysBaseUrl,
+        noAuth: true,
+      }
+    );
+  });
+
+  it('falls through to endpoint detail when the live catalog request fails', async () => {
+    const client = makeClient();
+    client._request
+      .mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            name: 'arrays-data-api-news',
+            description: 'Market news',
+            content: 'endpoint docs',
+          },
+        ],
+      });
+    const skills = new DataSkillsResource(client);
+
+    const result = await skills.endpoint({
+      name: 'arrays-data-api-news',
+      file: 'market-news',
+    });
+
+    expect(result.content).toBe('endpoint docs');
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'GET',
+      '/api/v1/skills/arrays-data-api-news',
+      {
+        baseUrl: client.arraysBaseUrl,
+        noAuth: true,
+        query: { endpoint: 'market-news' },
+      }
+    );
+  });
+
+  it('does not keep a rejected catalog promise after a transient catalog failure', async () => {
+    const client = makeClient();
+    client._request
+      .mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            name: 'arrays-data-api-news',
+            description: 'Market news',
+            content: 'news docs',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            name: 'arrays-data-api-news',
+            description: 'Market news',
+            content: 'news docs again',
+          },
+        ],
+      });
+    const skills = new DataSkillsResource(client);
+
+    await expect(
+      skills.summary({ name: 'arrays-data-api-news' })
+    ).resolves.toMatchObject({ content: 'news docs' });
+    await expect(
+      skills.summary({ name: 'arrays-data-api-news' })
+    ).resolves.toMatchObject({ content: 'news docs again' });
+
+    expect(client._request).toHaveBeenNthCalledWith(
+      3,
+      'GET',
+      '/api/v1/skills',
+      {
+        baseUrl: client.arraysBaseUrl,
+        noAuth: true,
+      }
+    );
+  });
+
+  it('refreshes the catalog on miss before deciding a skill is unknown', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          ...liveSkills,
+          {
+            name: 'arrays-data-api-new-catalog-skill',
+            description: 'New catalog skill',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            name: 'arrays-data-api-new-catalog-skill',
+            description: 'New catalog skill',
+            content: 'fresh docs',
+          },
+        ],
+      });
+    const skills = new DataSkillsResource(client);
+
+    const result = await skills.summary({
+      name: 'arrays-data-api-new-catalog-skill',
+    });
+
+    expect(result.content).toBe('fresh docs');
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'GET',
+      '/api/v1/skills',
+      {
+        baseUrl: client.arraysBaseUrl,
+        noAuth: true,
+      }
+    );
+  });
+
+  it('reports not found without a suggestion when no candidate is plausible', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({ success: true, data: liveSkills });
+    const skills = new DataSkillsResource(client);
+
+    await expect(skills.summary({ name: 'zzzzzzzz' })).rejects.toMatchObject({
+      message: 'skill "zzzzzzzz" not found',
+    });
+  });
+
+  it('falls back to edit distance when prefix and token matching do not apply', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({ success: true, data: liveSkills });
+    const skills = new DataSkillsResource(client);
+
+    await expect(
+      skills.summary({ name: 'arrays-data-api-newz' })
+    ).rejects.toMatchObject({
+      message:
+        'skill "arrays-data-api-newz" not found; did you mean "arrays-data-api-news"?',
+    });
+  });
+
+  it('uses the live catalog as the guard and reuses it for later detail calls', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({ success: true, data: liveSkills })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            name: 'arrays-data-api-news',
+            description: 'Market news',
+            content: 'news docs',
+          },
+        ],
+      });
+    const skills = new DataSkillsResource(client);
+
+    await skills.list();
+    const result = await skills.summary({ name: 'arrays-data-api-news' });
+
+    expect(result.content).toBe('news docs');
+    expect(client._request).toHaveBeenCalledTimes(2);
+    expect(client._request).toHaveBeenLastCalledWith(
+      'GET',
+      '/api/v1/skills/arrays-data-api-news',
+      {
+        baseUrl: client.arraysBaseUrl,
+        noAuth: true,
+      }
     );
   });
 });
