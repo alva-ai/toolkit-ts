@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { Readable } from 'node:stream';
 import {
   dispatch,
   handleConfigure,
@@ -4220,6 +4221,24 @@ describe('CLI dispatch — broker', () => {
     return client;
   }
 
+  async function dispatchBrokerStdin(client: AlvaClient, stdin: string) {
+    const stdinSpy = vi
+      .spyOn(process, 'stdin', 'get')
+      .mockReturnValue(
+        Readable.from([Buffer.from(stdin)]) as unknown as typeof process.stdin
+      );
+    try {
+      return await dispatch(
+        client,
+        ['broker', 'order', 'place', '--stdin'],
+        undefined,
+        { mode: 'jagent' }
+      );
+    } finally {
+      stdinSpy.mockRestore();
+    }
+  }
+
   it('passes argv through verbatim to /api/v1/broker/invoke', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
     const env = await dispatch(
@@ -4356,6 +4375,62 @@ describe('CLI dispatch — broker', () => {
     expect(argv.filter((a) => a.startsWith('--intent-id'))).toHaveLength(1);
     expect(argv).toContain('--intent-id=mine');
   });
+
+  it.each([
+    ['intentId', '{\n  "intentId": "retry-me"\n}\n'],
+    ['clientOrderId', '{"clientOrderId":"venue-retry"}'],
+    ['dryRun', '{"dryRun":true}'],
+  ])('does not mint over a stdin %s control', async (_name, stdin) => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    await dispatchBrokerStdin(client, stdin);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (client as any)._request.mock.calls[0][2].body;
+    expect(body.argv).toEqual(['order', 'place', '--stdin']);
+    expect(body.stdin).toBe(stdin);
+  });
+
+  it('preserves the same stdin intent-id across retries', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    const stdin = '{"intentId":"stable-retry"}';
+
+    await dispatchBrokerStdin(client, stdin);
+    await dispatchBrokerStdin(client, stdin);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls = (client as any)._request.mock.calls;
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call[2].body.argv).toEqual(['order', 'place', '--stdin']);
+      expect(call[2].body.stdin).toBe(stdin);
+    }
+  });
+
+  it('still mints for a valid live stdin order without a retry control', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    const stdin = '{\n  "account": "7",\n  "dryRun": false\n}\n';
+    await dispatchBrokerStdin(client, stdin);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (client as any)._request.mock.calls[0][2].body;
+    const idx = body.argv.indexOf('--intent-id');
+    expect(idx).toBeGreaterThan(-1);
+    expect(body.argv[idx + 1]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.stdin).toBe(stdin);
+  });
+
+  it.each(['{bad json', 'null', '[]', '{"dryRun":"true"}'])(
+    'does not mint for invalid or ambiguous stdin: %s',
+    async (stdin) => {
+      const client = brokerClient({ envelope: {}, exit: 0 });
+      await dispatchBrokerStdin(client, stdin);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (client as any)._request.mock.calls[0][2].body;
+      expect(body.argv).toEqual(['order', 'place', '--stdin']);
+      expect(body.stdin).toBe(stdin);
+    }
+  );
 
   it('forwards a broker-native valueless flag (--open) without a parse error', async () => {
     // --open is not in toolkit's BOOLEAN_FLAGS, so parseFlags would reject it
