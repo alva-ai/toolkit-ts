@@ -96,7 +96,6 @@ Commands:
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
   subscriptions       Playbook follows and feed alert subscriptions
-  channel     Deprecated group-alert compatibility commands
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
@@ -1105,35 +1104,6 @@ Examples:
   alva subscriptions list --first 200
   alva subscriptions follows`,
 
-  channel: `Usage: alva channel group-subscriptions <subcommand> [options]
-
-Deprecated compatibility surface. Normal alva alert list/enable/disable
-commands remain personal-channel operations. Use alva alert group
-list/enable/disable for the current external group. This alias remains available
-for existing scripts.
-
-Manage alerts delivered into the external group chat attached to a channel
-session. The group can subscribe to feeds the group admin may read.
-Subscribe/unsubscribe are idempotent no-ops unless the authenticated caller
-is that group's Alva admin.
-
-Subcommands:
-  context       Show group admin status and current subscriptions
-  list          List active subscriptions for the group
-  subscribe     Subscribe the group to a feed the admin may read
-  unsubscribe   Unsubscribe the group from a feed
-
-Subscribe/unsubscribe flags:
-  --feed-id <id>         Numeric feed_id (required)
-
-Examples:
-  alva channel group-subscriptions context
-  alva channel group-subscriptions list
-  alva channel group-subscriptions subscribe --feed-id 8169
-  alva channel group-subscriptions unsubscribe --feed-id 8169
-
-These commands use the current sandbox session from ALVA_SESSION_ID.`,
-
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
 Record remix lineage when creating a playbook based on existing playbooks.
@@ -1641,59 +1611,6 @@ function configureRunFetchTimeout(
     })
   );
   configuredRunFetchTimeoutMs = timeoutMs;
-}
-
-function requireGroupSubscriptionTargetType(
-  flags: Record<string, string>,
-  command: string
-): 'feed' {
-  const val = flags['target-type']?.trim().toLowerCase() ?? 'feed';
-  if (val === 'feed') return val;
-  throw new CliUsageError(
-    `--target-type must be feed for '${command}', got '${val}'`,
-    command.split(' ')[0]
-  );
-}
-
-function requireGroupSubscriptionSessionID(
-  client: AlvaClient,
-  flags: Record<string, string>,
-  command: string
-): string {
-  const val = flags['session-id'] ?? client.originSessionId;
-  if (val === undefined) {
-    throw new CliUsageError(
-      `current group session is unavailable for '${command}'; run inside an Alva sandbox with ALVA_SESSION_ID`,
-      'channel'
-    );
-  }
-  if (!/^[1-9]\d*$/.test(val)) {
-    throw new CliUsageError(
-      `current group session must be a positive integer for '${command}', got '${val}'`,
-      'channel'
-    );
-  }
-  return val;
-}
-
-function requireGroupSubscriptionFeedID(
-  flags: Record<string, string>,
-  command: string
-): string {
-  const val = flags['feed-id'] ?? flags['target-id'];
-  if (val === undefined) {
-    throw new CliUsageError(
-      `--feed-id is required for '${command}'`,
-      'channel'
-    );
-  }
-  if (!/^[1-9]\d*$/.test(val)) {
-    throw new CliUsageError(
-      `--feed-id must be a positive integer for '${command}', got '${val}'`,
-      'channel'
-    );
-  }
-  return val;
 }
 
 function requireCurrentGroupAlertSessionID(
@@ -3692,79 +3609,6 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: alert ${subcommand}`,
             'alert'
-          );
-      }
-    }
-
-    case 'channel': {
-      if (!subcommand || subcommand === '--help' || subcommand === '-h') {
-        return { _help: true, text: COMMAND_HELP.channel };
-      }
-      if (subcommand !== 'group-subscriptions') {
-        throw new CliUsageError(
-          `Unknown subcommand: channel ${subcommand}`,
-          'channel'
-        );
-      }
-      const leaf = args[2];
-      if (!leaf || leaf === '--help' || leaf === '-h') {
-        return { _help: true, text: COMMAND_HELP.channel };
-      }
-      const channelFlags = parseFlags(args.slice(3));
-      const commandName = `channel group-subscriptions ${leaf}`;
-      switch (leaf) {
-        case 'context':
-          return client.channelGroupSubscriptions.context({
-            session_id: requireGroupSubscriptionSessionID(
-              client,
-              channelFlags,
-              commandName
-            ),
-          });
-        case 'list':
-          return client.channelGroupSubscriptions.list({
-            session_id: requireGroupSubscriptionSessionID(
-              client,
-              channelFlags,
-              commandName
-            ),
-          });
-        case 'subscribe':
-          return client.channelGroupSubscriptions.subscribe({
-            session_id: requireGroupSubscriptionSessionID(
-              client,
-              channelFlags,
-              commandName
-            ),
-            target_type: requireGroupSubscriptionTargetType(
-              channelFlags,
-              commandName
-            ),
-            target_id: requireGroupSubscriptionFeedID(
-              channelFlags,
-              commandName
-            ),
-          });
-        case 'unsubscribe':
-          return client.channelGroupSubscriptions.unsubscribe({
-            session_id: requireGroupSubscriptionSessionID(
-              client,
-              channelFlags,
-              commandName
-            ),
-            target_type: requireGroupSubscriptionTargetType(
-              channelFlags,
-              commandName
-            ),
-            target_id: requireGroupSubscriptionFeedID(
-              channelFlags,
-              commandName
-            ),
-          });
-        default:
-          throw new CliUsageError(
-            `Unknown subcommand: channel group-subscriptions ${leaf}`,
-            'channel'
           );
       }
     }
