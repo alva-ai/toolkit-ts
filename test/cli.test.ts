@@ -2219,143 +2219,15 @@ components: {}
     expect(client.feedback.submit).not.toHaveBeenCalled();
   });
 
-  it('dispatches channel group-subscriptions context', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'channel',
-      'group-subscriptions',
-      'context',
-      '--session-id',
-      '123',
-    ]);
-    expect(client.channelGroupSubscriptions.context).toHaveBeenCalledWith({
-      session_id: '123',
-    });
-  });
-
-  it('uses the sandbox origin session for group-subscriptions context', async () => {
-    const client = makeClient('123');
-    await dispatch(client, ['channel', 'group-subscriptions', 'context']);
-    expect(client.channelGroupSubscriptions.context).toHaveBeenCalledWith({
-      session_id: '123',
-    });
-  });
-
-  it('dispatches channel group-subscriptions subscribe', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'channel',
-      'group-subscriptions',
-      'subscribe',
-      '--session-id',
-      '123',
-      '--target-type',
-      'feed',
-      '--target-id',
-      '8169',
-    ]);
-    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
-      session_id: '123',
-      target_type: 'feed',
-      target_id: '8169',
-    });
-  });
-
-  it('subscribes the current sandbox group by feed id', async () => {
-    const client = makeClient('123');
-    await dispatch(client, [
-      'channel',
-      'group-subscriptions',
-      'subscribe',
-      '--feed-id',
-      '8169',
-    ]);
-    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
-      session_id: '123',
-      target_type: 'feed',
-      target_id: '8169',
-    });
-  });
-
-  it('dispatches channel group-subscriptions unsubscribe for feeds', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'channel',
-      'group-subscriptions',
-      'unsubscribe',
-      '--session-id',
-      '123',
-      '--target-type',
-      'feed',
-      '--target-id',
-      '42',
-    ]);
-    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
-      session_id: '123',
-      target_type: 'feed',
-      target_id: '42',
-    });
-  });
-
-  it('unsubscribes the current sandbox group by feed id', async () => {
-    const client = makeClient('123');
-    await dispatch(client, [
-      'channel',
-      'group-subscriptions',
-      'unsubscribe',
-      '--feed-id',
-      '42',
-    ]);
-    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
-      session_id: '123',
-      target_type: 'feed',
-      target_id: '42',
-    });
-  });
-
-  it('requires sandbox session context when no legacy session id is passed', async () => {
-    const client = makeClient();
+  it('rejects the removed channel command', async () => {
+    const client = makeClient('123', 'channel_group');
+    await expect(dispatch(client, ['channel', '--help'])).rejects.toThrow(
+      "Unknown command: 'channel'"
+    );
     await expect(
       dispatch(client, ['channel', 'group-subscriptions', 'list'])
-    ).rejects.toThrow(/ALVA_SESSION_ID/);
-  });
-
-  it('throws CliUsageError when channel group target type is invalid', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'channel',
-        'group-subscriptions',
-        'subscribe',
-        '--session-id',
-        '123',
-        '--target-type',
-        'dashboard',
-        '--target-id',
-        '8169',
-      ])
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'channel'
-    );
-  });
-
-  it('rejects playbook channel group mutation targets', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'channel',
-        'group-subscriptions',
-        'subscribe',
-        '--session-id',
-        '123',
-        '--target-type',
-        'playbook',
-        '--target-id',
-        '42',
-      ])
-    ).rejects.toThrow(/target-type must be feed/);
-    expect(client.channelGroupSubscriptions.subscribe).not.toHaveBeenCalled();
+    ).rejects.toThrow("Unknown command: 'channel'");
+    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('dispatches remix', async () => {
@@ -2831,14 +2703,14 @@ describe('auth help', () => {
     expect(result.text).toContain('auth');
   });
 
-  it('top-level help presents alert as canonical and channel as deprecated', async () => {
+  it('top-level help exposes alert without advertising the removed channel command', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['--help'])) as {
       _help: boolean;
       text: string;
     };
-    expect(result.text).toContain('channel');
-    expect(result.text).toContain('Deprecated group-alert compatibility');
+    expect(result.text).not.toMatch(/^\s{2}channel\s/m);
+    expect(result.text).not.toContain('Deprecated group-alert compatibility');
     expect(result.text).toContain('alert');
   });
 
@@ -3012,18 +2884,6 @@ describe('help text', () => {
     };
     expect(result.text).toContain('feed_widgets');
     expect(result.text).toContain('unified_search');
-  });
-
-  it('returns per-command help for channel --help', async () => {
-    const client = makeClient();
-    const result = (await dispatch(client, ['channel', '--help'])) as {
-      _help: boolean;
-      text: string;
-    };
-    expect(result.text).toContain('group-subscriptions');
-    expect(result.text).toContain('--feed-id');
-    expect(result.text).not.toContain('--session-id');
-    expect(result.text).not.toContain('--target-type');
   });
 
   it('returns per-command help for notification-history --help', async () => {
