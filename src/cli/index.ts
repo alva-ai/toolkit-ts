@@ -2128,6 +2128,31 @@ async function readAllStdin(): Promise<string> {
 }
 
 /**
+ * Return true only when a valid stdin object is clearly a live order without
+ * a caller-provided retry control. Invalid or ambiguous input is left for
+ * Trex to validate; the toolkit must not attach a live retry identity before
+ * that validation.
+ */
+function brokerStdinNeedsIntentId(stdin: string): boolean {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdin);
+  } catch {
+    return false;
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const input = value as Record<string, unknown>;
+  const owns = (key: string): boolean =>
+    Object.prototype.hasOwnProperty.call(input, key);
+  if (owns('intentId') || owns('clientOrderId')) return false;
+  if (!owns('dryRun')) return true;
+  return input.dryRun === false;
+}
+
+/**
  * `alva broker` — a thin passthrough to trex's BrokerService.Invoke via the
  * gateway. argv goes through untouched (the command grammar IS the contract:
  * `alva broker describe`); the envelope comes back and is written to stdout
@@ -2151,17 +2176,25 @@ async function handleBroker(
     brokerArgv.some((a) => a === name || a.startsWith(`${name}=`));
   const hasHandle = hasFlag('--intent-id') || hasFlag('--client-order-id');
   const isDryRun = hasFlag('--dry-run');
-  if (isOrderPlace && !hasHandle && !isDryRun) {
+
+  // Read stdin once before deciding whether to mint. Trex gives explicit
+  // flags precedence, so appending a new --intent-id here would otherwise
+  // overwrite an intentId/clientOrderId supplied in the JSON body.
+  let stdin: string | undefined;
+  if (hasFlag('--stdin')) {
+    stdin = await readAllStdin();
+  }
+  if (
+    isOrderPlace &&
+    !hasHandle &&
+    !isDryRun &&
+    (stdin === undefined || brokerStdinNeedsIntentId(stdin))
+  ) {
     const intentId = crypto.randomUUID();
     // stderr BEFORE the request: if we die mid-flight, the operator still has
     // the retry handle. stdout stays the pure JSON envelope.
     process.stderr.write(`alva broker: intent-id ${intentId}\n`);
     argv = [...brokerArgv, '--intent-id', intentId];
-  }
-
-  let stdin: string | undefined;
-  if (hasFlag('--stdin')) {
-    stdin = await readAllStdin();
   }
 
   let envelope: unknown;
