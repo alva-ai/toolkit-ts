@@ -308,6 +308,23 @@ describe('loadConfig', () => {
     expect(result.gaSessionId).toBeUndefined();
     expect(result.utmParams).toBeUndefined();
   });
+
+  it('loadConfig reads the sandbox session id and kind', () => {
+    const result = loadConfig({
+      argv: [],
+      env: {
+        ALVA_API_KEY: 'ak',
+        ALVA_SESSION_ID: '123',
+        ALVA_SESSION_KIND: 'channel_group',
+      },
+      readFile: () => {
+        throw new Error('ENOENT');
+      },
+      homedir: () => '/home/test',
+    });
+    expect(result.originSessionId).toBe('123');
+    expect(result.originSessionKind).toBe('channel_group');
+  });
 });
 
 describe('writeConfig', () => {

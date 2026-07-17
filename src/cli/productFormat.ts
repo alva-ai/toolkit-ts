@@ -1,5 +1,6 @@
 import type {
   AutomationInspectResponse,
+  ChannelGroupSubscriptionListResponse,
   FeedListResponse,
   PushSubscriptionListResponse,
 } from '../types.js';
@@ -74,6 +75,23 @@ export function formatAlertList(result: PushSubscriptionListResponse): string {
   if (result.next_cursor) {
     lines.push('(more results — pass --cursor <next_cursor> to page)');
     lines.push(`next_cursor: ${result.next_cursor}`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+export function formatGroupAlertList(
+  result: ChannelGroupSubscriptionListResponse
+): string {
+  const alerts = result.subscriptions ?? [];
+  if (alerts.length === 0) return '(no group alerts)\n';
+
+  const lines: string[] = [`${alerts.length} group alert(s):`, ''];
+  for (const alert of alerts) {
+    const targetID = alert.target?.id;
+    const status = alert.enabled ? 'enabled' : 'disabled';
+    lines.push(`• automation ${targetID ?? '(unknown)'}  [${status}]`);
+    lines.push(`    event: ${alert.event_type}`);
     lines.push('');
   }
   return lines.join('\n');
