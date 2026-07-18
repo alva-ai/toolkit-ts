@@ -380,6 +380,7 @@ Create/Update flags:
   --push-notify          Enable Telegram push notifications on completion
   --no-push-notify       Disable push notifications
   --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
+  --execution-timeout-seconds <seconds>  Wall-clock timeout (1-3600; create default: 1800; update omitted: unchanged)
   --run-as-service-account <id>  Run the cronjob under a service-account identity
                          (id from "alva service-account create"); restricts file
                          access to the SA's grants. Omit on update ⇒ unchanged (#602)
@@ -2485,6 +2486,13 @@ export async function dispatch(
               1,
               2046
             ),
+            execution_timeout_seconds: optionalBoundedIntegerFlag(
+              flags,
+              'execution-timeout-seconds',
+              'deploy create',
+              1,
+              3600
+            ),
             run_as_user_id: optionalServiceAccountIdFlag(
               flags,
               'deploy create'
@@ -2514,6 +2522,13 @@ export async function dispatch(
               'deploy update',
               1,
               2046
+            ),
+            execution_timeout_seconds: optionalBoundedIntegerFlag(
+              flags,
+              'execution-timeout-seconds',
+              'deploy update',
+              1,
+              3600
             ),
             run_as_user_id: resolveRunAsFlag(flags, 'deploy update'),
           });
