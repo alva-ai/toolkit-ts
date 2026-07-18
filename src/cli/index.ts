@@ -88,7 +88,7 @@ Commands:
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   credits     Credit wallet and self-scoped usage history (wallet, items)
   secrets     Secret management (create, list, get, update, delete)
-  sdk         SDK documentation (doc, partitions, partition-summary)
+  sdk         SDK documentation and artifact publishing (doc, partitions, partition-summary, publish)
   skillhub    Playbook skills (list, tags, get, file)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
@@ -898,10 +898,22 @@ Subcommands:
   doc                 Get documentation for a specific SDK module
   partitions          List all available data partitions
   partition-summary   Get a summary of modules in a partition
+  publish             Publish a built CommonJS SDK artifact to your username scope
 
 Flags:
   --name <module>        Module name for 'doc' (required)
   --partition <name>     Partition name for 'partition-summary' (required)
+
+Publish flags:
+  --package <name>       ALFS package name, for example fintwit-digest (required)
+  --version <vX.Y.Z>     Immutable release version (required)
+  --file <path>          Local CommonJS bundle to upload (required)
+  --entrypoint <path>    Artifact path for entrypoints.main (required)
+  --source-repository <repo>  Source repository, for example alva-ai/backtest-js
+  --source-ref <ref>     Source commit, tag, or branch
+  --platform             Publish under @alva (admin API key required)
+  --no-latest           Do not update the latest ref
+  --no-verify-readback  Skip post-publish consumer-path verification
 
 Key partitions:
   feed_widgets                             Per-handle/channel rolling subscriptions
@@ -912,7 +924,10 @@ Examples:
   alva sdk partitions
   alva sdk partition-summary --partition feed_widgets
   alva sdk doc --name "@arrays/data/widget-scrap/news:v1.0.0"
-  alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"`,
+  alva sdk doc --name "@arrays/data/search/search-grok-x:v1.0.0"
+  alva sdk publish --package fintwit-digest --version v2.3.0 \\
+    --file dist/cjs/index.js --entrypoint dist/cjs/index.js \\
+    --source-repository alva-ai/backtest-js --source-ref "$GITHUB_SHA"`,
 
   'data-skills': `Usage: alva data-skills <subcommand> [args]
 
@@ -1341,6 +1356,9 @@ export const BOOLEAN_FLAGS = new Set([
   'base64',
   'full',
   'today',
+  'latest',
+  'verify-readback',
+  'platform',
 ]);
 
 export function parseFlags(argv: string[]): Record<string, string> {
@@ -3157,6 +3175,75 @@ export async function dispatch(
           return client.sdk.partitionSummary({
             partition: requireFlag(flags, 'partition', 'sdk partition-summary'),
           });
+        case 'publish': {
+          assertLocalFileAvailable('sdk publish', 'file', deps);
+          const file = requireFlag(flags, 'file', 'sdk publish');
+          const entrypoint = requireFlag(flags, 'entrypoint', 'sdk publish');
+          const repository = flags['source-repository'];
+          const sourceRef = flags['source-ref'];
+          const source =
+            repository || sourceRef
+              ? {
+                  type: flags['source-type'] ?? 'github',
+                  repository,
+                  ref: sourceRef,
+                }
+              : undefined;
+          const packageName = requireFlag(flags, 'package', 'sdk publish');
+          const version = requireFlag(flags, 'version', 'sdk publish');
+          const refs = (boolFlag(flags['latest']) ?? true) ? ['latest'] : [];
+          const platform = boolFlag(flags['platform']) ?? false;
+          const result = await client.artifacts.publishSDK(
+            {
+              package: packageName,
+              version,
+              files: [
+                {
+                  path: entrypoint,
+                  data_base64: fs.readFileSync(file).toString('base64'),
+                },
+              ],
+              entrypoints: { main: entrypoint },
+              source,
+              refs,
+              verify_readback: boolFlag(flags['verify-readback']) ?? true,
+            },
+            { platform }
+          );
+          const expectedScope = platform ? 'alva' : result.response.scope;
+          const expectedPackage = `@${expectedScope}/${packageName}`;
+          const expectedTarget = `/alva/registry/sdk/${expectedScope}/${packageName}/releases/${version}`;
+          const expectedRefs = refs.map(
+            (ref) =>
+              `/alva/registry/sdk/${expectedScope}/${packageName}/refs/${ref}`
+          );
+          const missingRefs = expectedRefs.filter(
+            (ref) => !result.response.updated_refs.includes(ref)
+          );
+          if (
+            !expectedScope ||
+            result.response.scope !== expectedScope ||
+            result.response.canonical_package !== expectedPackage ||
+            result.response.target_path !== expectedTarget ||
+            missingRefs.length > 0
+          ) {
+            throw new AlvaError(
+              'PUBLISH_RESPONSE_MISMATCH',
+              'Artifact was published, but the gateway response did not confirm the requested target and refs.',
+              200,
+              result
+            );
+          }
+          if (result.verification?.verified === false) {
+            throw new AlvaError(
+              'READBACK_FAILED',
+              'Artifact was published, but consumer-path readback verification failed.',
+              200,
+              result
+            );
+          }
+          return result;
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: sdk ${subcommand}`,
