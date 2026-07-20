@@ -26,6 +26,7 @@ export class DeployResource {
         args: params.args,
         push_notify: params.push_notify,
         max_heap_size_mb: params.max_heap_size_mb,
+        execution_timeout_seconds: params.execution_timeout_seconds,
         run_as_user_id: params.run_as_user_id,
         start_at: params.start_at,
         end_at: params.end_at,

@@ -21,6 +21,7 @@ describe('DeployResource', () => {
       start_at: '2026-07-15T12:00:00Z',
       end_at: '2026-07-15T14:00:00Z',
       max_runs: 12,
+      execution_timeout_seconds: 3600,
     });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
@@ -37,6 +38,7 @@ describe('DeployResource', () => {
           start_at: '2026-07-15T12:00:00Z',
           end_at: '2026-07-15T14:00:00Z',
           max_runs: 12,
+          execution_timeout_seconds: 3600,
         },
       }
     );
@@ -77,11 +79,20 @@ describe('DeployResource', () => {
   it('update sends PATCH /api/v1/deploy/cronjob/:id', async () => {
     const client = makeClient();
     const deploy = new DeployResource(client);
-    await deploy.update({ id: 123, name: 'new-name' });
+    await deploy.update({
+      id: 123,
+      name: 'new-name',
+      execution_timeout_seconds: 900,
+    });
     expect(client._request).toHaveBeenCalledWith(
       'PATCH',
       '/api/v1/deploy/cronjob/123',
-      { body: { name: 'new-name' } }
+      {
+        body: {
+          name: 'new-name',
+          execution_timeout_seconds: 900,
+        },
+      }
     );
   });
 

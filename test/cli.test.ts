@@ -2284,6 +2284,58 @@ components: {}
     );
   });
 
+  it('dispatches deploy create with --execution-timeout-seconds', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'create',
+      '--name',
+      'j',
+      '--path',
+      '~/j.js',
+      '--cron',
+      '* * * * *',
+      '--execution-timeout-seconds',
+      '3600',
+    ]);
+    expect(client.deploy.create).toHaveBeenCalledWith(
+      expect.objectContaining({ execution_timeout_seconds: 3600 })
+    );
+  });
+
+  it('dispatches deploy update with --execution-timeout-seconds', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'deploy',
+      'update',
+      '--id',
+      '5',
+      '--execution-timeout-seconds',
+      '900',
+    ]);
+    expect(client.deploy.update).toHaveBeenCalledWith(
+      expect.objectContaining({ execution_timeout_seconds: 900 })
+    );
+  });
+
+  it.each(['0', '3601', '1.5'])(
+    'rejects deploy execution timeout %s outside the integer range',
+    async (value) => {
+      const client = makeClient();
+      await expect(
+        dispatch(client, [
+          'deploy',
+          'update',
+          '--id',
+          '5',
+          '--execution-timeout-seconds',
+          value,
+        ])
+      ).rejects.toThrow(/execution-timeout-seconds/);
+      expect(client.deploy.update).not.toHaveBeenCalled();
+    }
+  );
+
   // Security: a malformed --run-as-service-account must FAIL, not silently drop
   // the flag and run the job with the owner's full privileges (Codex #113 P1).
   it('rejects a non-numeric --run-as-service-account (deploy create)', async () => {
@@ -2804,6 +2856,7 @@ describe('help text', () => {
     expect(result.text).toContain('create');
     expect(result.text).toContain('--cron');
     expect(result.text).toContain('--push-notify');
+    expect(result.text).toContain('--execution-timeout-seconds');
     expect(result.text).toContain('Recommended cron schedules');
   });
 
