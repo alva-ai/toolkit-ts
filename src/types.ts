@@ -496,6 +496,32 @@ export interface AutomationInspectResponse {
   flow_config_path: string | null;
 }
 
+export interface AutomationUpdateRequest {
+  /** Positive decimal automation id kept as a string to preserve int64 precision. */
+  id: string;
+  /** Contract version to republish. Omitted preserves the current version. */
+  version?: string;
+  /** Replacement producer cronjob. Omitted preserves the current producer. */
+  cronjob_id?: number;
+  /** Omitted preserves; an explicit empty string clears the field. */
+  description?: string;
+  /** Omitted preserves; an explicit empty string clears the field. */
+  changelog?: string;
+  /** Omitted preserves; an explicit empty string clears the agent marker. */
+  agent_type?: string;
+  /** Trigger the effective producer once after the update commits. */
+  trigger?: boolean;
+}
+
+export interface AutomationUpdateResponse {
+  id: string;
+  feed_id: string;
+  name: string;
+  feed_major: number;
+  version: string;
+  cronjob_id: number;
+}
+
 export interface FeedStatusUpdateRequest {
   /** Numeric feed id to stop/resume. */
   id: number;
