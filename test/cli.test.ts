@@ -393,7 +393,7 @@ describe('CLI dispatch', () => {
       slack_username: 'Alice',
       whatsapp_username: '+15555550123',
       imessage_username: 'alice@example.com',
-      active_channel: 'slack',
+      active_im_provider: 'slack',
       toolkit_min_version: '0.1.0',
       home_path: '/alva/home/alice',
     });
@@ -2097,23 +2097,61 @@ components: {}
 
   it('dispatches notification-history list-feed', async () => {
     const client = makeClient();
-    await dispatch(client, [
+    vi.mocked(client.notifications.listFeed).mockResolvedValueOnce({
+      items: [
+        {
+          id: '1',
+          event_type: 'feed_alert_ready',
+          user_id: '7',
+          channel: 'telegram',
+          status: 'sent',
+          created_at: 1777355703,
+          feed_id: '42',
+        },
+      ],
+      next_cursor: '',
+      feed_path: '~/f',
+    });
+    const result = (await dispatch(client, [
       'notification-history',
       'list-feed',
       '--username',
       'alice',
       '--name',
       'btc-ema',
-    ]);
+      '--delivery-provider',
+      'telegram',
+    ])) as { items: Array<Record<string, unknown>> };
     expect(client.notifications.listFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
-      channel: undefined,
+      channel: 'telegram',
       status: undefined,
       since_time: undefined,
       first: undefined,
       cursor: undefined,
     });
+    expect(result.items[0]).toMatchObject({ delivery_provider: 'telegram' });
+    expect(result.items[0]!.channel).toBeUndefined();
+  });
+
+  it('rejects the legacy notification-history --channel flag', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'notification-history',
+        'list-feed',
+        '--username',
+        'alice',
+        '--name',
+        'btc-ema',
+        '--channel',
+        'telegram',
+      ])
+    ).rejects.toThrow(
+      /--channel is no longer supported.*use --delivery-provider/
+    );
+    expect(client.notifications.listFeed).not.toHaveBeenCalled();
   });
 
   it('dispatches notification-preferences list', async () => {
@@ -2526,6 +2564,8 @@ describe('whoami', () => {
     expect(client.user.me).toHaveBeenCalled();
     expect(result.username).toBe('alice');
     expect(result.subscription_tier).toBe('free');
+    expect(result.active_im_provider).toBe('slack');
+    expect(result.active_channel).toBeUndefined();
     expect(result._meta).toMatchObject({
       profile: 'staging',
       endpoint: 'http://staging',
@@ -2933,7 +2973,20 @@ describe('help text', () => {
     };
     expect(result._help).toBe(true);
     expect(result.text).toContain('whoami');
+    expect(result.text).toContain('active_im_provider');
+    expect(result.text).not.toContain('active_channel');
     expect(result.text.toLowerCase()).toContain('arrays_jwt');
+  });
+
+  it('returns per-command help for user --help with IM provider naming', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['user', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('active_im_provider');
+    expect(result.text).not.toContain('active_channel');
   });
 
   it('returns per-command help for sdk --help with partition names', async () => {
@@ -2957,6 +3010,8 @@ describe('help text', () => {
     };
     expect(result.text).toContain('audit/history');
     expect(result.text).toContain('list-feed');
+    expect(result.text).toContain('--delivery-provider <name>');
+    expect(result.text).not.toContain('--channel <name>');
   });
 
   it('returns per-command help for notification-preferences --help', async () => {
@@ -3016,6 +3071,9 @@ describe('help text', () => {
     expect(result.text).toContain('alva alert follows');
     expect(result.text).toContain('--automation <owner/name>');
     expect(result.text).toContain('--automation-ids <a,b>');
+    expect(result.text).toContain('--delivery-provider <name>');
+    expect(result.text).toContain('Alva workspace channel ID');
+    expect(result.text).not.toContain('--channel <name>');
     expect(result.text).toContain('preferences');
   });
 
@@ -4197,13 +4255,13 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
         '--channel-id',
         '7',
       ])
-    ).rejects.toThrow(/personal Alva channel/);
+    ).rejects.toThrow(/Alva workspace channel/);
   });
 
   it('requires alert group commands to run in a channel-group session', async () => {
     const client = makeClient('123', 'chat');
     await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
-      /only available inside a channel-group sandbox/
+      /only available inside an external IM-group sandbox/
     );
     expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
@@ -4234,13 +4292,28 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
 
   it('dispatches alert history for automation targets', async () => {
     const client = makeClient();
-    await dispatch(client, [
+    vi.mocked(client.alerts.historyAutomation).mockResolvedValueOnce({
+      items: [
+        {
+          id: '1',
+          event_type: 'feed_alert_ready',
+          user_id: '7',
+          channel: 'web',
+          status: 'sent',
+          created_at: 1777355703,
+          feed_id: '42',
+        },
+      ],
+      next_cursor: '',
+      feed_path: '~/f',
+    });
+    const result = (await dispatch(client, [
       'alert',
       'history',
       '--automation',
       'alice/btc-ema',
-      '--channel',
-      'telegram',
+      '--delivery-provider',
+      'web',
       '--status',
       'sent',
       '--since',
@@ -4249,16 +4322,35 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '5',
       '--cursor',
       'c1',
-    ]);
+    ])) as { items: Array<Record<string, unknown>> };
     expect(client.alerts.historyAutomation).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
-      channel: 'telegram',
+      channel: 'web',
       status: 'sent',
       since_time: 1777355703,
       first: 5,
       cursor: 'c1',
     });
+    expect(result.items[0]).toMatchObject({ delivery_provider: 'web' });
+    expect(result.items[0]!.channel).toBeUndefined();
+  });
+
+  it('rejects the legacy alert history --channel flag', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'alert',
+        'history',
+        '--automation',
+        'alice/btc-ema',
+        '--channel',
+        'telegram',
+      ])
+    ).rejects.toThrow(
+      /--channel is no longer supported.*use --delivery-provider/
+    );
+    expect(client.alerts.historyAutomation).not.toHaveBeenCalled();
   });
 
   it('dispatches alert preferences', async () => {
