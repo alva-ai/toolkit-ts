@@ -180,8 +180,9 @@ Verify that your credentials are valid by calling the Alva API. Shows your
 username, subscription tier, and which profile/endpoint is being used.
 Use this after 'alva configure' to confirm everything works.
 
-Output also includes _meta.arrays_jwt (exists, expires_at, renewal_needed,
-tier) when the backend is reachable; the field is omitted on RPC failure.
+Output includes active_im_provider (telegram, discord, slack, whatsapp,
+imessage, or empty) and _meta.arrays_jwt (exists, expires_at, renewal_needed,
+tier). arrays_jwt is omitted when the backend status call fails.
 
 Examples:
   alva whoami
@@ -201,7 +202,7 @@ Response fields:
   slack_username      Slack display name if connected, empty otherwise
   whatsapp_username   WhatsApp display name if connected, empty otherwise
   imessage_username   iMessage display name if connected, empty otherwise
-  active_channel      Currently selected IM delivery channel
+  active_im_provider  Currently selected IM provider
 
 Examples:
   alva user me`,
@@ -451,9 +452,9 @@ Build-time verify (fire once, then poll up to 5 minutes):
 
   loop: `Usage: alva loop <subcommand> [options]
 
-Create a bounded, self-scheduled in-channel goal loop. Each tick runs one
-fire-and-forget agent turn on a channel's stable main session (via the
-@alva/loop SDK), continuing that channel's conversation toward a goal. Creation
+Create a bounded, self-scheduled goal loop in an Alva channel. Each tick runs
+one fire-and-forget agent turn on the Alva channel's stable main
+session (via the @alva/loop SDK), continuing that conversation toward a goal. Creation
 seeds a shared runner, creates its cronjob, and registers the cronjob as an
 Automation without starting an extra publish-time run.
 
@@ -463,7 +464,8 @@ Subcommands:
 Create flags:
   --goal <text>          Instruction run each tick (required)
   --cron <expression>    Cron schedule (required, e.g. "0 * * * *")
-  --channel-id <id>      Target channel id. Omit ⇒ your DM/agent channel
+  --channel-id <id>      Target Alva channel ID. Omit ⇒ your default
+                         Alva agent channel
   --start <time>         First eligible time: 'now' (default) or RFC3339
   --until <time>         Exclusive RFC3339 cutoff
   --runs <count>         Maximum admitted runs after --start
@@ -546,8 +548,9 @@ Examples:
 
 Manage alerts. Alert subscriptions target automations (feeds) only. Playbook
 follows are independent; delivery history and global preferences live here too.
-Personal alerts may be routed to different Alva delivery channels. Group alerts
-are managed explicitly through "alert group" and target the current group.
+Personal alerts may be routed to different Alva channels. External IM
+group alerts are managed explicitly through "alert group" and target the current
+group.
 
 Subcommands:
   list          List the caller's active alerts
@@ -565,15 +568,15 @@ Target flags:
 
 Enable/disable-by-id flags:
   --automation-ids <a,b>     Comma-separated automation target ids
-  --channel-id <id>          Delivery channel for batch enable (optional)
+  --channel-id <id>          Alva channel ID for batch enable (optional)
 
 Group subcommands:
   alva alert group list
   alva alert group enable --automation-ids <id>
   alva alert group disable --automation-ids <id>
 
-Group commands must run inside the attached channel-group sandbox. The current
-group is inferred automatically; there is no session-id argument.
+Group commands must run inside the attached external IM-group sandbox. The
+current group is inferred automatically; there is no session-id argument.
 
 List flags:
   --first <n>      Optional page size
@@ -585,7 +588,7 @@ Follows flags:
   --cursor <token> Optional cursor from previous response
 
 History flags:
-  --channel <name>   Optional delivery channel filter
+  --delivery-provider <name>  Optional provider filter (telegram, web, ...)
   --status <status>  Optional status filter (sent, failed, filtered)
   --since <seconds>  Optional Unix seconds lower bound
 
@@ -1010,7 +1013,7 @@ Subcommands:
 Common flags:
   --username <user>  Owner's username (required)
   --name <name>      URL-safe feed name (required)
-  --channel <name>   Optional delivery channel filter (telegram, web, ...)
+  --delivery-provider <name>  Optional provider filter (telegram, web, ...)
   --status <status>  Optional status filter (sent, failed, filtered)
   --since <seconds>  Optional Unix seconds lower bound
   --first <n>        Optional page size (default 50, max 200 server-side)
@@ -1085,7 +1088,7 @@ Name-addressed flags:
 
 Batch flags:
   --feed-ids <a,b>       Comma-separated feed target ids
-  --channel-id <id>      Delivery channel for subscribe (optional)
+  --channel-id <id>      Alva channel ID for subscribe (optional)
 
 List flags:
   --first <n>            Optional page size (response carries total_count —
@@ -1623,7 +1626,7 @@ function requireCurrentGroupAlertSessionID(
 ): string {
   if (client.originSessionKind !== 'channel_group') {
     throw new CliUsageError(
-      `'${command}' is only available inside a channel-group sandbox`,
+      `'${command}' is only available inside an external IM-group sandbox`,
       'alert'
     );
   }
@@ -1655,7 +1658,7 @@ function requireSingleGroupAlertFeedID(
   }
   if (flags['channel-id'] !== undefined) {
     throw new CliUsageError(
-      `--channel-id selects a personal Alva channel; omit it for '${command}'`,
+      `--channel-id selects an Alva channel; omit it for '${command}'`,
       'alert'
     );
   }
@@ -1667,6 +1670,51 @@ function requireSingleGroupAlertFeedID(
     );
   }
   return ids[0]!;
+}
+
+function deliveryProviderFilter(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  if (flags['channel'] !== undefined) {
+    throw new CliUsageError(
+      `--channel is no longer supported for '${command}'; use --delivery-provider`,
+      command.split(' ')[0]
+    );
+  }
+  return flags['delivery-provider'];
+}
+
+function projectUserProfileForCLI(
+  record: Record<string, unknown>
+): Record<string, unknown> {
+  const { active_channel: activeIMProvider, ...profile } = record;
+  return { ...profile, active_im_provider: activeIMProvider };
+}
+
+function projectNotificationHistoryForCLI(response: unknown): unknown {
+  if (
+    response === null ||
+    typeof response !== 'object' ||
+    Array.isArray(response)
+  ) {
+    return response;
+  }
+  const record = response as Record<string, unknown>;
+  if (!Array.isArray(record.items)) return response;
+  return {
+    ...record,
+    items: record.items.map((item) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        return item;
+      }
+      const { channel: deliveryProvider, ...event } = item as Record<
+        string,
+        unknown
+      >;
+      return { ...event, delivery_provider: deliveryProvider };
+    }),
+  };
 }
 
 function num(val: string | undefined): number | undefined {
@@ -2282,7 +2330,9 @@ export async function dispatch(
   // whoami: verify credentials and show user info
   if (group === 'whoami') {
     const user = await client.user.me();
-    const record = user as unknown as Record<string, unknown>;
+    const record = projectUserProfileForCLI(
+      user as unknown as Record<string, unknown>
+    );
     const version = meta?.cliVersion ?? CLI_VERSION;
     let arraysJwtStatus: unknown;
     try {
@@ -2339,7 +2389,12 @@ export async function dispatch(
     case 'user':
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for user', 'user');
-      if (subcommand === 'me') return client.user.me();
+      if (subcommand === 'me') {
+        const user = await client.user.me();
+        return projectUserProfileForCLI(
+          user as unknown as Record<string, unknown>
+        );
+      }
       throw new CliUsageError(`Unknown subcommand: user ${subcommand}`, 'user');
 
     case 'fs': {
@@ -3329,15 +3384,20 @@ export async function dispatch(
           `notification-history ${subcommand}`
         ),
         name: requireFlag(flags, 'name', `notification-history ${subcommand}`),
-        channel: flags['channel'],
+        channel: deliveryProviderFilter(
+          flags,
+          `notification-history ${subcommand}`
+        ),
         status: flags['status'],
         since_time: num(flags['since']),
         first: num(flags['first']),
         cursor: flags['cursor'],
       };
       switch (subcommand) {
-        case 'list-feed':
-          return client.notifications.listFeed(params);
+        case 'list-feed': {
+          const response = await client.notifications.listFeed(params);
+          return projectNotificationHistoryForCLI(response);
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: notification-history ${subcommand}`,
@@ -3603,13 +3663,14 @@ export async function dispatch(
           const params = {
             username: target.username,
             name: target.name,
-            channel: flags['channel'],
+            channel: deliveryProviderFilter(flags, 'alert history'),
             status: flags['status'],
             since_time: num(flags['since']),
             first: num(flags['first']),
             cursor: flags['cursor'],
           };
-          return client.alerts.historyAutomation(params);
+          const response = await client.alerts.historyAutomation(params);
+          return projectNotificationHistoryForCLI(response);
         }
         case 'preferences':
           return client.alerts.preferences();
