@@ -368,6 +368,7 @@ Subcommands:
   resume     Resume a paused cronjob
   trigger    Fire the cronjob once, immediately, bypassing the schedule
              (returns workflow_run_id; poll 'run-status' with a timeout)
+             This is not a dry run and may deliver Feed alerts to subscribers.
   runs       List runs for a cronjob (cursor-paginated)
   run-status Get one triggered run's pollable status by workflow_run_id
   run-logs   Get stdout/stderr logs for a single cronjob run
@@ -377,8 +378,8 @@ Create/Update flags:
   --path <path>          Path to script on ALFS (required on create, must exist)
   --cron <expression>    Cron expression (required on create, e.g. "0 */4 * * *")
   --args <json>          JSON object passed to require("env").args
-  --push-notify          Enable Telegram push notifications on completion
-  --no-push-notify       Disable push notifications
+  --push-notify          Let successful Feed runs deliver declared alert outputs
+  --no-push-notify       Disable Feed alert delivery
   --max-heap-size-mb <mb>  Override per-cronjob V8 heap limit (1-2046, default uses server config)
   --execution-timeout-seconds <seconds>  Wall-clock timeout (1-3600; create default: 1800; update omitted: unchanged)
   --run-as-service-account <id>  Run the cronjob under a service-account identity
@@ -433,6 +434,8 @@ Examples:
   alva deploy run-logs --id 42 --run-id 123
 
 Build-time verify (fire once, then poll up to 5 minutes):
+  WARNING: trigger uses production delivery semantics. If --push-notify and
+  subscriber alert bindings are enabled, this run may send real notifications.
   WF=$(alva deploy trigger --id 42 | jq -r .workflow_run_id)
   for _ in {1..60}; do
     STATUS_JSON=$(alva deploy run-status --id 42 --workflow-run-id "$WF")

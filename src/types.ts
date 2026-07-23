@@ -242,6 +242,10 @@ export interface CronjobCreateRequest {
   cron_expression: string;
   name: string;
   args?: Record<string, unknown>;
+  /**
+   * Let successful scheduled and manually triggered Feed runs deliver declared
+   * alert outputs to eligible subscribers. Does not create subscriptions.
+   */
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
@@ -273,6 +277,7 @@ export interface Cronjob {
   cron_expression: string;
   status: string;
   args: Record<string, unknown>;
+  /** Whether successful Feed runs may deliver alerts to subscribers. */
   push_notify: boolean;
   /** Per-cronjob V8 heap cap (MB). null when using the server default. */
   max_heap_size_mb: number | null;
@@ -313,6 +318,7 @@ export interface CronjobUpdateRequest {
   name?: string;
   cron_expression?: string;
   args?: Record<string, unknown>;
+  /** Enable or disable delivery of declared Feed alert outputs. */
   push_notify?: boolean;
   /** Override per-cronjob V8 heap limit (MB). Valid range 1–2046. */
   max_heap_size_mb?: number;
