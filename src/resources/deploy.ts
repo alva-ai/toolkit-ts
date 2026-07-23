@@ -81,6 +81,8 @@ export class DeployResource {
 
   /**
    * Fire the cronjob workflow once, immediately, bypassing the schedule.
+   * This is not a dry run: when publisher push and subscriber alert bindings
+   * are enabled, a successful Feed execution may send real notifications.
    * Async — returns the Hatchet workflow run id at enqueue. The
    * `cronjob_runs` row can appear as DISPATCHED/RUNNING before it reaches a
    * terminal status; callers verify completion by polling

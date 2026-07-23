@@ -2856,6 +2856,13 @@ describe('help text', () => {
     expect(result.text).toContain('create');
     expect(result.text).toContain('--cron');
     expect(result.text).toContain('--push-notify');
+    expect(result.text).toContain(
+      'Let successful Feed runs deliver declared alert outputs'
+    );
+    expect(result.text).toContain(
+      'This is not a dry run and may deliver Feed alerts to subscribers'
+    );
+    expect(result.text).toContain('trigger uses production delivery semantics');
     expect(result.text).toContain('--execution-timeout-seconds');
     expect(result.text).toContain('Recommended cron schedules');
   });
