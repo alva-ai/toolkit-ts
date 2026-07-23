@@ -3072,7 +3072,7 @@ describe('help text', () => {
     expect(result.text).toContain('--automation <owner/name>');
     expect(result.text).toContain('--automation-ids <a,b>');
     expect(result.text).toContain('--delivery-provider <name>');
-    expect(result.text).toContain('Alva workspace channel ID');
+    expect(result.text).toContain('Alva channel ID');
     expect(result.text).not.toContain('--channel <name>');
     expect(result.text).toContain('preferences');
   });
@@ -4255,7 +4255,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
         '--channel-id',
         '7',
       ])
-    ).rejects.toThrow(/Alva workspace channel/);
+    ).rejects.toThrow(/Alva channel/);
   });
 
   it('requires alert group commands to run in a channel-group session', async () => {

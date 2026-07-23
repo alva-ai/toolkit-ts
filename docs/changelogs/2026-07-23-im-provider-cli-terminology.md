@@ -3,9 +3,9 @@
 ## 1. Background
 
 - Problem/outcome: CLI output and flags currently use `channel` for both IM
-  providers such as Telegram and first-class Alva workspace channels. Make every
+  providers such as Telegram and first-class Alva channels. Make every
   CLI-visible IM transport use `im_provider` terminology while preserving
-  `channel_id` for Alva workspace channels.
+  `channel_id` for Alva channels.
 - Verified constraints: the gateway and public SDK contracts remain unchanged;
   this delivery is limited to the toolkit CLI and the Alva Skill.
 
@@ -17,7 +17,7 @@
   the existing values include both IM providers and `web`; the CLI maps that
   value into the existing SDK request and exposes each result as
   `delivery_provider` without changing the REST contract.
-- B3 - CLI help consistently distinguishes an Alva workspace channel ID from an
+- B3 - CLI help consistently distinguishes an Alva channel ID from an
   IM provider and an attached external IM group.
 - B4 - the Alva Skill reads and describes the CLI's `active_im_provider` field
   and uses IM-provider terminology for external delivery.
@@ -38,8 +38,8 @@
 
 - `src/cli/index.ts`: project identity responses to `active_im_provider`, parse
   `--delivery-provider` for history commands, project history results to
-  `delivery_provider`, reject legacy `--channel`, and clarify workspace-channel
-  versus IM-provider help text.
+  `delivery_provider`, reject legacy `--channel`, and clarify Alva channel versus
+  IM-provider help text.
 - `test/cli.test.ts`: cover both identity commands, both history commands, the
   legacy-flag error, and public help terminology.
 - `alva-ai/skills`: update `SKILL.md`, preflight, and push-notification guidance;
@@ -68,7 +68,7 @@
 | -------- | --------------------------------------------------------------------------- |
 | B1       | identity dispatch tests assert the projected field and removed legacy field |
 | B2       | history tests assert request mapping and `delivery_provider` output         |
-| B3       | command-help tests assert workspace-channel and IM-provider wording         |
+| B3       | command-help tests assert Alva channel and IM-provider wording              |
 | B4       | scoped Skill terminology search and docs validation                         |
 | F1       | both history surfaces reject `--channel` with migration guidance            |
 
@@ -88,7 +88,7 @@
 
 - Result: CLI identity output now exposes `active_im_provider`; notification
   history uses `--delivery-provider` and returns `delivery_provider`; numeric
-  `channel_id` help consistently identifies Alva workspace channels.
+  `channel_id` help consistently identifies Alva channels.
 - Changes: toolkit CLI dispatch/help/tests plus Alva Skill preflight,
   push-notification guidance, patch version, and deterministic eval coverage.
 - Deviations: None.

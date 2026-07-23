@@ -452,8 +452,8 @@ Build-time verify (fire once, then poll up to 5 minutes):
 
   loop: `Usage: alva loop <subcommand> [options]
 
-Create a bounded, self-scheduled goal loop in an Alva workspace channel. Each
-tick runs one fire-and-forget agent turn on the workspace channel's stable main
+Create a bounded, self-scheduled goal loop in an Alva channel. Each tick runs
+one fire-and-forget agent turn on the Alva channel's stable main
 session (via the @alva/loop SDK), continuing that conversation toward a goal. Creation
 seeds a shared runner, creates its cronjob, and registers the cronjob as an
 Automation without starting an extra publish-time run.
@@ -464,7 +464,7 @@ Subcommands:
 Create flags:
   --goal <text>          Instruction run each tick (required)
   --cron <expression>    Cron schedule (required, e.g. "0 * * * *")
-  --channel-id <id>      Target Alva workspace channel ID. Omit ⇒ your default
+  --channel-id <id>      Target Alva channel ID. Omit ⇒ your default
                          Alva agent channel
   --start <time>         First eligible time: 'now' (default) or RFC3339
   --until <time>         Exclusive RFC3339 cutoff
@@ -548,7 +548,7 @@ Examples:
 
 Manage alerts. Alert subscriptions target automations (feeds) only. Playbook
 follows are independent; delivery history and global preferences live here too.
-Personal alerts may be routed to different Alva workspace channels. External IM
+Personal alerts may be routed to different Alva channels. External IM
 group alerts are managed explicitly through "alert group" and target the current
 group.
 
@@ -568,7 +568,7 @@ Target flags:
 
 Enable/disable-by-id flags:
   --automation-ids <a,b>     Comma-separated automation target ids
-  --channel-id <id>          Alva workspace channel ID for batch enable (optional)
+  --channel-id <id>          Alva channel ID for batch enable (optional)
 
 Group subcommands:
   alva alert group list
@@ -1088,7 +1088,7 @@ Name-addressed flags:
 
 Batch flags:
   --feed-ids <a,b>       Comma-separated feed target ids
-  --channel-id <id>      Alva workspace channel ID for subscribe (optional)
+  --channel-id <id>      Alva channel ID for subscribe (optional)
 
 List flags:
   --first <n>            Optional page size (response carries total_count —
@@ -1658,7 +1658,7 @@ function requireSingleGroupAlertFeedID(
   }
   if (flags['channel-id'] !== undefined) {
     throw new CliUsageError(
-      `--channel-id selects an Alva workspace channel; omit it for '${command}'`,
+      `--channel-id selects an Alva channel; omit it for '${command}'`,
       'alert'
     );
   }
