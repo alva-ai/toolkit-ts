@@ -1186,6 +1186,17 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     access: 'pro_only',
     pro_required: true,
   },
+  {
+    // TODO(audit): verify tier — auto-defaulted to pro
+    skill: 'arrays-data-api-equity-ownership-and-flow',
+    file: 'short-interest',
+    method: 'GET',
+    path: '/api/v1/stocks/short-interest',
+    tier: 'alternative',
+    required_subscription_tier: 'pro',
+    access: 'pro_only',
+    pro_required: true,
+  },
 ];
 
 export function getSkillEndpointMetadata(
