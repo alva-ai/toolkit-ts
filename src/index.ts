@@ -9,6 +9,14 @@ export { AlvaError, CliUsageError } from './error.js';
 export * from './playbookRuntime.js';
 export { AutomationResource } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
+export { ArtifactsResource } from './resources/artifacts.js';
+export type {
+  PublishSDKArtifactParams,
+  PublishSDKArtifactOptions,
+  PublishSDKArtifactResponse,
+  SDKArtifactFile,
+  SDKArtifactSource,
+} from './resources/artifacts.js';
 export type {
   AlvaClientConfig,
   FsReadParams,
