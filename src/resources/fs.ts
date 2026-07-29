@@ -21,6 +21,13 @@ import type {
 // Fixed bit value from ALFS WriteFlag; Gateway accepts it as a uint32 bitmask.
 const WRITE_FLAG_APPEND = 1 << 0;
 
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return (
+    value instanceof ArrayBuffer ||
+    Object.prototype.toString.call(value) === '[object ArrayBuffer]'
+  );
+}
+
 function isValidUtf8(bytes: Uint8Array): boolean {
   let i = 0;
   while (i < bytes.length) {
@@ -75,7 +82,10 @@ export class FsResource {
     const result = await this.client._request('GET', '/api/v1/fs/read', {
       query: { path: params.path, offset: params.offset, size: params.size },
     });
-    if (!(result instanceof ArrayBuffer)) return result;
+    // Jagent's Fetch implementation creates the response body in the runtime
+    // realm. Such buffers have the ArrayBuffer internal slot but fail the
+    // current realm's `instanceof ArrayBuffer` check.
+    if (!isArrayBuffer(result)) return result;
     if (!isValidUtf8(new Uint8Array(result))) {
       return result;
     }

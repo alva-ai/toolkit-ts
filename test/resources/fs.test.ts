@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { FsResource } from '../../src/resources/fs.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
+import { runInNewContext } from 'node:vm';
 
 function makeClient(
   apiKey?: string
@@ -62,6 +63,21 @@ describe('FsResource', () => {
       client._request.mockResolvedValue(new TextEncoder().encode(text).buffer);
       const result = await fs.read({ path: '~/script.js' });
       expect(result).toBe('console.log("hi");');
+    });
+
+    it('decodes text from an ArrayBuffer created in another realm', async () => {
+      const client = makeClient('key');
+      const fs = new FsResource(client);
+      const bytes = [...new TextEncoder().encode('<html>ok</html>')];
+      const crossRealmBuffer = runInNewContext(
+        `new Uint8Array(${JSON.stringify(bytes)}).buffer`
+      );
+      expect(crossRealmBuffer).not.toBeInstanceOf(ArrayBuffer);
+      client._request.mockResolvedValue(crossRealmBuffer);
+
+      const result = await fs.read({ path: '~/index.html' });
+
+      expect(result).toBe('<html>ok</html>');
     });
 
     it('returns ArrayBuffer as-is for binary data', async () => {
