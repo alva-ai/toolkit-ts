@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
 import { writeConfig } from './config.js';
+import { parseCommand } from './commandSchema.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
 
 export function generateState(): string {
@@ -91,23 +92,6 @@ const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 const DEFAULT_AUTH_URL = 'https://alva.ai';
 const CLIENT_ID = 'alva-cli';
 const SCOPE = 'cli';
-
-function parseFlags(argv: string[]): Record<string, string> {
-  const flags: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg.startsWith('--')) {
-      const eqIdx = arg.indexOf('=');
-      if (eqIdx !== -1) {
-        flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
-      } else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
-        flags[arg.slice(2)] = argv[i + 1];
-        i++;
-      }
-    }
-  }
-  return flags;
-}
 
 function defaultOpenBrowser(url: string): Promise<void> {
   // Use spawn with an args array — never the shell — so the URL is
@@ -290,7 +274,7 @@ export async function handleAuthLogin(
   deps?: Partial<AuthLoginDeps>
 ): Promise<AuthLoginResult> {
   const d = { ...defaultDeps(), ...deps };
-  const flags = parseFlags(args.slice(1));
+  const flags = parseCommand(args).flags;
   const profileName = flags.profile || 'default';
   const authUrl = flags['auth-url'] || DEFAULT_AUTH_URL;
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
@@ -602,7 +586,7 @@ export async function handleAuthLoginNoBrowser(
   deps?: Partial<AuthLoginNoBrowserDeps>
 ): Promise<AuthLoginResult> {
   const d = { ...defaultNoBrowserDeps(), ...deps };
-  const flags = parseFlags(args.slice(1));
+  const flags = parseCommand(args).flags;
   const profileName = flags.profile || 'default';
   const authUrl = flags['auth-url'] || DEFAULT_AUTH_URL;
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;

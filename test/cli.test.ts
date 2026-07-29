@@ -2513,6 +2513,29 @@ components: {}
     );
   });
 
+  it('rejects unknown flags before invoking a leaf command', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['whoami', '--profiel', 'staging'])
+    ).rejects.toThrow(/--profiel is not supported for 'whoami'.*--profile/);
+    expect(client.user.me).not.toHaveBeenCalled();
+  });
+
+  it('rejects a flag that belongs to a different leaf command', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'fs',
+        'read',
+        '--path',
+        '~/file',
+        '--automation-ids',
+        '42',
+      ])
+    ).rejects.toThrow(/--automation-ids is not supported for 'fs read'/);
+    expect(client.fs.read).not.toHaveBeenCalled();
+  });
+
   it('throws CliUsageError with command="secrets" for missing secrets subcommand', async () => {
     const client = makeClient();
     await expect(dispatch(client, ['secrets'])).rejects.toSatisfy(
@@ -4720,9 +4743,8 @@ describe('CLI dispatch — broker', () => {
   );
 
   it('forwards a broker-native valueless flag (--open) without a parse error', async () => {
-    // --open is not in toolkit's BOOLEAN_FLAGS, so parseFlags would reject it
-    // ("--open requires a value"). broker must bypass parseFlags entirely and
-    // forward the flag verbatim. (order list, not stdin — no blocking read.)
+    // --open is not a toolkit flag. broker must bypass the command parser and
+    // forward it verbatim. (order list, not stdin — no blocking read.)
     const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
     const env = await dispatch(
       client,

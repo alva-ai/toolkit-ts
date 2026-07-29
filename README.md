@@ -189,7 +189,10 @@ tools: flags that read or write local files, such as `--local-file`, `--file`,
 `--params-schema-file`, and screenshot `--out`, are rejected. Use inline data
 or prepare content in ALFS before dispatching the CLI command. `dispatch()`
 throws `CliUsageError` for command-line usage errors and `AlvaError` for API
-errors.
+errors. Toolkit-managed commands reject unknown flags before invoking an API;
+the error is scoped to the resolved command and suggests a nearby supported
+flag when possible. `broker` is the explicit exception because its remaining
+arguments are forwarded verbatim to the venue-native CLI.
 
 ## SDK Usage (Node.js)
 
