@@ -1,45 +1,65 @@
 import { describe, expect, it } from 'vitest';
-import { parseFlags } from '../../src/cli/index.js';
+import { parseCommand } from '../../src/cli/commandSchema.js';
 
 // Regression tests for the auth-login boolean flag pair --no-browser /
-// --browser. The original parseFlags treated `--no-X` as the negation of
-// `--X` whenever X was a known boolean flag. Since `'browser'` is in
-// BOOLEAN_FLAGS (so `alva auth login --browser` parses standalone), the
-// shortcut swallowed `--no-browser` as `--browser=false`, defeating the
-// intent. Fixed by checking literal flag names first.
+// --browser. The original parser treated `--no-X` as the negation of
+// `--X` whenever X was a known boolean flag. Since `browser` was registered as
+// boolean, the shortcut swallowed `--no-browser` as `--browser=false`,
+// defeating the intent. The command schema checks literal names first.
 
-describe('parseFlags --no-browser / --browser', () => {
+describe('command parser --no-browser / --browser', () => {
+  it('preserves the legacy parser exports for existing ./cli consumers', async () => {
+    const cli = (await import('../../src/cli/index.js')) as unknown as {
+      BOOLEAN_FLAGS?: Set<string>;
+      parseFlags?: (argv: string[]) => Record<string, string>;
+    };
+
+    expect(cli.BOOLEAN_FLAGS).toBeInstanceOf(Set);
+    expect(cli.BOOLEAN_FLAGS?.has('no-browser')).toBe(true);
+    expect(cli.parseFlags?.(['--future-flag', 'value', '--json'])).toEqual({
+      'future-flag': 'value',
+      json: 'true',
+    });
+  });
+
   it('treats --no-browser as a literal boolean flag, not the negation of --browser', () => {
-    const flags = parseFlags(['login', '--no-browser']);
+    const flags = parseCommand(['auth', 'login', '--no-browser']).flags;
     expect(flags['no-browser']).toBe('true');
     expect(flags.browser).toBeUndefined();
   });
 
   it('treats --browser as a literal boolean flag (no value-consumption)', () => {
-    const flags = parseFlags(['login', '--browser', '--profile', 'stg']);
+    const flags = parseCommand([
+      'auth',
+      'login',
+      '--browser',
+      '--profile',
+      'stg',
+    ]).flags;
     expect(flags.browser).toBe('true');
     expect(flags.profile).toBe('stg');
   });
 
   it('--no-mkdir-parents still works via the --no-X shortcut (existing behavior)', () => {
-    // `'mkdir-parents'` is in BOOLEAN_FLAGS but `'no-mkdir-parents'` is
-    // NOT, so the shortcut path is the only way this resolves.
-    const flags = parseFlags(['write', '--no-mkdir-parents']);
+    // `mkdir-parents` is declared boolean, while `no-mkdir-parents` is not a
+    // literal flag, so the synthetic negation path resolves it.
+    const flags = parseCommand(['fs', 'write', '--no-mkdir-parents']).flags;
     expect(flags['mkdir-parents']).toBe('false');
   });
 
   it('--no-browser=true with explicit value is honored verbatim', () => {
-    const flags = parseFlags(['login', '--no-browser=true']);
+    const flags = parseCommand(['auth', 'login', '--no-browser=true']).flags;
     expect(flags['no-browser']).toBe('true');
   });
 
   it('non-boolean --flag value still consumes the next arg', () => {
-    const flags = parseFlags([
+    const flags = parseCommand([
+      'auth',
       'login',
       '--auth-url',
       'https://stg.alva.xyz',
       '--no-browser',
-    ]);
+    ]).flags;
     expect(flags['auth-url']).toBe('https://stg.alva.xyz');
     expect(flags['no-browser']).toBe('true');
   });
@@ -48,10 +68,10 @@ describe('parseFlags --no-browser / --browser', () => {
     // Reproduces the multi-line shell footgun: when a command split
     // across lines without a `\` continuation, --base-url ends up with
     // no value and the URL became a separate shell command. Before
-    // this change parseFlags silently dropped the flag and the CLI
+    // this change the old parser silently dropped the flag and the CLI
     // fell back to its default (prd), producing an HTTP 404 against a
     // stg-issued code.
-    expect(() => parseFlags(['login', '--base-url'])).toThrow(
+    expect(() => parseCommand(['auth', 'login', '--base-url'])).toThrow(
       /--base-url requires a value/
     );
   });
@@ -61,7 +81,7 @@ describe('parseFlags --no-browser / --browser', () => {
     // value before, leaving profile unrecognized later. Force an
     // error so the typo surfaces.
     expect(() =>
-      parseFlags(['login', '--auth-url', '--profile', 'stg'])
+      parseCommand(['auth', 'login', '--auth-url', '--profile', 'stg'])
     ).toThrow(/--auth-url requires a value/);
   });
 });

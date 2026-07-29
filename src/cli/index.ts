@@ -5,6 +5,11 @@ import { loadConfig, writeConfig } from './config.js';
 import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
 import { selectMode } from './modeSelect.js';
 import { runPostConfigureHooks } from './postConfigureHooks.js';
+import { parseCommand } from './commandSchema.js';
+import {
+  COMMAND_DEFINITIONS,
+  GLOBAL_FLAG_DEFINITIONS,
+} from './commandDefinitions.js';
 import {
   formatSkillsList,
   formatSkillSummary,
@@ -45,6 +50,28 @@ export const CLI_VERSION: string =
 export const DEFAULT_RUN_TIMEOUT_MS = 600_000;
 const RUN_TIMEOUT_ENV = 'ALVA_RUN_TIMEOUT_MS';
 let configuredRunFetchTimeoutMs: number | undefined;
+const GLOBAL_VALUE_FLAGS = Object.entries(GLOBAL_FLAG_DEFINITIONS)
+  .filter(([, kind]) => kind === 'value')
+  .map(([name]) => `--${name}`);
+const GLOBAL_VALUE_FLAG_SET = new Set(GLOBAL_VALUE_FLAGS);
+
+/**
+ * @deprecated Internal command handling uses the strict declarative parser.
+ * Retained for compatibility with existing `@alva-ai/toolkit/cli` consumers.
+ */
+export const BOOLEAN_FLAGS = (() => {
+  const flags = new Set(
+    Object.entries(GLOBAL_FLAG_DEFINITIONS)
+      .filter(([, kind]) => kind === 'boolean')
+      .map(([name]) => name)
+  );
+  for (const definition of COMMAND_DEFINITIONS) {
+    for (const [name, kind] of Object.entries(definition.flags)) {
+      if (kind === 'boolean') flags.add(name);
+    }
+  }
+  return flags;
+})();
 
 /**
  * Returns true if version `a` is strictly older than version `b`.
@@ -1284,7 +1311,7 @@ export async function handleConfigure(
   baseUrl?: string;
   profile: string;
 }> {
-  const flags = parseFlags(args.slice(1));
+  const flags = parseCommand(args).flags;
   const apiKey = flags['api-key'];
   if (!apiKey) {
     throw new CliUsageError('--api-key is required', 'configure');
@@ -1330,75 +1357,38 @@ export async function handleConfigure(
   };
 }
 
-export const BOOLEAN_FLAGS = new Set([
-  'recursive',
-  'mkdir-parents',
-  'append',
-  'push-notify',
-  'help',
-  'execute-latest',
-  'dry-run',
-  'allow-charges',
-  'clear-run-as',
-  'json',
-  'compress',
-  'bypass-lint',
-  'no-browser',
-  'browser',
-  'base64',
-  'full',
-  'today',
-]);
-
+/**
+ * @deprecated Use `dispatch()` for validated command execution. This permissive
+ * parser remains available only to preserve the existing `./cli` export.
+ */
 export function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
+  for (let index = 0; index < argv.length; index++) {
+    const argument = argv[index]!;
+    if (!argument.startsWith('--')) continue;
 
-    const eqIdx = arg.indexOf('=');
-    if (eqIdx !== -1) {
-      flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+    const equalsIndex = argument.indexOf('=');
+    if (equalsIndex !== -1) {
+      flags[argument.slice(2, equalsIndex)] = argument.slice(equalsIndex + 1);
       continue;
     }
 
-    const name = arg.slice(2);
-
-    // Literal boolean flag wins over the --no-X shortcut. This matters
-    // for flags whose own name starts with "no-" (e.g. --no-browser is
-    // itself a boolean opt-in, NOT the negation of --browser).
+    const name = argument.slice(2);
     if (BOOLEAN_FLAGS.has(name)) {
       flags[name] = 'true';
       continue;
     }
-
-    // --no-X shortcut: only when X is a known boolean flag AND there is
-    // no literal --no-X flag registered (handled above).
     if (name.startsWith('no-') && BOOLEAN_FLAGS.has(name.slice(3))) {
       flags[name.slice(3)] = 'false';
       continue;
     }
 
-    // Non-boolean flag: requires a value. Two failure modes both
-    // silently fell back to defaults before, which masked footguns
-    // like `--base-url` at end-of-line (multi-line shell command with
-    // a stray newline) or `--api-key --profile staging`:
-    //   1. no next arg at all
-    //   2. next arg looks like another flag (`--something`)
-    // Treat both as a usage error — the user almost certainly meant to
-    // pass a value.
-    const next = argv[i + 1];
-    if (next === undefined || next.startsWith('--')) {
-      throw new CliUsageError(
-        `--${name} requires a value`,
-        // Group is best-effort: first non-flag arg of the original
-        // argv. parseFlags doesn't track group, so just use the flag
-        // name as a fallback hint.
-        name
-      );
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      throw new CliUsageError(`--${name} requires a value`, name);
     }
-    flags[name] = next;
-    i++;
+    flags[name] = value;
+    index++;
   }
   return flags;
 }
@@ -1730,22 +1720,6 @@ function csvList(val: string | undefined): string[] | undefined {
     .map((item) => item.trim())
     .filter(Boolean);
   return values.length > 0 ? values : undefined;
-}
-
-function rejectUnsupportedFlags(
-  flags: Record<string, string>,
-  allowed: readonly string[],
-  command: string
-): void {
-  const supported = new Set([...allowed, 'help']);
-  for (const flag of Object.keys(flags)) {
-    if (!supported.has(flag)) {
-      throw new CliUsageError(
-        `--${flag} is not supported for '${command}'`,
-        command.split(' ')[0]
-      );
-    }
-  }
 }
 
 function parseOwnerNameTarget(
@@ -2343,6 +2317,23 @@ export async function dispatch(
     return { _help: true, text: COMMAND_HELP[group] };
   }
 
+  // broker is a raw argv passthrough. Intercept it before resolving toolkit
+  // command definitions so venue-native flags remain forward compatible.
+  if (group === 'broker') {
+    return handleBroker(client, args.slice(1), deps);
+  }
+
+  const parsedCommand = parseCommand(args);
+  const subcommand = parsedCommand.path[1];
+  const flags = parsedCommand.flags;
+  const positionals = parsedCommand.positionals;
+
+  // Also check for --help in flags (e.g. alva fs read --help).
+  if (flags['help'] !== undefined) {
+    const helpText = COMMAND_HELP[group];
+    if (helpText) return { _help: true, text: helpText };
+  }
+
   // whoami: verify credentials and show user info
   if (group === 'whoami') {
     const user = await client.user.me();
@@ -2379,26 +2370,6 @@ export async function dispatch(
         `Please upgrade: npm install -g @alva-ai/toolkit`;
     }
     return result;
-  }
-
-  // broker is a raw argv passthrough — it must NOT go through parseFlags
-  // (which would reject broker-native valueless flags like --stdin and any
-  // future flag toolkit doesn't know about). Intercept before parsing.
-  if (group === 'broker') {
-    return handleBroker(client, args.slice(1), deps);
-  }
-
-  const subcommand = args[1];
-  const flags = parseFlags(
-    args.slice(
-      group === 'run' || group === 'remix' || group === 'screenshot' ? 1 : 2
-    )
-  );
-
-  // Also check for --help in flags (e.g. alva fs read --help)
-  if (flags['help'] !== undefined) {
-    const helpText = COMMAND_HELP[group];
-    if (helpText) return { _help: true, text: helpText };
   }
 
   switch (group) {
@@ -2970,7 +2941,7 @@ export async function dispatch(
         );
       switch (subcommand) {
         case 'allowance': {
-          const leaf = args[2];
+          const leaf = parsedCommand.path[2];
           if (!leaf || leaf === '--help' || leaf === '-h') {
             return { _help: true, text: COMMAND_HELP.functions };
           }
@@ -3166,13 +3137,7 @@ export async function dispatch(
           'lint'
         );
       }
-      const file = args[2];
-      if (!file || file.startsWith('--')) {
-        throw new CliUsageError(
-          'Missing file argument for lint playbook',
-          'lint'
-        );
-      }
+      const file = positionals[0]!;
       const formatFlag = flags['format'];
       if (
         formatFlag !== undefined &&
@@ -3267,31 +3232,13 @@ export async function dispatch(
           return asJson ? result : formatSkillsList(result);
         }
         case 'summary': {
-          const name = args[2];
-          if (!name || name.startsWith('--')) {
-            throw new CliUsageError(
-              'Missing skill name for data-skills summary',
-              'data-skills'
-            );
-          }
+          const name = positionals[0]!;
           const result = await client.dataSkills.summary({ name });
           return asJson ? result : formatSkillSummary(result);
         }
         case 'endpoint': {
-          const name = args[2];
-          if (!name || name.startsWith('--')) {
-            throw new CliUsageError(
-              'Missing skill name for data-skills endpoint',
-              'data-skills'
-            );
-          }
-          const file = args[3];
-          if (!file || file.startsWith('--')) {
-            throw new CliUsageError(
-              'Missing endpoint file for data-skills endpoint',
-              'data-skills'
-            );
-          }
+          const name = positionals[0]!;
+          const file = positionals[1]!;
           const result = await client.dataSkills.endpoint({ name, file });
           return asJson ? result : formatSkillEndpoint(result);
         }
@@ -3320,31 +3267,13 @@ export async function dispatch(
           return asJson ? result : formatPlaybookSkillsTags(result);
         }
         case 'get': {
-          const id = args[2];
-          if (!id || id.startsWith('--')) {
-            throw new CliUsageError(
-              'Missing playbook skill identifier for skillhub get',
-              'skillhub'
-            );
-          }
+          const id = positionals[0]!;
           const result = await client.playbookSkills.get(id);
           return asJson ? result : formatPlaybookSkillGet(result);
         }
         case 'file': {
-          const id = args[2];
-          if (!id || id.startsWith('--')) {
-            throw new CliUsageError(
-              'Missing playbook skill identifier for skillhub file',
-              'skillhub'
-            );
-          }
-          const path = args[3];
-          if (!path || path.startsWith('--')) {
-            throw new CliUsageError(
-              'Missing file path for skillhub file',
-              'skillhub'
-            );
-          }
+          const id = positionals[0]!;
+          const path = positionals[1]!;
           const result = await client.playbookSkills.file(id, path);
           return asJson ? result : formatPlaybookSkillFile(result);
         }
@@ -3579,11 +3508,6 @@ export async function dispatch(
         throw new CliUsageError('Missing subcommand for alert', 'alert');
       switch (subcommand) {
         case 'list': {
-          rejectUnsupportedFlags(
-            flags,
-            ['first', 'cursor', 'json'],
-            'alert list'
-          );
           const result = await client.alerts.list({
             first: num(flags['first']),
             cursor: flags['cursor'],
@@ -3591,23 +3515,11 @@ export async function dispatch(
           return boolFlag(flags['json']) ? result : formatAlertList(result);
         }
         case 'follows':
-          rejectUnsupportedFlags(flags, ['limit', 'cursor'], 'alert follows');
           return client.alerts.follows({
             limit: num(flags['limit']),
             cursor: flags['cursor'],
           });
         case 'enable': {
-          rejectUnsupportedFlags(
-            flags,
-            [
-              'automation',
-              'automation-ids',
-              'channel-id',
-              'playbook',
-              'playbook-ids',
-            ],
-            'alert enable'
-          );
           rejectPlaybookAlertTarget(flags, 'alert enable');
           const automationIds = csvList(flags['automation-ids']) ?? [];
           if (automationIds.length > 0) {
@@ -3643,11 +3555,6 @@ export async function dispatch(
           );
         }
         case 'disable': {
-          rejectUnsupportedFlags(
-            flags,
-            ['automation', 'automation-ids', 'playbook', 'playbook-ids'],
-            'alert disable'
-          );
           rejectPlaybookAlertTarget(flags, 'alert disable');
           const automationIds = csvList(flags['automation-ids']) ?? [];
           if (automationIds.length > 0) {
@@ -3664,7 +3571,7 @@ export async function dispatch(
           );
         }
         case 'group': {
-          const leaf = args[2];
+          const leaf = parsedCommand.path[2];
           if (!leaf || leaf === '--help' || leaf === '-h') {
             return { _help: true, text: COMMAND_HELP.alert };
           }
@@ -3678,7 +3585,6 @@ export async function dispatch(
           const sessionID = requireCurrentGroupAlertSessionID(client, command);
           switch (leaf) {
             case 'list': {
-              rejectUnsupportedFlags(flags, ['json'], command);
               const result = await client.channelGroupSubscriptions.list({
                 session_id: sessionID,
               });
@@ -3687,22 +3593,12 @@ export async function dispatch(
                 : formatGroupAlertList(result);
             }
             case 'enable':
-              rejectUnsupportedFlags(
-                flags,
-                ['automation', 'automation-ids', 'channel-id'],
-                command
-              );
               return client.channelGroupSubscriptions.subscribe({
                 session_id: sessionID,
                 target_type: 'feed',
                 target_id: requireSingleGroupAlertFeedID(flags, command),
               });
             case 'disable':
-              rejectUnsupportedFlags(
-                flags,
-                ['automation', 'automation-ids', 'channel-id'],
-                command
-              );
               return client.channelGroupSubscriptions.unsubscribe({
                 session_id: sessionID,
                 target_type: 'feed',
@@ -3716,21 +3612,6 @@ export async function dispatch(
           }
         }
         case 'history': {
-          rejectUnsupportedFlags(
-            flags,
-            [
-              'automation',
-              'playbook',
-              'playbook-ids',
-              'delivery-provider',
-              'channel',
-              'status',
-              'since',
-              'first',
-              'cursor',
-            ],
-            'alert history'
-          );
           rejectPlaybookAlertTarget(flags, 'alert history');
           const target = requireAutomationAlertTarget(flags, 'alert history');
           const params = {
@@ -3746,16 +3627,13 @@ export async function dispatch(
           return projectNotificationHistoryForCLI(response);
         }
         case 'preferences':
-          rejectUnsupportedFlags(flags, [], 'alert preferences');
           return client.alerts.preferences();
         case 'enable-session-completed':
-          rejectUnsupportedFlags(flags, [], 'alert enable-session-completed');
           return client.alerts.updatePreference({
             key: 'session_completed',
             enabled: true,
           });
         case 'disable-session-completed':
-          rejectUnsupportedFlags(flags, [], 'alert disable-session-completed');
           return client.alerts.updatePreference({
             key: 'session_completed',
             enabled: false,
@@ -3785,7 +3663,7 @@ export async function dispatch(
         return { _help: true, text: COMMAND_HELP.arrays };
       }
       if (subcommand === 'token') {
-        const leaf = args[2];
+        const leaf = parsedCommand.path[2];
         if (!leaf || leaf === '--help' || leaf === '-h') {
           return { _help: true, text: COMMAND_HELP.arrays };
         }
@@ -4045,14 +3923,8 @@ export async function dispatch(
 
     case 'auth': {
       // bare `auth`, `auth --help`, `auth login --help` all show help
-      const authSub = args[1];
-      if (
-        !authSub ||
-        authSub === '--help' ||
-        authSub === '-h' ||
-        args[2] === '--help' ||
-        args[2] === '-h'
-      ) {
+      const authSub = parsedCommand.path[1];
+      if (!authSub) {
         return { _help: true, text: COMMAND_HELP.auth };
       }
       // auth login is handled in main() before loadConfig; if we reach here
@@ -4071,12 +3943,6 @@ export async function dispatch(
  * `--flag value` and `--flag=value` forms.
  */
 export function stripGlobalFlags(argv: string[]): string[] {
-  const GLOBAL_FLAGS = [
-    '--api-key',
-    '--base-url',
-    '--profile',
-    '--arrays-endpoint',
-  ];
   const result: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -4090,11 +3956,15 @@ export function stripGlobalFlags(argv: string[]): string[] {
       result.push(...argv.slice(i));
       break;
     }
-    if (GLOBAL_FLAGS.includes(a)) {
+    if (GLOBAL_VALUE_FLAG_SET.has(a)) {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--')) {
+        throw new CliUsageError(`${a} requires a value`);
+      }
       i++; // skip the value
       continue;
     }
-    if (GLOBAL_FLAGS.some((f) => a.startsWith(`${f}=`))) {
+    if (GLOBAL_VALUE_FLAGS.some((flag) => a.startsWith(`${flag}=`))) {
       continue;
     }
     result.push(a);
@@ -4125,19 +3995,14 @@ async function main() {
 
     // Handle auth before loading config (user doesn't have config yet when logging in)
     if (rawArgs[0] === 'auth') {
-      const authSub = rawArgs[1];
-      if (
-        !authSub ||
-        authSub === '--help' ||
-        authSub === '-h' ||
-        rawArgs[2] === '--help' ||
-        rawArgs[2] === '-h'
-      ) {
+      const parsedAuth = parseCommand(rawArgs);
+      const authSub = parsedAuth.path[1];
+      if (!authSub || parsedAuth.flags.help !== undefined) {
         process.stdout.write(`${COMMAND_HELP.auth}\n`);
         return;
       }
       if (authSub === 'login') {
-        const loginFlags = parseFlags(rawArgs.slice(1));
+        const loginFlags = parsedAuth.flags;
         const mode = selectMode(
           process.env as Record<string, string | undefined>,
           {
