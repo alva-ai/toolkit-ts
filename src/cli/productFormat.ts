@@ -59,6 +59,9 @@ export function formatAlertList(result: PushSubscriptionListResponse): string {
     const status = alert.target_status ? `  [${alert.target_status}]` : '';
     lines.push(`• ${alertTitle(alert)}${status}`);
     lines.push(`    target: ${targetType} ${alert.target?.id ?? ''}`.trimEnd());
+    if (alert.channel_id !== undefined) {
+      lines.push(`    channel: ${alert.channel_id}`);
+    }
     if (alert.kind) lines.push(`    kind: ${alert.kind}`);
     if (alert.feed_status)
       lines.push(`    automation status: ${alert.feed_status}`);

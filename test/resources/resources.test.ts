@@ -1150,6 +1150,30 @@ describe('SubscriptionsResource — agent surface (mono-meta#584 W3)', () => {
     });
   });
 
+  it('subscribeFeed() posts an explicit channel id and preserves empty-body compatibility', async () => {
+    const client = makeClient();
+    const subs = new SubscriptionsResource(client);
+
+    await subs.subscribeFeed({
+      username: 'alice',
+      name: 'btc-ema',
+      channelId: '42',
+    });
+    await subs.subscribeFeed({ username: 'alice', name: 'btc-ema' });
+
+    expect(client._request).toHaveBeenNthCalledWith(
+      1,
+      'POST',
+      '/api/v1/subscriptions/feed/alice/btc-ema',
+      { body: { channel_id: '42' } }
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      '/api/v1/subscriptions/feed/alice/btc-ema'
+    );
+  });
+
   it('subscribeBatch() posts feed ids and channel id', async () => {
     const client = makeClient();
     const subs = new SubscriptionsResource(client);
@@ -1206,12 +1230,17 @@ describe('AlertsResource', () => {
       .mockResolvedValue({ ok: true });
     const alerts = new AlertsResource(client);
 
-    await alerts.enableAutomation({ username: 'alice', name: 'btc-ema' });
+    await alerts.enableAutomation({
+      username: 'alice',
+      name: 'btc-ema',
+      channelId: '7',
+    });
     await alerts.disableAutomation({ username: 'alice', name: 'btc-ema' });
 
     expect(client.subscriptions.subscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
+      channelId: '7',
     });
     expect(client.subscriptions.unsubscribeFeed).toHaveBeenCalledWith({
       username: 'alice',

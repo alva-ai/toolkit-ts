@@ -7,6 +7,7 @@ import type {
   PushSubscriptionFeedParams,
   PushSubscriptionListParams,
   PushSubscriptionListResponse,
+  SubscribeFeedParams,
   SubscribeBatchParams,
   SubscribeBatchResponse,
   SubscribeFeedResponse,
@@ -74,11 +75,19 @@ export class SubscriptionsResource {
    * Does NOT follow any playbook. Idempotent.
    */
   async subscribeFeed(
-    params: PushSubscriptionFeedParams
+    params: SubscribeFeedParams
   ): Promise<SubscribeFeedResponse> {
     this.client._requireAuth();
     const path = `/api/v1/subscriptions/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
-    return this.client._request('POST', path) as Promise<SubscribeFeedResponse>;
+    if (params.channelId === undefined) {
+      return this.client._request(
+        'POST',
+        path
+      ) as Promise<SubscribeFeedResponse>;
+    }
+    return this.client._request('POST', path, {
+      body: { channel_id: params.channelId },
+    }) as Promise<SubscribeFeedResponse>;
   }
 
   /**

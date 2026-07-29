@@ -10,6 +10,7 @@ import type {
   PushSubscriptionFeedParams,
   PushSubscriptionListParams,
   PushSubscriptionListResponse,
+  SubscribeFeedParams,
   SubscribeBatchParams,
   SubscribeBatchResponse,
   SubscribeFeedResponse,
@@ -36,7 +37,7 @@ export class AlertsResource {
   }
 
   enableAutomation(
-    params: PushSubscriptionFeedParams
+    params: SubscribeFeedParams
   ): Promise<SubscribeFeedResponse> {
     return this.client.subscriptions.subscribeFeed(params);
   }

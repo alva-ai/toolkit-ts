@@ -563,12 +563,12 @@ Subcommands:
   enable-session-completed
   disable-session-completed
 
-Target flags:
+Target flags (choose one):
   --automation <owner/name>  Automation target
-
-Enable/disable-by-id flags:
   --automation-ids <a,b>     Comma-separated automation target ids
-  --channel-id <id>          Alva channel ID for batch enable (optional)
+
+Enable routing:
+  --channel-id <id>          Alva channel ID for name or id targets (optional)
 
 Group subcommands:
   alva alert group list
@@ -1730,6 +1730,22 @@ function csvList(val: string | undefined): string[] | undefined {
     .map((item) => item.trim())
     .filter(Boolean);
   return values.length > 0 ? values : undefined;
+}
+
+function rejectUnsupportedFlags(
+  flags: Record<string, string>,
+  allowed: readonly string[],
+  command: string
+): void {
+  const supported = new Set([...allowed, 'help']);
+  for (const flag of Object.keys(flags)) {
+    if (!supported.has(flag)) {
+      throw new CliUsageError(
+        `--${flag} is not supported for '${command}'`,
+        command.split(' ')[0]
+      );
+    }
+  }
 }
 
 function parseOwnerNameTarget(
@@ -3563,6 +3579,11 @@ export async function dispatch(
         throw new CliUsageError('Missing subcommand for alert', 'alert');
       switch (subcommand) {
         case 'list': {
+          rejectUnsupportedFlags(
+            flags,
+            ['first', 'cursor', 'json'],
+            'alert list'
+          );
           const result = await client.alerts.list({
             first: num(flags['first']),
             cursor: flags['cursor'],
@@ -3570,11 +3591,23 @@ export async function dispatch(
           return boolFlag(flags['json']) ? result : formatAlertList(result);
         }
         case 'follows':
+          rejectUnsupportedFlags(flags, ['limit', 'cursor'], 'alert follows');
           return client.alerts.follows({
             limit: num(flags['limit']),
             cursor: flags['cursor'],
           });
         case 'enable': {
+          rejectUnsupportedFlags(
+            flags,
+            [
+              'automation',
+              'automation-ids',
+              'channel-id',
+              'playbook',
+              'playbook-ids',
+            ],
+            'alert enable'
+          );
           rejectPlaybookAlertTarget(flags, 'alert enable');
           const automationIds = csvList(flags['automation-ids']) ?? [];
           if (automationIds.length > 0) {
@@ -3596,11 +3629,25 @@ export async function dispatch(
                     ),
             });
           }
+          const target = requireAutomationAlertTarget(flags, 'alert enable');
+          const channelId =
+            flags['channel-id'] === undefined
+              ? undefined
+              : requirePositiveIntegerStringFlag(
+                  flags,
+                  'channel-id',
+                  'alert enable'
+                );
           return client.alerts.enableAutomation(
-            requireAutomationAlertTarget(flags, 'alert enable')
+            channelId === undefined ? target : { ...target, channelId }
           );
         }
         case 'disable': {
+          rejectUnsupportedFlags(
+            flags,
+            ['automation', 'automation-ids', 'playbook', 'playbook-ids'],
+            'alert disable'
+          );
           rejectPlaybookAlertTarget(flags, 'alert disable');
           const automationIds = csvList(flags['automation-ids']) ?? [];
           if (automationIds.length > 0) {
@@ -3631,6 +3678,7 @@ export async function dispatch(
           const sessionID = requireCurrentGroupAlertSessionID(client, command);
           switch (leaf) {
             case 'list': {
+              rejectUnsupportedFlags(flags, ['json'], command);
               const result = await client.channelGroupSubscriptions.list({
                 session_id: sessionID,
               });
@@ -3639,12 +3687,22 @@ export async function dispatch(
                 : formatGroupAlertList(result);
             }
             case 'enable':
+              rejectUnsupportedFlags(
+                flags,
+                ['automation', 'automation-ids', 'channel-id'],
+                command
+              );
               return client.channelGroupSubscriptions.subscribe({
                 session_id: sessionID,
                 target_type: 'feed',
                 target_id: requireSingleGroupAlertFeedID(flags, command),
               });
             case 'disable':
+              rejectUnsupportedFlags(
+                flags,
+                ['automation', 'automation-ids', 'channel-id'],
+                command
+              );
               return client.channelGroupSubscriptions.unsubscribe({
                 session_id: sessionID,
                 target_type: 'feed',
@@ -3658,6 +3716,21 @@ export async function dispatch(
           }
         }
         case 'history': {
+          rejectUnsupportedFlags(
+            flags,
+            [
+              'automation',
+              'playbook',
+              'playbook-ids',
+              'delivery-provider',
+              'channel',
+              'status',
+              'since',
+              'first',
+              'cursor',
+            ],
+            'alert history'
+          );
           rejectPlaybookAlertTarget(flags, 'alert history');
           const target = requireAutomationAlertTarget(flags, 'alert history');
           const params = {
@@ -3673,13 +3746,16 @@ export async function dispatch(
           return projectNotificationHistoryForCLI(response);
         }
         case 'preferences':
+          rejectUnsupportedFlags(flags, [], 'alert preferences');
           return client.alerts.preferences();
         case 'enable-session-completed':
+          rejectUnsupportedFlags(flags, [], 'alert enable-session-completed');
           return client.alerts.updatePreference({
             key: 'session_completed',
             enabled: true,
           });
         case 'disable-session-completed':
+          rejectUnsupportedFlags(flags, [], 'alert disable-session-completed');
           return client.alerts.updatePreference({
             key: 'session_completed',
             enabled: false,

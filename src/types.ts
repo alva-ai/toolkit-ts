@@ -960,6 +960,8 @@ export interface PushSubscription {
   target: PushTarget;
   created_at_ms: number;
   updated_at_ms: number;
+  /** Alva delivery channel id. "0" denotes the agent/home channel. */
+  channel_id?: string;
   /** Present on list responses. */
   cursor?: string;
   /** Feed metadata is present for FEED targets when available. */
@@ -1000,6 +1002,11 @@ export interface PlaybookFollowParams {
 export interface PushSubscriptionFeedParams {
   username: string;
   name: string;
+}
+
+export interface SubscribeFeedParams extends PushSubscriptionFeedParams {
+  /** Delivery channel id. Omit for the user's agent/home channel. */
+  channelId?: string;
 }
 
 export interface PushSubscriptionListParams {

@@ -220,6 +220,7 @@ function makeClient(
         feed_status: 'ACTIVE',
         kind: 'FEED_ALERT',
         target_status: 'ACTIVE',
+        channel_id: '7',
         used_by_total: 1,
         last_pushed_at_ms: 1700000000000,
       },
@@ -240,6 +241,7 @@ function makeClient(
         feed_status: 'ACTIVE',
         kind: 'FEED_ALERT',
         target_status: 'ACTIVE',
+        channel_id: '7',
         used_by_total: 1,
         last_pushed_at_ms: 1700000000000,
       },
@@ -4075,6 +4077,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     });
     expect(result).toEqual(expect.stringContaining('1 alert(s):'));
     expect(result).toEqual(expect.stringContaining('btc-ema'));
+    expect(result).toEqual(expect.stringContaining('channel: 7'));
     expect(result).toEqual(expect.stringContaining('next_cursor: next'));
   });
 
@@ -4091,6 +4094,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
           feed_status: 'ACTIVE',
           kind: 'FEED_ALERT',
           target_status: 'ACTIVE',
+          channel_id: '7',
           used_by_total: 1,
           last_pushed_at_ms: 1700000000000,
         },
@@ -4167,6 +4171,53 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       username: 'alice',
       name: 'btc-ema',
     });
+  });
+
+  it('dispatches name-addressed alert enable with an explicit channel id', async () => {
+    const client = makeClient();
+
+    await dispatch(client, [
+      'alert',
+      'enable',
+      '--automation',
+      'alice/btc-ema',
+      '--channel-id',
+      '7',
+    ]);
+
+    expect(client.alerts.enableAutomation).toHaveBeenCalledWith({
+      username: 'alice',
+      name: 'btc-ema',
+      channelId: '7',
+    });
+    expect(client.alerts.enableBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects flags that alert subcommands do not consume', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatch(client, ['alert', 'list', '--channel-id', '7'])
+    ).rejects.toThrow(/--channel-id is not supported for 'alert list'/);
+    await expect(
+      dispatch(client, ['alert', 'list', '--typo', 'value'])
+    ).rejects.toThrow(/--typo is not supported for 'alert list'/);
+    await expect(
+      dispatch(client, ['alert', 'disable', '--channel-id', '7'])
+    ).rejects.toThrow(/--channel-id is not supported for 'alert disable'/);
+    await expect(
+      dispatch(makeClient('123', 'channel_group'), [
+        'alert',
+        'group',
+        'list',
+        '--channel-id',
+        '7',
+      ])
+    ).rejects.toThrow(/--channel-id is not supported for 'alert group list'/);
+
+    expect(client.alerts.list).not.toHaveBeenCalled();
+    expect(client.alerts.disableAutomation).not.toHaveBeenCalled();
+    expect(client.alerts.disableBatch).not.toHaveBeenCalled();
   });
 
   it('rejects alert enable and disable for playbook targets', async () => {
