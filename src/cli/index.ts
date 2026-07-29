@@ -6,7 +6,10 @@ import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
 import { selectMode } from './modeSelect.js';
 import { runPostConfigureHooks } from './postConfigureHooks.js';
 import { parseCommand } from './commandSchema.js';
-import { GLOBAL_FLAG_DEFINITIONS } from './commandDefinitions.js';
+import {
+  COMMAND_DEFINITIONS,
+  GLOBAL_FLAG_DEFINITIONS,
+} from './commandDefinitions.js';
 import {
   formatSkillsList,
   formatSkillSummary,
@@ -51,6 +54,24 @@ const GLOBAL_VALUE_FLAGS = Object.entries(GLOBAL_FLAG_DEFINITIONS)
   .filter(([, kind]) => kind === 'value')
   .map(([name]) => `--${name}`);
 const GLOBAL_VALUE_FLAG_SET = new Set(GLOBAL_VALUE_FLAGS);
+
+/**
+ * @deprecated Internal command handling uses the strict declarative parser.
+ * Retained for compatibility with existing `@alva-ai/toolkit/cli` consumers.
+ */
+export const BOOLEAN_FLAGS = (() => {
+  const flags = new Set(
+    Object.entries(GLOBAL_FLAG_DEFINITIONS)
+      .filter(([, kind]) => kind === 'boolean')
+      .map(([name]) => name)
+  );
+  for (const definition of COMMAND_DEFINITIONS) {
+    for (const [name, kind] of Object.entries(definition.flags)) {
+      if (kind === 'boolean') flags.add(name);
+    }
+  }
+  return flags;
+})();
 
 /**
  * Returns true if version `a` is strictly older than version `b`.
@@ -1334,6 +1355,42 @@ export async function handleConfigure(
     baseUrl: result.baseUrl,
     profile: profileName,
   };
+}
+
+/**
+ * @deprecated Use `dispatch()` for validated command execution. This permissive
+ * parser remains available only to preserve the existing `./cli` export.
+ */
+export function parseFlags(argv: string[]): Record<string, string> {
+  const flags: Record<string, string> = {};
+  for (let index = 0; index < argv.length; index++) {
+    const argument = argv[index]!;
+    if (!argument.startsWith('--')) continue;
+
+    const equalsIndex = argument.indexOf('=');
+    if (equalsIndex !== -1) {
+      flags[argument.slice(2, equalsIndex)] = argument.slice(equalsIndex + 1);
+      continue;
+    }
+
+    const name = argument.slice(2);
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags[name] = 'true';
+      continue;
+    }
+    if (name.startsWith('no-') && BOOLEAN_FLAGS.has(name.slice(3))) {
+      flags[name.slice(3)] = 'false';
+      continue;
+    }
+
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      throw new CliUsageError(`--${name} requires a value`, name);
+    }
+    flags[name] = value;
+    index++;
+  }
+  return flags;
 }
 
 function boolFlag(val: string | undefined): boolean | undefined {
@@ -3900,6 +3957,10 @@ export function stripGlobalFlags(argv: string[]): string[] {
       break;
     }
     if (GLOBAL_VALUE_FLAG_SET.has(a)) {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--')) {
+        throw new CliUsageError(`${a} requires a value`);
+      }
       i++; // skip the value
       continue;
     }
@@ -3934,19 +3995,14 @@ async function main() {
 
     // Handle auth before loading config (user doesn't have config yet when logging in)
     if (rawArgs[0] === 'auth') {
-      const authSub = rawArgs[1];
-      if (
-        !authSub ||
-        authSub === '--help' ||
-        authSub === '-h' ||
-        rawArgs[2] === '--help' ||
-        rawArgs[2] === '-h'
-      ) {
+      const parsedAuth = parseCommand(rawArgs);
+      const authSub = parsedAuth.path[1];
+      if (!authSub || parsedAuth.flags.help !== undefined) {
         process.stdout.write(`${COMMAND_HELP.auth}\n`);
         return;
       }
       if (authSub === 'login') {
-        const loginFlags = parseCommand(rawArgs).flags;
+        const loginFlags = parsedAuth.flags;
         const mode = selectMode(
           process.env as Record<string, string | undefined>,
           {

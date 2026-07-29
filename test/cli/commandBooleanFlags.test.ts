@@ -8,6 +8,20 @@ import { parseCommand } from '../../src/cli/commandSchema.js';
 // defeating the intent. The command schema checks literal names first.
 
 describe('command parser --no-browser / --browser', () => {
+  it('preserves the legacy parser exports for existing ./cli consumers', async () => {
+    const cli = (await import('../../src/cli/index.js')) as unknown as {
+      BOOLEAN_FLAGS?: Set<string>;
+      parseFlags?: (argv: string[]) => Record<string, string>;
+    };
+
+    expect(cli.BOOLEAN_FLAGS).toBeInstanceOf(Set);
+    expect(cli.BOOLEAN_FLAGS?.has('no-browser')).toBe(true);
+    expect(cli.parseFlags?.(['--future-flag', 'value', '--json'])).toEqual({
+      'future-flag': 'value',
+      json: 'true',
+    });
+  });
+
   it('treats --no-browser as a literal boolean flag, not the negation of --browser', () => {
     const flags = parseCommand(['auth', 'login', '--no-browser']).flags;
     expect(flags['no-browser']).toBe('true');

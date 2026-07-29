@@ -45,16 +45,18 @@
 - Add a trie-backed parser that resolves the leaf before parsing arguments,
   rejects unsupported input, and provides edit-distance suggestions.
 - Route `dispatch()`, configure, and auth parsing through the shared parser;
-  remove the global boolean parser, auth parser, and alert-only allowlists.
+  remove internal use of the global boolean parser, auth parser, and alert-only
+  allowlists while retaining deprecated `parseFlags` and `BOOLEAN_FLAGS`
+  compatibility exports.
 - Keep existing semantic validators in handlers for required inputs, ranges,
   mutual exclusion, deprecated flags, and security-sensitive service-account
   IDs.
 - Derive global-flag stripping from the shared global definitions while
   retaining broker's positional passthrough boundary.
 - Compatibility: valid invocations, help output, API shapes, embedded return
-  values, and error classes remain unchanged. Previously ignored arguments now
-  fail intentionally. Rollback is a toolkit package rollback with no backend
-  dependency or data migration.
+  values, error classes, and existing `./cli` named exports remain unchanged.
+  Previously ignored arguments now fail intentionally. Rollback is a toolkit
+  package rollback with no backend dependency or data migration.
 
 ## 5. Verification Strategy
 
@@ -96,15 +98,20 @@ revised internal-parser plan.
   unexpected positional arguments before invoking an API. Errors are scoped to
   the resolved command and include a nearby flag suggestion when available.
 - Changes: added the declarative command registry and trie-backed parser,
-  routed terminal/embedded/configure/auth parsing through it, removed both old
-  permissive parsers and the alert-only allowlists, and preserved broker raw
-  argv handling.
-- Deviations: none from the approved internal-parser plan.
+  routed terminal/embedded/configure/auth parsing through it, removed internal
+  use of both old permissive parsers and the alert-only allowlists, preserved
+  broker raw argv handling, and retained deprecated compatibility exports for
+  the old low-level parser surface.
+- Deviations: review established that the undocumented `parseFlags` and
+  `BOOLEAN_FLAGS` exports may still have external consumers, so they remain as
+  deprecated compatibility exports rather than being removed in a patch.
 - Tests and verification: added parser, boolean-negation, unknown-flag,
-  wrong-leaf, positional, and passthrough regressions. `npm test` passed 699
-  tests; `npm run typecheck`, `npm run lint`, `npm run format:check`,
-  `npm run build`, `git diff --check`, and built CLI/embedded-dispatch smoke
-  tests on Node 18, 20, and 22 passed.
+  wrong-leaf, positional, passthrough, compatibility-export, terminal auth, and
+  missing-global-value regressions. `npm test` passed 703 tests; `npm run
+typecheck`, `npm run lint`, `npm run format:check`, `npm run build`, `git diff
+--check`, and built CLI/embedded-dispatch smoke tests passed. The initial
+  implementation additionally passed built CLI/embedded-dispatch smoke tests
+  on Node 18, 20, and 22.
 - Migration: none; this is a toolkit-only behavioral fix.
 
 ## 8. Remaining Tasks

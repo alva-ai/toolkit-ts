@@ -3657,6 +3657,18 @@ describe('stripGlobalFlags', () => {
     ]);
   });
 
+  it('rejects a trailing global value flag before it can be stripped', () => {
+    expect(() => stripGlobalFlags(['whoami', '--base-url'])).toThrow(
+      /--base-url requires a value/
+    );
+  });
+
+  it('rejects a global value flag followed by another flag', () => {
+    expect(() =>
+      stripGlobalFlags(['whoami', '--base-url', '--profile', 'stg'])
+    ).toThrow(/--base-url requires a value/);
+  });
+
   it('strips leading globals before broker but passes broker argv verbatim', () => {
     // Globals precede the command group; everything after `broker` is a raw
     // passthrough and must survive even when a venue flag collides with a CLI

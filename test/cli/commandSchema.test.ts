@@ -81,6 +81,15 @@ describe('declarative CLI command parser', () => {
     ).toThrow(/--auth-url requires a value/);
   });
 
+  it('supports nested -h help while still rejecting unknown auth routes', () => {
+    expect(parseCommand(['auth', 'login', '-h']).flags).toEqual({
+      help: 'true',
+    });
+    expect(() => parseCommand(['auth', 'logni'])).toThrow(
+      /Unknown subcommand: auth logni/
+    );
+  });
+
   it('validates positional argument bounds', () => {
     expect(
       parseCommand(['data-skills', 'endpoint', '--json', 'prices', 'README.md'])

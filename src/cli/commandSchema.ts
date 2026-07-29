@@ -57,7 +57,7 @@ function buildCommandTree(
 const COMMAND_TREE = buildCommandTree(COMMAND_DEFINITIONS);
 
 function editDistance(a: string, b: string): number {
-  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
   for (let row = 1; row <= a.length; row++) {
     const current = [row];
     for (let column = 1; column <= b.length; column++) {
@@ -67,7 +67,7 @@ function editDistance(a: string, b: string): number {
         previous[column - 1]! + (a[row - 1] === b[column - 1] ? 0 : 1)
       );
     }
-    previous.splice(0, previous.length, ...current);
+    previous = current;
   }
   return previous[b.length]!;
 }
@@ -167,6 +167,10 @@ export function parseCommand(args: readonly string[]): ParsedCommand {
 
   for (let index = consumed; index < args.length; index++) {
     const input = args[index]!;
+    if (input === '-h') {
+      flags.help = 'true';
+      continue;
+    }
     if (!input.startsWith('--')) {
       positionals.push(input);
       continue;
