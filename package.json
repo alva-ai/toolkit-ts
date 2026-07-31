@@ -18,6 +18,10 @@
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"
     },
+    "./dispatch": {
+      "types": "./dist/dispatch.d.ts",
+      "import": "./dist/dispatch.js"
+    },
     "./browser": "./dist/browser.global.js"
   },
   "main": "./dist/index.cjs",

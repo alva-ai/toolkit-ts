@@ -3703,6 +3703,12 @@ describe('CLI_VERSION', () => {
   it('falls back to dev when __VERSION__ is not defined at build time', () => {
     expect(CLI_VERSION).toBe('dev');
   });
+
+  it('is available through embedded dispatch', async () => {
+    await expect(dispatch(makeClient(), ['--version'])).resolves.toBe(
+      `alva version ${CLI_VERSION}`
+    );
+  });
 });
 
 describe('isVersionOlderThan', () => {
