@@ -1,4 +1,5 @@
 import type { AlvaClient } from '../client.js';
+import { isArrayBuffer } from '../arrayBuffer.js';
 import type {
   FsReadParams,
   FsWriteParams,
@@ -20,13 +21,6 @@ import type {
 
 // Fixed bit value from ALFS WriteFlag; Gateway accepts it as a uint32 bitmask.
 const WRITE_FLAG_APPEND = 1 << 0;
-
-function isArrayBuffer(value: unknown): value is ArrayBuffer {
-  return (
-    value instanceof ArrayBuffer ||
-    Object.prototype.toString.call(value) === '[object ArrayBuffer]'
-  );
-}
 
 function isValidUtf8(bytes: Uint8Array): boolean {
   let i = 0;

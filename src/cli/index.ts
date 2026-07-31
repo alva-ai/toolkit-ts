@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import { Agent, setGlobalDispatcher } from 'undici';
 
 import { AlvaClient } from '../client.js';
+import { isArrayBuffer } from '../arrayBuffer.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
 import { loadConfig, writeConfig } from './config.js';
@@ -248,7 +249,7 @@ async function main(): Promise<void> {
       process.stdout.write((result as { data: string }).data + '\n');
       return;
     }
-    if (result instanceof ArrayBuffer) {
+    if (isArrayBuffer(result)) {
       process.stdout.write(Buffer.from(result));
     } else if (typeof result === 'string') {
       process.stdout.write(result);

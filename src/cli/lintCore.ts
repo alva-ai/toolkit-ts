@@ -2,6 +2,7 @@ import { lint, loadContract, formatReport } from '../lint/index.js';
 import { loadActiveDesignSystem } from '../lint/fetchContract.js';
 import type { AlvaClient } from '../client.js';
 import type { Report } from '../lint/types.js';
+import { isArrayBuffer } from '../arrayBuffer.js';
 
 export interface LintPlaybookOptions {
   file: string;
@@ -21,7 +22,7 @@ export interface LintResult {
 
 function textContent(result: ArrayBuffer | unknown, path: string): string {
   if (typeof result === 'string') return result;
-  if (result instanceof ArrayBuffer) {
+  if (isArrayBuffer(result)) {
     return new TextDecoder('utf-8').decode(result);
   }
   throw new Error(
