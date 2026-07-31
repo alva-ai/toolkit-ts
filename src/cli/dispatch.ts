@@ -35,6 +35,8 @@ import {
 import { formatReport } from '../lint/report.js';
 import { handleLintPlaybook, lintBeforeRelease } from './lintCore.js';
 
+export { CliUsageError } from '../error.js';
+
 declare const __VERSION__: string;
 export const CLI_VERSION: string =
   typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';

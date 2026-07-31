@@ -173,8 +173,7 @@ Node.js CLI shell or spawning the `alva` binary:
 
 ```typescript
 import { AlvaClient } from '@alva-ai/toolkit';
-import { dispatch } from '@alva-ai/toolkit/dispatch';
-import { CliUsageError } from '@alva-ai/toolkit';
+import { dispatch, CliUsageError } from '@alva-ai/toolkit/dispatch';
 
 const client = new AlvaClient({ apiKey: process.env.ALVA_API_KEY });
 const result = await dispatch(

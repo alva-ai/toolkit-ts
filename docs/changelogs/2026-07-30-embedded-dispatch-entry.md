@@ -23,6 +23,8 @@ terminal CLI imports the same dispatcher and supplies its Node adapters.
 ## 4. Change specification
 
 - Add `@alva-ai/toolkit/dispatch` as a browser-platform ESM export.
+- Export `CliUsageError` from the same entry so embedded callers use the
+  dispatch bundle's error identity for reliable `instanceof` checks.
 - Move shared command parsing and dispatch into `src/cli/dispatch.ts`.
 - Keep config, login, local filesystem, stdio, and Undici in
   `src/cli/index.ts`.
