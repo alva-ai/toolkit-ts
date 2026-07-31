@@ -1,4 +1,5 @@
 import type { AlvaClient } from '../client.js';
+import { isArrayBuffer } from '../arrayBuffer.js';
 import type {
   FsReadParams,
   FsWriteParams,
@@ -75,7 +76,10 @@ export class FsResource {
     const result = await this.client._request('GET', '/api/v1/fs/read', {
       query: { path: params.path, offset: params.offset, size: params.size },
     });
-    if (!(result instanceof ArrayBuffer)) return result;
+    // Jagent's Fetch implementation creates the response body in the runtime
+    // realm. Such buffers have the ArrayBuffer internal slot but fail the
+    // current realm's `instanceof ArrayBuffer` check.
+    if (!isArrayBuffer(result)) return result;
     if (!isValidUtf8(new Uint8Array(result))) {
       return result;
     }

@@ -168,12 +168,12 @@ The CLI resolves config in this order:
 
 ### Embedded CLI Dispatch
 
-Node.js tools can reuse the CLI dispatcher directly instead of shelling out to
-the `alva` binary:
+Embedded runtimes can reuse the CLI dispatcher directly without loading the
+Node.js CLI shell or spawning the `alva` binary:
 
 ```typescript
 import { AlvaClient } from '@alva-ai/toolkit';
-import { CliUsageError, dispatch } from '@alva-ai/toolkit/cli';
+import { dispatch, CliUsageError } from '@alva-ai/toolkit/dispatch';
 
 const client = new AlvaClient({ apiKey: process.env.ALVA_API_KEY });
 const result = await dispatch(
@@ -193,6 +193,10 @@ errors. Toolkit-managed commands reject unknown flags before invoking an API;
 the error is scoped to the resolved command and suggests a nearby supported
 flag when possible. `broker` is the explicit exception because its remaining
 arguments are forwarded verbatim to the venue-native CLI.
+
+Node.js command-line consumers should continue to use
+`@alva-ai/toolkit/cli`, which adds config files, authentication, local files,
+stdio, and Undici timeout configuration around the same dispatcher.
 
 ## SDK Usage (Node.js)
 

@@ -27,6 +27,17 @@ export default defineConfig([
     external: ['css-tree', 'yaml'],
   },
   {
+    entry: { dispatch: 'src/cli/dispatch.ts' },
+    format: ['esm'],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    target: 'es2022',
+    platform: 'browser',
+    define,
+    external: ['css-tree', 'yaml'],
+  },
+  {
     entry: { browser: 'src/browser.ts' },
     format: ['iife'],
     globalName: 'AlvaToolkit',

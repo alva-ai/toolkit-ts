@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Readable } from 'node:stream';
+import { runInNewContext } from 'node:vm';
 import {
   dispatch,
   handleConfigure,
@@ -3703,6 +3704,12 @@ describe('CLI_VERSION', () => {
   it('falls back to dev when __VERSION__ is not defined at build time', () => {
     expect(CLI_VERSION).toBe('dev');
   });
+
+  it('is available through embedded dispatch', async () => {
+    await expect(dispatch(makeClient(), ['--version'])).resolves.toBe(
+      `alva version ${CLI_VERSION}`
+    );
+  });
 });
 
 describe('isVersionOlderThan', () => {
@@ -3928,6 +3935,36 @@ components: {}
       path: '~/playbooks/demo/index.html',
     });
     expect(fs.readFileSync).not.toHaveBeenCalled();
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('required-container');
+  });
+
+  it('can lint an ArrayBuffer created in another realm', async () => {
+    const { handleLintPlaybook } = await import('../src/cli/lint.js');
+    const client = makeClient();
+    const html = '<html><body><p>no container</p></body></html>';
+    const bytes = [...new TextEncoder().encode(html)];
+    client.fs.read = vi
+      .fn()
+      .mockResolvedValue(
+        runInNewContext(`new Uint8Array(${JSON.stringify(bytes)}).buffer`)
+      );
+
+    const result = await handleLintPlaybook({
+      file: '~/playbooks/demo/index.html',
+      client,
+      format: 'json',
+      contractYaml: `
+version: 1
+global:
+  required-container: { selector: ".playbook-container", must-exist: true }
+  scroll: { sole-scroll-container: ["body"] }
+  typography: { font-family-root-must-include: "Delight", font-weight-allowed: [400, 500] }
+  links: { anchor-required-attrs: ["target", "rel"] }
+components: {}
+`,
+    });
+
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain('required-container');
   });
