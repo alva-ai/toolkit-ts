@@ -552,6 +552,13 @@ Publish flags:
   --description <text>   Automation description
   --changelog <text>     Per-major changelog summary
   --agent-type <type>    Agent kind that produces this automation, e.g. "alpi"
+  --skip-auto-trigger    Suppress the default first producer run. Publishing
+                         still creates the owner's alert binding.
+
+Publish behavior:
+  A new automation creates an ACTIVE owner alert binding, then triggers its
+  first producer run unless --skip-auto-trigger is present. Use the flag when
+  you will route the binding or trigger the producer explicitly afterward.
 
 Update flags:
   --id <automation_id>   Existing automation id (required)
@@ -832,6 +839,13 @@ Feed flags:
   --agent-type <type>    Agent kind that produces this feed, e.g. "alpi".
                          Marks the feed as an agent feed with an editable
                          prompt (AGENTS.md). Omit for a regular feed.
+  --skip-auto-trigger    Suppress the default first producer run. Releasing
+                         still creates the owner's alert binding.
+
+Feed release behavior:
+  A new feed creates an ACTIVE owner alert binding, then triggers its first
+  producer run unless --skip-auto-trigger is present. Use the flag when you
+  will route the binding or trigger the producer explicitly afterward.
 
 Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
@@ -1713,6 +1727,7 @@ function feedReleaseParams(flags: Record<string, string>, command: string) {
     description: flags['description'],
     changelog: flags['changelog'],
     agent_type: flags['agent-type'],
+    skip_auto_trigger: boolFlag(flags['skip-auto-trigger']),
   };
 }
 
