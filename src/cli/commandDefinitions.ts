@@ -195,6 +195,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'changelog',
       'agent-type',
     ],
+    booleans: ['skip-auto-trigger'],
   }),
   command('automation update', {
     values: [
@@ -269,6 +270,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'changelog',
       'agent-type',
     ],
+    booleans: ['skip-auto-trigger'],
   }),
   command('release playbook-draft', {
     values: [

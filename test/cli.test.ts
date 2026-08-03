@@ -1626,6 +1626,7 @@ describe('CLI dispatch', () => {
       'Initial',
       '--agent-type',
       'alpi',
+      '--skip-auto-trigger',
     ]);
     expect(client.automation.publish).toHaveBeenCalledWith({
       name: 'btc',
@@ -1635,7 +1636,19 @@ describe('CLI dispatch', () => {
       description: 'BTC signal',
       changelog: 'Initial',
       agent_type: 'alpi',
+      skip_auto_trigger: true,
     });
+  });
+
+  it('documents automation publish side effects and their run opt-out', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['automation', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(result.text).toContain('--skip-auto-trigger');
+    expect(result.text).toContain('owner alert binding');
+    expect(result.text).toContain('first producer run');
   });
 
   it('dispatches an ID-scoped automation update', async () => {
@@ -1994,9 +2007,15 @@ describe('CLI dispatch', () => {
       '1.0',
       '--cronjob-id',
       '5',
+      '--skip-auto-trigger',
     ]);
     expect(client.release.feed).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'btc', version: '1.0', cronjob_id: 5 })
+      expect.objectContaining({
+        name: 'btc',
+        version: '1.0',
+        cronjob_id: 5,
+        skip_auto_trigger: true,
+      })
     );
   });
 
