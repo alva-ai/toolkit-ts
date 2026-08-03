@@ -293,12 +293,13 @@ Path conventions:
   Quote tilde paths to prevent shell expansion: --path "~/data" (not --path ~/data).
 
 Time series reads:
-  Paths under feed data directories support virtual suffixes:
-    @last/{n}            Last N data points (chronological order)
-    @range/{start}..{end}  Between timestamps (RFC 3339 or Unix ms)
-    @range/{duration}    Recent data within duration (e.g. 7d, 1h)
-    @count               Data point count
-    @now                 Latest single data point
+  Feed data directories are synth mounts. Their supported read suffixes are:
+    @last/{n}                    Last N data points (chronological order)
+    @range/{start_ms}..{end_ms}  Between Unix millisecond timestamps
+    @before/{timestamp_ms}/{limit}  Up to limit points before a Unix millisecond timestamp
+    @after/{timestamp_ms}/{limit}   Up to limit points after a Unix millisecond timestamp
+    @count                       Data point count
+  RFC 3339, Unix-second timestamps, @range/{duration}, and @now are not supported.
 
 Grant/revoke subjects:
   special:user:*         Public (anyone, including unauthenticated)

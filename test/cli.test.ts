@@ -2909,6 +2909,14 @@ describe('help text', () => {
     expect(result.text).toContain('write');
     expect(result.text).toContain('--path');
     expect(result.text).toContain('@last');
+    expect(result.text).toContain('@range/{start_ms}..{end_ms}');
+    expect(result.text).toContain('@before/{timestamp_ms}/{limit}');
+    expect(result.text).toContain('@after/{timestamp_ms}/{limit}');
+    expect(result.text).toContain(
+      'RFC 3339, Unix-second timestamps, @range/{duration}, and @now are not supported.'
+    );
+    expect(result.text).not.toContain('Recent data within duration');
+    expect(result.text).not.toContain('Latest single data point');
     expect(result.text).toContain('special:user:*');
   });
 
