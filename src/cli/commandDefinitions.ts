@@ -231,7 +231,11 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('playbooks list', {
     values: ['owner', 'limit', 'cursor'],
-    booleans: ['json'],
+    booleans: ['json', 'all'],
+  }),
+  command('playbooks mine', {
+    values: ['filter', 'limit', 'cursor'],
+    booleans: ['json', 'all'],
   }),
 
   command('functions allowance'),

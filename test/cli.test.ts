@@ -189,6 +189,9 @@ function makeClient(
   client.playbooks.listByOwner = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
+  client.playbooks.listOwn = vi
+    .fn()
+    .mockResolvedValue({ playbooks: [], has_next: false });
   client.subscriptions.follows = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
@@ -4683,6 +4686,103 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       owner: 'alice',
       limit: 10,
       cursor: undefined,
+    });
+  });
+
+  it('dispatches playbooks mine to the owner endpoint (drafts included)', async () => {
+    const client = makeClient();
+    await dispatch(client, ['playbooks', 'mine']);
+    expect(client.playbooks.listOwn).toHaveBeenCalledWith({
+      filter: undefined,
+      limit: undefined,
+      cursor: undefined,
+    });
+  });
+
+  it('passes a validated --filter to playbooks mine', async () => {
+    const client = makeClient();
+    await dispatch(client, ['playbooks', 'mine', '--filter', 'DRAFT']);
+    expect(client.playbooks.listOwn).toHaveBeenCalledWith({
+      filter: 'draft',
+      limit: undefined,
+      cursor: undefined,
+    });
+  });
+
+  it('rejects an unknown playbooks mine --filter', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['playbooks', 'mine', '--filter', 'bogus'])
+    ).rejects.toThrow(/--filter must be one of/);
+    expect(client.playbooks.listOwn).not.toHaveBeenCalled();
+  });
+
+  it('auto-paginates playbooks list --all across pages', async () => {
+    const client = makeClient();
+    client.playbooks.listByOwner = vi
+      .fn()
+      .mockResolvedValueOnce({
+        items: [{ id: '1', owner_username: 'alice', name: 'a' }],
+        has_next: true,
+        next_cursor: 'c1',
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: '2', owner_username: 'alice', name: 'b' }],
+        has_next: false,
+      });
+    const out = await dispatch(client, [
+      'playbooks',
+      'list',
+      '--owner',
+      'alice',
+      '--all',
+      '--json',
+    ]);
+    expect(client.playbooks.listByOwner).toHaveBeenCalledTimes(2);
+    expect(client.playbooks.listByOwner).toHaveBeenLastCalledWith({
+      owner: 'alice',
+      limit: undefined,
+      cursor: 'c1',
+    });
+    expect(out).toEqual({
+      items: [
+        { id: '1', owner_username: 'alice', name: 'a' },
+        { id: '2', owner_username: 'alice', name: 'b' },
+      ],
+      has_next: false,
+    });
+  });
+
+  it('auto-paginates playbooks mine --all using the last row cursor', async () => {
+    const client = makeClient();
+    client.playbooks.listOwn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        playbooks: [{ id: '1', name: 'a', cursor: 'c1' }],
+        has_next: true,
+      })
+      .mockResolvedValueOnce({
+        playbooks: [{ id: '2', name: 'b', cursor: 'c2' }],
+        has_next: false,
+      });
+    const out = await dispatch(client, [
+      'playbooks',
+      'mine',
+      '--all',
+      '--json',
+    ]);
+    expect(client.playbooks.listOwn).toHaveBeenCalledTimes(2);
+    expect(client.playbooks.listOwn).toHaveBeenLastCalledWith({
+      filter: undefined,
+      limit: undefined,
+      cursor: 'c1',
+    });
+    expect(out).toEqual({
+      playbooks: [
+        { id: '1', name: 'a', cursor: 'c1' },
+        { id: '2', name: 'b', cursor: 'c2' },
+      ],
+      has_next: false,
     });
   });
 });

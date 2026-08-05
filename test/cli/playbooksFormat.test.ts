@@ -3,10 +3,12 @@ import {
   formatTrendingPlaybooks,
   formatPlaybook,
   formatPlaybookList,
+  formatOwnedPlaybookList,
 } from '../../src/cli/playbooksFormat.js';
 import type {
   TrendingPlaybookItem,
   PlaybookDiscoveryItem,
+  OwnedPlaybookItem,
 } from '../../src/resources/playbooks.js';
 
 function trendingItem(
@@ -118,5 +120,44 @@ describe('formatPlaybook / formatPlaybookList', () => {
 
   it('handles an empty list', () => {
     expect(formatPlaybookList([], 'https://alva.ai')).toBe('(no playbooks)\n');
+  });
+});
+
+function ownedItem(over: Partial<OwnedPlaybookItem> = {}): OwnedPlaybookItem {
+  return {
+    id: '8832',
+    name: 'wip-scanner',
+    display_name: 'WIP Scanner',
+    visibility: 'private',
+    cursor: 'abc',
+    ...over,
+  };
+}
+
+describe('formatOwnedPlaybookList', () => {
+  it('renders id / name / visibility for owned rows', () => {
+    const out = formatOwnedPlaybookList([ownedItem()]);
+    expect(out).toContain('1 playbook(s):');
+    expect(out).toContain('• WIP Scanner  [private]');
+    expect(out).toContain('    wip-scanner');
+    expect(out).toContain('    id: 8832');
+  });
+
+  it('hints at pagination when truncated and --all was not passed', () => {
+    const out = formatOwnedPlaybookList([ownedItem()], { hasNext: true });
+    expect(out).toContain('--all');
+    expect(out).toContain('(more results');
+  });
+
+  it('omits the pagination hint when --all fetched every page', () => {
+    const out = formatOwnedPlaybookList([ownedItem()], {
+      hasNext: true,
+      all: true,
+    });
+    expect(out).not.toContain('more results');
+  });
+
+  it('handles an empty list', () => {
+    expect(formatOwnedPlaybookList([])).toBe('(no playbooks)\n');
   });
 });
