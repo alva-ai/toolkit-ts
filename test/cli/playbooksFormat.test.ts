@@ -157,6 +157,17 @@ describe('formatOwnedPlaybookList', () => {
     expect(out).not.toContain('more results');
   });
 
+  it('does not print the name twice when display_name is absent', () => {
+    const out = formatOwnedPlaybookList([
+      ownedItem({ display_name: undefined }),
+    ]);
+    // Title falls back to the name; the name must not also appear on its
+    // own indented line.
+    expect(out).toContain('• wip-scanner  [private]');
+    expect(out).not.toContain('    wip-scanner');
+    expect(out).toContain('    id: 8832');
+  });
+
   it('handles an empty list', () => {
     expect(formatOwnedPlaybookList([])).toBe('(no playbooks)\n');
   });

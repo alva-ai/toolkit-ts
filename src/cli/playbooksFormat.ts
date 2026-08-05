@@ -101,7 +101,9 @@ export function formatOwnedPlaybookList(
     const title = item.display_name || item.name || item.id;
     const visibility = item.visibility ? `  [${item.visibility}]` : '';
     lines.push(`• ${title}${visibility}`);
-    if (item.name) lines.push(`    ${item.name}`);
+    // Only show the name on its own line when it isn't already the title
+    // (i.e. a display_name was present) — otherwise it prints twice.
+    if (item.name && item.name !== title) lines.push(`    ${item.name}`);
     lines.push(`    id: ${item.id}`);
     lines.push('');
   }
