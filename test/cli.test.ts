@@ -3562,20 +3562,11 @@ describe('data-skills dispatch', () => {
         {
           name: 'alpha',
           description: 'alpha desc',
-          metadata: {
-            endpoint_count: 2,
-            endpoint_tier_counts: { public: 1, unstructured: 1 },
-            pro_count: 1,
-          },
+          metadata: { endpoint_count: 2 },
         },
         {
           name: 'beta',
           description: 'beta desc',
-          metadata: {
-            endpoint_count: 3,
-            endpoint_tier_counts: { public: 3 },
-            pro_count: 0,
-          },
         },
       ],
     });
@@ -3585,9 +3576,9 @@ describe('data-skills dispatch', () => {
     expect(text).toContain('alpha');
     expect(text).toContain('alpha desc');
     expect(text).toContain('2 endpoints');
-    expect(text).toContain('1 pro');
-    // beta has zero pro endpoints — pro tag must be omitted, not "0 pro"
-    expect(text).not.toContain('0 pro');
+    expect(text).toContain('beta');
+    expect(text).toContain('beta desc');
+    expect(text).not.toContain('pro');
   });
 
   it('data-skills list --json returns raw object', async () => {
@@ -3605,6 +3596,15 @@ describe('data-skills dispatch', () => {
       name: 'sk',
       description: 'desc',
       content: '# Header\n\nbody line',
+      metadata: { endpoint_count: 1 },
+      endpoint_metadata: [
+        {
+          skill: 'sk',
+          file: 'f',
+          method: 'GET',
+          path: '/api/v1/stocks/f',
+        },
+      ],
     });
     const result = await dispatch(client, ['data-skills', 'summary', 'sk']);
     expect(typeof result).toBe('string');
@@ -3613,6 +3613,10 @@ describe('data-skills dispatch', () => {
     expect(text).toContain('desc');
     expect(text).toContain('# Header');
     expect(text).toContain('body line');
+    expect(text).toContain('GET');
+    expect(text).toContain('/api/v1/stocks/f');
+    expect(text).not.toContain('ACCESS');
+    expect(text).not.toContain('TIER');
     expect(text).not.toContain('\\n');
   });
 
@@ -3636,6 +3640,12 @@ describe('data-skills dispatch', () => {
       name: 'sk',
       description: 'desc',
       content: 'endpoint body',
+      metadata: {
+        skill: 'sk',
+        file: 'f',
+        method: 'GET',
+        path: '/api/v1/stocks/f',
+      },
     });
     const result = await dispatch(client, [
       'data-skills',
@@ -3645,6 +3655,9 @@ describe('data-skills dispatch', () => {
     ]);
     expect(typeof result).toBe('string');
     expect(result as string).toContain('endpoint body');
+    expect(result as string).toContain('GET /api/v1/stocks/f');
+    expect(result as string).not.toContain('requires pro');
+    expect(result as string).not.toContain('access:');
   });
 
   it('data-skills --help returns help text', async () => {
@@ -3655,6 +3668,7 @@ describe('data-skills dispatch', () => {
     };
     expect(result._help).toBe(true);
     expect(result.text).toContain('Browse the Arrays backend');
+    expect(result.text).not.toContain('local tier metadata');
   });
 
   it('top-level --help lists data-skills', async () => {

@@ -4,24 +4,26 @@ import {
   listSkillEndpointMetadata,
   type SkillEndpointMetadata,
   type SkillEndpointTier,
-} from './skillTiers.js';
+} from './skillEndpoints.js';
 
 type Envelope<T> = { success: boolean; data: T; request_id?: string };
-type SkillTierCounts = Partial<Record<SkillEndpointTier, number>>;
 
 export type { SkillEndpointMetadata, SkillEndpointTier };
 
 export interface SkillMetadata {
   endpoint_count: number;
-  endpoint_tier_counts: SkillTierCounts;
-  pro_count: number;
+  /** @deprecated Data-skills no longer adds local endpoint tier metadata. */
+  endpoint_tier_counts?: Partial<Record<SkillEndpointTier, number>>;
+  /** @deprecated Data-skills no longer adds local endpoint tier metadata. */
+  pro_count?: number;
 }
 
 export interface SkillSummary {
   name: string;
   description: string;
   metadata?: SkillMetadata;
-  endpoint_tier_counts?: SkillTierCounts;
+  /** @deprecated Data-skills no longer adds this local metadata. */
+  endpoint_tier_counts?: Partial<Record<SkillEndpointTier, number>>;
 }
 
 export interface SkillDoc {
@@ -30,7 +32,8 @@ export interface SkillDoc {
   content: string;
   metadata?: SkillMetadata | SkillEndpointMetadata;
   endpoint_metadata?: SkillEndpointMetadata[];
-  endpoint_tier_counts?: SkillTierCounts;
+  /** @deprecated Data-skills no longer adds this local metadata. */
+  endpoint_tier_counts?: Partial<Record<SkillEndpointTier, number>>;
 }
 
 export class DataSkillsResource {
@@ -99,24 +102,8 @@ export class DataSkillsResource {
 
 function metadataSummaryForSkill(skill: string): {
   metadata?: SkillMetadata;
-  endpoint_tier_counts?: SkillTierCounts;
 } {
-  const endpointMetadata = listSkillEndpointMetadata(skill);
-  if (endpointMetadata.length === 0) {
-    return {};
-  }
-  const counts: SkillTierCounts = {};
-  let proCount = 0;
-  for (const endpoint of endpointMetadata) {
-    counts[endpoint.tier] = (counts[endpoint.tier] ?? 0) + 1;
-    if (endpoint.pro_required) proCount += 1;
-  }
-  return {
-    endpoint_tier_counts: counts,
-    metadata: {
-      endpoint_count: endpointMetadata.length,
-      endpoint_tier_counts: counts,
-      pro_count: proCount,
-    },
-  };
+  const endpointCount = listSkillEndpointMetadata(skill).length;
+  if (endpointCount === 0) return {};
+  return { metadata: { endpoint_count: endpointCount } };
 }

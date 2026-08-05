@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Audit src/resources/skillTiers.ts against the live Arrays doc registry.
+// Audit src/resources/skillEndpoints.ts against the live Arrays doc registry.
 //
 // For every (skill, file) row in the hardcoded SKILL_ENDPOINT_METADATA table:
 //   - confirm the doc registry recognizes the file
@@ -10,9 +10,8 @@
 //   - parse the endpoints markdown table from .content
 //   - flag any file declared on the backend but absent locally
 //
-// With --apply, rewrites src/resources/skillTiers.ts to remove stale rows
-// and append missing rows (defaulted to the pro tier — flagged with a
-// TODO comment so a human reviewer must confirm).
+// With --apply, rewrites src/resources/skillEndpoints.ts to remove stale rows,
+// fix method/path drift, and append missing endpoint inventory rows.
 //
 // Doc API is public — no credentials required.
 //
@@ -26,17 +25,16 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SRC = resolve(__dirname, '..', 'src', 'resources', 'skillTiers.ts');
+const SRC = resolve(__dirname, '..', 'src', 'resources', 'skillEndpoints.ts');
 const BASE = process.env.ARRAYS_ENDPOINT ?? 'https://data-tools.prd.space.id';
 const REPORT_PATH =
   process.env.AUDIT_REPORT_PATH ?? '/tmp/skill-registry-audit.md';
 const APPLY = process.argv.includes('--apply');
 
 function parseLocalEntries(text) {
-  // Tolerates an optional leading `// ...` comment line (the `TODO(audit)`
-  // marker that --apply writes into auto-added blocks) and consumes nested
-  // single-quoted string literals atomically so a `}` inside a `path:`
-  // value such as `/api/v1/.../{var}` does not terminate the block early.
+  // Tolerates optional leading comments and consumes nested single-quoted
+  // string literals atomically so a `}` inside a templated `path:` value does
+  // not terminate the block early.
   const re =
     /\{\s*(?:\/\/[^\n]*\n\s*)*skill:\s*'([^']+)',\s*file:\s*'([^']+)',\s*method:\s*'([^']+)',\s*path:\s*'([^']+)',(?:'[^']*'|[^}])*\}/g;
   const out = [];
@@ -144,18 +142,12 @@ function fallbackPathFromSummary(summary, file) {
 }
 
 function buildBlock(entry) {
-  // Defaults to pro tier — reviewers must verify via TODO.
   return [
     '  {',
-    '    // TODO(audit): verify tier — auto-defaulted to pro',
     `    skill: '${entry.skill}',`,
     `    file: '${entry.file}',`,
     `    method: '${entry.method}',`,
     `    path: '${entry.path}',`,
-    "    tier: 'alternative',",
-    "    required_subscription_tier: 'pro',",
-    "    access: 'pro_only',",
-    '    pro_required: true,',
     '  },',
   ].join('\n');
 }
@@ -163,10 +155,8 @@ function buildBlock(entry) {
 function removeStaleBlocks(text, stale) {
   let out = text;
   for (const e of stale) {
-    // (?:'[^']*'|[^}])* consumes nested single-quoted strings atomically so
-    // a `}` inside a path like `/.../{var}` does not terminate the block.
     const re = new RegExp(
-      `\\s*\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${e.skill}',\\s*file:\\s*'${e.file}',(?:'[^']*'|[^}])*pro_required:\\s*(?:true|false),?\\s*\\},?`,
+      `\\s*\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${e.skill}',\\s*file:\\s*'${e.file}',\\s*method:\\s*'[^']+',\\s*path:\\s*'[^']+',?\\s*\\},?`,
       'g'
     );
     out = out.replace(re, '');
@@ -177,8 +167,7 @@ function removeStaleBlocks(text, stale) {
 function applyMethodPathFixes(text, mismatched) {
   let out = text;
   for (const m of mismatched) {
-    // Match only the `method: '...',\s*path: '...'` slice of the row so
-    // hand-tuned tier fields are preserved across an auto-fix.
+    // Match only the `method: '...',\s*path: '...'` slice of the row.
     const re = new RegExp(
       `(\\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)*skill:\\s*'${m.skill}',\\s*file:\\s*'${m.file}',\\s*method:\\s*)'[^']*'(,\\s*path:\\s*)'[^']*'`,
       'g'
@@ -202,7 +191,7 @@ async function main() {
   const entries = parseLocalEntries(text);
   if (entries.length === 0) {
     console.error(
-      'FATAL: parsed 0 entries from skillTiers.ts — regex broken or file moved'
+      'FATAL: parsed 0 entries from skillEndpoints.ts — regex broken or file moved'
     );
     process.exit(2);
   }
@@ -362,14 +351,14 @@ async function main() {
     lines.push('## Auto-patch');
     lines.push('');
     lines.push(
-      'Rewrote `src/resources/skillTiers.ts`: removed stale rows; appended missing rows with `tier: alternative`, `required_subscription_tier: pro`, `access: pro_only`, `pro_required: true` and a `// TODO(audit)` comment. A reviewer must confirm the tier on each new row before merge.'
+      'Rewrote `src/resources/skillEndpoints.ts`: removed stale rows, fixed method/path drift, and appended missing endpoint inventory rows.'
     );
     lines.push('');
   } else {
     lines.push('## How to fix');
     lines.push('');
     lines.push(
-      'Re-run with `--apply` to rewrite `src/resources/skillTiers.ts` in place (stale rows removed, missing rows appended at pro tier with a TODO comment), then review the diff and commit.'
+      'Re-run with `--apply` to rewrite `src/resources/skillEndpoints.ts` in place, then review the endpoint inventory diff and commit.'
     );
     lines.push('');
   }
