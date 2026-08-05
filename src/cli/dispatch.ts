@@ -974,8 +974,8 @@ public — no Alva credentials required.
 
 Subcommands:
   list                            List all available data skills
-  summary <skill>                 Get the endpoints table for a skill, plus local tier metadata
-  endpoint <skill> <file>         Get full documentation and local tier metadata for a specific endpoint
+  summary <skill>                 Get the endpoints table for a skill
+  endpoint <skill> <file>         Get full documentation for a specific endpoint
 
 Flags:
   --json             Emit raw JSON instead of the readable rendering (for scripting / jq)
