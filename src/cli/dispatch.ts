@@ -693,6 +693,7 @@ Subcommands:
   get             Resolve playbooks by id(s) or "owner/name" ref
   list            List a user's playbooks by owner username
   set-visibility  Set a playbook's visibility (requires auth)
+  delete          Delete one of your own playbooks (requires auth)
 
 Get flags:
   --id <n>               Single numeric playbook id
@@ -718,6 +719,9 @@ Set-visibility flags:
   --name <name>          Playbook name (required; owner derived from auth)
   --visibility <v>       public, private, or paid (required, case-insensitive)
 
+Delete flags:
+  --name <name>          Playbook name (required; owner derived from auth)
+
 Output:
   trending / get / list print a readable summary (title, ref, clickable
   URL, description, tags) by default. Pass --json for the raw envelope
@@ -733,11 +737,20 @@ JSON response fields:
   playbooks[].follow_count Social proof signal
   playbooks[].cursor       Cursor for pagination
   has_next                 Whether another page exists
-  playbook_path            "<owner>/<name>" echoed by set-visibility
+  playbook_path            "<owner>/<name>" echoed by set-visibility;
+                           absolute ALFS directory path echoed by delete
 
 Notes:
   private and paid are paid-tier features; free-tier accounts get a
   PERMISSION_DENIED error from the gateway.
+
+  delete is irreversible and narrower than it looks. It removes the registry
+  row only: the playbook's ALFS directory survives, so any index.html and
+  README.md written at release time stay at the returned playbook_path with
+  nothing pointing at them — clear those with "alva fs remove" if you want the
+  storage back. It also leaves the producing automation and cronjob running,
+  so delete those first ("alva automation delete", "alva deploy delete") or a
+  live schedule keeps firing at a playbook that is gone.
 
 Examples:
   alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
@@ -2918,6 +2931,10 @@ export async function dispatch(
             visibility: playbookVisibility(
               requireFlag(flags, 'visibility', 'playbooks set-visibility')
             ),
+          });
+        case 'delete':
+          return client.playbooks.delete({
+            name: requireFlag(flags, 'name', 'playbooks delete'),
           });
         case 'get': {
           const ids = csvList(flags['ids']);

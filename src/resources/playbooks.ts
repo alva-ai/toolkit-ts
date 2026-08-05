@@ -22,6 +22,24 @@ export interface SetVisibilityResponse {
   playbook_path: string;
 }
 
+export interface DeleteParams {
+  /** URL-safe playbook name. The owner is derived server-side from auth. */
+  name: string;
+}
+
+export interface DeleteResponse {
+  /**
+   * Absolute ALFS path of the deleted playbook's directory, e.g.
+   * `/alva/home/<owner>/playbooks/<name>`.
+   *
+   * The directory itself is NOT removed — deleting a playbook removes its
+   * registry row, and any `index.html` / `README.md` written during release
+   * stay behind. The path is returned so the caller can clean them up with
+   * `fs remove` when that is intended.
+   */
+  playbook_path: string;
+}
+
 export type TrendingPlaybooksSort = 'FOLLOWS' | 'RECENT';
 export type TrendingPlaybooksDir = 'FORWARD' | 'BACKWARD';
 
@@ -259,6 +277,33 @@ export class PlaybooksResource {
       `/api/v1/playbook/${encodeURIComponent(params.name)}/visibility`,
       { body: { visibility: params.visibility } }
     )) as SetVisibilityResponse;
+  }
+
+  /**
+   * Delete one of the caller's own playbooks by name. The owner is derived
+   * server-side from auth, so only `name` is needed — there is no way to
+   * delete someone else's playbook through this call.
+   *
+   * This is irreversible. Afterwards the playbook stops appearing in
+   * `listByOwner` and `getByIds` returns no row for its id.
+   *
+   * Two things it does NOT do, both worth knowing before relying on it as
+   * cleanup:
+   *
+   * - It does not delete the playbook's ALFS directory. Files written during
+   *   release (`index.html`, `README.md`) remain at the returned
+   *   `playbook_path` with no registry row pointing at them. Remove them with
+   *   `fs remove` if you want the storage reclaimed too.
+   * - It does not touch the automation or cronjob that produced the playbook.
+   *   Delete those first, or a live schedule keeps running against a playbook
+   *   that no longer exists.
+   */
+  async delete(params: DeleteParams): Promise<DeleteResponse> {
+    this.client._requireAuth();
+    return (await this.client._request(
+      'DELETE',
+      `/api/v1/playbook/${encodeURIComponent(params.name)}`
+    )) as DeleteResponse;
   }
 }
 

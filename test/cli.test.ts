@@ -189,6 +189,9 @@ function makeClient(
   client.playbooks.listByOwner = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
+  client.playbooks.delete = vi
+    .fn()
+    .mockResolvedValue({ playbook_path: '/alva/home/alice/playbooks/demo' });
   client.subscriptions.follows = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
@@ -1492,6 +1495,36 @@ describe('CLI dispatch', () => {
       id: 42,
       visibility: 'private',
     });
+  });
+
+  it('dispatches playbooks delete', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'playbooks',
+      'delete',
+      '--name',
+      'demo',
+    ]);
+    expect(client.playbooks.delete).toHaveBeenCalledWith({ name: 'demo' });
+    expect(result).toEqual({
+      playbook_path: '/alva/home/alice/playbooks/demo',
+    });
+  });
+
+  it('playbooks delete requires --name', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['playbooks', 'delete'])
+    ).rejects.toThrow("--name is required for 'playbooks delete'");
+    expect(client.playbooks.delete).not.toHaveBeenCalled();
+  });
+
+  it('playbooks delete does not accept an owner (auth decides the owner)', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['playbooks', 'delete', '--name', 'demo', '--owner', 'bob'])
+    ).rejects.toThrow();
+    expect(client.playbooks.delete).not.toHaveBeenCalled();
   });
 
   it('feed set-visibility requires --id', async () => {

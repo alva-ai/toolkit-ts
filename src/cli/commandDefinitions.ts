@@ -233,6 +233,9 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['owner', 'limit', 'cursor'],
     booleans: ['json'],
   }),
+  command('playbooks delete', {
+    values: ['name'],
+  }),
 
   command('functions allowance'),
   command('functions allowance get', { values: ['playbook-id'] }),
