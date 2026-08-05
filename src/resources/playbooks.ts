@@ -124,6 +124,38 @@ export interface ListByOwnerResponse {
   next_cursor?: string;
 }
 
+/** Lifecycle filters for the owner-scoped list (GET /api/v1/playbook). */
+export const OWNED_PLAYBOOK_FILTERS = ['draft', 'running', 'paused'] as const;
+
+export type OwnedPlaybookFilter = (typeof OWNED_PLAYBOOK_FILTERS)[number];
+
+export interface ListOwnParams {
+  /** draft | running | paused. Omit to list all your published playbooks. */
+  filter?: OwnedPlaybookFilter;
+  /** Page size, default 50, max 100 server-side. */
+  limit?: number;
+  cursor?: string;
+}
+
+/** One row from the owner-scoped list (GET /api/v1/playbook). */
+export interface OwnedPlaybookItem {
+  /** Numeric playbook id encoded as a string. */
+  id: string;
+  /** URL-safe playbook name. */
+  name: string;
+  display_name?: string;
+  visibility?: string;
+  created_at?: string;
+  updated_at?: string;
+  /** Cursor to pass as `cursor` for the next page. */
+  cursor?: string;
+}
+
+export interface ListOwnResponse {
+  playbooks: OwnedPlaybookItem[];
+  has_next: boolean;
+}
+
 export class PlaybooksResource {
   constructor(private client: AlvaClient) {}
 
@@ -159,6 +191,27 @@ export class PlaybooksResource {
     return (await this.client._request('GET', '/api/v1/playbooks', {
       query,
     })) as ListByOwnerResponse;
+  }
+
+  /**
+   * List the authenticated user's OWN playbooks via GET /api/v1/playbook —
+   * the owner-scoped surface that INCLUDES drafts. Unlike `listByOwner` (the
+   * public discovery view, which requires at least one release and therefore
+   * hides drafts), this shows work-in-progress playbooks you created but
+   * never released. Requires an API key: the owner is derived from auth, not
+   * a username argument. Optional `filter` narrows to draft | running |
+   * paused.
+   */
+  async listOwn(params: ListOwnParams = {}): Promise<ListOwnResponse> {
+    const query: Record<string, string> = {};
+    if (params.filter) query.filter = params.filter;
+    if (params.limit !== undefined && params.limit > 0) {
+      query.limit = String(params.limit);
+    }
+    if (params.cursor) query.cursor = params.cursor;
+    return (await this.client._request('GET', '/api/v1/playbook', {
+      query,
+    })) as ListOwnResponse;
   }
 
   /**

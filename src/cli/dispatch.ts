@@ -18,13 +18,16 @@ import {
 } from './playbookSkillsFormat.js';
 import {
   PLAYBOOK_VISIBILITIES,
+  OWNED_PLAYBOOK_FILTERS,
   webOriginFromApiBase,
   type PlaybookVisibility,
+  type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
 import {
   formatTrendingPlaybooks,
   formatPlaybook,
   formatPlaybookList,
+  formatOwnedPlaybookList,
 } from './playbooksFormat.js';
 import {
   formatAlertList,
@@ -691,7 +694,8 @@ Find and resolve playbooks with an agent-friendly response shape.
 Subcommands:
   trending        List trending playbooks
   get             Resolve playbooks by id(s) or "owner/name" ref
-  list            List a user's playbooks by owner username
+  list            List a user's public (released) playbooks by owner username
+  mine            List YOUR OWN playbooks incl. drafts (requires auth)
   set-visibility  Set a playbook's visibility (requires auth)
 
 Get flags:
@@ -702,8 +706,16 @@ Get flags:
 
 List flags:
   --owner <username>     Owner username (required)
-  --limit <n>            Max results per page
+  --limit <n>            Max results per page (default one page of ~50)
   --cursor <cursor>      Pagination cursor from previous response
+  --all                  Fetch every page (auto-paginate); without it a
+                         single page is returned — check has_next
+
+Mine flags (your own playbooks, drafts included):
+  --filter <f>           draft | running | paused (optional; omit for all)
+  --limit <n>            Max results per page (default one page of ~50)
+  --cursor <cursor>      Pagination cursor from previous response
+  --all                  Fetch every page (auto-paginate)
 
 Trending flags:
   --keyword <text>       Search text
@@ -743,7 +755,8 @@ Examples:
   alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
   alva playbooks get --ids 8009,8010
   alva playbooks get --ref alice/btc-dashboard
-  alva playbooks list --owner alice
+  alva playbooks list --owner alice --all
+  alva playbooks mine --filter draft
   alva playbooks set-visibility --name my-scanner --visibility private
   alva playbooks set-visibility --name my-scanner --visibility public`,
 
@@ -1788,6 +1801,20 @@ function playbookVisibility(val: string): PlaybookVisibility {
   }
   throw new CliUsageError(
     `--visibility must be one of ${PLAYBOOK_VISIBILITIES.join(', ')} for 'playbooks set-visibility', got '${val}'`,
+    'playbooks'
+  );
+}
+
+function ownedPlaybookFilter(
+  val: string | undefined
+): OwnedPlaybookFilter | undefined {
+  if (val === undefined || val === '') return undefined;
+  const normalized = val.trim().toLowerCase();
+  if ((OWNED_PLAYBOOK_FILTERS as readonly string[]).includes(normalized)) {
+    return normalized as OwnedPlaybookFilter;
+  }
+  throw new CliUsageError(
+    `--filter must be one of ${OWNED_PLAYBOOK_FILTERS.join(', ')} for 'playbooks mine', got '${val}'`,
     'playbooks'
   );
 }
@@ -2940,14 +2967,82 @@ export async function dispatch(
           );
         }
         case 'list': {
+          const owner = requireFlag(flags, 'owner', 'playbooks list');
+          const limit = num(flags['limit']);
+          if (boolFlag(flags['all']) ?? false) {
+            const first = await client.playbooks.listByOwner({
+              owner,
+              limit,
+              cursor: flags['cursor'],
+            });
+            const items = first.items;
+            let hasNext = first.has_next;
+            let cursor = first.next_cursor;
+            while (hasNext && cursor) {
+              const page = await client.playbooks.listByOwner({
+                owner,
+                limit,
+                cursor,
+              });
+              items.push(...page.items);
+              hasNext = page.has_next;
+              cursor = page.next_cursor;
+            }
+            return asJson
+              ? { items, has_next: false }
+              : formatPlaybookList(items, webOrigin);
+          }
           const result = await client.playbooks.listByOwner({
-            owner: requireFlag(flags, 'owner', 'playbooks list'),
-            limit: num(flags['limit']),
+            owner,
+            limit,
             cursor: flags['cursor'],
           });
           return asJson
             ? result
             : formatPlaybookList(result.items, webOrigin, {
+                hasNext: result.has_next,
+              });
+        }
+        case 'mine': {
+          // Owner-scoped list (GET /api/v1/playbook) — includes YOUR drafts,
+          // unlike `list --owner me` (public discovery, drafts hidden).
+          const filter = ownedPlaybookFilter(flags['filter']);
+          const limit = num(flags['limit']);
+          if (boolFlag(flags['all']) ?? false) {
+            const first = await client.playbooks.listOwn({
+              filter,
+              limit,
+              cursor: flags['cursor'],
+            });
+            const items = first.playbooks;
+            let hasNext = first.has_next;
+            let cursor = items.length
+              ? items[items.length - 1].cursor
+              : undefined;
+            while (hasNext && cursor) {
+              const page = await client.playbooks.listOwn({
+                filter,
+                limit,
+                cursor,
+              });
+              items.push(...page.playbooks);
+              hasNext = page.has_next;
+              cursor = page.playbooks.length
+                ? page.playbooks[page.playbooks.length - 1].cursor
+                : undefined;
+            }
+            return asJson
+              ? { playbooks: items, has_next: false }
+              : formatOwnedPlaybookList(items, { all: true });
+          }
+          const result = await client.playbooks.listOwn({
+            filter,
+            limit,
+            cursor: flags['cursor'],
+          });
+          return asJson
+            ? result
+            : formatOwnedPlaybookList(result.playbooks, {
                 hasNext: result.has_next,
               });
         }

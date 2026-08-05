@@ -1,6 +1,7 @@
 import type {
   TrendingPlaybooksResponse,
   PlaybookDiscoveryItem,
+  OwnedPlaybookItem,
 } from '../resources/playbooks.js';
 
 const MAX_DESC = 200;
@@ -83,4 +84,34 @@ function discoveryItemLines(
   if (item.id) out.push(`    id: ${item.id}`);
   out.push('');
   return out;
+}
+
+/**
+ * Pretty render of the owner-scoped list (`playbooks mine`). These rows are
+ * the caller's own playbooks — drafts included — so they carry no discovery
+ * ref/url, only id / name / visibility.
+ */
+export function formatOwnedPlaybookList(
+  items: OwnedPlaybookItem[],
+  opts: { hasNext?: boolean; all?: boolean } = {}
+): string {
+  if (!items || items.length === 0) return '(no playbooks)\n';
+  const lines: string[] = [`${items.length} playbook(s):`, ''];
+  for (const item of items) {
+    const title = item.display_name || item.name || item.id;
+    const visibility = item.visibility ? `  [${item.visibility}]` : '';
+    lines.push(`• ${title}${visibility}`);
+    // Only show the name on its own line when it isn't already the title
+    // (i.e. a display_name was present) — otherwise it prints twice.
+    if (item.name && item.name !== title) lines.push(`    ${item.name}`);
+    lines.push(`    id: ${item.id}`);
+    lines.push('');
+  }
+  if (opts.hasNext && !opts.all) {
+    lines.push(
+      '(more results — pass --cursor <last item cursor>, or --all for every page)',
+      ''
+    );
+  }
+  return lines.join('\n');
 }
