@@ -459,6 +459,11 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['account-id', 'limit', 'page-token'],
   }),
 
+  command('markets narrative', { values: ['ticker'] }),
+  command('markets earnings', {
+    values: ['ticker', 'event', 'fiscal-year', 'fiscal-quarter'],
+  }),
+
   command('trading accounts'),
   command('trading portfolio', { values: ['account-id'] }),
   command('trading orders', {
