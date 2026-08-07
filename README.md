@@ -343,6 +343,8 @@ alva comments <create|pin|unpin>
 alva notification-preferences <list|enable-session-completed|disable-session-completed>
 alva remix --child-username <u> --child-name <n> --parents <json>
 alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
+alva markets narrative --ticker <symbol>
+alva markets earnings --ticker <symbol> [--event <latest-completed|next-confirmed> | --fiscal-year <year> --fiscal-quarter <Q1|Q2|Q3|Q4>]
 alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
 ```
 

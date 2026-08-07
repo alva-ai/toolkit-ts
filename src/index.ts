@@ -9,6 +9,7 @@ export { AlvaError, CliUsageError } from './error.js';
 export * from './playbookRuntime.js';
 export { AutomationResource } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
+export { MarketsResource } from './resources/markets.js';
 export type {
   AlvaClientConfig,
   FsReadParams,
@@ -109,3 +110,25 @@ export type {
   RevokeAllowanceParams,
   RevokeAllowanceResponse,
 } from './resources/functions.js';
+export type {
+  CompanyEarningsCatalog,
+  CompanyEarningsContentStatus,
+  CompanyEarningsContext,
+  CompanyEarningsEvent,
+  CompanyEarningsParams,
+  CompanyEarningsPeriod,
+  CompanyEarningsRelease,
+  CompanyEarningsSession,
+  CompanyEarningsStatus,
+  CompanyEarningsTranscript,
+  CompanyEarningsTranscriptEntry,
+  CompanyEarningsTranscriptSection,
+  CompanyFiscalQuarter,
+  CompanyNarrative,
+  CompanyNarrativeChangeLogEntry,
+  CompanyNarrativeContext,
+  CompanyNarrativeHistory,
+  CompanyNarrativeSnapshot,
+  CompanyPostEarningsSummary,
+  CompanyPreEarningsAnalysis,
+} from './resources/markets.js';

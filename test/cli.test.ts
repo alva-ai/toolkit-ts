@@ -181,6 +181,15 @@ function makeClient(
       edges: [],
     },
   });
+  client.markets.narrative = vi.fn().mockResolvedValue({
+    ticker: 'AAPL',
+    current: null,
+    history: null,
+  });
+  client.markets.earnings = vi.fn().mockResolvedValue({
+    ticker: 'AAPL',
+    period: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
+  });
   client.playbooks.trending = vi
     .fn()
     .mockResolvedValue({ playbooks: [], has_next: false });
@@ -915,6 +924,94 @@ describe('CLI dispatch', () => {
       totalRemaining: 100,
       todayUsed: 3,
     });
+  });
+
+  it('dispatches markets narrative', async () => {
+    const client = makeClient();
+    await dispatch(client, ['markets', 'narrative', '--ticker', 'BRK.B']);
+    expect(client.markets.narrative).toHaveBeenCalledWith('BRK.B');
+  });
+
+  it('defaults markets earnings to latest-completed', async () => {
+    const client = makeClient();
+    await dispatch(client, ['markets', 'earnings', '--ticker', 'AAPL']);
+    expect(client.markets.earnings).toHaveBeenCalledWith({
+      ticker: 'AAPL',
+      event: undefined,
+    });
+  });
+
+  it('dispatches markets earnings with an event selector', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'markets',
+      'earnings',
+      '--ticker',
+      'AAPL',
+      '--event',
+      'next-confirmed',
+    ]);
+    expect(client.markets.earnings).toHaveBeenCalledWith({
+      ticker: 'AAPL',
+      event: 'next-confirmed',
+    });
+  });
+
+  it('dispatches markets earnings with an explicit fiscal period', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'markets',
+      'earnings',
+      '--ticker',
+      'AAPL',
+      '--fiscal-year',
+      '2026',
+      '--fiscal-quarter',
+      'q3',
+    ]);
+    expect(client.markets.earnings).toHaveBeenCalledWith({
+      ticker: 'AAPL',
+      fiscalYear: 2026,
+      fiscalQuarter: 'Q3',
+    });
+  });
+
+  it('rejects mixed markets earnings selectors', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'markets',
+        'earnings',
+        '--ticker',
+        'AAPL',
+        '--event',
+        'latest-completed',
+        '--fiscal-year',
+        '2026',
+        '--fiscal-quarter',
+        'Q3',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'markets'
+    );
+  });
+
+  it('rejects incomplete markets earnings fiscal periods', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'markets',
+        'earnings',
+        '--ticker',
+        'AAPL',
+        '--fiscal-year',
+        '2026',
+      ])
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof CliUsageError && err.command === 'markets'
+    );
   });
 
   it('dispatches credits items with explicit ISO window and filters', async () => {

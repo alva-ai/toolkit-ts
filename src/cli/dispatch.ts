@@ -120,6 +120,7 @@ Commands:
   subscriptions       Playbook follows and feed alert subscriptions
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
+  markets     Company narrative and earnings context (narrative, earnings)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   broker      Agentic order execution — venue-native passthrough to trex (accounts, quote, order, balance, positions, ...; run 'alva broker describe')
   auth        Authentication (login)
@@ -1230,6 +1231,34 @@ Examples:
   alva portfolio accounts
   alva portfolio summary --account-id trex:123
   alva portfolio activities --account-id snaptrade:456 --limit 20`,
+
+  markets: `Usage: alva markets <subcommand> [options]
+
+Read the Markets backend's canonical company context. The Toolkit resolves
+earnings events through the backend period catalog; it does not construct ALFS
+owners, feed slugs, versions, or paths.
+
+Subcommands:
+  narrative    Get the current narrative, history, and narrative change log
+  earnings     Get Pre, Release, Transcript, and Post for one fiscal event
+
+Narrative flags:
+  --ticker <symbol>             Stock ticker (required)
+
+Earnings flags:
+  --ticker <symbol>             Stock ticker (required)
+  --event <selector>            latest-completed (default) or next-confirmed
+  --fiscal-year <year>          Explicit fiscal year; requires --fiscal-quarter
+  --fiscal-quarter <Q1..Q4>     Explicit fiscal quarter; requires --fiscal-year
+
+Do not combine --event with --fiscal-year/--fiscal-quarter. These commands read
+the current backend view; historical query-as-of gating is not supported yet.
+
+Examples:
+  alva markets narrative --ticker AAPL
+  alva markets earnings --ticker AAPL
+  alva markets earnings --ticker AAPL --event next-confirmed
+  alva markets earnings --ticker AAPL --fiscal-year 2026 --fiscal-quarter Q3`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
@@ -3916,6 +3945,76 @@ export async function dispatch(
           throw new CliUsageError(
             `Unknown subcommand: portfolio ${subcommand}`,
             'portfolio'
+          );
+      }
+    }
+
+    case 'markets': {
+      if (!subcommand)
+        throw new CliUsageError('Missing subcommand for markets', 'markets');
+      const ticker = requireFlag(flags, 'ticker', `markets ${subcommand}`);
+      switch (subcommand) {
+        case 'narrative':
+          return client.markets.narrative(ticker);
+        case 'earnings': {
+          const event = flags['event'];
+          const fiscalYear = optionalBoundedIntegerFlag(
+            flags,
+            'fiscal-year',
+            'markets earnings',
+            1900,
+            9999
+          );
+          const fiscalQuarter = flags['fiscal-quarter']?.toUpperCase();
+          const hasExplicitPeriod =
+            fiscalYear !== undefined || fiscalQuarter !== undefined;
+          if (event !== undefined && hasExplicitPeriod) {
+            throw new CliUsageError(
+              "--event cannot be combined with --fiscal-year or --fiscal-quarter for 'markets earnings'",
+              'markets'
+            );
+          }
+          if ((fiscalYear === undefined) !== (fiscalQuarter === undefined)) {
+            throw new CliUsageError(
+              "--fiscal-year and --fiscal-quarter must be provided together for 'markets earnings'",
+              'markets'
+            );
+          }
+          if (
+            event !== undefined &&
+            event !== 'latest-completed' &&
+            event !== 'next-confirmed'
+          ) {
+            throw new CliUsageError(
+              "--event must be 'latest-completed' or 'next-confirmed' for 'markets earnings'",
+              'markets'
+            );
+          }
+          if (
+            fiscalQuarter !== undefined &&
+            !['Q1', 'Q2', 'Q3', 'Q4'].includes(fiscalQuarter)
+          ) {
+            throw new CliUsageError(
+              "--fiscal-quarter must be Q1, Q2, Q3, or Q4 for 'markets earnings'",
+              'markets'
+            );
+          }
+          if (fiscalYear !== undefined && fiscalQuarter !== undefined) {
+            return client.markets.earnings({
+              ticker,
+              fiscalYear,
+              fiscalQuarter: fiscalQuarter as 'Q1' | 'Q2' | 'Q3' | 'Q4',
+            });
+          }
+          return client.markets.earnings({
+            ticker,
+            event: event as 'latest-completed' | 'next-confirmed' | undefined,
+          });
+        }
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: markets ${subcommand}`,
+            'markets'
           );
       }
     }
