@@ -292,9 +292,13 @@ Subcommand flags:
   revoke     --path (required), --subject <s> (required), --permission <p> (required)
 
 Path conventions:
-  ~/...                  Home-relative path (expands to /alva/home/<username>/...)
+  ~/...                  Home-relative filesystem location (for example, --path and --link-path)
   /alva/home/alice/...   Absolute path (required for public/unauthenticated reads)
   Quote tilde paths to prevent shell expansion: --path "~/data" (not --path ~/data).
+
+Symlink targets:
+  Symlink target paths are stored verbatim with POSIX semantics; they are not home-expanded.
+  Use a path relative to the link's parent (for example, "real-file.txt") or a true /... absolute path.
 
 Time series reads:
   Feed data directories are synth mounts. Their supported read suffixes are:
@@ -327,7 +331,7 @@ Examples:
   alva fs chmod --path "~/script.js" --mode 755
   alva fs grant --path "~/feeds/btc-ema" --subject "special:user:*" --permission read
   alva fs revoke --path "~/feeds/btc-ema" --subject "special:user:*" --permission read
-  alva fs symlink --target-path "~/real-file.txt" --link-path "~/my-link.txt"
+  alva fs symlink --target-path "real-file.txt" --link-path "~/my-link.txt"
   alva fs readlink --path "~/my-link.txt"`,
 
   run: `Usage: alva run [options]
