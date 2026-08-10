@@ -3421,6 +3421,12 @@ describe('help text', () => {
     };
     expect(result.text).toContain('--target-path');
     expect(result.text).toContain('--link-path');
+    expect(result.text).toContain('Symlink target paths are stored verbatim');
+    expect(result.text).toContain('not home-expanded');
+    expect(result.text).toContain(
+      'alva fs symlink --target-path "real-file.txt" --link-path "~/my-link.txt"'
+    );
+    expect(result.text).not.toContain('--target-path "~/real-file.txt"');
   });
 
   it('case 16: fs --help per-sub flags for chmod', async () => {
