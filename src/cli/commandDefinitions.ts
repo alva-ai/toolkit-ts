@@ -156,10 +156,31 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'until',
       'runs',
       'name',
+      'timezone',
       // Retained so the handler can emit the existing migration guidance.
       'expires-in',
     ],
   }),
+
+  command('schedule list', { values: ['channel-id'] }),
+  command('schedule put', {
+    values: [
+      'channel-id',
+      'name',
+      'message',
+      'at',
+      'after',
+      'every',
+      'cron',
+      'timezone',
+      'starts-at',
+      'until',
+      'max-occurrences',
+    ],
+  }),
+  command('schedule pause', { values: ['channel-id', 'name'] }),
+  command('schedule resume', { values: ['channel-id', 'name'] }),
+  command('schedule delete', { values: ['channel-id', 'name'] }),
 
   command('service-account create', { values: ['name'] }),
   command('service-account list'),
