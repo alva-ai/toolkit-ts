@@ -102,7 +102,6 @@ Commands:
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
-  loop        Self-scheduled in-channel goal loops (create)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -510,34 +509,6 @@ Examples:
   alva schedule put --name market-open --message "Review the open" --cron "30 9 * * 1-5" --timezone America/New_York
   alva schedule list
   alva schedule pause --name market-open`,
-
-  loop: `Usage: alva loop <subcommand> [options]
-
-Compatibility parser for a bounded cron Schedule in an Alva Channel. It writes
-only the unified Schedule resource; it does not create ALFS runner files,
-Cronjobs, or Automations.
-
-Subcommands:
-  create     Create or replace the corresponding named Schedule
-
-Create flags:
-  --goal <text>          Instruction run each tick (required)
-  --cron <expression>    Cron schedule (required, e.g. "0 * * * *")
-  --timezone <IANA>      Cron timezone (required)
-  --channel-id <id>      Target Alva channel ID. Omit ⇒ your default
-                         Alva agent channel
-  --start <time>         First eligible time: 'now' (default) or RFC3339
-  --until <time>         Exclusive RFC3339 cutoff
-  --runs <count>         Maximum admitted runs after --start
-  --name <name>          Schedule name (default: derived from --goal)
-
-At least one of --until or --runs is required. RFC3339 timestamps must include
-a timezone (Z or ±HH:MM). The result is the canonical Schedule. Use
-'alva schedule pause|resume|delete --name <name>' for lifecycle management.
-
-Examples:
-  alva loop create --channel-id 7284... --goal "watch NVDA pre-market, alert on setup" --cron "*/5 * * * *" --until "2026-07-15T09:30:00-04:00"
-  alva loop create --goal "check the next 12 intervals" --cron "0 * * * *" --start now --runs 12`,
 
   'service-account': `Usage: alva service-account <subcommand> [options]
 
@@ -2006,93 +1977,6 @@ function parseCreditsDurationMs(value: string): number {
   return durationMs;
 }
 
-function parseLoopTimestamp(value: string, flag: 'start' | 'until'): string {
-  const raw = value.trim();
-  const match =
-    /^(\d{4})-(\d{2})-(\d{2})[tT](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[zZ]|([+-])(\d{2}):(\d{2}))$/.exec(
-      raw
-    );
-  if (!match) {
-    throw new CliUsageError(
-      `--${flag} must be an RFC3339 timestamp with a timezone (Z or ±HH:MM), got '${value}'`,
-      'loop'
-    );
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6]);
-  const offsetHour = Number(match[8] ?? 0);
-  const offsetMinute = Number(match[9] ?? 0);
-  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const monthDays = [
-    31,
-    leapYear ? 29 : 28,
-    31,
-    30,
-    31,
-    30,
-    31,
-    31,
-    30,
-    31,
-    30,
-    31,
-  ];
-  if (
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > monthDays[month - 1] ||
-    hour > 23 ||
-    minute > 59 ||
-    second > 59 ||
-    offsetHour > 23 ||
-    offsetMinute > 59
-  ) {
-    throw new CliUsageError(
-      `--${flag} must be a valid RFC3339 timestamp, got '${value}'`,
-      'loop'
-    );
-  }
-  const timestamp = Date.parse(raw);
-  if (!Number.isFinite(timestamp)) {
-    throw new CliUsageError(
-      `--${flag} must be a valid RFC3339 timestamp, got '${value}'`,
-      'loop'
-    );
-  }
-  return new Date(timestamp).toISOString();
-}
-
-function parseLoopRuns(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (!/^[1-9]\d*$/.test(value)) {
-    throw new CliUsageError('--runs must be a positive integer', 'loop');
-  }
-  const runs = Number(value);
-  if (!Number.isSafeInteger(runs) || runs > 2_147_483_647) {
-    throw new CliUsageError('--runs is too large', 'loop');
-  }
-  return runs;
-}
-
-// loopCronjobName derives a valid cronjob name (1-63 lowercase alphanumeric or
-// hyphens, no leading/trailing hyphen) from the goal, unless --name is given.
-function loopCronjobName(flags: Record<string, string>, goal: string): string {
-  if (flags['name'] !== undefined) return flags['name']; // backend validates
-  const base = goal
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  const slug = (base ? `loop-${base}` : 'loop')
-    .slice(0, 63)
-    .replace(/-+$/g, '');
-  return slug || 'loop';
-}
-
 async function scheduleChannelId(
   client: AlvaClient,
   flags: Record<string, string>
@@ -2138,7 +2022,7 @@ function scheduleRuleFromFlags(
 function parseScheduleTimestamp(value: string, flag: string): string {
   const raw = value.trim();
   const match =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/i.exec(
       raw
     );
   if (!match) {
@@ -2934,10 +2818,11 @@ export async function executeParsedCommand(
       if (!subcommand) {
         throw new CliUsageError('Missing subcommand for schedule', 'schedule');
       }
-      const channelId = await scheduleChannelId(client, flags);
       switch (subcommand) {
-        case 'list':
+        case 'list': {
+          const channelId = await scheduleChannelId(client, flags);
           return client.schedules.list({ channelId });
+        }
         case 'put': {
           const rule = scheduleRuleFromFlags(flags);
           const bounds = scheduleBoundsFromFlags(flags);
@@ -2950,95 +2835,46 @@ export async function executeParsedCommand(
               'schedule'
             );
           }
+          const name = requireFlag(flags, 'name', 'schedule put');
+          const text = requireFlag(flags, 'message', 'schedule put');
+          const channelId = await scheduleChannelId(client, flags);
           return client.schedules.put({
             channelId,
-            name: requireFlag(flags, 'name', 'schedule put'),
-            text: requireFlag(flags, 'message', 'schedule put'),
+            name,
+            text,
             rule,
             bounds,
           });
         }
-        case 'pause':
+        case 'pause': {
+          const name = requireFlag(flags, 'name', 'schedule pause');
+          const channelId = await scheduleChannelId(client, flags);
           return client.schedules.pause({
             channelId,
-            name: requireFlag(flags, 'name', 'schedule pause'),
+            name,
           });
-        case 'resume':
+        }
+        case 'resume': {
+          const name = requireFlag(flags, 'name', 'schedule resume');
+          const channelId = await scheduleChannelId(client, flags);
           return client.schedules.resume({
             channelId,
-            name: requireFlag(flags, 'name', 'schedule resume'),
+            name,
           });
-        case 'delete':
+        }
+        case 'delete': {
+          const name = requireFlag(flags, 'name', 'schedule delete');
+          const channelId = await scheduleChannelId(client, flags);
           await client.schedules.delete({
             channelId,
-            name: requireFlag(flags, 'name', 'schedule delete'),
+            name,
           });
           return { deleted: true };
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: schedule ${subcommand}`,
             'schedule'
-          );
-      }
-    }
-
-    case 'loop': {
-      if (!subcommand)
-        throw new CliUsageError('Missing subcommand for loop', 'loop');
-      switch (subcommand) {
-        case 'create': {
-          if (flags['expires-in'] !== undefined) {
-            throw new CliUsageError(
-              'Unknown flag --expires-in; use --until and/or --runs',
-              'loop'
-            );
-          }
-          const goal = requireFlag(flags, 'goal', 'loop create');
-          const cron = requireFlag(flags, 'cron', 'loop create');
-          const timezone = requireFlag(flags, 'timezone', 'loop create');
-          const channelId = await scheduleChannelId(client, flags);
-          const startRaw = (flags['start'] ?? 'now').trim();
-          const startAt =
-            startRaw.toLowerCase() === 'now'
-              ? undefined
-              : parseLoopTimestamp(startRaw, 'start');
-          const endAt = flags['until']
-            ? parseLoopTimestamp(flags['until'], 'until')
-            : undefined;
-          const maxRuns = parseLoopRuns(flags['runs']);
-          if (endAt === undefined && maxRuns === undefined) {
-            throw new CliUsageError(
-              'loop create requires at least one of --until or --runs',
-              'loop'
-            );
-          }
-          if (
-            startAt !== undefined &&
-            endAt !== undefined &&
-            endAt <= startAt
-          ) {
-            throw new CliUsageError(
-              '--until must be later than --start',
-              'loop'
-            );
-          }
-          const name = loopCronjobName(flags, goal);
-          return client.schedules.put({
-            channelId,
-            name,
-            text: goal,
-            rule: { kind: 'cron', expression: cron, timezone },
-            bounds: {
-              startsAt: startAt,
-              until: endAt,
-              maxOccurrences: maxRuns,
-            },
-          });
-        }
-        default:
-          throw new CliUsageError(
-            `Unknown subcommand: loop ${subcommand}`,
-            'loop'
           );
       }
     }

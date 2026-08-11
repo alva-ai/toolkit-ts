@@ -663,110 +663,41 @@ describe('CLI dispatch', () => {
       ])
     ).rejects.toThrow(/exactly one/);
     expect(client.schedules.put).not.toHaveBeenCalled();
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
   });
 
-  it('loop create is a compatibility parser over Schedule Put only', async () => {
+  it('schedule put validates required fields before resolving the default channel', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'schedule',
+        'put',
+        '--name',
+        'missing-message',
+        '--every',
+        'PT1H',
+      ])
+    ).rejects.toThrow(/--message/);
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
+  });
+
+  it('schedule put accepts lowercase RFC3339 timezone markers', async () => {
     const client = makeClient();
     await dispatch(client, [
-      'loop',
-      'create',
-      '--channel-id',
-      '7284',
-      '--goal',
-      'Watch NVDA pre-market',
-      '--cron',
-      '0 * * * *',
-      '--timezone',
-      'America/New_York',
-      '--runs',
-      '12',
+      'schedule',
+      'put',
+      '--name',
+      'lowercase-time',
+      '--message',
+      'x',
+      '--at',
+      '2026-08-11t04:00:00z',
     ]);
-    expect(client.schedules.put).toHaveBeenCalledWith({
-      channelId: '7284',
-      name: 'loop-watch-nvda-pre-market',
-      text: 'Watch NVDA pre-market',
-      rule: {
-        kind: 'cron',
-        expression: '0 * * * *',
-        timezone: 'America/New_York',
-      },
-      bounds: { startsAt: undefined, until: undefined, maxOccurrences: 12 },
-    });
-    expect(client.fs.write).not.toHaveBeenCalled();
-    expect(client.deploy.create).not.toHaveBeenCalled();
-    expect(client.automation.publish).not.toHaveBeenCalled();
-  });
-
-  it('loop create requires --until or --runs', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'forever',
-        '--cron',
-        '0 * * * *',
-        '--timezone',
-        'UTC',
-      ])
-    ).rejects.toThrow(/--until.*--runs|--runs.*--until/);
-  });
-
-  it('loop create rejects timestamps without a timezone', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--timezone',
-        'UTC',
-        '--start',
-        '2026-07-15T08:00:00',
-        '--runs',
-        '1',
-      ])
-    ).rejects.toThrow(/timezone/);
-  });
-
-  it('loop create rejects invalid RFC3339 calendar dates', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--timezone',
-        'UTC',
-        '--until',
-        '2026-02-30T08:00:00Z',
-      ])
-    ).rejects.toThrow(/valid RFC3339/);
-  });
-
-  it('loop create rejects non-positive --runs', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--timezone',
-        'UTC',
-        '--runs',
-        '0',
-      ])
-    ).rejects.toThrow(/--runs/);
+    expect(client.schedules.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00.000Z' },
+      })
+    );
   });
 
   it('dispatches secrets create with --name and --value', async () => {

@@ -147,21 +147,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('deploy run-logs', { values: ['id', 'run-id'] }),
 
-  command('loop create', {
-    values: [
-      'goal',
-      'cron',
-      'channel-id',
-      'start',
-      'until',
-      'runs',
-      'name',
-      'timezone',
-      // Retained so the handler can emit the existing migration guidance.
-      'expires-in',
-    ],
-  }),
-
   command('schedule list', { values: ['channel-id'] }),
   command('schedule put', {
     values: [

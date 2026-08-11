@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 
 const wireSchedule = {
+  id: 'AgentSchedule:91:heartbeat',
+  channelId: '91',
   name: 'heartbeat',
   rule: {
     kind: 'EVERY',
@@ -33,7 +35,13 @@ describe('SchedulesResource', () => {
 
   it('lists canonical schedules through the owner-scoped Channel graph', async () => {
     request.mockResolvedValue({
-      data: { viewer: { channel: { schedules: [wireSchedule] } } },
+      data: {
+        viewer: {
+          channel: {
+            schedules: { edges: [{ node: wireSchedule }] },
+          },
+        },
+      },
     });
 
     await expect(client.schedules.list({ channelId: '91' })).resolves.toEqual([
@@ -63,7 +71,7 @@ describe('SchedulesResource', () => {
     vi.setSystemTime(new Date('2026-08-11T04:00:00Z'));
     request.mockResolvedValue({
       data: {
-        putChannelSchedule: {
+        updateChannelSchedule: {
           schedule: {
             ...wireSchedule,
             rule: {
@@ -107,7 +115,7 @@ describe('SchedulesResource', () => {
 
   it('uses explicit lifecycle mutations and rejects unsafe inputs before IO', async () => {
     request.mockResolvedValue({
-      data: { pauseChannelSchedule: { schedule: wireSchedule } },
+      data: { updateChannelSchedule: { schedule: wireSchedule } },
     });
     await client.schedules.pause({ channelId: 91, name: 'heartbeat' });
     expect(request).toHaveBeenCalledWith(
@@ -115,7 +123,13 @@ describe('SchedulesResource', () => {
       '/query',
       expect.objectContaining({
         body: expect.objectContaining({
-          variables: { input: { channelId: '91', name: 'heartbeat' } },
+          variables: {
+            input: {
+              channelId: '91',
+              name: 'heartbeat',
+              lifecycle: 'PAUSED',
+            },
+          },
         }),
       })
     );
@@ -130,6 +144,76 @@ describe('SchedulesResource', () => {
       })
     ).rejects.toThrow('timezone');
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsafe numeric channel IDs before network IO', async () => {
+    await expect(
+      client.schedules.list({ channelId: Number.MAX_SAFE_INTEGER + 1 })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('accepts lowercase RFC3339 timezone markers', async () => {
+    request.mockResolvedValue({
+      data: {
+        updateChannelSchedule: {
+          schedule: {
+            ...wireSchedule,
+            rule: {
+              kind: 'AT',
+              atMs: Date.parse('2026-08-11T04:00:00Z'),
+              everyIntervalSeconds: null,
+              cronExpression: null,
+              cronTimezone: null,
+            },
+          },
+        },
+      },
+    });
+
+    await client.schedules.put({
+      channelId: 91,
+      name: 'lowercase-time',
+      rule: { kind: 'at', timestamp: '2026-08-11t04:00:00z' },
+      text: 'x',
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: expect.objectContaining({
+            input: expect.objectContaining({
+              rule: {
+                kind: 'AT',
+                atMs: Date.parse('2026-08-11T04:00:00Z'),
+              },
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  it('tolerates omitted optional bounds and message in responses', async () => {
+    request.mockResolvedValue({
+      data: {
+        viewer: {
+          channel: {
+            schedules: {
+              edges: [
+                { node: { ...wireSchedule, bounds: null, message: null } },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    await expect(client.schedules.list({ channelId: 91 })).resolves.toEqual([
+      expect.objectContaining({ bounds: {}, text: '' }),
+    ]);
   });
 
   it.each([
@@ -180,7 +264,11 @@ describe('SchedulesResource', () => {
     request.mockResolvedValue({
       data: {
         viewer: {
-          channel: { schedules: [{ ...wireSchedule, status: 'FUTURE' }] },
+          channel: {
+            schedules: {
+              edges: [{ node: { ...wireSchedule, status: 'FUTURE' } }],
+            },
+          },
         },
       },
     });
