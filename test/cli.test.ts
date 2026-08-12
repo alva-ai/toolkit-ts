@@ -1014,6 +1014,21 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('markets --help documents context evidence semantics', async () => {
+    const client = makeClient();
+    const result = (await dispatch(client, ['markets', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    const help = result.text.replace(/\s+/g, ' ');
+    expect(help).toContain('Narrative is dated Alva analysis');
+    expect(help).toContain('Pre is the dated expectation baseline');
+    expect(help).toContain('Transcript holds management statements');
+    expect(help).toContain("Post is Alva's dated interpretation");
+    expect(help).toContain('does not invalidate valid stages');
+    expect(help).toContain('never replaced with a different quarter');
+  });
+
   it('dispatches credits items with explicit ISO window and filters', async () => {
     const client = makeClient();
     await dispatch(client, [

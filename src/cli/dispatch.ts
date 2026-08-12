@@ -1258,6 +1258,19 @@ Earnings flags:
 Do not combine --event with --fiscal-year/--fiscal-quarter. These commands read
 the current backend view; historical query-as-of gating is not supported yet.
 
+Output semantics:
+  Narrative is dated Alva analysis. Use current for present-tense company
+  context and history only to explain changes; use separate sources for live
+  prices and official facts.
+
+  Earnings covers one fiscal event. Pre is the dated expectation baseline;
+  Release identifies the official source for reported facts; Transcript holds
+  management statements; Post is Alva's dated interpretation.
+
+  Each Earnings stage has its own status. A missing or unavailable stage does
+  not invalidate valid stages, and an unavailable requested event is never
+  replaced with a different quarter.
+
 Examples:
   alva markets narrative --ticker AAPL
   alva markets earnings --ticker AAPL
