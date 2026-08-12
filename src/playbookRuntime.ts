@@ -49,6 +49,11 @@ export type SubscribeApi = {
    * the viewer's own session. Resolves with the outcome.
    */
   propose: (input: SubscribeProposalInput) => Promise<SubscribeProposalResult>;
+  /**
+   * Ask the parent to open its trusted alert manager for this playbook. The
+   * parent resolves the current release feeds and viewer subscription state.
+   */
+  manage: () => void;
 };
 
 export type UdfDescriptor = {
@@ -170,6 +175,7 @@ export const UDF_CONSENT_RESPONSE_MESSAGE = 'alva:udf:consent-response';
 export const UDF_AUTH_REQUIRED_MESSAGE = 'alva:udf:auth-required';
 export const SUBSCRIBE_PROPOSE_MESSAGE = 'alva:subscribe:propose';
 export const SUBSCRIBE_RESULT_MESSAGE = 'alva:subscribe:result';
+export const SUBSCRIBE_MANAGE_MESSAGE = 'alva:subscribe:manage';
 
 const DEFAULT_API_ORIGIN = 'https://api-llm.prd.alva.ai';
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -424,8 +430,20 @@ const proposeSubscribe = async (
   });
 };
 
+const manageSubscriptions = () => {
+  if (!runtimeWindow || !expectedParentOrigin) return;
+  runtimeWindow.parent.postMessage(
+    {
+      type: SUBSCRIBE_MANAGE_MESSAGE,
+      playbook_id: playbookIdFromBoot,
+    },
+    expectedParentOrigin
+  );
+};
+
 export const subscribe: SubscribeApi = {
   propose: proposeSubscribe,
+  manage: manageSubscriptions,
 };
 
 const requestAuthentication = (functionName: string) => {
