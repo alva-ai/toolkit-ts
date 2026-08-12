@@ -343,6 +343,43 @@ describe('playbook runtime SDK', () => {
     expect(fake.parent.postMessage).not.toHaveBeenCalled();
   });
 
+  it('asks the trusted parent to open the current playbook alert manager', async () => {
+    const token = tokenWithPid('42');
+    const fake = installFakeWindow(
+      `https://alice.playbook.alva.ai/demo/v1?_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai`
+    );
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    runtime.subscribe.manage();
+
+    expect(fake.parent.postMessage).toHaveBeenCalledWith(
+      {
+        type: 'alva:subscribe:manage',
+        playbook_id: '42',
+      },
+      'https://alva.ai'
+    );
+  });
+
+  it('can ask to manage alerts before an anonymous viewer has a playbook token', async () => {
+    const fake = installFakeWindow(
+      'https://alice.playbook.alva.ai/demo/v1?parent_origin=https%3A%2F%2Falva.ai'
+    );
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+
+    runtime.subscribe.manage();
+
+    expect(fake.parent.postMessage).toHaveBeenCalledWith(
+      {
+        type: 'alva:subscribe:manage',
+        playbook_id: null,
+      },
+      'https://alva.ai'
+    );
+  });
+
   it('maps backend sentinel errors to typed errors', async () => {
     const token = tokenWithPid('42');
     installFakeWindow(
