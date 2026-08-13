@@ -90,8 +90,10 @@ function makeClient(
   client.fs.revoke = vi.fn().mockResolvedValue(undefined);
   client.deploy.list = vi.fn().mockResolvedValue({ cronjobs: [] });
   client.deploy.create = vi.fn().mockResolvedValue({ id: 1 });
+  client.deploy._createSerializedArgs = vi.fn().mockResolvedValue({ id: 1 });
   client.deploy.get = vi.fn().mockResolvedValue({ id: 1 });
   client.deploy.update = vi.fn().mockResolvedValue({ id: 1 });
+  client.deploy._updateSerializedArgs = vi.fn().mockResolvedValue({ id: 1 });
   client.deploy.delete = vi.fn().mockResolvedValue(undefined);
   client.deploy.pause = vi.fn().mockResolvedValue(undefined);
   client.deploy.resume = vi.fn().mockResolvedValue(undefined);
@@ -109,6 +111,9 @@ function makeClient(
   client.secrets.update = vi.fn().mockResolvedValue(undefined);
   client.secrets.delete = vi.fn().mockResolvedValue(undefined);
   client.run.execute = vi
+    .fn()
+    .mockResolvedValue({ result: '2', status: 'completed' });
+  client.run._executeSerializedArgs = vi
     .fn()
     .mockResolvedValue({ result: '2', status: 'completed' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
@@ -795,13 +800,23 @@ describe('CLI dispatch', () => {
       '{"symbol":"BTC"}',
     ]);
     expect(mock).toHaveBeenCalledWith('/tmp/script.js', 'utf-8');
-    expect(client.run.execute).toHaveBeenCalledWith(
+    expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 'require("env").args',
-        args: { symbol: 'BTC' },
-      })
+      }),
+      '{"symbol":"BTC"}'
     );
     mock.mockReset();
+  });
+
+  it('preserves large integer literals in run --args', async () => {
+    const client = makeClient();
+    const args = '{"channel_id":2087608331744604160}';
+    await dispatch(client, ['run', '--code', '1+1', '--args', args]);
+    expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
+      expect.objectContaining({ code: '1+1' }),
+      args
+    );
   });
 
   it('dispatches run with --max-heap-size-mb', async () => {
@@ -2503,6 +2518,27 @@ components: {}
     ]);
     expect(client.deploy.create).toHaveBeenCalledWith(
       expect.objectContaining({ push_notify: false })
+    );
+  });
+
+  it('preserves large integer literals in deploy create --args', async () => {
+    const client = makeClient();
+    const args = '{"channel_id":2087608331744604160}';
+    await dispatch(client, [
+      'deploy',
+      'create',
+      '--name',
+      'j',
+      '--path',
+      '~/j.js',
+      '--cron',
+      '* * * * *',
+      '--args',
+      args,
+    ]);
+    expect(client.deploy._createSerializedArgs).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'j' }),
+      args
     );
   });
 

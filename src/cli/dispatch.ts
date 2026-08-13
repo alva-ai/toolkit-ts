@@ -1420,6 +1420,22 @@ function boolFlag(val: string | undefined): boolean | undefined {
   return undefined;
 }
 
+function serializedJSONFlag(
+  value: string | undefined,
+  command: string
+): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    JSON.parse(value);
+  } catch (error) {
+    throw new CliUsageError(
+      `--args must contain valid JSON for '${command}': ${error instanceof Error ? error.message : String(error)}`,
+      command.split(' ')[0]
+    );
+  }
+  return value;
+}
+
 function requireFlag(
   flags: Record<string, string>,
   name: string,
@@ -2592,11 +2608,10 @@ export async function dispatch(
       }
       const timeout_ms = runTimeoutMs(flags, deps);
       configureRunFetchTimeout(timeout_ms, deps);
-      return client.run.execute({
+      const params = {
         code,
         entry_path: flags['entry-path'],
         working_dir: flags['working-dir'],
-        args: jsonParse(flags['args']) as Record<string, unknown> | undefined,
         max_heap_size_mb: optionalBoundedIntegerFlag(
           flags,
           'max-heap-size-mb',
@@ -2605,21 +2620,22 @@ export async function dispatch(
           2048
         ),
         timeout_ms,
-      });
+      };
+      const serializedArgs = serializedJSONFlag(flags['args'], 'run');
+      return serializedArgs === undefined
+        ? client.run.execute(params)
+        : client.run._executeSerializedArgs(params, serializedArgs);
     }
 
     case 'deploy': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for deploy', 'deploy');
       switch (subcommand) {
-        case 'create':
-          return client.deploy.create({
+        case 'create': {
+          const params = {
             name: requireFlag(flags, 'name', 'deploy create'),
             path: requireFlag(flags, 'path', 'deploy create'),
             cron_expression: requireFlag(flags, 'cron', 'deploy create'),
-            args: jsonParse(flags['args']) as
-              | Record<string, unknown>
-              | undefined,
             push_notify: boolFlag(flags['push-notify']),
             max_heap_size_mb: optionalBoundedIntegerFlag(
               flags,
@@ -2639,7 +2655,15 @@ export async function dispatch(
               flags,
               'deploy create'
             ),
-          });
+          };
+          const serializedArgs = serializedJSONFlag(
+            flags['args'],
+            'deploy create'
+          );
+          return serializedArgs === undefined
+            ? client.deploy.create(params)
+            : client.deploy._createSerializedArgs(params, serializedArgs);
+        }
         case 'list':
           return client.deploy.list({
             limit: num(flags['limit']),
@@ -2649,14 +2673,11 @@ export async function dispatch(
           return client.deploy.get({
             id: requireNumericFlag(flags, 'id', 'deploy get'),
           });
-        case 'update':
-          return client.deploy.update({
+        case 'update': {
+          const params = {
             id: requireNumericFlag(flags, 'id', 'deploy update'),
             name: flags['name'],
             cron_expression: flags['cron'],
-            args: jsonParse(flags['args']) as
-              | Record<string, unknown>
-              | undefined,
             push_notify: boolFlag(flags['push-notify']),
             max_heap_size_mb: optionalBoundedIntegerFlag(
               flags,
@@ -2673,7 +2694,15 @@ export async function dispatch(
               3600
             ),
             run_as_user_id: resolveRunAsFlag(flags, 'deploy update'),
-          });
+          };
+          const serializedArgs = serializedJSONFlag(
+            flags['args'],
+            'deploy update'
+          );
+          return serializedArgs === undefined
+            ? client.deploy.update(params)
+            : client.deploy._updateSerializedArgs(params, serializedArgs);
+        }
         case 'delete':
           return client.deploy.delete({
             id: requireNumericFlag(flags, 'id', 'deploy delete'),
