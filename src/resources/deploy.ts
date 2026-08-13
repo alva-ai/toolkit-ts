@@ -14,7 +14,7 @@ import type {
 } from '../types.js';
 import {
   objectWithRawJSONField,
-  validateStructuredArgs,
+  serializeStructuredArgs,
 } from '../jsonPayload.js';
 
 export class DeployResource {
@@ -22,8 +22,9 @@ export class DeployResource {
 
   async create(params: CronjobCreateRequest): Promise<Cronjob> {
     this.client._requireAuth();
-    validateStructuredArgs(params.args);
-    return this.createRequest(params);
+    return params.args === undefined
+      ? this.createRequest(params)
+      : this.createRequest(params, serializeStructuredArgs(params.args));
   }
 
   /** @internal Used by the CLI to preserve the exact --args JSON text. */
@@ -78,8 +79,9 @@ export class DeployResource {
 
   async update(params: CronjobUpdateRequest): Promise<Cronjob> {
     this.client._requireAuth();
-    validateStructuredArgs(params.args);
-    return this.updateRequest(params);
+    return params.args === undefined
+      ? this.updateRequest(params)
+      : this.updateRequest(params, serializeStructuredArgs(params.args));
   }
 
   /** @internal Used by the CLI to preserve the exact --args JSON text. */

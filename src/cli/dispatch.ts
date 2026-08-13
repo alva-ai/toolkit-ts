@@ -37,6 +37,7 @@ import {
 } from './productFormat.js';
 import { formatReport } from '../lint/report.js';
 import { handleLintPlaybook, lintBeforeRelease } from './lintCore.js';
+import { validateSerializedArgs } from '../jsonPayload.js';
 
 export { CliUsageError } from '../error.js';
 
@@ -1426,7 +1427,7 @@ function serializedJSONFlag(
 ): string | undefined {
   if (value === undefined) return undefined;
   try {
-    JSON.parse(value);
+    validateSerializedArgs(value);
   } catch (error) {
     throw new CliUsageError(
       `--args must contain valid JSON for '${command}': ${error instanceof Error ? error.message : String(error)}`,

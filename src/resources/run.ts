@@ -2,7 +2,7 @@ import type { AlvaClient } from '../client.js';
 import type { RunRequest, RunResponse } from '../types.js';
 import {
   objectWithRawJSONField,
-  validateStructuredArgs,
+  serializeStructuredArgs,
 } from '../jsonPayload.js';
 
 export class RunResource {
@@ -10,8 +10,9 @@ export class RunResource {
 
   async execute(params: RunRequest): Promise<RunResponse> {
     this.client._requireAuth();
-    validateStructuredArgs(params.args);
-    return this.request(params);
+    return params.args === undefined
+      ? this.request(params)
+      : this.request(params, serializeStructuredArgs(params.args));
   }
 
   /** @internal Used by the CLI to preserve the exact --args JSON text. */

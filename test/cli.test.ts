@@ -809,9 +809,9 @@ describe('CLI dispatch', () => {
     mock.mockReset();
   });
 
-  it('preserves large integer literals in run --args', async () => {
+  it('preserves string IDs in run --args', async () => {
     const client = makeClient();
-    const args = '{"channel_id":2087608331744604160}';
+    const args = '{"channel_id":"2087608331744604161"}';
     await dispatch(client, ['run', '--code', '1+1', '--args', args]);
     expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
       expect.objectContaining({ code: '1+1' }),
@@ -2521,9 +2521,9 @@ components: {}
     );
   });
 
-  it('preserves large integer literals in deploy create --args', async () => {
+  it('preserves string IDs in deploy create --args', async () => {
     const client = makeClient();
-    const args = '{"channel_id":2087608331744604160}';
+    const args = '{"channel_id":"2087608331744604161"}';
     await dispatch(client, [
       'deploy',
       'create',
@@ -2540,6 +2540,20 @@ components: {}
       expect.objectContaining({ name: 'j' }),
       args
     );
+  });
+
+  it.each([
+    '{"channel_id":2087608331744604161}',
+    '{"channel_id":9.007199254740992e15}',
+    '{"nested":[{"channel_id":2087608331744604161}]}',
+    'null',
+    '[]',
+  ])('rejects unsafe run --args before dispatch: %s', async (args) => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--args', args])
+    ).rejects.toThrow();
+    expect(client.run._executeSerializedArgs).not.toHaveBeenCalled();
   });
 
   it('dispatches deploy create with --run-as-service-account', async () => {
