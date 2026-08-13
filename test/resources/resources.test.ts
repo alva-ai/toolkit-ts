@@ -180,6 +180,95 @@ describe('RunResource', () => {
     });
   });
 
+  it('execute() preserves serialized string IDs supplied by the CLI', async () => {
+    const client = makeClient();
+    const run = new RunResource(client);
+    await run._executeSerializedArgs(
+      { code: '1+1' },
+      '{"channel_id":"2087608331744604161"}'
+    );
+    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
+      jsonBody: '{"code":"1+1","args":{"channel_id":"2087608331744604161"}}',
+      timeoutMs: undefined,
+    });
+  });
+
+  it('execute() rejects malformed serialized args before sending', async () => {
+    const client = makeClient();
+    const run = new RunResource(client);
+    await expect(
+      run._executeSerializedArgs({ code: '1+1' }, '{"broken":')
+    ).rejects.toThrow();
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'unsafe integer',
+      args: { channel_id: 2087608331744604200 },
+    },
+    { name: 'NaN', args: { value: Number.NaN } },
+    { name: 'Infinity', args: { value: Number.POSITIVE_INFINITY } },
+    { name: 'boxed number', args: { value: new Number(1) } },
+    {
+      name: 'toJSON object',
+      args: { toJSON: () => ({ channel_id: 2087608331744604200 }) },
+    },
+    {
+      name: 'accessor',
+      args: Object.defineProperty({}, 'value', {
+        enumerable: true,
+        get: () => 1,
+      }),
+    },
+    { name: 'array root', args: [] },
+    { name: 'null root', args: null },
+  ])(
+    'execute() rejects $name from the structured SDK API',
+    async ({ args }) => {
+      const client = makeClient();
+      const run = new RunResource(client);
+      await expect(
+        run.execute({
+          code: '1+1',
+          args: args as Record<string, unknown>,
+        })
+      ).rejects.toThrow();
+      expect(client._request).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    '{"channel_id":2087608331744604161}',
+    '{"channel_id":9.007199254740992e15}',
+    '{"nested":[{"channel_id":2087608331744604161}]}',
+    'null',
+    '[]',
+    '1',
+  ])('execute() rejects unsafe serialized args: %s', async (args) => {
+    const client = makeClient();
+    const run = new RunResource(client);
+    await expect(
+      run._executeSerializedArgs({ code: '1+1' }, args)
+    ).rejects.toThrow();
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '{"min":-9007199254740991,"max":9007199254740991}',
+    '{"fraction":1000000000000000.1}',
+    '{"smallScientific":9.007199254740991e15}',
+    '{"normalizedScientific":0.00000000000000009e32}',
+  ])(
+    'execute() accepts serialized numbers within the safe range: %s',
+    async (args) => {
+      const client = makeClient();
+      const run = new RunResource(client);
+      await run._executeSerializedArgs({ code: '1+1' }, args);
+      expect(client._request).toHaveBeenCalled();
+    }
+  );
+
   it('execute() forwards max_heap_size_mb when provided', async () => {
     const client = makeClient();
     const run = new RunResource(client);

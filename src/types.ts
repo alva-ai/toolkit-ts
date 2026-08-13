@@ -276,7 +276,8 @@ export interface Cronjob {
   path: string;
   cron_expression: string;
   status: string;
-  args: Record<string, unknown>;
+  /** Valid current rows are objects; legacy invalid rows are returned as strings. */
+  args: Record<string, unknown> | string | null;
   /** Whether successful Feed runs may deliver alerts to subscribers. */
   push_notify: boolean;
   /** Per-cronjob V8 heap cap (MB). null when using the server default. */

@@ -12,26 +12,53 @@ import type {
   CronjobRunLogsResponse,
   CronjobTriggerResponse,
 } from '../types.js';
+import {
+  objectWithRawJSONField,
+  serializeStructuredArgs,
+} from '../jsonPayload.js';
 
 export class DeployResource {
   constructor(private client: AlvaClient) {}
 
   async create(params: CronjobCreateRequest): Promise<Cronjob> {
     this.client._requireAuth();
+    return params.args === undefined
+      ? this.createRequest(params)
+      : this.createRequest(params, serializeStructuredArgs(params.args));
+  }
+
+  /** @internal Used by the CLI to preserve the exact --args JSON text. */
+  async _createSerializedArgs(
+    params: CronjobCreateRequest,
+    serializedArgs: string
+  ): Promise<Cronjob> {
+    this.client._requireAuth();
+    return this.createRequest(params, serializedArgs);
+  }
+
+  private createRequest(
+    params: CronjobCreateRequest,
+    serializedArgs?: string
+  ): Promise<Cronjob> {
+    const body = {
+      name: params.name,
+      path: params.path,
+      cron_expression: params.cron_expression,
+      args: params.args,
+      push_notify: params.push_notify,
+      max_heap_size_mb: params.max_heap_size_mb,
+      execution_timeout_seconds: params.execution_timeout_seconds,
+      run_as_user_id: params.run_as_user_id,
+      start_at: params.start_at,
+      end_at: params.end_at,
+      max_runs: params.max_runs,
+    };
     return this.client._request('POST', '/api/v1/deploy/cronjob', {
-      body: {
-        name: params.name,
-        path: params.path,
-        cron_expression: params.cron_expression,
-        args: params.args,
-        push_notify: params.push_notify,
-        max_heap_size_mb: params.max_heap_size_mb,
-        execution_timeout_seconds: params.execution_timeout_seconds,
-        run_as_user_id: params.run_as_user_id,
-        start_at: params.start_at,
-        end_at: params.end_at,
-        max_runs: params.max_runs,
-      },
+      ...(serializedArgs === undefined
+        ? { body }
+        : {
+            jsonBody: objectWithRawJSONField(body, 'args', serializedArgs),
+          }),
     }) as Promise<Cronjob>;
   }
 
@@ -52,9 +79,31 @@ export class DeployResource {
 
   async update(params: CronjobUpdateRequest): Promise<Cronjob> {
     this.client._requireAuth();
+    return params.args === undefined
+      ? this.updateRequest(params)
+      : this.updateRequest(params, serializeStructuredArgs(params.args));
+  }
+
+  /** @internal Used by the CLI to preserve the exact --args JSON text. */
+  async _updateSerializedArgs(
+    params: CronjobUpdateRequest,
+    serializedArgs: string
+  ): Promise<Cronjob> {
+    this.client._requireAuth();
+    return this.updateRequest(params, serializedArgs);
+  }
+
+  private updateRequest(
+    params: CronjobUpdateRequest,
+    serializedArgs?: string
+  ): Promise<Cronjob> {
     const { id, ...body } = params;
     return this.client._request('PATCH', `/api/v1/deploy/cronjob/${id}`, {
-      body,
+      ...(serializedArgs === undefined
+        ? { body }
+        : {
+            jsonBody: objectWithRawJSONField(body, 'args', serializedArgs),
+          }),
     }) as Promise<Cronjob>;
   }
 
