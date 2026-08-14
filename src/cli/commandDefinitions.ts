@@ -208,6 +208,12 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     ],
     booleans: ['trigger'],
   }),
+  command('automation delivery'),
+  command('automation delivery get', { values: ['id'] }),
+  command('automation delivery update', {
+    values: ['id', 'alva-channel-ids'],
+    booleans: ['email-enabled'],
+  }),
   command('automation stop', { values: ['id'] }),
   command('automation resume', { values: ['id'] }),
   command('automation delete', { values: ['id'] }),

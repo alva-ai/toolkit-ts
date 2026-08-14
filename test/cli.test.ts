@@ -160,6 +160,18 @@ function makeClient(
     version: '1.0.1',
     cronjob_id: 5,
   });
+  client.automation.delivery.get = vi.fn().mockResolvedValue({
+    isEnabled: true,
+    alvaChannels: [{ id: '17' }],
+    email: { isEnabled: true, isAvailable: true, address: 'a@example.com' },
+  });
+  client.automation.delivery.update = vi.fn().mockResolvedValue({
+    automation: { id: '42' },
+    alertDelivery: {
+      isEnabled: true,
+      email: { isEnabled: true, isAvailable: true, address: 'a@example.com' },
+    },
+  });
   client.automation.stop = vi
     .fn()
     .mockResolvedValue({ id: '42', status: 'PAUSED' });
@@ -1837,6 +1849,56 @@ describe('CLI dispatch', () => {
       'automation update requires at least one field or --trigger'
     );
     expect(client.automation.update).not.toHaveBeenCalled();
+  });
+
+  it('gets and partially updates automation delivery destinations', async () => {
+    const client = makeClient();
+
+    await dispatch(client, ['automation', 'delivery', 'get', '--id', '42']);
+    await dispatch(client, [
+      'automation',
+      'delivery',
+      'update',
+      '--id',
+      '42',
+      '--no-email-enabled',
+    ]);
+    await dispatch(client, [
+      'automation',
+      'delivery',
+      'update',
+      '--id',
+      '42',
+      '--alva-channel-ids=',
+    ]);
+
+    expect(client.automation.delivery.get).toHaveBeenCalledWith({ id: '42' });
+    expect(client.automation.delivery.update).toHaveBeenNthCalledWith(1, {
+      id: '42',
+      alvaChannelIds: undefined,
+      emailEnabled: false,
+    });
+    expect(client.automation.delivery.update).toHaveBeenNthCalledWith(2, {
+      id: '42',
+      alvaChannelIds: [],
+      emailEnabled: undefined,
+    });
+  });
+
+  it('rejects a no-op automation delivery update', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['automation', 'delivery', 'update', '--id', '42'])
+    ).rejects.toThrow('automation delivery update requires');
+    expect(client.automation.delivery.update).not.toHaveBeenCalled();
+  });
+
+  it('validates the required delivery automation id before patch fields', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['automation', 'delivery', 'update'])
+    ).rejects.toThrow("--id is required for 'automation delivery update'");
+    expect(client.automation.delivery.update).not.toHaveBeenCalled();
   });
 
   it('dispatches automation lifecycle commands', async () => {

@@ -529,6 +529,41 @@ export interface AutomationUpdateResponse {
   cronjob_id: number;
 }
 
+export interface AutomationEmailDelivery {
+  isEnabled: boolean;
+  isAvailable: boolean;
+  address: string | null;
+}
+
+export interface AutomationAlertDelivery {
+  isEnabled: boolean;
+  alvaChannels: Array<{ id: string }>;
+  email: AutomationEmailDelivery;
+}
+
+export interface AutomationAlertDeliveryGetRequest {
+  /** Positive decimal automation id kept as a string to preserve int64 precision. */
+  id: string;
+}
+
+export interface AutomationAlertDeliveryUpdateRequest {
+  /** Positive decimal automation id kept as a string to preserve int64 precision. */
+  id: string;
+  /** Replace Alva destinations when present; an explicit empty list clears them. */
+  alvaChannelIds?: readonly string[];
+  /** Update only the verified-account email destination when present. */
+  emailEnabled?: boolean;
+}
+
+export interface AutomationAlertDeliveryUpdateResponse {
+  automation: { id: string };
+  alertDelivery: {
+    isEnabled: boolean;
+    alvaChannels?: Array<{ id: string }>;
+    email?: AutomationEmailDelivery;
+  };
+}
+
 export interface FeedStatusUpdateRequest {
   /** Numeric feed id to stop/resume. */
   id: number;

@@ -104,7 +104,7 @@ Commands:
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
-  automation  Automation management (list, inspect, publish, update, stop, resume, delete)
+  automation  Automation management (list, inspect, publish, update, delivery, stop, resume, delete)
   alert       Alert management (list, follows, enable, disable, history, preferences, enable-session-completed, disable-session-completed)
   feed        Legacy automation alias (list, stop, resume, delete, set-visibility)
   playbooks   Playbook discovery (trending, get, list) and visibility
@@ -543,6 +543,7 @@ Subcommands:
   inspect   Inspect one automation and show its flow config path when available
   publish   First-publish/register a new automation after deploying its cronjob
   update    Partially update an existing automation by numeric id
+  delivery  Get or partially update per-automation alert destinations
   stop      Stop an automation's producer cronjob
   resume    Resume a stopped automation's producer cronjob
   delete    Soft-delete an automation
@@ -578,6 +579,16 @@ Update flags:
   --agent-type <type>    Replace agent kind; explicit empty clears it
   --trigger              Trigger one run after the update commits
 
+Delivery subcommands:
+  delivery get       Read Alva channel and verified-email destinations
+  delivery update    Update only the destination fields explicitly provided
+
+Delivery flags:
+  --id <automation_id>       Existing automation id (required)
+  --alva-channel-ids <a,b>   Replace Alva destinations; empty clears them
+  --email-enabled            Enable verified-account email delivery
+  --no-email-enabled         Disable email delivery
+
 Lifecycle flags:
   --id <automation_id>   Numeric automation id (required for inspect/update/stop/resume/delete)
 
@@ -588,6 +599,10 @@ Examples:
   alva automation publish --name btc-ema --version 1.0.0 --cronjob-id 42
   alva automation update --id 42 --description "Updated BTC EMA"
   alva automation update --id 42 --version 2.0.0 --trigger
+  alva automation delivery get --id 42
+  alva automation delivery update --id 42 --email-enabled
+  alva automation delivery update --id 42 --no-email-enabled
+  alva automation delivery update --id 42 --alva-channel-ids 0,123
   alva automation stop --id 42
   alva automation resume --id 42
   alva automation delete --id 42`,
@@ -1845,6 +1860,27 @@ function automationUpdateParams(flags: Record<string, string>) {
   return params;
 }
 
+function automationDeliveryUpdateParams(flags: Record<string, string>) {
+  const command = 'automation delivery update';
+  const id = requirePositiveIntegerStringFlag(flags, 'id', command);
+  const alvaChannelIds =
+    flags['alva-channel-ids'] === undefined
+      ? undefined
+      : (csvList(flags['alva-channel-ids']) ?? []);
+  const emailEnabled = boolFlag(flags['email-enabled']);
+  if (alvaChannelIds === undefined && emailEnabled === undefined) {
+    throw new CliUsageError(
+      'automation delivery update requires --alva-channel-ids or --email-enabled/--no-email-enabled',
+      'automation'
+    );
+  }
+  return {
+    id,
+    alvaChannelIds,
+    emailEnabled,
+  };
+}
+
 function trendingPlaybooksSort(
   val: string | undefined
 ): 'FOLLOWS' | 'RECENT' | undefined {
@@ -2959,6 +2995,31 @@ export async function dispatch(
           );
         case 'update':
           return client.automation.update(automationUpdateParams(flags));
+        case 'delivery': {
+          const leaf = parsedCommand.path[2];
+          if (!leaf || leaf === '--help' || leaf === '-h') {
+            return { _help: true, text: COMMAND_HELP.automation };
+          }
+          switch (leaf) {
+            case 'get':
+              return client.automation.delivery.get({
+                id: requirePositiveIntegerStringFlag(
+                  flags,
+                  'id',
+                  'automation delivery get'
+                ),
+              });
+            case 'update':
+              return client.automation.delivery.update(
+                automationDeliveryUpdateParams(flags)
+              );
+            default:
+              throw new CliUsageError(
+                `Unknown subcommand: automation delivery ${leaf}`,
+                'automation'
+              );
+          }
+        }
         case 'stop':
           return client.automation.stop({
             id: requireNumericFlag(flags, 'id', 'automation stop'),

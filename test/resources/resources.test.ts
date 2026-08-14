@@ -639,6 +639,95 @@ describe('AutomationResource', () => {
     );
     expect(client._request).not.toHaveBeenCalled();
   });
+
+  it('delivery.get() reads the viewer-scoped aggregate over GraphQL', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      data: {
+        automation: {
+          alertDelivery: {
+            isEnabled: true,
+            alvaChannels: [{ id: '17' }],
+            email: {
+              isEnabled: true,
+              isAvailable: true,
+              address: 'alice@example.com',
+            },
+          },
+        },
+      },
+    });
+    const automation = new AutomationResource(client);
+
+    const result = await automation.delivery.get({ id: '42' });
+
+    expect(result.email.address).toBe('alice@example.com');
+    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('ToolkitAutomationAlertDelivery'),
+        variables: { automationId: '42' },
+      },
+    });
+  });
+
+  it('delivery.update() sends only explicitly provided destination fields', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      data: {
+        updateAutomationAlertDelivery: {
+          automation: { id: '42' },
+          alertDelivery: {
+            isEnabled: true,
+            email: { isEnabled: true, isAvailable: true, address: null },
+          },
+        },
+      },
+    });
+    const automation = new AutomationResource(client);
+
+    await automation.delivery.update({ id: '42', emailEnabled: true });
+
+    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('@include(if: $includeAlvaChannels)'),
+        variables: {
+          input: { automationId: '42', emailEnabled: true },
+          includeAlvaChannels: false,
+          includeEmail: true,
+        },
+      },
+    });
+  });
+
+  it('delivery.update() validates no-op and channel ids before I/O', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+
+    await expect(automation.delivery.update({ id: '42' })).rejects.toThrow(
+      'requires alvaChannelIds or emailEnabled'
+    );
+    await expect(
+      automation.delivery.update({ id: '42', alvaChannelIds: ['topic'] })
+    ).rejects.toThrow('Alva channel ids must be positive integer strings');
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it('delivery.get() reports empty and malformed GraphQL responses', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+
+    client._request.mockResolvedValueOnce(null);
+    await expect(automation.delivery.get({ id: '42' })).rejects.toMatchObject({
+      code: 'GRAPHQL_EMPTY_RESPONSE',
+      message: 'GraphQL response was empty',
+    });
+
+    client._request.mockResolvedValueOnce({ errors: [null, {}] });
+    await expect(automation.delivery.get({ id: '42' })).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      message: 'GraphQL request failed',
+    });
+  });
 });
 
 describe('FunctionsResource', () => {
