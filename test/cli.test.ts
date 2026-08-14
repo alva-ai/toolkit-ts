@@ -1893,6 +1893,14 @@ describe('CLI dispatch', () => {
     expect(client.automation.delivery.update).not.toHaveBeenCalled();
   });
 
+  it('validates the required delivery automation id before patch fields', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, ['automation', 'delivery', 'update'])
+    ).rejects.toThrow("--id is required for 'automation delivery update'");
+    expect(client.automation.delivery.update).not.toHaveBeenCalled();
+  });
+
   it('dispatches automation lifecycle commands', async () => {
     const client = makeClient();
     await dispatch(client, ['automation', 'stop', '--id', '42']);

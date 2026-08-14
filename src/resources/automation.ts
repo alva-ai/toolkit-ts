@@ -55,7 +55,7 @@ interface GraphQLErrorPayload {
 
 interface GraphQLResponse<T> {
   data?: T | null;
-  errors?: GraphQLErrorPayload[];
+  errors?: Array<GraphQLErrorPayload | null>;
 }
 
 interface AutomationAlertDeliveryQueryData {
@@ -206,7 +206,14 @@ export class AutomationAlertDeliveryResource {
   ): Promise<T> {
     const response = (await this.client._request('POST', '/query', {
       body: { query, variables },
-    })) as GraphQLResponse<T>;
+    })) as GraphQLResponse<T> | null | undefined;
+    if (!response) {
+      throw new AlvaError(
+        'GRAPHQL_EMPTY_RESPONSE',
+        'GraphQL response was empty',
+        502
+      );
+    }
     if (response.errors && response.errors.length > 0) {
       throw new AlvaError(
         'GRAPHQL_ERROR',
@@ -263,10 +270,12 @@ function uniqueAlvaChannelIDs(values: readonly string[]): string[] {
   return ids;
 }
 
-function graphQLErrorMessage(errors: GraphQLErrorPayload[]): string {
+function graphQLErrorMessage(
+  errors: Array<GraphQLErrorPayload | null>
+): string {
   const messages = errors
     .map((error) =>
-      typeof error.message === 'string' && error.message
+      error && typeof error.message === 'string' && error.message
         ? error.message
         : undefined
     )

@@ -711,6 +711,23 @@ describe('AutomationResource', () => {
     ).rejects.toThrow('Alva channel ids must be positive integer strings');
     expect(client._request).not.toHaveBeenCalled();
   });
+
+  it('delivery.get() reports empty and malformed GraphQL responses', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+
+    client._request.mockResolvedValueOnce(null);
+    await expect(automation.delivery.get({ id: '42' })).rejects.toMatchObject({
+      code: 'GRAPHQL_EMPTY_RESPONSE',
+      message: 'GraphQL response was empty',
+    });
+
+    client._request.mockResolvedValueOnce({ errors: [null, {}] });
+    await expect(automation.delivery.get({ id: '42' })).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      message: 'GraphQL request failed',
+    });
+  });
 });
 
 describe('FunctionsResource', () => {

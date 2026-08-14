@@ -1862,6 +1862,7 @@ function automationUpdateParams(flags: Record<string, string>) {
 
 function automationDeliveryUpdateParams(flags: Record<string, string>) {
   const command = 'automation delivery update';
+  const id = requirePositiveIntegerStringFlag(flags, 'id', command);
   const alvaChannelIds =
     flags['alva-channel-ids'] === undefined
       ? undefined
@@ -1874,7 +1875,7 @@ function automationDeliveryUpdateParams(flags: Record<string, string>) {
     );
   }
   return {
-    id: requirePositiveIntegerStringFlag(flags, 'id', command),
+    id,
     alvaChannelIds,
     emailEnabled,
   };
