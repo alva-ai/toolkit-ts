@@ -7,7 +7,10 @@ export const VERSION: string =
 export { AlvaClient } from './client.js';
 export { AlvaError, CliUsageError } from './error.js';
 export * from './playbookRuntime.js';
-export { AutomationResource } from './resources/automation.js';
+export {
+  AutomationAlertDeliveryResource,
+  AutomationResource,
+} from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
 export { MarketsResource } from './resources/markets.js';
 export type {
@@ -53,6 +56,11 @@ export type {
   FeedListParams,
   FeedListItem,
   FeedListResponse,
+  AutomationEmailDelivery,
+  AutomationAlertDelivery,
+  AutomationAlertDeliveryGetRequest,
+  AutomationAlertDeliveryUpdateRequest,
+  AutomationAlertDeliveryUpdateResponse,
   FeedDeleteRequest,
   FeedDeleteResponse,
   FeedStatusUpdateRequest,
