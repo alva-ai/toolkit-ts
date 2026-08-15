@@ -5,6 +5,12 @@ import {
   type CommandDefinition,
   type FlagKind,
 } from './commandDefinitions.js';
+import {
+  AGENT_COMMAND_DEFINITIONS,
+  AGENT_GLOBAL_FLAG_DEFINITIONS,
+} from './agentCommandDefinitions.js';
+
+export type CliCommandProfile = 'terminal' | 'agent';
 
 interface CommandNode {
   readonly children: Map<string, CommandNode>;
@@ -54,7 +60,10 @@ function buildCommandTree(
   return root;
 }
 
-const COMMAND_TREE = buildCommandTree(COMMAND_DEFINITIONS);
+const COMMAND_TREES: Readonly<Record<CliCommandProfile, CommandNode>> = {
+  terminal: buildCommandTree(COMMAND_DEFINITIONS),
+  agent: buildCommandTree(AGENT_COMMAND_DEFINITIONS),
+};
 
 function editDistance(a: string, b: string): number {
   let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -90,16 +99,20 @@ function closestFlag(
 }
 
 function mergeFlags(
-  definition: CommandDefinition
+  definition: CommandDefinition,
+  globalFlags: Readonly<Record<string, FlagKind>>
 ): Readonly<Record<string, FlagKind>> {
-  return { ...GLOBAL_FLAG_DEFINITIONS, ...definition.flags };
+  return { ...globalFlags, ...definition.flags };
 }
 
-function resolveCommand(args: readonly string[]): {
+function resolveCommand(
+  args: readonly string[],
+  tree: CommandNode
+): {
   definition: CommandDefinition;
   consumed: number;
 } {
-  let node = COMMAND_TREE;
+  let node = tree;
   let consumed = 0;
 
   while (consumed < args.length) {
@@ -150,8 +163,11 @@ function unsupportedFlag(
   );
 }
 
-export function parseCommand(args: readonly string[]): ParsedCommand {
-  const { definition, consumed } = resolveCommand(args);
+export function parseCommand(
+  args: readonly string[],
+  profile: CliCommandProfile = 'terminal'
+): ParsedCommand {
+  const { definition, consumed } = resolveCommand(args, COMMAND_TREES[profile]);
   if (definition.passthrough === true) {
     return {
       path: definition.path,
@@ -161,7 +177,12 @@ export function parseCommand(args: readonly string[]): ParsedCommand {
     };
   }
 
-  const available = mergeFlags(definition);
+  const available = mergeFlags(
+    definition,
+    profile === 'agent'
+      ? AGENT_GLOBAL_FLAG_DEFINITIONS
+      : GLOBAL_FLAG_DEFINITIONS
+  );
   const flags: Record<string, string> = {};
   const positionals: string[] = [];
 
