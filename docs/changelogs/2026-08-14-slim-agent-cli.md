@@ -39,8 +39,9 @@
 - B8 — Broker order execution retains the existing envelope, dry-run,
   intent-id, and unknown-outcome contract. Broker argv remains forward
   compatible after the `trading broker` prefix.
-- B9 — The official Alva Skill teaches only Slim Agent paths, and ALPI pins and
-  bundles the Toolkit version that implements them.
+- B9 — A future, separate Slim Alva Skill will teach only Slim Agent paths, and
+  ALPI will pin and bundle the Toolkit version that implements them. The
+  existing Alva Skill remains unchanged.
 
 ## 3. Findings
 
@@ -109,14 +110,16 @@
   explicitly dry-run trading requests.
 - Rebuild and verify the Layer 3 bundle; lower layers must remain Toolkit-free.
 
-### Alva Skill
+### Future Slim Alva Skill
 
-- Rewrite the command index and every executable command example to the Slim
-  paths. Remove Agent guidance for `sdk`, Arrays token management, deploy/feed
-  split lifecycle, risk-rule writes, and Signal `--execute-latest`.
-- Update authoritative references for preflight, deployment/automation,
-  playbook creation/release, push notifications, credits/secrets, trading, and
-  broker execution. Keep product-specific names such as `skillhub` unchanged.
+- Create this as a separate future Skill; do not update the existing Alva
+  Skill as part of this change.
+- Its command index and executable examples must use only Slim paths. It must
+  omit Agent guidance for `sdk`, Arrays token management, deploy/feed split
+  lifecycle, risk-rule writes, and Signal `--execute-latest`.
+- Its authoritative references must cover preflight, unified Automation,
+  playbook creation/release, alerts, credits/secrets, trading, and broker
+  execution. Product-specific names such as `skillhub` remain unchanged.
 
 ### Compatibility and rollout
 
@@ -124,17 +127,16 @@
 - Agent CLI: intentionally breaking; old paths are rejected rather than
   aliased.
 - Rollout order: deploy the additive Gateway detail field, publish Toolkit,
-  update/rebuild/deploy ALPI, then publish the matching Alva Skill. Reversing
-  the last two steps can teach commands that the embedded runtime does not yet
-  support.
-- Rollback: redeploy the previous ALPI bundle and previous Skill release. The
-  additive Gateway response field can remain deployed.
+  then coordinate the ALPI pin/deployment with the future Slim Alva Skill.
+  The existing Alva Skill is not part of this rollout.
+- Rollback: redeploy the previous ALPI bundle and withdraw the future Slim Alva
+  Skill release. The existing Alva Skill and additive Gateway response field
+  can remain unchanged.
 
 ### Core documentation impact
 
-- `code/public/skills/skills/alva/SKILL.md` and command-bearing references under
-  `skills/alva/references/` are authoritative for Agent command use and must be
-  updated with the code.
+- The existing `code/public/skills/skills/alva/` tree remains unchanged. The
+  future Slim Alva Skill will own its own authoritative command references.
 - `code/backend/jagent/alpi/ext/adapters/jagent/docs/layers/layer-3-alva-agent.md`
   must identify the dispatch surface as the Slim Agent profile.
 - Toolkit terminal README remains accurate because terminal behavior is not
@@ -143,11 +145,11 @@
 ## 5. Verification Strategy
 
 - Affected components: Toolkit Agent catalog/parser/help/route adapter and
-  automation types; Gateway automation detail handler; ALPI Alva CLI adapter and
-  Layer 3 bundle; Alva Skill command documentation/evals.
+  automation types; Gateway automation detail handler; ALPI Alva CLI adapter
+  and Layer 3 bundle.
 - Relevant dependents: packaged Toolkit CLI (negative compatibility check),
-  ALPI Layer 3 bundle, official Alva Skill. No other Gateway consumer breaks
-  because `cronjob_id` is additive.
+  ALPI Layer 3 bundle, and the future Slim Alva Skill. No other Gateway
+  consumer breaks because `cronjob_id` is additive.
 - Toolkit evidence: focused command-schema and dispatch tests for catalog
   isolation, every regrouped leaf, automation partial failures, Signal safety,
   broker passthrough/global flags, and terminal compatibility; then typecheck,
@@ -157,18 +159,19 @@
   repository-required `npm run check`; guarded local-account smoke coverage for
   every Slim catalog leaf and every Broker leaf. Do not run its full test/build
   commands beyond the focused documented commands.
-- Skill evidence: doc regression eval and mutation smoke, plus a structural
-  scan that every executable `alva ...` example starts with an allowed Slim
-  route.
+- Future Slim Alva Skill verification belongs to its own PR: doc regression
+  evals, mutation smoke, and a structural scan that every executable
+  `alva ...` example starts with an allowed Slim route.
 - Escalation triggers: a changed public Toolkit export, proto/schema change,
   unknown command consumer, or bundle input drift requires the broader owning
   repository suite.
 - Full suite required: yes for Toolkit because the dispatcher is shared with
-  the terminal CLI; no for Gateway (additive handler field), ALPI (focused
-  adapter/bundle tests plus required check), or Skills (canonical doc evals).
+  the terminal CLI; no for Gateway (additive handler field) or ALPI (focused
+  adapter/bundle tests plus required check). The future Slim Alva Skill will
+  define its own verification scope.
 - E2E Required: no for local completion. Production availability depends on
-  the ordered Toolkit publish and ALPI/Skill rollout and should receive a
-  deployed smoke after release.
+  the coordinated Toolkit publish and ALPI/future-Skill rollout and should
+  receive a deployed smoke after release.
 
 ### Implementation Checklist
 
@@ -176,8 +179,8 @@
 - [x] Implement and test unified automation, playbook/account/alert mappings.
 - [x] Implement and test the approved portfolio/trading tree and safety rules.
 - [x] Expose and test automation `cronjob_id` in Gateway detail responses.
-- [x] Update Toolkit embedded-dispatch docs and all authoritative Alva Skill
-      command references/evals.
+- [x] Update Toolkit embedded-dispatch docs without changing the existing Alva
+      Skill.
 - [x] Update and verify the ALPI adapter contract and Layer 3 bundle against the
       profile seam.
 - [x] Add and run the exhaustive guarded Jagent Slim smoke against the local
@@ -185,6 +188,8 @@
 - [x] Run final affected-graph verification and record the reviewed outcome.
 - [ ] After Toolkit publication, pin that released version in ALPI and refresh
       its lockfile. An unpublished version must not be written into the lock.
+- [ ] Create and verify the separate future Slim Alva Skill, then coordinate
+      its rollout with the ALPI pin/deployment.
 
 ## 6. Human Interaction
 
@@ -217,9 +222,9 @@ checkpoints. No additional decision is pending.
   requests, three help paths were zero-network, and 58 read/dry-run paths made
   60 allowlisted requests. No live trading, file, secret, automation, playbook,
   alert, subscription, or account mutation was sent.
-- Alva Skill v1.22.0 and its command-bearing references teach only the Slim
-  surface. SDK CLI guidance is removed in favor of Skill-owned runtime
-  references; Toolkit issue #160 tracks removal from the full terminal catalog.
+- The existing Alva Skill was deliberately left unchanged. A separate future
+  Slim Alva Skill will own the Slim command guidance; Toolkit issue #160 still
+  tracks eventual SDK-command cleanup in the full terminal catalog.
 
 Fresh verification:
 
@@ -230,8 +235,6 @@ Fresh verification:
   focused Slim smoke safety suite (4), repository-required `npm run check`, and
   the local-account exhaustive smoke (105/105 probes) passed after dependency
   hydration with scripts disabled.
-- Skill: documentation eval passed 84/84 cases and 861/861 checks; mutation
-  smoke passed 18/18.
 - No database, proto, GraphQL, or migration artifact is required.
 
 ## 8. Remaining Tasks
@@ -242,4 +245,5 @@ Release-only rollout remains:
 2. Publish a new Toolkit version containing this change.
 3. Pin that exact version in ALPI, refresh the lockfile with scripts disabled,
    rebuild/deploy Layer 3, and run a deployed Slim help smoke.
-4. Publish Alva Skill v1.22.0 after the new ALPI bundle is live.
+4. Create the separate future Slim Alva Skill and coordinate its publication
+   with the new ALPI bundle. Do not change the existing Alva Skill.
