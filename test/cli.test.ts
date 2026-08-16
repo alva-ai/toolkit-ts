@@ -5120,6 +5120,21 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.release.playbookDraft).not.toHaveBeenCalled();
   });
 
+  it('renders both accepted forms of Slim boolean flags', async () => {
+    const client = makeClient();
+    const help = (await dispatch(
+      client,
+      ['playbooks', 'functions', 'register', '--help'],
+      undefined,
+      agentDeps
+    )) as { _help: boolean; text: string };
+
+    expect(help._help).toBe(true);
+    expect(help.text).toContain('  --allow-charges | --no-allow-charges');
+    expect(help.text).toContain('  --clear-run-as | --no-clear-run-as');
+    expect(client.functions.register).not.toHaveBeenCalled();
+  });
+
   it('leaves Full playbook-draft help unchanged', async () => {
     const client = makeClient();
     const help = (await dispatch(client, [

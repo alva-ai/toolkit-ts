@@ -181,7 +181,7 @@ function formatAgentLeafHelp(definition: AgentCommandDefinition): string {
     definition.passthrough === true ? '[arguments...]' : '[options]',
   ].join(' ');
   const options = Object.entries(definition.flags).map(([name, kind]) =>
-    kind === 'value' ? `  --${name} <value>` : `  --${name}`
+    kind === 'value' ? `  --${name} <value>` : `  --${name} | --no-${name}`
   );
   options.push('  --help');
 
