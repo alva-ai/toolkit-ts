@@ -5352,6 +5352,21 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(trigger).toEqual({ workflow_run_id: 'wf-test' });
   });
 
+  it('rejects array-shaped Automation details before producer operations', async () => {
+    const client = makeClient();
+    client.automation.inspect = vi.fn().mockResolvedValue([]);
+
+    await expect(
+      dispatchEmbedded(
+        client,
+        ['automation', 'trigger', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow('Automation 42 returned an invalid detail');
+    expect(client.deploy.trigger).not.toHaveBeenCalled();
+  });
+
   it('keeps Automation delivery reads and partial updates in the Slim tree', async () => {
     const client = makeClient();
 

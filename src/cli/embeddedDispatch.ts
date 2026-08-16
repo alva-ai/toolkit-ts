@@ -51,7 +51,7 @@ function producerIDFromAutomationDetail(
   detail: unknown,
   automationId: string
 ): number | undefined {
-  if (typeof detail !== 'object' || detail === null) {
+  if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
     throw new Error(`Automation ${automationId} returned an invalid detail`);
   }
   const raw = (detail as Record<string, unknown>).cronjob_id;
