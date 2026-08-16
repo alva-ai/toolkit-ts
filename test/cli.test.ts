@@ -5741,10 +5741,12 @@ describe('CLI dispatch — broker', () => {
       exit: 0,
     });
 
-    const result = await dispatchEmbedded(
-      client,
-      ['trading', 'broker', 'quote', '--help']
-    );
+    const result = await dispatchEmbedded(client, [
+      'trading',
+      'broker',
+      'quote',
+      '--help',
+    ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((client as any)._request).toHaveBeenCalledWith(
