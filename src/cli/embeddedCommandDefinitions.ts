@@ -180,18 +180,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('markets earnings', 'markets earnings', {
       values: ['ticker', 'event', 'fiscal-year', 'fiscal-quarter'],
     }),
-    route('feedback submit', 'feedback submit', {
-      values: [
-        'source',
-        'category',
-        'severity',
-        'summary',
-        'details',
-        'evidence-json',
-        'context-json',
-        'dedupe-key',
-      ],
-    }),
     action(
       'automation create',
       {

@@ -19,7 +19,6 @@ Commands:
   alert         Manage personal automation alert bindings
   portfolio     Read connected accounts, assets, activity, and history
   trading       Inspect controls and use Signal or Broker execution
-  feedback      Submit user-confirmed platform feedback
 
 Run 'alva <command> --help' for a command tree.`;
 
@@ -161,8 +160,6 @@ Subcommands:
   order place|cancel|get|list
 
 Run 'alva trading broker describe' for the live venue contract.`,
-
-  feedback: `Usage: alva feedback submit [options]`,
 };
 
 const AGENT_LEAF_DEFINITIONS = new Map(

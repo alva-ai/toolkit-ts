@@ -23,6 +23,7 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(93);
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(
       new Set(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).size
     );
@@ -40,6 +41,9 @@ describe('Slim Alva Agent command profile', () => {
     );
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(
       'trading broker'
+    );
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).not.toContain(
+      'feedback submit'
     );
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).not.toContain('sdk doc');
     expect(embeddedDispatch).not.toHaveProperty('dispatchCli');
@@ -112,6 +116,7 @@ describe('Slim Alva Agent command profile', () => {
       ['deploy', 'list'],
       ['sdk', 'partitions'],
       ['arrays', 'token', 'status'],
+      ['feedback', 'submit'],
       ['trading', 'portfolio'],
       ['trading', 'update-risk-rules'],
     ]) {
@@ -127,6 +132,10 @@ describe('Slim Alva Agent command profile', () => {
     expect(parseCommand(['sdk', 'partitions']).path).toEqual([
       'sdk',
       'partitions',
+    ]);
+    expect(parseCommand(['feedback', 'submit']).path).toEqual([
+      'feedback',
+      'submit',
     ]);
   });
 
