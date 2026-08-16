@@ -5733,6 +5733,45 @@ describe('CLI dispatch — broker', () => {
     ]);
   });
 
+  it('forwards Broker-native help to the Broker service', async () => {
+    const client = brokerClient({
+      envelope: { usage: 'quote --venue <venue> --symbol <symbol>' },
+      exit: 0,
+    });
+
+    const result = await dispatchEmbedded(
+      client,
+      ['trading', 'broker', 'quote', '--help']
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((client as any)._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/broker/invoke',
+      expect.objectContaining({
+        body: expect.objectContaining({ argv: ['quote', '--help'] }),
+      })
+    );
+    expect(result).toEqual({
+      usage: 'quote --venue <venue> --symbol <symbol>',
+    });
+  });
+
+  it('keeps help at the Broker passthrough boundary in Toolkit', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+
+    const result = (await dispatchEmbedded(client, [
+      'trading',
+      'broker',
+      '--help',
+    ])) as { _help: boolean; text: string };
+
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('trading broker');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((client as any)._request).not.toHaveBeenCalled();
+  });
+
   it('keeps shared prerequisites out of the Broker subtree', async () => {
     const client = brokerClient({ envelope: {}, exit: 0 });
     await expect(

@@ -373,16 +373,21 @@ async function dispatchEmbedded(
   const requestedHelp = args.some(
     (argument) => argument === '--help' || argument === '-h'
   );
+  const requestedHelpIndex = args.findIndex(
+    (argument) => argument === '--help' || argument === '-h'
+  );
+  const brokerNativeHelp =
+    args[0] === 'trading' &&
+    args[1] === 'broker' &&
+    requestedHelpIndex > 2;
   const bareHelp = args.every((argument) => !argument.startsWith('-'))
     ? AGENT_COMMAND_HELP[args.join(' ')]
     : undefined;
   if (bareHelp !== undefined) {
     return { _help: true, text: bareHelp };
   }
-  if (requestedHelp) {
-    const helpIndex = args.findIndex(
-      (argument) => argument === '--help' || argument === '-h'
-    );
+  if (requestedHelp && !brokerNativeHelp) {
+    const helpIndex = requestedHelpIndex;
     const helpPath = args.slice(0, helpIndex);
     const treeHelp =
       helpIndex === args.length - 1 &&
@@ -398,7 +403,10 @@ async function dispatchEmbedded(
   }
 
   const parsed = parseEmbeddedCommand(args);
-  if (requestedHelp || parsed.flags.help !== undefined) {
+  if (
+    (requestedHelp && !brokerNativeHelp) ||
+    parsed.flags.help !== undefined
+  ) {
     return {
       _help: true,
       text: agentHelpFor(args) ?? AGENT_HELP_TEXT,
