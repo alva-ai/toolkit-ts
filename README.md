@@ -176,17 +176,16 @@ import { AlvaClient } from '@alva-ai/toolkit';
 import { dispatch, CliUsageError } from '@alva-ai/toolkit/dispatch';
 
 const client = new AlvaClient({ apiKey: process.env.ALVA_API_KEY });
-const result = await dispatch(client, ['account', 'whoami'], undefined, {
-  mode: 'jagent',
-});
+const result = await dispatch(client, ['account', 'whoami']);
 ```
 
-`mode: 'jagent'` selects the purpose-built Slim Alva Agent command catalog.
+The embedded dispatcher always exposes the purpose-built Alpi Alva command
+catalog. It is independent from the packaged system `alva` CLI.
 Authentication/setup, Arrays bootstrap, SDK documentation, duplicate aliases,
 and legacy top-level groupings are not part of this catalog; old Agent paths
 are rejected rather than aliased. Run the embedded `--help` for the live tree.
 
-The profile is also aligned with ALFS-native tools: local-file flags such as
+The embedded surface is aligned with ALFS-native tools: local-file flags such as
 `--local-file`, `--file`, `--params-schema-file`, and screenshot `--out` are
 absent. Use inline data or prepare content in ALFS before dispatching the
 command; Agent screenshots return image content directly. `dispatch()` throws
@@ -197,7 +196,9 @@ verbatim to the venue-native Broker contract.
 
 Node.js command-line consumers should continue to use
 `@alva-ai/toolkit/cli`, which adds config files, authentication, local files,
-stdio, and Undici timeout configuration around the same dispatcher.
+stdio, and Undici timeout configuration around its independent terminal
+dispatcher. Both entries share the SDK and low-level command execution handlers,
+not their catalogs, parsers, or help.
 
 ## SDK Usage (Node.js)
 

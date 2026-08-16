@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { Readable } from 'node:stream';
 import { runInNewContext } from 'node:vm';
 import {
   dispatch,
@@ -9,6 +8,7 @@ import {
   isVersionOlderThan,
   stripGlobalFlags,
 } from '../src/cli/index.js';
+import { dispatch as dispatchEmbedded } from '../src/cli/embeddedDispatch.js';
 import { AlvaClient } from '../src/client.js';
 import { CliUsageError } from '../src/error.js';
 
@@ -1298,7 +1298,7 @@ describe('CLI dispatch', () => {
 
     for (const { argv } of cases) {
       await expect(
-        dispatch(makeClient(), argv, undefined, { mode: 'jagent' })
+        dispatchEmbedded(makeClient(), argv, undefined, { runtime: 'jagent' })
       ).rejects.toSatisfy(
         (err: unknown) =>
           err instanceof CliUsageError &&
@@ -1311,7 +1311,7 @@ describe('CLI dispatch', () => {
     const client = makeClient();
 
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
         [
           'playbooks',
@@ -1322,7 +1322,7 @@ describe('CLI dispatch', () => {
           'p.png',
         ],
         undefined,
-        { mode: 'jagent' }
+        { runtime: 'jagent' }
       )
     ).rejects.toSatisfy(
       (err: unknown) =>
@@ -5047,15 +5047,29 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
 });
 
 describe('CLI dispatch — Slim Agent profile', () => {
+  it('uses the Slim catalog by default without changing the system CLI', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatchEmbedded(client, ['deploy', 'list'])
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof CliUsageError &&
+        error.message.includes("Unknown command: 'deploy'")
+    );
+
+    await expect(dispatch(client, ['deploy', 'list'])).resolves.toBeDefined();
+  });
+
   const agentDeps = {
-    mode: 'jagent' as const,
+    runtime: 'jagent' as const,
     env: {},
     stderr: { write: vi.fn(() => true) },
   };
 
   it('uses isolated help and rejects terminal-only routes', async () => {
     const client = makeClient();
-    const help = (await dispatch(client, [], undefined, agentDeps)) as {
+    const help = (await dispatchEmbedded(client, [], undefined, agentDeps)) as {
       text: string;
     };
     expect(help.text).toContain('account');
@@ -5064,7 +5078,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(help.text).not.toContain('sdk');
 
     await expect(
-      dispatch(client, ['deploy', 'list'], undefined, agentDeps)
+      dispatchEmbedded(client, ['deploy', 'list'], undefined, agentDeps)
     ).rejects.toThrow(/Unknown command: 'deploy'/);
 
     await dispatch(client, ['deploy', 'list']);
@@ -5075,7 +5089,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
 
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
         ['playbooks', 'draft', '--trading_symbols', 'TSLA', '--help'],
         undefined,
@@ -5089,13 +5103,13 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('renders schema-backed Slim leaf help without dispatching', async () => {
     const client = makeClient();
-    const help = (await dispatch(
+    const help = (await dispatchEmbedded(
       client,
       ['playbooks', 'draft', '--help'],
       undefined,
       agentDeps
     )) as { _help: boolean; text: string };
-    const helpWithValidFlags = await dispatch(
+    const helpWithValidFlags = await dispatchEmbedded(
       client,
       ['playbooks', 'draft', '--trading-symbols', '["TSLA"]', '--help'],
       undefined,
@@ -5122,7 +5136,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('renders both accepted forms of Slim boolean flags', async () => {
     const client = makeClient();
-    const help = (await dispatch(
+    const help = (await dispatchEmbedded(
       client,
       ['playbooks', 'functions', 'register', '--help'],
       undefined,
@@ -5151,7 +5165,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('routes account identity and notification preferences', async () => {
     const client = makeClient();
-    const identity = (await dispatch(
+    const identity = (await dispatchEmbedded(
       client,
       ['account', 'whoami'],
       undefined,
@@ -5159,7 +5173,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     )) as { username: string };
     expect(identity.username).toBe('alice');
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'account',
@@ -5183,7 +5197,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       .fn()
       .mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer);
 
-    const result = await dispatch(
+    const result = await dispatchEmbedded(
       client,
       ['playbooks', 'screenshot', '--url', '/playbook/alice/pulse'],
       undefined,
@@ -5203,7 +5217,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('creates and registers an automation in one command', async () => {
     const client = makeClient();
-    const result = await dispatch(
+    const result = await dispatchEmbedded(
       client,
       [
         'automation',
@@ -5244,7 +5258,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
   it('validates automation registration fields before creating a producer', async () => {
     const client = makeClient();
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
         [
           'automation',
@@ -5269,7 +5283,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       .fn()
       .mockRejectedValue(new Error('registration unavailable'));
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
         [
           'automation',
@@ -5294,7 +5308,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('resolves the producer for unified update and run commands', async () => {
     const client = makeClient();
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'automation',
@@ -5316,7 +5330,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       expect.objectContaining({ id: '42', description: 'New description' })
     );
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['automation', 'runs', 'list', '--id', '42', '--first', '20'],
       undefined,
@@ -5328,7 +5342,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       cursor: undefined,
     });
 
-    const trigger = await dispatch(
+    const trigger = await dispatchEmbedded(
       client,
       ['automation', 'trigger', '--id', '42'],
       undefined,
@@ -5341,13 +5355,13 @@ describe('CLI dispatch — Slim Agent profile', () => {
   it('keeps Automation delivery reads and partial updates in the Slim tree', async () => {
     const client = makeClient();
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['automation', 'delivery', 'get', '--id', '42'],
       undefined,
       agentDeps
     );
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['automation', 'delivery', 'update', '--id', '42', '--no-email-enabled'],
       undefined,
@@ -5369,7 +5383,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       .mockRejectedValue(new Error('metadata unavailable'));
 
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
         [
           'automation',
@@ -5392,7 +5406,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('pauses a producer before deleting its product automation', async () => {
     const client = makeClient();
-    const result = await dispatch(
+    const result = await dispatchEmbedded(
       client,
       ['automation', 'delete', '--id', '42'],
       undefined,
@@ -5411,7 +5425,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
   it('coordinates product and producer pause/resume state', async () => {
     const client = makeClient();
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['automation', 'pause', '--id', '42'],
       undefined,
@@ -5421,7 +5435,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['automation', 'resume', '--id', '42'],
       undefined,
@@ -5441,7 +5455,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       .mockRejectedValue(new Error('delete unavailable'));
 
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
         ['automation', 'delete', '--id', '42'],
         undefined,
@@ -5462,26 +5476,31 @@ describe('CLI dispatch — Slim Agent profile', () => {
     client.trading.equityHistory = vi.fn().mockResolvedValue({ equity: [] });
     client.trading.execute = vi.fn().mockResolvedValue({ accepted: true });
 
-    await dispatch(client, ['portfolio', 'accounts'], undefined, agentDeps);
-    await dispatch(
+    await dispatchEmbedded(
+      client,
+      ['portfolio', 'accounts'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
       client,
       ['portfolio', 'summary', '--account-id', '42'],
       undefined,
       agentDeps
     );
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['portfolio', 'activities', '--account-id', '42', '--limit', '10'],
       undefined,
       agentDeps
     );
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['portfolio', 'orders', '--account-id', '42'],
       undefined,
       agentDeps
     );
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'portfolio',
@@ -5515,7 +5534,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       untilMs: undefined,
     });
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['trading', 'signals', 'execute', '--account-id', '42', '--signal', '{}'],
       undefined,
@@ -5529,7 +5548,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       sourceFeed: undefined,
     });
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5557,13 +5576,13 @@ describe('CLI dispatch — Slim Agent profile', () => {
     client.trading.subscribe = vi.fn().mockResolvedValue({ id: 'sub-1' });
     client.trading.unsubscribe = vi.fn().mockResolvedValue({ ok: true });
 
-    await dispatch(
+    await dispatchEmbedded(
       client,
       ['trading', 'signals', 'subscriptions', 'list', '--account-id', '42'],
       undefined,
       agentDeps
     );
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5584,7 +5603,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5615,21 +5634,12 @@ describe('CLI dispatch — broker', () => {
   }
 
   async function dispatchBrokerStdin(client: AlvaClient, stdin: string) {
-    const stdinSpy = vi
-      .spyOn(process, 'stdin', 'get')
-      .mockReturnValue(
-        Readable.from([Buffer.from(stdin)]) as unknown as typeof process.stdin
-      );
-    try {
-      return await dispatch(
-        client,
-        ['trading', 'broker', 'order', 'place', '--stdin'],
-        undefined,
-        { mode: 'jagent' }
-      );
-    } finally {
-      stdinSpy.mockRestore();
-    }
+    return dispatchEmbedded(
+      client,
+      ['trading', 'broker', 'order', 'place', '--stdin'],
+      undefined,
+      { runtime: 'jagent', readStdin: async () => stdin }
+    );
   }
 
   it('projects Broker discovery into the Slim tree', async () => {
@@ -5644,11 +5654,11 @@ describe('CLI dispatch — broker', () => {
       },
       exit: 0,
     });
-    const result = (await dispatch(
+    const result = (await dispatchEmbedded(
       client,
       ['trading', 'broker', 'describe'],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     )) as {
       commands: Array<{ name: string; usage: string }>;
       nextCommands: string[];
@@ -5665,8 +5675,8 @@ describe('CLI dispatch — broker', () => {
   it('keeps shared prerequisites out of the Broker subtree', async () => {
     const client = brokerClient({ envelope: {}, exit: 0 });
     await expect(
-      dispatch(client, ['trading', 'broker', 'accounts'], undefined, {
-        mode: 'jagent',
+      dispatchEmbedded(client, ['trading', 'broker', 'accounts'], undefined, {
+        runtime: 'jagent',
       })
     ).rejects.toThrow(/use 'alva trading accounts'/);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5676,11 +5686,11 @@ describe('CLI dispatch — broker', () => {
   it('routes shared accounts and risk rules through Broker-backed reads', async () => {
     const client = brokerClient({ envelope: { items: [] }, exit: 0 });
 
-    await dispatch(client, ['trading', 'accounts'], undefined, {
-      mode: 'jagent',
+    await dispatchEmbedded(client, ['trading', 'accounts'], undefined, {
+      runtime: 'jagent',
     });
-    await dispatch(client, ['trading', 'risk-rules'], undefined, {
-      mode: 'jagent',
+    await dispatchEmbedded(client, ['trading', 'risk-rules'], undefined, {
+      runtime: 'jagent',
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5705,7 +5715,7 @@ describe('CLI dispatch — broker', () => {
 
   it('passes argv through verbatim to /api/v1/broker/invoke', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
-    const env = await dispatch(
+    const env = await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5717,7 +5727,7 @@ describe('CLI dispatch — broker', () => {
         'BTC/USDT',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((client as any)._request).toHaveBeenCalledWith(
@@ -5734,7 +5744,7 @@ describe('CLI dispatch — broker', () => {
 
   it('mints an --intent-id for a live order place', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5753,7 +5763,7 @@ describe('CLI dispatch — broker', () => {
         '0.01',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = (client as any)._request.mock.calls[0];
@@ -5765,7 +5775,7 @@ describe('CLI dispatch — broker', () => {
 
   it('does NOT mint an intent-id for a dry-run or when one is supplied', async () => {
     const client = brokerClient({ envelope: { dryRun: true }, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5785,14 +5795,14 @@ describe('CLI dispatch — broker', () => {
         '--dry-run',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
     expect(argv).not.toContain('--intent-id');
 
     const client2 = brokerClient({ envelope: {}, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client2,
       [
         'trading',
@@ -5813,7 +5823,7 @@ describe('CLI dispatch — broker', () => {
         'mine',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv2: string[] = (client2 as any)._request.mock.calls[0][2].body
@@ -5824,7 +5834,7 @@ describe('CLI dispatch — broker', () => {
 
   it('does not double-mint when the handle is in equals-form', async () => {
     const client = brokerClient({ envelope: {}, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5844,7 +5854,7 @@ describe('CLI dispatch — broker', () => {
         '--intent-id=mine',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
@@ -5912,7 +5922,7 @@ describe('CLI dispatch — broker', () => {
     // --open is not a toolkit flag. broker must bypass the command parser and
     // forward it verbatim. (order list, not stdin — no blocking read.)
     const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
-    const env = await dispatch(
+    const env = await dispatchEmbedded(
       client,
       [
         'trading',
@@ -5926,7 +5936,7 @@ describe('CLI dispatch — broker', () => {
         '--open',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     expect(env).toEqual({ status: 'ok' });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5940,11 +5950,11 @@ describe('CLI dispatch — broker', () => {
     (client as any)._request = vi
       .fn()
       .mockRejectedValue(new Error('econnrefused'));
-    const env = (await dispatch(
+    const env = (await dispatchEmbedded(
       client,
       ['trading', 'broker', 'balance', '--venue', 'binance', '--account', '7'],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     )) as { status: string; reason: { code: string } };
     expect(env.status).toBe('error');
     expect(env.reason.code).toBe('network');

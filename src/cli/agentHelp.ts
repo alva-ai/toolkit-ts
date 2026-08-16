@@ -1,7 +1,7 @@
 import {
-  AGENT_COMMAND_DEFINITIONS,
-  type AgentCommandDefinition,
-} from './agentCommandDefinitions.js';
+  EMBEDDED_COMMAND_DEFINITIONS,
+  type EmbeddedCommandDefinition,
+} from './embeddedCommandDefinitions.js';
 
 export const AGENT_HELP_TEXT = `Usage: alva <command> [options]
 
@@ -166,13 +166,13 @@ Run 'alva trading broker describe' for the live venue contract.`,
 };
 
 const AGENT_LEAF_DEFINITIONS = new Map(
-  AGENT_COMMAND_DEFINITIONS.map((definition) => [
+  EMBEDDED_COMMAND_DEFINITIONS.map((definition) => [
     definition.path.join(' '),
     definition,
   ])
 );
 
-function formatAgentLeafHelp(definition: AgentCommandDefinition): string {
+function formatAgentLeafHelp(definition: EmbeddedCommandDefinition): string {
   const positionals = definition.positionals.names.map((name, index) =>
     index < definition.positionals.min ? `<${name}>` : `[<${name}>]`
   );
