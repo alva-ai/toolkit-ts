@@ -233,8 +233,9 @@ export class AutomationAlertDeliveryResource {
   }
 }
 
-function requireAutomationID(id: number): number {
-  if (!Number.isInteger(id) || id <= 0) {
+function requireAutomationID(id: number | string): number | string {
+  if (typeof id === 'string') return requireAutomationIDString(id);
+  if (!Number.isSafeInteger(id) || id <= 0) {
     throw new Error('automation id must be a positive integer');
   }
   return id;

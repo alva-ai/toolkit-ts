@@ -443,8 +443,8 @@ export interface FeedReleaseResponse {
 }
 
 export interface FeedDeleteRequest {
-  /** Numeric feed id to delete. */
-  id: number;
+  /** Positive decimal feed id. String form preserves int64 precision. */
+  id: number | string;
 }
 
 export type FeedListStatus = 'active' | 'paused' | 'all';
@@ -476,8 +476,8 @@ export interface FeedListResponse {
 }
 
 export interface AutomationInspectRequest {
-  /** Numeric automation id. Currently the same underlying feed id. */
-  id: number;
+  /** Positive decimal automation id. String form preserves int64 precision. */
+  id: number | string;
 }
 
 export interface AutomationInspectResponse {
@@ -567,8 +567,8 @@ export interface AutomationAlertDeliveryUpdateResponse {
 }
 
 export interface FeedStatusUpdateRequest {
-  /** Numeric feed id to stop/resume. */
-  id: number;
+  /** Positive decimal feed id. String form preserves int64 precision. */
+  id: number | string;
 }
 
 export interface FeedStatusUpdateResponse {

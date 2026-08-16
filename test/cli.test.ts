@@ -5413,7 +5413,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
-    expect(client.automation.delete).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.delete).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.delete).toHaveBeenCalledWith({ id: 420 });
     expect(result).toEqual({
       automation_id: '42',
@@ -5432,7 +5432,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
-    expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.stop).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
     await dispatchEmbedded(
@@ -5441,7 +5441,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.automation.resume).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.resume).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.resume).toHaveBeenCalledWith({ id: 420 });
     expect(client.automation.resume).toHaveBeenCalledBefore(
       client.deploy.resume
