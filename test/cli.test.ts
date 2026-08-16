@@ -5442,6 +5442,39 @@ describe('CLI dispatch — Slim Agent profile', () => {
     });
   });
 
+  it('preserves int64 automation ids for inspect and visibility routes', async () => {
+    const client = makeClient();
+    const id = '9007199254740993';
+    client.automation.inspect = vi.fn().mockResolvedValue({
+      id,
+      feed_id: id,
+      name: 'large-id',
+      status: 'ACTIVE',
+      total_runs: 0,
+      flow_id: null,
+      flow_config_path: null,
+    });
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'inspect', '--id', id, '--json'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      ['automation', 'set-visibility', '--id', id, '--visibility', 'public'],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.inspect).toHaveBeenCalledWith({ id });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith({
+      id,
+      visibility: 'public',
+    });
+  });
+
   it('pauses a producer before deleting its product automation', async () => {
     const client = makeClient();
     const result = await dispatchEmbedded(

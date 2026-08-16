@@ -16,6 +16,7 @@ import {
   requirePositiveIntegerStringFlag,
 } from './dispatch.js';
 import { EMBEDDED_COMMAND_DEFINITIONS } from './embeddedCommandDefinitions.js';
+import { formatAutomationDetail } from './productFormat.js';
 import type { DispatchRuntimeDeps } from './dispatch.js';
 
 /** Stable leaf inventory for Alpi Alva safety smokes and tooling. */
@@ -101,6 +102,30 @@ async function dispatchEmbeddedAutomation(
 ): Promise<unknown> {
   const definition = embeddedCommandDefinition(parsed.path);
   switch (definition.action) {
+    case 'automation-inspect': {
+      const id = automationID(parsed, 'automation inspect');
+      const result = await client.automation.inspect({ id });
+      return parsed.flags.json === 'true'
+        ? result
+        : formatAutomationDetail(result);
+    }
+
+    case 'automation-set-visibility': {
+      const id = automationID(parsed, 'automation set-visibility');
+      const visibility = requireFlag(
+        parsed.flags,
+        'visibility',
+        'automation set-visibility'
+      );
+      if (visibility !== 'public' && visibility !== 'private') {
+        throw new CliUsageError(
+          `--visibility must be one of public, private for 'automation set-visibility', got '${visibility}'`,
+          'automation'
+        );
+      }
+      return client.feed.setVisibility({ id, visibility });
+    }
+
     case 'automation-create': {
       const name = requireFlag(parsed.flags, 'name', 'automation create');
       requireFlag(parsed.flags, 'path', 'automation create');

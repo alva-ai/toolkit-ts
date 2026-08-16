@@ -587,8 +587,8 @@ export interface FeedDeleteResponse {
 export type FeedVisibility = 'public' | 'private';
 
 export interface FeedSetVisibilityRequest {
-  /** Numeric feed id to publish/unpublish. */
-  id: number;
+  /** Positive decimal feed id. String form preserves int64 precision. */
+  id: number | string;
   /** Target visibility. */
   visibility: FeedVisibility;
 }
