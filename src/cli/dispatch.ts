@@ -1,6 +1,6 @@
 import { AlvaClient } from '../client.js';
 import { CliUsageError } from '../error.js';
-import { parseCommand } from './commandSchema.js';
+import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
   COMMAND_DEFINITIONS,
   GLOBAL_FLAG_DEFINITIONS,
@@ -23,6 +23,7 @@ import {
   type PlaybookVisibility,
   type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
+
 import {
   formatTrendingPlaybooks,
   formatPlaybook,
@@ -1375,7 +1376,7 @@ Examples:
   alva arrays token status`,
 };
 
-export type AlvaCliRuntimeMode = 'nodejs' | 'jagent';
+export type DispatchRuntime = 'nodejs' | 'jagent';
 
 export interface DispatchLocalFiles {
   readText(path: string): string;
@@ -1384,7 +1385,7 @@ export interface DispatchLocalFiles {
 }
 
 export interface DispatchRuntimeDeps {
-  mode?: AlvaCliRuntimeMode;
+  runtime?: DispatchRuntime;
   env?: Record<string, string | undefined>;
   stderr?: { write(value: string): unknown };
   localFiles?: DispatchLocalFiles;
@@ -1452,7 +1453,7 @@ function serializedJSONFlag(
   return value;
 }
 
-function requireFlag(
+export function requireFlag(
   flags: Record<string, string>,
   name: string,
   command: string
@@ -1482,7 +1483,7 @@ function requireNumericFlag(
   return n;
 }
 
-function requirePositiveIntegerFlag(
+export function requirePositiveIntegerFlag(
   flags: Record<string, string>,
   name: string,
   command: string
@@ -1652,7 +1653,7 @@ function configureRunFetchTimeout(
   timeoutMs: number,
   deps?: DispatchRuntimeDeps
 ): void {
-  if (deps?.mode === 'jagent') return;
+  if (deps?.runtime === 'jagent') return;
   deps?.configureFetchTimeout?.(timeoutMs);
 }
 
@@ -2240,7 +2241,7 @@ function assertLocalFileAvailable(
   flag: string,
   deps?: DispatchRuntimeDeps
 ): void {
-  if (deps?.mode === 'jagent') {
+  if (deps?.runtime === 'jagent') {
     throw localFileUnsupported(command, flag);
   }
 }
@@ -2369,12 +2370,12 @@ function brokerStdinNeedsIntentId(stdin: string): boolean {
  * retry handle survives even if this process dies before the response
  * arrives (design §2.5.1 / §2.6).
  */
-async function handleBroker(
+export async function handleBroker(
   client: AlvaClient,
-  brokerArgv: string[],
+  brokerArgv: readonly string[],
   deps?: DispatchRuntimeDeps
 ): Promise<unknown> {
-  let argv = brokerArgv;
+  let argv = [...brokerArgv];
   const isOrderPlace = brokerArgv[0] === 'order' && brokerArgv[1] === 'place';
   // Detect a retry handle in either form: `--intent-id x` or `--intent-id=x`
   // (same for --client-order-id). Missing the equals-form would append a
@@ -2409,7 +2410,9 @@ async function handleBroker(
     const intentId = randomUUID();
     // stderr BEFORE the request: if we die mid-flight, the operator still has
     // the retry handle. stdout stays the pure JSON envelope.
-    deps?.stderr?.write(`alva broker: intent-id ${intentId}\n`);
+    const brokerLabel =
+      deps?.runtime === 'jagent' ? 'alva trading broker' : 'alva broker';
+    deps?.stderr?.write(`${brokerLabel}: intent-id ${intentId}\n`);
     argv = [...brokerArgv, '--intent-id', intentId];
   }
 
@@ -2433,7 +2436,7 @@ async function handleBroker(
     exit = 2;
   }
 
-  if (deps?.mode === 'jagent') {
+  if (deps?.runtime === 'jagent') {
     // Programmatic callers get the envelope regardless of outcome; the exit
     // code is encoded in the envelope's status, so returning it (not throwing)
     // preserves the full contract for the caller to inspect.
@@ -2446,7 +2449,23 @@ async function handleBroker(
   return undefined;
 }
 
-export async function dispatch(
+/**
+ * Terminal-only dispatcher used by the system `alva` CLI entry.
+ *
+ * This is intentionally separate from the embedded `./dispatch` export. The
+ * terminal CLI owns its existing catalog while the embedded export always
+ * exposes the Alpi Alva command surface.
+ */
+export async function dispatchCli(
+  client: AlvaClient,
+  args: string[],
+  meta?: { profile?: string; baseUrl?: string; cliVersion?: string },
+  deps?: DispatchRuntimeDeps
+): Promise<unknown> {
+  return dispatchTerminal(client, args, meta, deps);
+}
+
+async function dispatchTerminal(
   client: AlvaClient,
   args: string[],
   meta?: { profile?: string; baseUrl?: string; cliVersion?: string },
@@ -2474,15 +2493,27 @@ export async function dispatch(
   }
 
   const parsedCommand = parseCommand(args);
-  const subcommand = parsedCommand.path[1];
   const flags = parsedCommand.flags;
-  const positionals = parsedCommand.positionals;
 
   // Also check for --help in flags (e.g. alva fs read --help).
   if (flags['help'] !== undefined) {
     const helpText = COMMAND_HELP[group];
     if (helpText) return { _help: true, text: helpText };
   }
+
+  return executeParsedCommand(client, parsedCommand, meta, deps);
+}
+
+export async function executeParsedCommand(
+  client: AlvaClient,
+  parsedCommand: ParsedCommand,
+  meta?: { profile?: string; baseUrl?: string; cliVersion?: string },
+  deps?: DispatchRuntimeDeps
+): Promise<unknown> {
+  const group = parsedCommand.path[0];
+  const subcommand = parsedCommand.path[1];
+  const flags = parsedCommand.flags;
+  const positionals = parsedCommand.positionals;
 
   // whoami: verify credentials and show user info
   if (group === 'whoami') {
@@ -3410,10 +3441,10 @@ export async function dispatch(
       const { exitCode, output } = await handleLintPlaybook({
         file,
         format,
-        client: deps?.mode === 'jagent' ? client : undefined,
+        client: deps?.runtime === 'jagent' ? client : undefined,
         readFile: deps?.localFiles?.readText,
       });
-      if (deps?.mode === 'jagent') {
+      if (deps?.runtime === 'jagent') {
         if (exitCode !== 0) throw new Error(output);
         return output;
       }
@@ -4271,7 +4302,7 @@ export function stripGlobalFlags(argv: string[]): string[] {
     // so stop stripping here, otherwise a venue flag that happens to collide
     // with a CLI global (--api-key/--base-url/--profile/--arrays-endpoint) is
     // silently dropped with its value (adversarial review).
-    if (a === 'broker') {
+    if (a === 'broker' || (a === 'trading' && argv[i + 1] === 'broker')) {
       result.push(...argv.slice(i));
       break;
     }

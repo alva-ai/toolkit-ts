@@ -176,27 +176,29 @@ import { AlvaClient } from '@alva-ai/toolkit';
 import { dispatch, CliUsageError } from '@alva-ai/toolkit/dispatch';
 
 const client = new AlvaClient({ apiKey: process.env.ALVA_API_KEY });
-const result = await dispatch(
-  client,
-  ['fs', 'read', '--path', '/alva/home/alice/playbooks/demo/README.md'],
-  undefined,
-  { mode: 'jagent' }
-);
+const result = await dispatch(client, ['account', 'whoami']);
 ```
 
-`mode: 'jagent'` keeps the command surface aligned with ALFS-native agent
-tools: flags that read or write local files, such as `--local-file`, `--file`,
-`--params-schema-file`, and screenshot `--out`, are rejected. Use inline data
-or prepare content in ALFS before dispatching the CLI command. `dispatch()`
-throws `CliUsageError` for command-line usage errors and `AlvaError` for API
-errors. Toolkit-managed commands reject unknown flags before invoking an API;
-the error is scoped to the resolved command and suggests a nearby supported
-flag when possible. `broker` is the explicit exception because its remaining
-arguments are forwarded verbatim to the venue-native CLI.
+The embedded dispatcher always exposes the purpose-built Alpi Alva command
+catalog. It is independent from the packaged system `alva` CLI.
+Authentication/setup, Arrays bootstrap, SDK documentation, duplicate aliases,
+and legacy top-level groupings are not part of this catalog; old Agent paths
+are rejected rather than aliased. Run the embedded `--help` for the live tree.
+
+The embedded surface is aligned with ALFS-native tools: local-file flags such as
+`--local-file`, `--file`, `--params-schema-file`, and screenshot `--out` are
+absent. Use inline data or prepare content in ALFS before dispatching the
+command; Agent screenshots return image content directly. `dispatch()` throws
+`CliUsageError` for command-line usage errors and `AlvaError` for API errors.
+Managed commands reject unknown flags before invoking an API. `trading broker`
+is the explicit exception because argv after that nested prefix is forwarded
+verbatim to the venue-native Broker contract.
 
 Node.js command-line consumers should continue to use
 `@alva-ai/toolkit/cli`, which adds config files, authentication, local files,
-stdio, and Undici timeout configuration around the same dispatcher.
+stdio, and Undici timeout configuration around its independent terminal
+dispatcher. Both entries share the SDK and low-level command execution handlers,
+not their catalogs, parsers, or help.
 
 ## SDK Usage (Node.js)
 

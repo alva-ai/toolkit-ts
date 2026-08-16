@@ -13,7 +13,7 @@ import {
   CLI_VERSION,
   COMMAND_HELP,
   HELP_TEXT,
-  dispatch as dispatchCore,
+  dispatchCli as dispatchCore,
   type DispatchRuntimeDeps,
 } from './dispatch.js';
 import { stripGlobalFlags } from './dispatch.js';
@@ -30,7 +30,7 @@ export {
   stripGlobalFlags,
 } from './dispatch.js';
 export type {
-  AlvaCliRuntimeMode,
+  DispatchRuntime,
   DispatchLocalFiles,
   DispatchRuntimeDeps,
 } from './dispatch.js';
@@ -66,7 +66,7 @@ async function readAllStdin(): Promise<string> {
 }
 
 const nodeRuntimeDeps: DispatchRuntimeDeps = {
-  mode: 'nodejs',
+  runtime: 'nodejs',
   env: process.env as Record<string, string | undefined>,
   stderr: process.stderr,
   localFiles: {

@@ -27,7 +27,7 @@ export default defineConfig([
     external: ['css-tree', 'yaml'],
   },
   {
-    entry: { dispatch: 'src/cli/dispatch.ts' },
+    entry: { dispatch: 'src/cli/embeddedDispatch.ts' },
     format: ['esm'],
     dts: true,
     splitting: false,

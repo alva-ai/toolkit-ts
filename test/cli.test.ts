@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { Readable } from 'node:stream';
 import { runInNewContext } from 'node:vm';
 import {
   dispatch,
@@ -9,6 +8,7 @@ import {
   isVersionOlderThan,
   stripGlobalFlags,
 } from '../src/cli/index.js';
+import { dispatch as dispatchEmbedded } from '../src/cli/embeddedDispatch.js';
 import { AlvaClient } from '../src/client.js';
 import { CliUsageError } from '../src/error.js';
 
@@ -143,6 +143,7 @@ function makeClient(
   client.automation.inspect = vi.fn().mockResolvedValue({
     id: '42',
     feed_id: '42',
+    cronjob_id: 420,
     name: 'portfolio-watch',
     status: 'ACTIVE',
     cron_expression: '0 9 * * *',
@@ -1255,7 +1256,7 @@ describe('CLI dispatch', () => {
     mock.mockReset();
   });
 
-  it('rejects local file flags in jagent mode with ALFS guidance', async () => {
+  it('omits local file flags from the Slim Agent catalog', async () => {
     const cases: Array<{ argv: string[] }> = [
       { argv: ['run', '--local-file', './script.js'] },
       {
@@ -1270,6 +1271,7 @@ describe('CLI dispatch', () => {
       },
       {
         argv: [
+          'playbooks',
           'functions',
           'register',
           '--playbook-id',
@@ -1282,17 +1284,25 @@ describe('CLI dispatch', () => {
           './schema.json',
         ],
       },
-      { argv: ['screenshot', '--url', '/playbook/alice/p', '--out', 'p.png'] },
+      {
+        argv: [
+          'playbooks',
+          'screenshot',
+          '--url',
+          '/playbook/alice/p',
+          '--out',
+          'p.png',
+        ],
+      },
     ];
 
     for (const { argv } of cases) {
       await expect(
-        dispatch(makeClient(), argv, undefined, { mode: 'jagent' })
+        dispatchEmbedded(makeClient(), argv, undefined, { runtime: 'jagent' })
       ).rejects.toSatisfy(
         (err: unknown) =>
           err instanceof CliUsageError &&
-          err.message.includes('local file') &&
-          err.message.includes('Use ALFS-native read/write/edit tools')
+          err.message.includes('is not supported')
       );
     }
   });
@@ -1301,17 +1311,23 @@ describe('CLI dispatch', () => {
     const client = makeClient();
 
     await expect(
-      dispatch(
+      dispatchEmbedded(
         client,
-        ['screenshot', '--url', '/playbook/alice/p', '--out', 'p.png'],
+        [
+          'playbooks',
+          'screenshot',
+          '--url',
+          '/playbook/alice/p',
+          '--out',
+          'p.png',
+        ],
         undefined,
-        { mode: 'jagent' }
+        { runtime: 'jagent' }
       )
     ).rejects.toSatisfy(
       (err: unknown) =>
         err instanceof CliUsageError &&
-        err.message.includes('local file') &&
-        err.message.includes('Use ALFS-native read/write/edit tools')
+        err.message.includes('--out is not supported')
     );
     expect(client.screenshot.capture).not.toHaveBeenCalled();
   });
@@ -1739,6 +1755,7 @@ describe('CLI dispatch', () => {
     expect(result).toEqual({
       id: '42',
       feed_id: '42',
+      cronjob_id: 420,
       name: 'portfolio-watch',
       status: 'ACTIVE',
       cron_expression: '0 9 * * *',
@@ -4045,6 +4062,18 @@ describe('stripGlobalFlags', () => {
       '--profile',
       'x',
     ]);
+
+    expect(
+      stripGlobalFlags([
+        '--profile',
+        'jagent',
+        'trading',
+        'broker',
+        'raw',
+        '--profile',
+        'venue-native',
+      ])
+    ).toEqual(['trading', 'broker', 'raw', '--profile', 'venue-native']);
   });
 });
 
@@ -5017,7 +5046,591 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
   });
 });
 
+describe('CLI dispatch — Slim Agent profile', () => {
+  it('uses the Slim catalog by default without changing the system CLI', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatchEmbedded(client, ['deploy', 'list'])
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof CliUsageError &&
+        error.message.includes("Unknown command: 'deploy'")
+    );
+
+    await expect(dispatch(client, ['deploy', 'list'])).resolves.toBeDefined();
+  });
+
+  const agentDeps = {
+    runtime: 'jagent' as const,
+    env: {},
+    stderr: { write: vi.fn(() => true) },
+  };
+
+  it('uses isolated help and rejects terminal-only routes', async () => {
+    const client = makeClient();
+    const help = (await dispatchEmbedded(client, [], undefined, agentDeps)) as {
+      text: string;
+    };
+    expect(help.text).toContain('account');
+    expect(help.text).toContain('portfolio');
+    expect(help.text).not.toContain('configure');
+    expect(help.text).not.toContain('sdk');
+
+    await expect(
+      dispatchEmbedded(client, ['deploy', 'list'], undefined, agentDeps)
+    ).rejects.toThrow(/Unknown command: 'deploy'/);
+
+    await dispatch(client, ['deploy', 'list']);
+    expect(client.deploy.list).toHaveBeenCalled();
+  });
+
+  it('parses Slim leaf help before rejecting unsupported flags', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatchEmbedded(
+        client,
+        ['playbooks', 'draft', '--trading_symbols', 'TSLA', '--help'],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow(
+      /--trading_symbols is not supported for 'playbooks draft'.*--trading-symbols/
+    );
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
+  });
+
+  it('renders schema-backed Slim leaf help without dispatching', async () => {
+    const client = makeClient();
+    const help = (await dispatchEmbedded(
+      client,
+      ['playbooks', 'draft', '--help'],
+      undefined,
+      agentDeps
+    )) as { _help: boolean; text: string };
+    const helpWithValidFlags = await dispatchEmbedded(
+      client,
+      ['playbooks', 'draft', '--trading-symbols', '["TSLA"]', '--help'],
+      undefined,
+      agentDeps
+    );
+
+    expect(help._help).toBe(true);
+    expect(help.text).toContain('Usage: alva playbooks draft [options]');
+    for (const flag of [
+      '--name',
+      '--display-name',
+      '--description',
+      '--feeds',
+      '--trading-symbols',
+      '--skill-id',
+      '--tags',
+      '--help',
+    ]) {
+      expect(help.text).toContain(flag);
+    }
+    expect(helpWithValidFlags).toEqual(help);
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
+  });
+
+  it('renders both accepted forms of Slim boolean flags', async () => {
+    const client = makeClient();
+    const help = (await dispatchEmbedded(
+      client,
+      ['playbooks', 'functions', 'register', '--help'],
+      undefined,
+      agentDeps
+    )) as { _help: boolean; text: string };
+
+    expect(help._help).toBe(true);
+    expect(help.text).toContain('  --allow-charges | --no-allow-charges');
+    expect(help.text).toContain('  --clear-run-as | --no-clear-run-as');
+    expect(client.functions.register).not.toHaveBeenCalled();
+  });
+
+  it('leaves Full playbook-draft help unchanged', async () => {
+    const client = makeClient();
+    const help = (await dispatch(client, [
+      'release',
+      'playbook-draft',
+      '--help',
+    ])) as { _help: boolean; text: string };
+
+    expect(help._help).toBe(true);
+    expect(help.text).toContain('Playbook-draft flags:');
+    expect(help.text).toContain('--trading-symbols');
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
+  });
+
+  it('routes account identity and notification preferences', async () => {
+    const client = makeClient();
+    const identity = (await dispatchEmbedded(
+      client,
+      ['account', 'whoami'],
+      undefined,
+      agentDeps
+    )) as { username: string };
+    expect(identity.username).toBe('alice');
+
+    await dispatchEmbedded(
+      client,
+      [
+        'account',
+        'notifications',
+        'set-preference',
+        '--session-completed',
+        'disabled',
+      ],
+      undefined,
+      agentDeps
+    );
+    expect(client.notificationPreferences.update).toHaveBeenCalledWith({
+      key: 'session_completed',
+      enabled: false,
+    });
+  });
+
+  it('returns Agent screenshots as image content without an encoding flag', async () => {
+    const client = makeClient();
+    client.screenshot.capture = vi
+      .fn()
+      .mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer);
+
+    const result = await dispatchEmbedded(
+      client,
+      ['playbooks', 'screenshot', '--url', '/playbook/alice/pulse'],
+      undefined,
+      agentDeps
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({ _image: true, mimeType: 'image/png' })
+    );
+    expect(client.screenshot.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: '/playbook/alice/pulse',
+        compress: true,
+      })
+    );
+  });
+
+  it('creates and registers an automation in one command', async () => {
+    const client = makeClient();
+    const result = await dispatchEmbedded(
+      client,
+      [
+        'automation',
+        'create',
+        '--name',
+        'pulse',
+        '--path',
+        '~/scripts/pulse.js',
+        '--cron',
+        '0 * * * *',
+        '--version',
+        '1.0.0',
+        '--description',
+        'Market pulse',
+      ],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.deploy.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'pulse',
+        path: '~/scripts/pulse.js',
+        cron_expression: '0 * * * *',
+      })
+    );
+    expect(client.automation.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'pulse',
+        version: '1.0.0',
+        cronjob_id: 1,
+        description: 'Market pulse',
+      })
+    );
+    expect(result).toEqual({ automation: { feed_id: 1 }, producer: { id: 1 } });
+  });
+
+  it('validates automation registration fields before creating a producer', async () => {
+    const client = makeClient();
+    await expect(
+      dispatchEmbedded(
+        client,
+        [
+          'automation',
+          'create',
+          '--name',
+          'pulse',
+          '--path',
+          '~/scripts/pulse.js',
+          '--cron',
+          '0 * * * *',
+        ],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow(/--version is required/);
+    expect(client.deploy.create).not.toHaveBeenCalled();
+  });
+
+  it('reports a recoverable producer id when automation registration fails', async () => {
+    const client = makeClient();
+    client.automation.publish = vi
+      .fn()
+      .mockRejectedValue(new Error('registration unavailable'));
+    await expect(
+      dispatchEmbedded(
+        client,
+        [
+          'automation',
+          'create',
+          '--name',
+          'pulse',
+          '--path',
+          '~/scripts/pulse.js',
+          '--cron',
+          '0 * * * *',
+          '--version',
+          '1.0.0',
+        ],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow(
+      /producer 1 was created.*left intact.*registration unavailable/
+    );
+    expect(client.deploy.delete).not.toHaveBeenCalled();
+  });
+
+  it('resolves the producer for unified update and run commands', async () => {
+    const client = makeClient();
+    await dispatchEmbedded(
+      client,
+      [
+        'automation',
+        'update',
+        '--id',
+        '42',
+        '--cron',
+        '0 8 * * *',
+        '--description',
+        'New description',
+      ],
+      undefined,
+      agentDeps
+    );
+    expect(client.deploy.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 420, cron_expression: '0 8 * * *' })
+    );
+    expect(client.automation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '42', description: 'New description' })
+    );
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'runs', 'list', '--id', '42', '--first', '20'],
+      undefined,
+      agentDeps
+    );
+    expect(client.deploy.listRuns).toHaveBeenCalledWith({
+      cronjob_id: 420,
+      first: 20,
+      cursor: undefined,
+    });
+
+    const trigger = await dispatchEmbedded(
+      client,
+      ['automation', 'trigger', '--id', '42'],
+      undefined,
+      agentDeps
+    );
+    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 420 });
+    expect(trigger).toEqual({ workflow_run_id: 'wf-test' });
+  });
+
+  it('keeps Automation delivery reads and partial updates in the Slim tree', async () => {
+    const client = makeClient();
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'delivery', 'get', '--id', '42'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      ['automation', 'delivery', 'update', '--id', '42', '--no-email-enabled'],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.delivery.get).toHaveBeenCalledWith({ id: '42' });
+    expect(client.automation.delivery.update).toHaveBeenCalledWith({
+      id: '42',
+      alvaChannelIds: undefined,
+      emailEnabled: false,
+    });
+  });
+
+  it('reports a producer-first partial automation update', async () => {
+    const client = makeClient();
+    client.automation.update = vi
+      .fn()
+      .mockRejectedValue(new Error('metadata unavailable'));
+
+    await expect(
+      dispatchEmbedded(
+        client,
+        [
+          'automation',
+          'update',
+          '--id',
+          '42',
+          '--cron',
+          '0 8 * * *',
+          '--description',
+          'New description',
+        ],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow(
+      /Automation 42 metadata update failed after producer 420 was updated: metadata unavailable/
+    );
+    expect(client.deploy.update).toHaveBeenCalled();
+  });
+
+  it('pauses a producer before deleting its product automation', async () => {
+    const client = makeClient();
+    const result = await dispatchEmbedded(
+      client,
+      ['automation', 'delete', '--id', '42'],
+      undefined,
+      agentDeps
+    );
+    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
+    expect(client.automation.delete).toHaveBeenCalledWith({ id: 42 });
+    expect(client.deploy.delete).toHaveBeenCalledWith({ id: 420 });
+    expect(result).toEqual({
+      automation_id: '42',
+      cronjob_id: 420,
+      status: 'deleted',
+    });
+  });
+
+  it('coordinates product and producer pause/resume state', async () => {
+    const client = makeClient();
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'pause', '--id', '42'],
+      undefined,
+      agentDeps
+    );
+    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
+    expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
+    expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'resume', '--id', '42'],
+      undefined,
+      agentDeps
+    );
+    expect(client.automation.resume).toHaveBeenCalledWith({ id: 42 });
+    expect(client.deploy.resume).toHaveBeenCalledWith({ id: 420 });
+    expect(client.automation.resume).toHaveBeenCalledBefore(
+      client.deploy.resume
+    );
+  });
+
+  it('reports a paused producer when product deletion fails', async () => {
+    const client = makeClient();
+    client.automation.delete = vi
+      .fn()
+      .mockRejectedValue(new Error('delete unavailable'));
+
+    await expect(
+      dispatchEmbedded(
+        client,
+        ['automation', 'delete', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow(
+      /producer 420 was paused.*remains paused.*delete unavailable/
+    );
+    expect(client.deploy.delete).not.toHaveBeenCalled();
+  });
+
+  it('moves portfolio reads and defaults legacy Signal execution to dry-run', async () => {
+    const client = makeClient();
+    client.portfolio.accounts = vi.fn().mockResolvedValue({ accounts: [] });
+    client.portfolio.summary = vi.fn().mockResolvedValue({ positions: [] });
+    client.portfolio.activities = vi.fn().mockResolvedValue({ activities: [] });
+    client.trading.orders = vi.fn().mockResolvedValue({ orders: [] });
+    client.trading.equityHistory = vi.fn().mockResolvedValue({ equity: [] });
+    client.trading.execute = vi.fn().mockResolvedValue({ accepted: true });
+
+    await dispatchEmbedded(
+      client,
+      ['portfolio', 'accounts'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      ['portfolio', 'summary', '--account-id', '42'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      ['portfolio', 'activities', '--account-id', '42', '--limit', '10'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      ['portfolio', 'orders', '--account-id', '42'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      [
+        'portfolio',
+        'equity-history',
+        '--account-id',
+        '42',
+        '--timeframe',
+        '1D',
+      ],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.portfolio.accounts).toHaveBeenCalled();
+    expect(client.portfolio.summary).toHaveBeenCalledWith('42');
+    expect(client.portfolio.activities).toHaveBeenCalledWith({
+      accountId: '42',
+      limit: 10,
+      pageToken: undefined,
+    });
+    expect(client.trading.orders).toHaveBeenCalledWith({
+      accountId: '42',
+      source: undefined,
+      since: undefined,
+      limit: undefined,
+    });
+    expect(client.trading.equityHistory).toHaveBeenCalledWith({
+      accountId: '42',
+      timeframe: '1D',
+      sinceMs: undefined,
+      untilMs: undefined,
+    });
+
+    await dispatchEmbedded(
+      client,
+      ['trading', 'signals', 'execute', '--account-id', '42', '--signal', '{}'],
+      undefined,
+      agentDeps
+    );
+    expect(client.trading.execute).toHaveBeenLastCalledWith({
+      accountId: '42',
+      signalJson: '{}',
+      dryRun: true,
+      sourceUsername: undefined,
+      sourceFeed: undefined,
+    });
+
+    await dispatchEmbedded(
+      client,
+      [
+        'trading',
+        'signals',
+        'execute',
+        '--account-id',
+        '42',
+        '--signal',
+        '{}',
+        '--live',
+      ],
+      undefined,
+      agentDeps
+    );
+    expect(client.trading.execute).toHaveBeenLastCalledWith(
+      expect.objectContaining({ dryRun: false })
+    );
+  });
+
+  it('keeps legacy Signal subscriptions isolated under their own subtree', async () => {
+    const client = makeClient();
+    client.trading.subscriptions = vi
+      .fn()
+      .mockResolvedValue({ subscriptions: [] });
+    client.trading.subscribe = vi.fn().mockResolvedValue({ id: 'sub-1' });
+    client.trading.unsubscribe = vi.fn().mockResolvedValue({ ok: true });
+
+    await dispatchEmbedded(
+      client,
+      ['trading', 'signals', 'subscriptions', 'list', '--account-id', '42'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      [
+        'trading',
+        'signals',
+        'subscriptions',
+        'subscribe',
+        '--account-id',
+        '42',
+        '--source-username',
+        'alice',
+        '--source-feed',
+        'targets',
+        '--playbook-id',
+        '7',
+        '--playbook-version',
+        '1.0.0',
+      ],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      [
+        'trading',
+        'signals',
+        'subscriptions',
+        'unsubscribe',
+        '--subscription-id',
+        'sub-1',
+      ],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.trading.subscriptions).toHaveBeenCalledWith('42');
+    expect(client.trading.subscribe).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: '42', executeLatest: undefined })
+    );
+    expect(client.trading.unsubscribe).toHaveBeenCalledWith('sub-1');
+  });
+});
+
 describe('CLI dispatch — broker', () => {
+  const brokerDeps = {
+    runtime: 'jagent' as const,
+    randomUUID: () => '123e4567-e89b-42d3-a456-426614174000',
+  };
+
   function brokerClient(resp: unknown) {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5026,30 +5639,103 @@ describe('CLI dispatch — broker', () => {
   }
 
   async function dispatchBrokerStdin(client: AlvaClient, stdin: string) {
-    const stdinSpy = vi
-      .spyOn(process, 'stdin', 'get')
-      .mockReturnValue(
-        Readable.from([Buffer.from(stdin)]) as unknown as typeof process.stdin
-      );
-    try {
-      return await dispatch(
-        client,
-        ['broker', 'order', 'place', '--stdin'],
-        undefined,
-        { mode: 'jagent' }
-      );
-    } finally {
-      stdinSpy.mockRestore();
-    }
+    return dispatchEmbedded(
+      client,
+      ['trading', 'broker', 'order', 'place', '--stdin'],
+      undefined,
+      {
+        ...brokerDeps,
+        readStdin: async () => stdin,
+      }
+    );
   }
+
+  it('projects Broker discovery into the Slim tree', async () => {
+    const client = brokerClient({
+      envelope: {
+        commands: [
+          { name: 'accounts', usage: 'alva broker accounts' },
+          { name: 'risk-rules', usage: 'alva broker risk-rules' },
+          { name: 'quote', usage: 'alva broker quote' },
+        ],
+        nextCommands: ['alva broker describe --venue <venue>'],
+      },
+      exit: 0,
+    });
+    const result = (await dispatchEmbedded(
+      client,
+      ['trading', 'broker', 'describe'],
+      undefined,
+      { runtime: 'jagent' }
+    )) as {
+      commands: Array<{ name: string; usage: string }>;
+      nextCommands: string[];
+    };
+
+    expect(result.commands).toEqual([
+      { name: 'quote', usage: 'alva trading broker quote' },
+    ]);
+    expect(result.nextCommands).toEqual([
+      'alva trading broker describe --venue <venue>',
+    ]);
+  });
+
+  it('keeps shared prerequisites out of the Broker subtree', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    await expect(
+      dispatchEmbedded(client, ['trading', 'broker', 'accounts'], undefined, {
+        runtime: 'jagent',
+      })
+    ).rejects.toThrow(/use 'alva trading accounts'/);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((client as any)._request).not.toHaveBeenCalled();
+  });
+
+  it('routes shared accounts and risk rules through Broker-backed reads', async () => {
+    const client = brokerClient({ envelope: { items: [] }, exit: 0 });
+
+    await dispatchEmbedded(client, ['trading', 'accounts'], undefined, {
+      runtime: 'jagent',
+    });
+    await dispatchEmbedded(client, ['trading', 'risk-rules'], undefined, {
+      runtime: 'jagent',
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const request = (client as any)._request;
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      'POST',
+      '/api/v1/broker/invoke',
+      expect.objectContaining({
+        body: expect.objectContaining({ argv: ['accounts'] }),
+      })
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      '/api/v1/broker/invoke',
+      expect.objectContaining({
+        body: expect.objectContaining({ argv: ['risk-rules'] }),
+      })
+    );
+  });
 
   it('passes argv through verbatim to /api/v1/broker/invoke', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
-    const env = await dispatch(
+    const env = await dispatchEmbedded(
       client,
-      ['broker', 'quote', '--venue', 'binance', '--symbol', 'BTC/USDT'],
+      [
+        'trading',
+        'broker',
+        'quote',
+        '--venue',
+        'binance',
+        '--symbol',
+        'BTC/USDT',
+      ],
       undefined,
-      { mode: 'jagent' }
+      brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((client as any)._request).toHaveBeenCalledWith(
@@ -5066,9 +5752,10 @@ describe('CLI dispatch — broker', () => {
 
   it('mints an --intent-id for a live order place', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
+        'trading',
         'broker',
         'order',
         'place',
@@ -5084,7 +5771,7 @@ describe('CLI dispatch — broker', () => {
         '0.01',
       ],
       undefined,
-      { mode: 'jagent' }
+      brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = (client as any)._request.mock.calls[0];
@@ -5096,9 +5783,10 @@ describe('CLI dispatch — broker', () => {
 
   it('does NOT mint an intent-id for a dry-run or when one is supplied', async () => {
     const client = brokerClient({ envelope: { dryRun: true }, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
+        'trading',
         'broker',
         'order',
         'place',
@@ -5115,16 +5803,17 @@ describe('CLI dispatch — broker', () => {
         '--dry-run',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
     expect(argv).not.toContain('--intent-id');
 
     const client2 = brokerClient({ envelope: {}, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client2,
       [
+        'trading',
         'broker',
         'order',
         'place',
@@ -5142,7 +5831,7 @@ describe('CLI dispatch — broker', () => {
         'mine',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv2: string[] = (client2 as any)._request.mock.calls[0][2].body
@@ -5153,9 +5842,10 @@ describe('CLI dispatch — broker', () => {
 
   it('does not double-mint when the handle is in equals-form', async () => {
     const client = brokerClient({ envelope: {}, exit: 0 });
-    await dispatch(
+    await dispatchEmbedded(
       client,
       [
+        'trading',
         'broker',
         'order',
         'place',
@@ -5172,7 +5862,7 @@ describe('CLI dispatch — broker', () => {
         '--intent-id=mine',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
@@ -5240,9 +5930,10 @@ describe('CLI dispatch — broker', () => {
     // --open is not a toolkit flag. broker must bypass the command parser and
     // forward it verbatim. (order list, not stdin — no blocking read.)
     const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
-    const env = await dispatch(
+    const env = await dispatchEmbedded(
       client,
       [
+        'trading',
         'broker',
         'order',
         'list',
@@ -5253,7 +5944,7 @@ describe('CLI dispatch — broker', () => {
         '--open',
       ],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     );
     expect(env).toEqual({ status: 'ok' });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5267,11 +5958,11 @@ describe('CLI dispatch — broker', () => {
     (client as any)._request = vi
       .fn()
       .mockRejectedValue(new Error('econnrefused'));
-    const env = (await dispatch(
+    const env = (await dispatchEmbedded(
       client,
-      ['broker', 'balance', '--venue', 'binance', '--account', '7'],
+      ['trading', 'broker', 'balance', '--venue', 'binance', '--account', '7'],
       undefined,
-      { mode: 'jagent' }
+      { runtime: 'jagent' }
     )) as { status: string; reason: { code: string } };
     expect(env.status).toBe('error');
     expect(env.reason.code).toBe('network');

@@ -13,7 +13,7 @@ export interface CommandDefinition {
   readonly passthrough?: boolean;
 }
 
-interface CommandOptions {
+export interface CommandOptions {
   readonly values?: readonly string[];
   readonly booleans?: readonly string[];
   readonly positionals?: readonly string[];
@@ -21,7 +21,7 @@ interface CommandOptions {
   readonly passthrough?: boolean;
 }
 
-function command(
+export function command(
   path: string,
   {
     values = [],

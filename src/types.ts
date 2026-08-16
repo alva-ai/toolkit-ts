@@ -485,6 +485,8 @@ export interface AutomationInspectResponse {
   id: string;
   /** Backing feed id encoded as a string. */
   feed_id: string;
+  /** Backing producer cronjob id used by lifecycle and run operations. */
+  cronjob_id?: number;
   name: string;
   description?: string;
   /** Automation runtime status. */
