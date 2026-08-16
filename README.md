@@ -182,8 +182,9 @@ const result = await dispatch(client, ['account', 'whoami']);
 The embedded dispatcher always exposes the purpose-built Alpi Alva command
 catalog. It is independent from the packaged system `alva` CLI.
 Authentication/setup, Arrays bootstrap, SDK documentation, duplicate aliases,
-and legacy top-level groupings are not part of this catalog; old Agent paths
-are rejected rather than aliased. Run the embedded `--help` for the live tree.
+legacy top-level groupings, and `feedback submit` are not part of this catalog;
+old Agent paths are rejected rather than aliased. Run the embedded `--help` for
+the live tree. The independent system CLI continues to expose feedback.
 
 The embedded surface is aligned with ALFS-native tools: local-file flags such as
 `--local-file`, `--file`, `--params-schema-file`, and screenshot `--out` are
