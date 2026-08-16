@@ -554,7 +554,7 @@ export async function dispatch(
   meta?: { profile?: string; baseUrl?: string; cliVersion?: string },
   deps?: DispatchRuntimeDeps
 ): Promise<unknown> {
-  return dispatchEmbedded(client, args, meta, deps);
+  return dispatchEmbedded(client, args, meta, { ...deps, runtime: 'jagent' });
 }
 
 export { CLI_VERSION, DEFAULT_RUN_TIMEOUT_MS } from './dispatch.js';

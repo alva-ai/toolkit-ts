@@ -6046,6 +6046,22 @@ describe('CLI dispatch — broker', () => {
     expect(argv).toContain('--open');
   });
 
+  it('uses Jagent Broker result semantics without caller runtime wiring', async () => {
+    const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
+
+    await expect(
+      dispatchEmbedded(client, [
+        'trading',
+        'broker',
+        'balance',
+        '--venue',
+        'binance',
+        '--account',
+        '7',
+      ])
+    ).resolves.toEqual({ status: 'ok' });
+  });
+
   it('synthesizes a network error envelope on transport failure', async () => {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
