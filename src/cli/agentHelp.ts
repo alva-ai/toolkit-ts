@@ -1,3 +1,8 @@
+import {
+  AGENT_COMMAND_DEFINITIONS,
+  type AgentCommandDefinition,
+} from './agentCommandDefinitions.js';
+
 export const AGENT_HELP_TEXT = `Usage: alva <command> [options]
 
 Slim Alva Agent CLI. Authentication and endpoints are owned by Jagent.
@@ -160,6 +165,29 @@ Run 'alva trading broker describe' for the live venue contract.`,
   feedback: `Usage: alva feedback submit [options]`,
 };
 
+const AGENT_LEAF_DEFINITIONS = new Map(
+  AGENT_COMMAND_DEFINITIONS.map((definition) => [
+    definition.path.join(' '),
+    definition,
+  ])
+);
+
+function formatAgentLeafHelp(definition: AgentCommandDefinition): string {
+  const positionals = definition.positionals.names.map((name, index) =>
+    index < definition.positionals.min ? `<${name}>` : `[<${name}>]`
+  );
+  const usageSuffix = [
+    ...positionals,
+    definition.passthrough === true ? '[arguments...]' : '[options]',
+  ].join(' ');
+  const options = Object.entries(definition.flags).map(([name, kind]) =>
+    kind === 'value' ? `  --${name} <value>` : `  --${name}`
+  );
+  options.push('  --help');
+
+  return `Usage: alva ${definition.path.join(' ')} ${usageSuffix}\n\nOptions:\n${options.join('\n')}`;
+}
+
 export function agentHelpFor(args: readonly string[]): string | undefined {
   const helpIndex = args.findIndex(
     (argument) => argument === '--help' || argument === '-h'
@@ -168,8 +196,11 @@ export function agentHelpFor(args: readonly string[]): string | undefined {
     (argument) => !argument.startsWith('-')
   );
   for (let length = path.length; length > 0; length--) {
-    const help = AGENT_COMMAND_HELP[path.slice(0, length).join(' ')];
+    const command = path.slice(0, length).join(' ');
+    const help = AGENT_COMMAND_HELP[command];
     if (help !== undefined) return help;
+    const definition = AGENT_LEAF_DEFINITIONS.get(command);
+    if (definition !== undefined) return formatAgentLeafHelp(definition);
   }
   return undefined;
 }

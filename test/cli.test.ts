@@ -5071,6 +5071,69 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.deploy.list).toHaveBeenCalled();
   });
 
+  it('parses Slim leaf help before rejecting unsupported flags', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatch(
+        client,
+        ['playbooks', 'draft', '--trading_symbols', 'TSLA', '--help'],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow(
+      /--trading_symbols is not supported for 'playbooks draft'.*--trading-symbols/
+    );
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
+  });
+
+  it('renders schema-backed Slim leaf help without dispatching', async () => {
+    const client = makeClient();
+    const help = (await dispatch(
+      client,
+      ['playbooks', 'draft', '--help'],
+      undefined,
+      agentDeps
+    )) as { _help: boolean; text: string };
+    const helpWithValidFlags = await dispatch(
+      client,
+      ['playbooks', 'draft', '--trading-symbols', '["TSLA"]', '--help'],
+      undefined,
+      agentDeps
+    );
+
+    expect(help._help).toBe(true);
+    expect(help.text).toContain('Usage: alva playbooks draft [options]');
+    for (const flag of [
+      '--name',
+      '--display-name',
+      '--description',
+      '--feeds',
+      '--trading-symbols',
+      '--skill-id',
+      '--tags',
+      '--help',
+    ]) {
+      expect(help.text).toContain(flag);
+    }
+    expect(helpWithValidFlags).toEqual(help);
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
+  });
+
+  it('leaves Full playbook-draft help unchanged', async () => {
+    const client = makeClient();
+    const help = (await dispatch(client, [
+      'release',
+      'playbook-draft',
+      '--help',
+    ])) as { _help: boolean; text: string };
+
+    expect(help._help).toBe(true);
+    expect(help.text).toContain('Playbook-draft flags:');
+    expect(help.text).toContain('--trading-symbols');
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
+  });
+
   it('routes account identity and notification preferences', async () => {
     const client = makeClient();
     const identity = (await dispatch(

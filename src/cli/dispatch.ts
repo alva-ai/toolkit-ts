@@ -54,6 +54,7 @@ import { validateSerializedArgs } from '../jsonPayload.js';
 export const SLIM_AGENT_COMMAND_PATHS: readonly string[] = Object.freeze(
   AGENT_COMMAND_DEFINITIONS.map((definition) => definition.path.join(' '))
 );
+const SLIM_AGENT_COMMAND_PATH_SET = new Set(SLIM_AGENT_COMMAND_PATHS);
 
 export { CliUsageError } from '../error.js';
 
@@ -2802,13 +2803,29 @@ async function dispatchAgent(
   const bareHelp = args.every((argument) => !argument.startsWith('-'))
     ? AGENT_COMMAND_HELP[args.join(' ')]
     : undefined;
-  if (requestedHelp || bareHelp !== undefined) {
-    const help = agentHelpFor(args) ?? bareHelp;
-    if (help !== undefined) return { _help: true, text: help };
+  if (bareHelp !== undefined) {
+    return { _help: true, text: bareHelp };
+  }
+  if (requestedHelp) {
+    const helpIndex = args.findIndex(
+      (argument) => argument === '--help' || argument === '-h'
+    );
+    const helpPath = args.slice(0, helpIndex);
+    const treeHelp =
+      helpIndex === args.length - 1 &&
+      helpPath.every((argument) => !argument.startsWith('-'))
+        ? AGENT_COMMAND_HELP[helpPath.join(' ')]
+        : undefined;
+    if (
+      treeHelp !== undefined &&
+      !SLIM_AGENT_COMMAND_PATH_SET.has(helpPath.join(' '))
+    ) {
+      return { _help: true, text: treeHelp };
+    }
   }
 
   const parsed = parseCommand(args, 'agent');
-  if (parsed.flags.help !== undefined) {
+  if (requestedHelp || parsed.flags.help !== undefined) {
     return {
       _help: true,
       text: agentHelpFor(args) ?? AGENT_HELP_TEXT,
