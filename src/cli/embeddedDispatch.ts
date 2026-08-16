@@ -16,11 +16,7 @@ import {
   requirePositiveIntegerFlag,
 } from './dispatch.js';
 import { EMBEDDED_COMMAND_DEFINITIONS } from './embeddedCommandDefinitions.js';
-import type {
-  DispatchLocalFiles,
-  DispatchRuntime,
-  DispatchRuntimeDeps,
-} from './dispatch.js';
+import type { DispatchRuntimeDeps } from './dispatch.js';
 
 /** Stable leaf inventory for Alpi Alva safety smokes and tooling. */
 export const ALPI_ALVA_COMMAND_PATHS: readonly string[] = Object.freeze(
