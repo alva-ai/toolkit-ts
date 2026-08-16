@@ -370,12 +370,10 @@ async function dispatchEmbedded(
   if (!group || group === '--help' || group === '-h') {
     return { _help: true, text: AGENT_HELP_TEXT };
   }
-  const requestedHelp = args.some(
-    (argument) => argument === '--help' || argument === '-h'
-  );
   const requestedHelpIndex = args.findIndex(
     (argument) => argument === '--help' || argument === '-h'
   );
+  const requestedHelp = requestedHelpIndex !== -1;
   const brokerNativeHelp =
     args[0] === 'trading' && args[1] === 'broker' && requestedHelpIndex > 2;
   const bareHelp = args.every((argument) => !argument.startsWith('-'))
