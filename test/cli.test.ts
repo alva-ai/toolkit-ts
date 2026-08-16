@@ -5709,6 +5709,8 @@ describe('CLI dispatch — broker', () => {
         commands: [
           { name: 'accounts', usage: 'alva broker accounts' },
           { name: 'risk-rules', usage: 'alva broker risk-rules' },
+          { name: 'venues', usage: 'alva broker venues' },
+          { name: 'help', usage: 'alva broker help' },
           { name: 'quote', usage: 'alva broker quote' },
         ],
         nextCommands: ['alva broker describe --venue <venue>'],

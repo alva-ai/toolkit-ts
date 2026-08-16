@@ -529,7 +529,12 @@ function adaptEmbeddedBrokerDescription(value: unknown, key?: string): unknown {
         ? value.filter((item) => {
             if (typeof item !== 'object' || item === null) return true;
             const name = (item as Record<string, unknown>).name;
-            return name !== 'accounts' && name !== 'risk-rules';
+            return (
+              name !== 'accounts' &&
+              name !== 'risk-rules' &&
+              name !== 'venues' &&
+              name !== 'help'
+            );
           })
         : value;
     return items.map((item) => adaptEmbeddedBrokerDescription(item));
