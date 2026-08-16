@@ -5445,6 +5445,36 @@ describe('CLI dispatch — Slim Agent profile', () => {
     });
   });
 
+  it('deletes an int64 automation without requiring a backing producer', async () => {
+    const client = makeClient();
+    const id = '9007199254740993';
+    client.automation.inspect = vi.fn().mockResolvedValue({
+      id,
+      feed_id: id,
+      name: 'metadata-only',
+      status: 'PAUSED',
+      total_runs: 0,
+      flow_id: null,
+      flow_config_path: null,
+    });
+
+    const result = await dispatchEmbedded(
+      client,
+      ['automation', 'delete', '--id', id],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.inspect).toHaveBeenCalledWith({ id });
+    expect(client.automation.delete).toHaveBeenCalledWith({ id });
+    expect(client.deploy.pause).not.toHaveBeenCalled();
+    expect(client.deploy.delete).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      automation_id: id,
+      status: 'deleted',
+    });
+  });
+
   it('coordinates product and producer pause/resume state', async () => {
     const client = makeClient();
 

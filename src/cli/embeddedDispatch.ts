@@ -270,7 +270,14 @@ async function dispatchEmbeddedAutomation(
 
     case 'automation-delete': {
       const id = automationID(parsed, 'automation delete');
-      const cronjobId = await resolveAutomationProducer(client, id);
+      const cronjobId = await findAutomationProducer(client, id);
+      if (cronjobId === undefined) {
+        await client.automation.delete({ id });
+        return {
+          automation_id: id,
+          status: 'deleted',
+        };
+      }
       await executeParsedCommand(
         client,
         internalCommand(['deploy', 'pause'], { id: String(cronjobId) }),
