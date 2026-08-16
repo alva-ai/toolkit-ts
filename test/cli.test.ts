@@ -5352,6 +5352,21 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(trigger).toEqual({ workflow_run_id: 'wf-test' });
   });
 
+  it('rejects array-shaped Automation details before producer operations', async () => {
+    const client = makeClient();
+    client.automation.inspect = vi.fn().mockResolvedValue([]);
+
+    await expect(
+      dispatchEmbedded(
+        client,
+        ['automation', 'trigger', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow('Automation 42 returned an invalid detail');
+    expect(client.deploy.trigger).not.toHaveBeenCalled();
+  });
+
   it('keeps Automation delivery reads and partial updates in the Slim tree', async () => {
     const client = makeClient();
 
@@ -5404,6 +5419,62 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.deploy.update).toHaveBeenCalled();
   });
 
+  it('preserves int64 automation ids and skips producer lookup for metadata-only updates', async () => {
+    const client = makeClient();
+    const id = '9007199254740993';
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'update', '--id', id, '--description', 'Metadata only'],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.inspect).not.toHaveBeenCalled();
+    expect(client.deploy.update).not.toHaveBeenCalled();
+    expect(client.automation.update).toHaveBeenCalledWith({
+      id,
+      description: 'Metadata only',
+      version: undefined,
+      changelog: undefined,
+      agent_type: undefined,
+      trigger: undefined,
+    });
+  });
+
+  it('preserves int64 automation ids for inspect and visibility routes', async () => {
+    const client = makeClient();
+    const id = '9007199254740993';
+    client.automation.inspect = vi.fn().mockResolvedValue({
+      id,
+      feed_id: id,
+      name: 'large-id',
+      status: 'ACTIVE',
+      total_runs: 0,
+      flow_id: null,
+      flow_config_path: null,
+    });
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'inspect', '--id', id, '--json'],
+      undefined,
+      agentDeps
+    );
+    await dispatchEmbedded(
+      client,
+      ['automation', 'set-visibility', '--id', id, '--visibility', 'public'],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.inspect).toHaveBeenCalledWith({ id });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith({
+      id,
+      visibility: 'public',
+    });
+  });
+
   it('pauses a producer before deleting its product automation', async () => {
     const client = makeClient();
     const result = await dispatchEmbedded(
@@ -5413,11 +5484,41 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
-    expect(client.automation.delete).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.delete).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.delete).toHaveBeenCalledWith({ id: 420 });
     expect(result).toEqual({
       automation_id: '42',
       cronjob_id: 420,
+      status: 'deleted',
+    });
+  });
+
+  it('deletes an int64 automation without requiring a backing producer', async () => {
+    const client = makeClient();
+    const id = '9007199254740993';
+    client.automation.inspect = vi.fn().mockResolvedValue({
+      id,
+      feed_id: id,
+      name: 'metadata-only',
+      status: 'PAUSED',
+      total_runs: 0,
+      flow_id: null,
+      flow_config_path: null,
+    });
+
+    const result = await dispatchEmbedded(
+      client,
+      ['automation', 'delete', '--id', id],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.inspect).toHaveBeenCalledWith({ id });
+    expect(client.automation.delete).toHaveBeenCalledWith({ id });
+    expect(client.deploy.pause).not.toHaveBeenCalled();
+    expect(client.deploy.delete).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      automation_id: id,
       status: 'deleted',
     });
   });
@@ -5432,7 +5533,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
-    expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.stop).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
     await dispatchEmbedded(
@@ -5441,7 +5542,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.automation.resume).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.resume).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.resume).toHaveBeenCalledWith({ id: 420 });
     expect(client.automation.resume).toHaveBeenCalledBefore(
       client.deploy.resume
@@ -5656,6 +5757,8 @@ describe('CLI dispatch — broker', () => {
         commands: [
           { name: 'accounts', usage: 'alva broker accounts' },
           { name: 'risk-rules', usage: 'alva broker risk-rules' },
+          { name: 'venues', usage: 'alva broker venues' },
+          { name: 'help', usage: 'alva broker help' },
           { name: 'quote', usage: 'alva broker quote' },
         ],
         nextCommands: ['alva broker describe --venue <venue>'],
@@ -5680,6 +5783,47 @@ describe('CLI dispatch — broker', () => {
     ]);
   });
 
+  it('forwards Broker-native help to the Broker service', async () => {
+    const client = brokerClient({
+      envelope: { usage: 'quote --venue <venue> --symbol <symbol>' },
+      exit: 0,
+    });
+
+    const result = await dispatchEmbedded(client, [
+      'trading',
+      'broker',
+      'quote',
+      '--help',
+    ]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((client as any)._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/broker/invoke',
+      expect.objectContaining({
+        body: expect.objectContaining({ argv: ['quote', '--help'] }),
+      })
+    );
+    expect(result).toEqual({
+      usage: 'quote --venue <venue> --symbol <symbol>',
+    });
+  });
+
+  it('keeps help at the Broker passthrough boundary in Toolkit', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+
+    const result = (await dispatchEmbedded(client, [
+      'trading',
+      'broker',
+      '--help',
+    ])) as { _help: boolean; text: string };
+
+    expect(result._help).toBe(true);
+    expect(result.text).toContain('trading broker');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((client as any)._request).not.toHaveBeenCalled();
+  });
+
   it('keeps shared prerequisites out of the Broker subtree', async () => {
     const client = brokerClient({ envelope: {}, exit: 0 });
     await expect(
@@ -5690,6 +5834,24 @@ describe('CLI dispatch — broker', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((client as any)._request).not.toHaveBeenCalled();
   });
+
+  it.each(['venues', 'help'])(
+    'blocks targeted discovery of the hidden Broker %s command',
+    async (command) => {
+      const client = brokerClient({ envelope: {}, exit: 0 });
+
+      await expect(
+        dispatchEmbedded(
+          client,
+          ['trading', 'broker', 'describe', '--command', command],
+          undefined,
+          { runtime: 'jagent' }
+        )
+      ).rejects.toThrow(/not part of the Slim Broker tree/);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((client as any)._request).not.toHaveBeenCalled();
+    }
+  );
 
   it('routes shared accounts and risk rules through Broker-backed reads', async () => {
     const client = brokerClient({ envelope: { items: [] }, exit: 0 });
@@ -5950,6 +6112,22 @@ describe('CLI dispatch — broker', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
     expect(argv).toContain('--open');
+  });
+
+  it('uses Jagent Broker result semantics without caller runtime wiring', async () => {
+    const client = brokerClient({ envelope: { status: 'ok' }, exit: 0 });
+
+    await expect(
+      dispatchEmbedded(client, [
+        'trading',
+        'broker',
+        'balance',
+        '--venue',
+        'binance',
+        '--account',
+        '7',
+      ])
+    ).resolves.toEqual({ status: 'ok' });
   });
 
   it('synthesizes a network error envelope on transport failure', async () => {

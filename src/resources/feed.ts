@@ -108,8 +108,14 @@ export class FeedResource {
   }
 }
 
-function requireFeedID(id: number): number {
-  if (!Number.isInteger(id) || id <= 0) {
+function requireFeedID(id: number | string): number | string {
+  if (typeof id === 'string') {
+    if (!/^[1-9]\d*$/.test(id)) {
+      throw new Error('feed id must be a positive integer');
+    }
+    return id;
+  }
+  if (!Number.isSafeInteger(id) || id <= 0) {
     throw new Error('feed id must be a positive integer');
   }
   return id;

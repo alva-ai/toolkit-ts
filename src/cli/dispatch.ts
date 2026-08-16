@@ -1499,7 +1499,7 @@ export function requirePositiveIntegerFlag(
   return Number(val);
 }
 
-function requirePositiveIntegerStringFlag(
+export function requirePositiveIntegerStringFlag(
   flags: Record<string, string>,
   name: string,
   command: string

@@ -13,9 +13,10 @@ import {
   executeParsedCommand,
   handleBroker,
   requireFlag,
-  requirePositiveIntegerFlag,
+  requirePositiveIntegerStringFlag,
 } from './dispatch.js';
 import { EMBEDDED_COMMAND_DEFINITIONS } from './embeddedCommandDefinitions.js';
+import { formatAutomationDetail } from './productFormat.js';
 import type { DispatchRuntimeDeps } from './dispatch.js';
 
 /** Stable leaf inventory for Alpi Alva safety smokes and tooling. */
@@ -23,6 +24,12 @@ export const ALPI_ALVA_COMMAND_PATHS: readonly string[] = Object.freeze(
   EMBEDDED_COMMAND_DEFINITIONS.map((definition) => definition.path.join(' '))
 );
 const ALPI_ALVA_COMMAND_PATH_SET = new Set(ALPI_ALVA_COMMAND_PATHS);
+const HIDDEN_BROKER_COMMANDS = new Set([
+  'accounts',
+  'risk-rules',
+  'venues',
+  'help',
+]);
 
 function selectedEmbeddedFlagValues(
   parsed: ParsedCommand,
@@ -43,20 +50,21 @@ function internalCommand(
   return { path, flags, positionals: [] };
 }
 
-function automationID(parsed: ParsedCommand, command: string): number {
-  return requirePositiveIntegerFlag(parsed.flags, 'id', command);
+function automationID(parsed: ParsedCommand, command: string): string {
+  return requirePositiveIntegerStringFlag(parsed.flags, 'id', command);
 }
 
 function producerIDFromAutomationDetail(
   detail: unknown,
-  automationId: number
-): number {
-  if (typeof detail !== 'object' || detail === null) {
+  automationId: string
+): number | undefined {
+  if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
     throw new Error(`Automation ${automationId} returned an invalid detail`);
   }
   const raw = (detail as Record<string, unknown>).cronjob_id;
+  if (raw === undefined || raw === null) return undefined;
   if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
-    throw new Error(`Automation ${automationId} has no active producer`);
+    throw new Error(`Automation ${automationId} returned an invalid producer`);
   }
   return raw;
 }
@@ -74,8 +82,20 @@ function producerIDFromCreate(result: unknown): number {
 
 async function resolveAutomationProducer(
   client: AlvaClient,
-  automationId: number
+  automationId: string
 ): Promise<number> {
+  const detail = await client.automation.inspect({ id: automationId });
+  const producerId = producerIDFromAutomationDetail(detail, automationId);
+  if (producerId === undefined) {
+    throw new Error(`Automation ${automationId} has no active producer`);
+  }
+  return producerId;
+}
+
+async function findAutomationProducer(
+  client: AlvaClient,
+  automationId: string
+): Promise<number | undefined> {
   const detail = await client.automation.inspect({ id: automationId });
   return producerIDFromAutomationDetail(detail, automationId);
 }
@@ -88,6 +108,30 @@ async function dispatchEmbeddedAutomation(
 ): Promise<unknown> {
   const definition = embeddedCommandDefinition(parsed.path);
   switch (definition.action) {
+    case 'automation-inspect': {
+      const id = automationID(parsed, 'automation inspect');
+      const result = await client.automation.inspect({ id });
+      return parsed.flags.json === 'true'
+        ? result
+        : formatAutomationDetail(result);
+    }
+
+    case 'automation-set-visibility': {
+      const id = automationID(parsed, 'automation set-visibility');
+      const visibility = requireFlag(
+        parsed.flags,
+        'visibility',
+        'automation set-visibility'
+      );
+      if (visibility !== 'public' && visibility !== 'private') {
+        throw new CliUsageError(
+          `--visibility must be one of public, private for 'automation set-visibility', got '${visibility}'`,
+          'automation'
+        );
+      }
+      return client.feed.setVisibility({ id, visibility });
+    }
+
     case 'automation-create': {
       const name = requireFlag(parsed.flags, 'name', 'automation create');
       requireFlag(parsed.flags, 'path', 'automation create');
@@ -165,9 +209,10 @@ async function dispatchEmbeddedAutomation(
           'automation'
         );
       }
-      const cronjobId = await resolveAutomationProducer(client, id);
+      let cronjobId: number | undefined;
       let producer: unknown;
       if (Object.keys(producerFlags).length > 0) {
+        cronjobId = await resolveAutomationProducer(client, id);
         producer = await executeParsedCommand(
           client,
           internalCommand(['deploy', 'update'], {
@@ -218,12 +263,7 @@ async function dispatchEmbeddedAutomation(
         deps
       );
       try {
-        await executeParsedCommand(
-          client,
-          internalCommand(['automation', 'stop'], { id: String(id) }),
-          meta,
-          deps
-        );
+        await client.automation.stop({ id });
       } catch (error) {
         throw new Error(
           `Automation ${id} delivery pause failed after producer ${cronjobId} was paused: ${error instanceof Error ? error.message : String(error)}`
@@ -239,12 +279,7 @@ async function dispatchEmbeddedAutomation(
     case 'automation-resume': {
       const id = automationID(parsed, 'automation resume');
       const cronjobId = await resolveAutomationProducer(client, id);
-      await executeParsedCommand(
-        client,
-        internalCommand(['automation', 'resume'], { id: String(id) }),
-        meta,
-        deps
-      );
+      await client.automation.resume({ id });
       try {
         await executeParsedCommand(
           client,
@@ -266,7 +301,14 @@ async function dispatchEmbeddedAutomation(
 
     case 'automation-delete': {
       const id = automationID(parsed, 'automation delete');
-      const cronjobId = await resolveAutomationProducer(client, id);
+      const cronjobId = await findAutomationProducer(client, id);
+      if (cronjobId === undefined) {
+        await client.automation.delete({ id });
+        return {
+          automation_id: id,
+          status: 'deleted',
+        };
+      }
       await executeParsedCommand(
         client,
         internalCommand(['deploy', 'pause'], { id: String(cronjobId) }),
@@ -274,12 +316,7 @@ async function dispatchEmbeddedAutomation(
         deps
       );
       try {
-        await executeParsedCommand(
-          client,
-          internalCommand(['automation', 'delete'], { id: String(id) }),
-          meta,
-          deps
-        );
+        await client.automation.delete({ id });
       } catch (error) {
         throw new Error(
           `Automation ${id} delete failed after producer ${cronjobId} was paused; the producer remains paused: ${error instanceof Error ? error.message : String(error)}`
@@ -364,19 +401,20 @@ async function dispatchEmbedded(
   if (!group || group === '--help' || group === '-h') {
     return { _help: true, text: AGENT_HELP_TEXT };
   }
-  const requestedHelp = args.some(
+  const requestedHelpIndex = args.findIndex(
     (argument) => argument === '--help' || argument === '-h'
   );
+  const requestedHelp = requestedHelpIndex !== -1;
+  const brokerNativeHelp =
+    args[0] === 'trading' && args[1] === 'broker' && requestedHelpIndex > 2;
   const bareHelp = args.every((argument) => !argument.startsWith('-'))
     ? AGENT_COMMAND_HELP[args.join(' ')]
     : undefined;
   if (bareHelp !== undefined) {
     return { _help: true, text: bareHelp };
   }
-  if (requestedHelp) {
-    const helpIndex = args.findIndex(
-      (argument) => argument === '--help' || argument === '-h'
-    );
+  if (requestedHelp && !brokerNativeHelp) {
+    const helpIndex = requestedHelpIndex;
     const helpPath = args.slice(0, helpIndex);
     const treeHelp =
       helpIndex === args.length - 1 &&
@@ -392,7 +430,7 @@ async function dispatchEmbedded(
   }
 
   const parsed = parseEmbeddedCommand(args);
-  if (requestedHelp || parsed.flags.help !== undefined) {
+  if ((requestedHelp && !brokerNativeHelp) || parsed.flags.help !== undefined) {
     return {
       _help: true,
       text: agentHelpFor(args) ?? AGENT_HELP_TEXT,
@@ -405,12 +443,7 @@ async function dispatchEmbedded(
   if (parsed.path.join(' ') === 'trading broker') {
     const brokerArgv = parsed.passthrough ?? [];
     const command = brokerArgv[0];
-    if (
-      command === 'accounts' ||
-      command === 'risk-rules' ||
-      command === 'venues' ||
-      command === 'help'
-    ) {
+    if (HIDDEN_BROKER_COMMANDS.has(command)) {
       const replacement =
         command === 'accounts' || command === 'risk-rules'
           ? `alva trading ${command}`
@@ -423,16 +456,17 @@ async function dispatchEmbedded(
     const commandSelector = brokerArgv.findIndex(
       (argument) => argument === '--command'
     );
+    const describedCommand = brokerArgv[commandSelector + 1];
     if (
       command === 'describe' &&
       commandSelector !== -1 &&
-      (brokerArgv[commandSelector + 1] === 'accounts' ||
-        brokerArgv[commandSelector + 1] === 'risk-rules')
+      HIDDEN_BROKER_COMMANDS.has(describedCommand)
     ) {
-      throw new CliUsageError(
-        `Shared trading prerequisites are described by 'alva trading ${brokerArgv[commandSelector + 1]}'`,
-        'trading'
-      );
+      const message =
+        describedCommand === 'accounts' || describedCommand === 'risk-rules'
+          ? `Shared trading prerequisites are described by 'alva trading ${describedCommand}'`
+          : `'trading broker describe --command ${describedCommand}' is not part of the Slim Broker tree`;
+      throw new CliUsageError(message, 'trading');
     }
     const result = await handleBroker(client, brokerArgv, deps);
     return command === 'describe'
@@ -515,7 +549,12 @@ function adaptEmbeddedBrokerDescription(value: unknown, key?: string): unknown {
         ? value.filter((item) => {
             if (typeof item !== 'object' || item === null) return true;
             const name = (item as Record<string, unknown>).name;
-            return name !== 'accounts' && name !== 'risk-rules';
+            return (
+              name !== 'accounts' &&
+              name !== 'risk-rules' &&
+              name !== 'venues' &&
+              name !== 'help'
+            );
           })
         : value;
     return items.map((item) => adaptEmbeddedBrokerDescription(item));
@@ -535,7 +574,7 @@ export async function dispatch(
   meta?: { profile?: string; baseUrl?: string; cliVersion?: string },
   deps?: DispatchRuntimeDeps
 ): Promise<unknown> {
-  return dispatchEmbedded(client, args, meta, deps);
+  return dispatchEmbedded(client, args, meta, { ...deps, runtime: 'jagent' });
 }
 
 export { CLI_VERSION, DEFAULT_RUN_TIMEOUT_MS } from './dispatch.js';

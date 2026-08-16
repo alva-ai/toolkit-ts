@@ -6,11 +6,13 @@ import type {
 
 export type EmbeddedCommandAction =
   | 'automation-create'
+  | 'automation-inspect'
   | 'automation-update'
   | 'automation-delete'
   | 'automation-pause'
   | 'automation-resume'
   | 'automation-trigger'
+  | 'automation-set-visibility'
   | 'automation-runs-list'
   | 'automation-runs-status'
   | 'automation-runs-logs'
@@ -215,10 +217,11 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['limit', 'cursor', 'status'],
       booleans: ['json'],
     }),
-    route('automation inspect', 'automation inspect', {
-      values: ['id'],
-      booleans: ['json'],
-    }),
+    action(
+      'automation inspect',
+      { values: ['id'], booleans: ['json'] },
+      'automation-inspect'
+    ),
     action(
       'automation update',
       {
@@ -250,9 +253,11 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     action('automation pause', { values: ['id'] }, 'automation-pause'),
     action('automation resume', { values: ['id'] }, 'automation-resume'),
     action('automation trigger', { values: ['id'] }, 'automation-trigger'),
-    route('automation set-visibility', 'feed set-visibility', {
-      values: ['id', 'visibility'],
-    }),
+    action(
+      'automation set-visibility',
+      { values: ['id', 'visibility'] },
+      'automation-set-visibility'
+    ),
     action(
       'automation runs list',
       { values: ['id', 'first', 'cursor'] },

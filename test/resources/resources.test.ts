@@ -571,6 +571,38 @@ describe('AutomationResource', () => {
     );
   });
 
+  it('preserves int64 automation ids across inspect and lifecycle requests', async () => {
+    const client = makeClient();
+    const automation = new AutomationResource(client);
+    const id = '9007199254740993';
+
+    await automation.inspect({ id });
+    await automation.stop({ id });
+    await automation.resume({ id });
+    await automation.delete({ id });
+
+    expect(client._request).toHaveBeenNthCalledWith(
+      1,
+      'GET',
+      `/api/v1/automation/${id}`
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      `/api/v1/feed/${id}/stop`
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      3,
+      'POST',
+      `/api/v1/feed/${id}/resume`
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      4,
+      'DELETE',
+      `/api/v1/feed/${id}`
+    );
+  });
+
   it('update() sends an ID-scoped PATCH and preserves explicit empty fields', async () => {
     const client = makeClient();
     const automation = new AutomationResource(client);
