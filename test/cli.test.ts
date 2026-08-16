@@ -5404,6 +5404,29 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.deploy.update).toHaveBeenCalled();
   });
 
+  it('preserves int64 automation ids and skips producer lookup for metadata-only updates', async () => {
+    const client = makeClient();
+    const id = '9007199254740993';
+
+    await dispatchEmbedded(
+      client,
+      ['automation', 'update', '--id', id, '--description', 'Metadata only'],
+      undefined,
+      agentDeps
+    );
+
+    expect(client.automation.inspect).not.toHaveBeenCalled();
+    expect(client.deploy.update).not.toHaveBeenCalled();
+    expect(client.automation.update).toHaveBeenCalledWith({
+      id,
+      description: 'Metadata only',
+      version: undefined,
+      changelog: undefined,
+      agent_type: undefined,
+      trigger: undefined,
+    });
+  });
+
   it('pauses a producer before deleting its product automation', async () => {
     const client = makeClient();
     const result = await dispatchEmbedded(

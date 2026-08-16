@@ -178,9 +178,10 @@ async function dispatchEmbeddedAutomation(
           'automation'
         );
       }
-      const cronjobId = await resolveAutomationProducer(client, id);
+      let cronjobId: number | undefined;
       let producer: unknown;
       if (Object.keys(producerFlags).length > 0) {
+        cronjobId = await resolveAutomationProducer(client, id);
         producer = await executeParsedCommand(
           client,
           internalCommand(['deploy', 'update'], {
