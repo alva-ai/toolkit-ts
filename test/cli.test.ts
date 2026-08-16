@@ -5626,6 +5626,11 @@ describe('CLI dispatch — Slim Agent profile', () => {
 });
 
 describe('CLI dispatch — broker', () => {
+  const brokerDeps = {
+    runtime: 'jagent' as const,
+    randomUUID: () => '123e4567-e89b-42d3-a456-426614174000',
+  };
+
   function brokerClient(resp: unknown) {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5638,7 +5643,10 @@ describe('CLI dispatch — broker', () => {
       client,
       ['trading', 'broker', 'order', 'place', '--stdin'],
       undefined,
-      { runtime: 'jagent', readStdin: async () => stdin }
+      {
+        ...brokerDeps,
+        readStdin: async () => stdin,
+      }
     );
   }
 
@@ -5727,7 +5735,7 @@ describe('CLI dispatch — broker', () => {
         'BTC/USDT',
       ],
       undefined,
-      { runtime: 'jagent' }
+      brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((client as any)._request).toHaveBeenCalledWith(
@@ -5763,7 +5771,7 @@ describe('CLI dispatch — broker', () => {
         '0.01',
       ],
       undefined,
-      { runtime: 'jagent' }
+      brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = (client as any)._request.mock.calls[0];
