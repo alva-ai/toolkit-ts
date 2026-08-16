@@ -24,6 +24,12 @@ export const ALPI_ALVA_COMMAND_PATHS: readonly string[] = Object.freeze(
   EMBEDDED_COMMAND_DEFINITIONS.map((definition) => definition.path.join(' '))
 );
 const ALPI_ALVA_COMMAND_PATH_SET = new Set(ALPI_ALVA_COMMAND_PATHS);
+const HIDDEN_BROKER_COMMANDS = new Set([
+  'accounts',
+  'risk-rules',
+  'venues',
+  'help',
+]);
 
 function selectedEmbeddedFlagValues(
   parsed: ParsedCommand,
@@ -437,12 +443,7 @@ async function dispatchEmbedded(
   if (parsed.path.join(' ') === 'trading broker') {
     const brokerArgv = parsed.passthrough ?? [];
     const command = brokerArgv[0];
-    if (
-      command === 'accounts' ||
-      command === 'risk-rules' ||
-      command === 'venues' ||
-      command === 'help'
-    ) {
+    if (HIDDEN_BROKER_COMMANDS.has(command)) {
       const replacement =
         command === 'accounts' || command === 'risk-rules'
           ? `alva trading ${command}`
@@ -455,16 +456,17 @@ async function dispatchEmbedded(
     const commandSelector = brokerArgv.findIndex(
       (argument) => argument === '--command'
     );
+    const describedCommand = brokerArgv[commandSelector + 1];
     if (
       command === 'describe' &&
       commandSelector !== -1 &&
-      (brokerArgv[commandSelector + 1] === 'accounts' ||
-        brokerArgv[commandSelector + 1] === 'risk-rules')
+      HIDDEN_BROKER_COMMANDS.has(describedCommand)
     ) {
-      throw new CliUsageError(
-        `Shared trading prerequisites are described by 'alva trading ${brokerArgv[commandSelector + 1]}'`,
-        'trading'
-      );
+      const message =
+        describedCommand === 'accounts' || describedCommand === 'risk-rules'
+          ? `Shared trading prerequisites are described by 'alva trading ${describedCommand}'`
+          : `'trading broker describe --command ${describedCommand}' is not part of the Slim Broker tree`;
+      throw new CliUsageError(message, 'trading');
     }
     const result = await handleBroker(client, brokerArgv, deps);
     return command === 'describe'

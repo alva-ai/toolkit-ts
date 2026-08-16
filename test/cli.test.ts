@@ -5835,6 +5835,24 @@ describe('CLI dispatch — broker', () => {
     expect((client as any)._request).not.toHaveBeenCalled();
   });
 
+  it.each(['venues', 'help'])(
+    'blocks targeted discovery of the hidden Broker %s command',
+    async (command) => {
+      const client = brokerClient({ envelope: {}, exit: 0 });
+
+      await expect(
+        dispatchEmbedded(
+          client,
+          ['trading', 'broker', 'describe', '--command', command],
+          undefined,
+          { runtime: 'jagent' }
+        )
+      ).rejects.toThrow(/not part of the Slim Broker tree/);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((client as any)._request).not.toHaveBeenCalled();
+    }
+  );
+
   it('routes shared accounts and risk rules through Broker-backed reads', async () => {
     const client = brokerClient({ envelope: { items: [] }, exit: 0 });
 
