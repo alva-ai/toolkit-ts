@@ -5312,6 +5312,15 @@ describe('CLI dispatch — Slim Agent profile', () => {
       first: 20,
       cursor: undefined,
     });
+
+    const trigger = await dispatch(
+      client,
+      ['automation', 'trigger', '--id', '42'],
+      undefined,
+      agentDeps
+    );
+    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 420 });
+    expect(trigger).toEqual({ workflow_run_id: 'wf-test' });
   });
 
   it('keeps Automation delivery reads and partial updates in the Slim tree', async () => {

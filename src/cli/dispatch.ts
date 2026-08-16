@@ -2743,9 +2743,10 @@ async function dispatchAgentAutomation(
 
     case 'automation-trigger': {
       const id = automationID(parsed, 'automation trigger');
+      const cronjobId = await resolveAutomationProducer(client, id);
       return dispatchFull(
         client,
-        ['automation', 'update', '--id', String(id), '--trigger'],
+        ['deploy', 'trigger', '--id', String(cronjobId)],
         meta,
         deps
       );
