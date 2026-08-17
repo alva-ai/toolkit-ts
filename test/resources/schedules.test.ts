@@ -3,7 +3,7 @@ import { AlvaClient } from '../../src/client.js';
 
 const wireSchedule = {
   id: 'AgentSchedule:91:heartbeat',
-  channelId: '91',
+  channel: { id: '91' },
   name: 'heartbeat',
   rule: {
     kind: 'EVERY',
@@ -312,6 +312,15 @@ describe('SchedulesResource', () => {
         channelId: 91,
         name: 'valid',
         rule: { kind: 'after', duration: 'PT1.5S' },
+        text: 'x',
+      },
+    ],
+    [
+      'empty ISO time component',
+      {
+        channelId: 91,
+        name: 'valid',
+        rule: { kind: 'after', duration: 'P1DT' },
         text: 'x',
       },
     ],

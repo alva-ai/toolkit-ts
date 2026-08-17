@@ -47,7 +47,7 @@ export interface ManageAgentScheduleParams {
 
 const SCHEDULE_FIELDS = `
   id
-  channelId
+  channel { id }
   name
   rule { kind atMs everyIntervalSeconds cronExpression cronTimezone }
   bounds { startsAtMs untilMs maxOccurrences }
@@ -98,7 +98,7 @@ interface GraphQLResponse<T> {
 
 interface WireSchedule {
   id: string;
-  channelId: string;
+  channel: { id: string };
   name: string;
   rule: {
     kind: 'AT' | 'EVERY' | 'CRON';
@@ -436,7 +436,12 @@ function durationSeconds(value: string): number {
 
 function durationMilliseconds(value: string, minimumSeconds: number): number {
   const match = ISO_DURATION.exec(value);
-  if (!match || match.slice(1, 5).every((part) => part === undefined)) {
+  if (
+    !match ||
+    match.slice(1, 5).every((part) => part === undefined) ||
+    (value.includes('T') &&
+      match.slice(2, 5).every((part) => part === undefined))
+  ) {
     throw invalid('duration must be a positive ISO 8601 day/time duration');
   }
   const [days, hours, minutes, seconds] = match
