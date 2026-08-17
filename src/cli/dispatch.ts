@@ -2000,6 +2000,9 @@ function scheduleRuleFromFlags(
       'schedule'
     );
   }
+  if (selected[0] !== 'cron' && flags['timezone'] !== undefined) {
+    throw new CliUsageError('--timezone is only valid with --cron', 'schedule');
+  }
   switch (selected[0]) {
     case 'after':
       return { kind: 'after', duration: flags['after'] };

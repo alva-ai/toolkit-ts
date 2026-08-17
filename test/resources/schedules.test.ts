@@ -38,7 +38,10 @@ describe('SchedulesResource', () => {
       data: {
         viewer: {
           channel: {
-            schedules: { edges: [{ node: wireSchedule }] },
+            schedules: {
+              edges: [{ node: wireSchedule }],
+              pageInfo: { hasNextPage: false, endCursor: 'heartbeat' },
+            },
           },
         },
       },
@@ -61,7 +64,52 @@ describe('SchedulesResource', () => {
       'POST',
       '/query',
       expect.objectContaining({
-        body: expect.objectContaining({ variables: { channelId: '91' } }),
+        body: expect.objectContaining({
+          variables: { channelId: '91', after: null },
+        }),
+      })
+    );
+  });
+
+  it('reads every schedule page before returning', async () => {
+    request
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            channel: {
+              schedules: {
+                edges: [{ node: wireSchedule }],
+                pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+              },
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            channel: {
+              schedules: {
+                edges: [{ node: { ...wireSchedule, name: 'second' } }],
+                pageInfo: { hasNextPage: false, endCursor: 'cursor-2' },
+              },
+            },
+          },
+        },
+      });
+
+    await expect(client.schedules.list({ channelId: '91' })).resolves.toEqual([
+      expect.objectContaining({ name: 'heartbeat' }),
+      expect.objectContaining({ name: 'second' }),
+    ]);
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: { channelId: '91', after: 'cursor-1' },
+        }),
       })
     );
   });

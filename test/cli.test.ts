@@ -666,6 +666,26 @@ describe('CLI dispatch', () => {
     expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
   });
 
+  it('schedule put rejects timezone for non-cron rules', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'schedule',
+        'put',
+        '--name',
+        'heartbeat',
+        '--message',
+        'x',
+        '--every',
+        'PT1H',
+        '--timezone',
+        'UTC',
+      ])
+    ).rejects.toThrow(/only valid with --cron/);
+    expect(client.schedules.put).not.toHaveBeenCalled();
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
+  });
+
   it('schedule put validates required fields before resolving the default channel', async () => {
     const client = makeClient();
     await expect(

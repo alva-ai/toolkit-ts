@@ -62,9 +62,12 @@ const SCHEDULE_FIELDS = `
 `;
 
 const LIST_SCHEDULES = `
-query ToolkitListAgentSchedules($channelId: ID!) {
+query ToolkitListAgentSchedules($channelId: ID!, $after: String) {
   viewer { channel(id: $channelId) {
-    schedules(input: { first: 64 }) { edges { node { ${SCHEDULE_FIELDS} } } }
+    schedules(input: { first: 64, after: $after }) {
+      edges { node { ${SCHEDULE_FIELDS} } }
+      pageInfo { hasNextPage endCursor }
+    }
   } }
 }`.trim();
 
@@ -126,26 +129,47 @@ interface WireSchedule {
   updatedAtMs: number;
 }
 
+interface ScheduleConnection {
+  edges?: Array<{ node?: WireSchedule | null } | null>;
+  pageInfo?: {
+    hasNextPage?: boolean;
+    endCursor?: string | null;
+  } | null;
+}
+
+interface ListSchedulesData {
+  viewer?: {
+    channel?: { schedules?: ScheduleConnection | null } | null;
+  } | null;
+}
+
 export class SchedulesResource {
   constructor(private client: AlvaClient) {}
 
   async list(params: { channelId: string | number }): Promise<AgentSchedule[]> {
     this.client._requireAuth();
-    const data = await this.graphql<{
-      viewer?: {
-        channel?: {
-          schedules?: {
-            edges?: Array<{ node?: WireSchedule | null } | null>;
-          } | null;
-        } | null;
-      } | null;
-    }>(LIST_SCHEDULES, { channelId: channelID(params.channelId) });
-    const edges = data.viewer?.channel?.schedules?.edges;
-    if (!edges) throw scheduleNotFound();
-    return edges.map((edge) => {
-      if (!edge?.node) throw scheduleEmptyResponse();
-      return fromWireSchedule(edge.node);
-    });
+    const id = channelID(params.channelId);
+    const schedules: AgentSchedule[] = [];
+    let after: string | null = null;
+    const seenCursors = new Set<string>();
+    for (;;) {
+      const data: ListSchedulesData = await this.graphql<ListSchedulesData>(
+        LIST_SCHEDULES,
+        { channelId: id, after }
+      );
+      const connection: ScheduleConnection | null | undefined =
+        data.viewer?.channel?.schedules;
+      if (!connection?.edges) throw scheduleNotFound();
+      for (const edge of connection.edges) {
+        if (!edge?.node) throw scheduleEmptyResponse();
+        schedules.push(fromWireSchedule(edge.node));
+      }
+      if (connection.pageInfo?.hasNextPage !== true) return schedules;
+      const next: string | null | undefined = connection.pageInfo.endCursor;
+      if (!next || seenCursors.has(next)) throw scheduleEmptyResponse();
+      seenCursors.add(next);
+      after = next;
+    }
   }
 
   async put(params: PutAgentScheduleParams): Promise<AgentSchedule> {
