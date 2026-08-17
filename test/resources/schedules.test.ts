@@ -103,8 +103,13 @@ describe('SchedulesResource', () => {
             input: {
               channelId: '91',
               name: 'soon',
-              rule: { kind: 'AT', atMs: Date.parse('2026-08-11T04:01:30Z') },
-              message: { text: 'Check soon.' },
+              definition: {
+                rule: {
+                  kind: 'AT',
+                  atMs: Date.parse('2026-08-11T04:01:30Z'),
+                },
+                message: { text: 'Check soon.' },
+              },
             },
           },
         }),
@@ -145,7 +150,12 @@ describe('SchedulesResource', () => {
         body: expect.objectContaining({
           variables: expect.objectContaining({
             input: expect.objectContaining({
-              rule: { kind: 'AT', atMs: Date.parse('2026-08-11T04:00:02Z') },
+              definition: expect.objectContaining({
+                rule: {
+                  kind: 'AT',
+                  atMs: Date.parse('2026-08-11T04:00:02Z'),
+                },
+              }),
             }),
           }),
         }),
@@ -226,10 +236,12 @@ describe('SchedulesResource', () => {
         body: expect.objectContaining({
           variables: expect.objectContaining({
             input: expect.objectContaining({
-              rule: {
-                kind: 'AT',
-                atMs: Date.parse('2026-08-11T04:00:00Z'),
-              },
+              definition: expect.objectContaining({
+                rule: {
+                  kind: 'AT',
+                  atMs: Date.parse('2026-08-11T04:00:00Z'),
+                },
+              }),
             }),
           }),
         }),

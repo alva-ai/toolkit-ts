@@ -700,6 +700,31 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it.each([
+    ['until', '--until'],
+    ['max occurrences', '--max-occurrences'],
+  ])(
+    'schedule put rejects an explicitly empty %s bound',
+    async (_label, flag) => {
+      const client = makeClient();
+      await expect(
+        dispatch(client, [
+          'schedule',
+          'put',
+          '--name',
+          'bounded',
+          '--message',
+          'x',
+          '--every',
+          'PT1H',
+          flag,
+          '',
+        ])
+      ).rejects.toThrow();
+      expect(client.schedules.put).not.toHaveBeenCalled();
+    }
+  );
+
   it('dispatches secrets create with --name and --value', async () => {
     const client = makeClient();
     await dispatch(client, [

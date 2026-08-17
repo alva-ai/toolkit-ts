@@ -153,8 +153,10 @@ export class SchedulesResource {
     const input = {
       channelId: channelID(params.channelId),
       name: requireName(params.name),
-      ...ruleInput(params.rule, params.bounds),
-      message: { text: requireText(params.text) },
+      definition: {
+        ...ruleInput(params.rule, params.bounds),
+        message: { text: requireText(params.text) },
+      },
     };
     const data = await this.graphql<{
       updateChannelSchedule?: { schedule?: WireSchedule | null } | null;

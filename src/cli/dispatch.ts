@@ -2067,15 +2067,18 @@ function scheduleBoundsFromFlags(flags: Record<string, string>):
       maxOccurrences?: number;
     }
   | undefined {
-  const startsAt = flags['starts-at']
-    ? parseScheduleTimestamp(flags['starts-at'], 'starts-at')
-    : undefined;
-  const until = flags['until']
-    ? parseScheduleTimestamp(flags['until'], 'until')
-    : undefined;
-  const maxOccurrences = flags['max-occurrences']
-    ? requirePositiveIntegerFlag(flags, 'max-occurrences', 'schedule put')
-    : undefined;
+  const startsAt =
+    flags['starts-at'] !== undefined
+      ? parseScheduleTimestamp(flags['starts-at'], 'starts-at')
+      : undefined;
+  const until =
+    flags['until'] !== undefined
+      ? parseScheduleTimestamp(flags['until'], 'until')
+      : undefined;
+  const maxOccurrences =
+    flags['max-occurrences'] !== undefined
+      ? requirePositiveIntegerFlag(flags, 'max-occurrences', 'schedule put')
+      : undefined;
   return startsAt !== undefined ||
     until !== undefined ||
     maxOccurrences !== undefined
