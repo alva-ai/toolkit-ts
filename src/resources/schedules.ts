@@ -83,9 +83,8 @@ query ToolkitAgentChannel {
 
 const SCHEDULE_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const RFC3339 =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-](\d{2}):(\d{2}))$/i;
-const ISO_DURATION =
-  /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.(\d{1,9}))?S)?)?$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(Z|[+-](\d{2}):(\d{2}))$/i;
+const ISO_DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
 
 interface GraphQLErrorPayload {
   message?: unknown;
@@ -244,7 +243,8 @@ function ruleInput(
     case 'after':
       if (convertedBounds)
         throw invalid('after does not accept recurring bounds');
-      const atMs = Date.now() + durationMilliseconds(rule.duration);
+      const requestedAt = Date.now() + durationMilliseconds(rule.duration, 1);
+      const atMs = Math.ceil(requestedAt / 1000) * 1000;
       if (!Number.isSafeInteger(atMs) || Number.isNaN(new Date(atMs).getTime()))
         throw invalid('after is out of range');
       return {
@@ -318,10 +318,10 @@ function fromWireSchedule(schedule: WireSchedule): AgentSchedule {
     rule: fromWireRule(schedule.rule),
     bounds: {
       ...(bounds.startsAtMs != null
-        ? { startsAt: timestampString(bounds.startsAtMs) }
+        ? { startsAt: timestampString(bounds.startsAtMs, true) }
         : {}),
       ...(bounds.untilMs != null
-        ? { until: timestampString(bounds.untilMs) }
+        ? { until: timestampString(bounds.untilMs, true) }
         : {}),
       ...(bounds.maxOccurrences != null
         ? {
@@ -336,7 +336,7 @@ function fromWireSchedule(schedule: WireSchedule): AgentSchedule {
     status,
     occurrencesUsed: safeInteger(schedule.occurrencesUsed, 'occurrencesUsed'),
     ...(schedule.nextFireAtMs != null
-      ? { nextFireAt: timestampString(schedule.nextFireAtMs) }
+      ? { nextFireAt: timestampString(schedule.nextFireAtMs, true) }
       : {}),
     createdAt: timestampString(schedule.createdAtMs),
     updatedAt: timestampString(schedule.updatedAtMs),
@@ -367,7 +367,7 @@ function fromWireRule(rule: WireSchedule['rule']): AgentScheduleRule {
   switch (rule.kind) {
     case 'AT':
       if (rule.atMs == null) throw scheduleEmptyResponse();
-      return { kind: 'at', timestamp: timestampString(rule.atMs) };
+      return { kind: 'at', timestamp: timestampString(rule.atMs, true) };
     case 'EVERY':
       if (rule.everyIntervalSeconds == null) throw scheduleEmptyResponse();
       return {
@@ -426,13 +426,13 @@ function requireText(value: string): string {
 }
 
 function durationSeconds(value: string): number {
-  const milliseconds = durationMilliseconds(value);
+  const milliseconds = durationMilliseconds(value, 60);
   if (milliseconds % 1000 !== 0)
     throw invalid('duration must resolve to whole seconds');
   return milliseconds / 1000;
 }
 
-function durationMilliseconds(value: string): number {
+function durationMilliseconds(value: string, minimumSeconds: number): number {
   const match = ISO_DURATION.exec(value);
   if (!match || match.slice(1, 5).every((part) => part === undefined)) {
     throw invalid('duration must be a positive ISO 8601 day/time duration');
@@ -440,16 +440,11 @@ function durationMilliseconds(value: string): number {
   const [days, hours, minutes, seconds] = match
     .slice(1, 5)
     .map((part) => BigInt(part ?? '0'));
-  const fraction = (match[5] ?? '').padEnd(9, '0');
-  const nanoseconds =
-    (((days * 24n + hours) * 60n + minutes) * 60n + seconds) * 1_000_000_000n +
-    BigInt(fraction || '0');
-  if (nanoseconds < 60_000_000_000n || nanoseconds % 1_000_000n !== 0n) {
-    throw invalid(
-      'duration must be at least one minute and resolve to whole milliseconds'
-    );
+  const totalSeconds = ((days * 24n + hours) * 60n + minutes) * 60n + seconds;
+  if (totalSeconds < BigInt(minimumSeconds)) {
+    throw invalid(`duration must be at least ${minimumSeconds} whole seconds`);
   }
-  const result = Number(nanoseconds / 1_000_000n);
+  const result = Number(totalSeconds * 1000n);
   if (!Number.isSafeInteger(result)) throw invalid('duration is out of range');
   return result;
 }
@@ -460,8 +455,8 @@ function timestampMilliseconds(value: string): number {
   const [year, month, day, hour, minute, second] = match
     .slice(1, 7)
     .map(Number);
-  const offsetHour = Number(match[9] ?? 0);
-  const offsetMinute = Number(match[10] ?? 0);
+  const offsetHour = Number(match[8] ?? 0);
+  const offsetMinute = Number(match[9] ?? 0);
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const result = Date.parse(value);
   if (
@@ -483,8 +478,9 @@ function timestampMilliseconds(value: string): number {
   return result;
 }
 
-function timestampString(value: number): string {
+function timestampString(value: number, semantic = false): string {
   if (!Number.isSafeInteger(value)) throw scheduleEmptyResponse();
+  if (semantic && value % 1000 !== 0) throw scheduleEmptyResponse();
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) throw scheduleEmptyResponse();
   return timestamp.toISOString();

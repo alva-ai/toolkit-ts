@@ -113,6 +113,47 @@ describe('SchedulesResource', () => {
     vi.useRealTimers();
   });
 
+  it('ceil-converts positive whole-second after from a fractional clock', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T04:00:00.001Z'));
+    request.mockResolvedValue({
+      data: {
+        updateChannelSchedule: {
+          schedule: {
+            ...wireSchedule,
+            rule: {
+              kind: 'AT',
+              atMs: Date.parse('2026-08-11T04:00:02Z'),
+              everyIntervalSeconds: null,
+              cronExpression: null,
+              cronTimezone: null,
+            },
+          },
+        },
+      },
+    });
+    await client.schedules.put({
+      channelId: 91,
+      name: 'soon',
+      rule: { kind: 'after', duration: 'PT1S' },
+      text: 'Check soon.',
+    });
+    expect(request).toHaveBeenCalledWith(
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: expect.objectContaining({
+            input: expect.objectContaining({
+              rule: { kind: 'AT', atMs: Date.parse('2026-08-11T04:00:02Z') },
+            }),
+          }),
+        }),
+      })
+    );
+    vi.useRealTimers();
+  });
+
   it('uses explicit lifecycle mutations and rejects unsafe inputs before IO', async () => {
     request.mockResolvedValue({
       data: { updateChannelSchedule: { schedule: wireSchedule } },
@@ -245,6 +286,24 @@ describe('SchedulesResource', () => {
       },
     ],
     [
+      'fractional explicit timestamp',
+      {
+        channelId: 91,
+        name: 'valid',
+        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00.001Z' },
+        text: 'x',
+      },
+    ],
+    [
+      'fractional after duration',
+      {
+        channelId: 91,
+        name: 'valid',
+        rule: { kind: 'after', duration: 'PT1.5S' },
+        text: 'x',
+      },
+    ],
+    [
       'valid UTF-8 text',
       {
         channelId: 91,
@@ -275,6 +334,32 @@ describe('SchedulesResource', () => {
     await expect(
       client.schedules.list({ channelId: 91 })
     ).rejects.toMatchObject({ code: 'GRAPHQL_EMPTY_RESPONSE' });
+  });
+
+  it('fails closed on a fractional semantic response timestamp', async () => {
+    request.mockResolvedValue({
+      data: {
+        viewer: {
+          channel: {
+            schedules: {
+              edges: [
+                {
+                  node: {
+                    ...wireSchedule,
+                    nextFireAtMs: wireSchedule.nextFireAtMs + 1,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    await expect(
+      client.schedules.list({ channelId: 91 })
+    ).rejects.toMatchObject({
+      code: 'GRAPHQL_EMPTY_RESPONSE',
+    });
   });
 
   it('resolves the viewer Agent Channel for CLI defaults', async () => {
