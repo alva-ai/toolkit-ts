@@ -5475,7 +5475,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     });
   });
 
-  it('pauses a producer before deleting its product automation', async () => {
+  it('lets automation deletion cascade a paused producer', async () => {
     const client = makeClient();
     const result = await dispatchEmbedded(
       client,
@@ -5485,7 +5485,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     );
     expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
     expect(client.automation.delete).toHaveBeenCalledWith({ id: '42' });
-    expect(client.deploy.delete).toHaveBeenCalledWith({ id: 420 });
+    expect(client.deploy.delete).not.toHaveBeenCalled();
     expect(result).toEqual({
       automation_id: '42',
       cronjob_id: 420,

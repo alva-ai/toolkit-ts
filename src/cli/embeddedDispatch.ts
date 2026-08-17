@@ -322,18 +322,6 @@ async function dispatchEmbeddedAutomation(
           `Automation ${id} delete failed after producer ${cronjobId} was paused; the producer remains paused: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-      try {
-        await executeParsedCommand(
-          client,
-          internalCommand(['deploy', 'delete'], { id: String(cronjobId) }),
-          meta,
-          deps
-        );
-      } catch (error) {
-        throw new Error(
-          `Automation ${id} was deleted but paused producer ${cronjobId} could not be removed: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
       return {
         automation_id: String(id),
         cronjob_id: cronjobId,
