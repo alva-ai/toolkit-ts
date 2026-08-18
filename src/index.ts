@@ -13,6 +13,16 @@ export {
 } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
 export { MarketsResource } from './resources/markets.js';
+export {
+  SchedulesResource,
+  type AgentSchedule,
+  type AgentScheduleBounds,
+  type AgentScheduleFailureCode,
+  type AgentScheduleRule,
+  type AgentScheduleStatus,
+  type ManageAgentScheduleParams,
+  type PutAgentScheduleParams,
+} from './resources/schedules.js';
 export type {
   AlvaClientConfig,
   FsReadParams,

@@ -101,7 +101,7 @@ Commands:
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
-  loop        Self-scheduled in-channel goal loops (create)
+  schedule    Agent-owned named schedules (list, put, pause, resume, delete)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -480,36 +480,35 @@ Build-time verify (fire once, then poll up to 5 minutes):
   [ "$STATE" = COMPLETED ] || alva deploy run-logs --id 42 \\
                                   --run-id "$(echo "$STATUS_JSON" | jq -r .run.id)"`,
 
-  loop: `Usage: alva loop <subcommand> [options]
+  schedule: `Usage: alva schedule <subcommand> [options]
 
-Create a bounded, self-scheduled goal loop in an Alva channel. Each tick runs
-one fire-and-forget agent turn on the Alva channel's stable main
-session (via the @alva/loop SDK), continuing that conversation toward a goal. Creation
-seeds a shared runner, creates its cronjob, and registers the cronjob as an
-Automation without starting an extra publish-time run.
+Manage named future and recurring work for an Alva Channel Agent.
 
 Subcommands:
-  create     Create a loop and its visible Automation
+  list       List schedules
+  put        Create or replace a schedule by name
+  pause      Pause a schedule
+  resume     Resume a schedule
+  delete     Delete a schedule
 
-Create flags:
-  --goal <text>          Instruction run each tick (required)
-  --cron <expression>    Cron schedule (required, e.g. "0 * * * *")
-  --channel-id <id>      Target Alva channel ID. Omit ⇒ your default
-                         Alva agent channel
-  --start <time>         First eligible time: 'now' (default) or RFC3339
-  --until <time>         Exclusive RFC3339 cutoff
-  --runs <count>         Maximum admitted runs after --start
-  --name <name>          Cronjob name (default: derived from --goal;
-                         1-63 lowercase alphanumeric/hyphens)
+Common flags:
+  --channel-id <id>      Target Channel; omit for your Agent Channel
+  --name <name>          Stable schedule name
 
-At least one of --until or --runs is required. RFC3339 timestamps must include
-a timezone (Z or ±HH:MM). The result includes automation_id and cronjob_id.
-Use 'alva automation inspect/stop/resume/delete --id <automation_id>' for
-lifecycle management; deletion also removes the Automation's producer cronjob.
+Put flags:
+  --message <text>       Agent instruction delivered at each occurrence
+  Choose exactly one: --after <ISO duration>, --at <RFC3339>,
+                      --every <ISO duration>, or --cron <five fields>
+  --timezone <IANA>      Required with --cron
+  --starts-at <RFC3339>  Inclusive recurrence lower bound
+  --until <RFC3339>      Exclusive recurrence upper bound
+  --max-occurrences <n>  Positive recurrence count bound
 
 Examples:
-  alva loop create --channel-id 7284... --goal "watch NVDA pre-market, alert on setup" --cron "*/5 * * * *" --until "2026-07-15T09:30:00-04:00"
-  alva loop create --goal "check the next 12 intervals" --cron "0 * * * *" --start now --runs 12`,
+  alva schedule put --name review --message "Review status" --after PT30M
+  alva schedule put --name market-open --message "Review the open" --cron "30 9 * * 1-5" --timezone America/New_York
+  alva schedule list
+  alva schedule pause --name market-open`,
 
   'service-account': `Usage: alva service-account <subcommand> [options]
 
@@ -1978,58 +1977,78 @@ function parseCreditsDurationMs(value: string): number {
   return durationMs;
 }
 
-// The per-user loop-runner: one shared script serves every one of a user's
-// loops. It reads its goal/channel from the cronjob's args (require('env').args)
-// and dispatches a fire-and-forget turn via @alva/loop. Home-relative — the
-// gateway resolves it against the caller's home, so no username is needed here.
-const LOOP_RUNNER_PATH = '~/loops/_runner/index.js';
-const LOOP_RUNNER_SRC = [
-  "const { loop } = require('@alva/loop');",
-  "const { goal, channelId } = require('env').args;",
-  'loop(goal, channelId ? { channelId } : {});',
-  '',
-].join('\n');
+async function scheduleChannelId(
+  client: AlvaClient,
+  flags: Record<string, string>
+): Promise<string> {
+  return flags['channel-id'] ?? client.schedules.agentChannelId();
+}
 
-function parseLoopTimestamp(value: string, flag: 'start' | 'until'): string {
+function scheduleRuleFromFlags(
+  flags: Record<string, string>
+):
+  | { kind: 'after'; duration: string }
+  | { kind: 'at'; timestamp: string }
+  | { kind: 'every'; interval: string }
+  | { kind: 'cron'; expression: string; timezone: string } {
+  const selected = ['after', 'at', 'every', 'cron'].filter(
+    (flag) => flags[flag] !== undefined
+  );
+  if (selected.length !== 1) {
+    throw new CliUsageError(
+      'schedule put requires exactly one of --after, --at, --every, or --cron',
+      'schedule'
+    );
+  }
+  if (selected[0] !== 'cron' && flags['timezone'] !== undefined) {
+    throw new CliUsageError('--timezone is only valid with --cron', 'schedule');
+  }
+  switch (selected[0]) {
+    case 'after':
+      return { kind: 'after', duration: flags['after'] };
+    case 'at':
+      return {
+        kind: 'at',
+        timestamp: parseScheduleTimestamp(flags['at'], 'at'),
+      };
+    case 'every':
+      return { kind: 'every', interval: flags['every'] };
+    default:
+      return {
+        kind: 'cron',
+        expression: flags['cron'],
+        timezone: requireFlag(flags, 'timezone', 'schedule put'),
+      };
+  }
+}
+
+function parseScheduleTimestamp(value: string, flag: string): string {
   const raw = value.trim();
   const match =
-    /^(\d{4})-(\d{2})-(\d{2})[tT](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[zZ]|([+-])(\d{2}):(\d{2}))$/.exec(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:Z|[+-](\d{2}):(\d{2}))$/i.exec(
       raw
     );
   if (!match) {
     throw new CliUsageError(
-      `--${flag} must be an RFC3339 timestamp with a timezone (Z or ±HH:MM), got '${value}'`,
-      'loop'
+      `--${flag} must be an RFC3339 timestamp with a timezone`,
+      'schedule'
     );
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6]);
-  const offsetHour = Number(match[8] ?? 0);
-  const offsetMinute = Number(match[9] ?? 0);
-  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const monthDays = [
-    31,
-    leapYear ? 29 : 28,
-    31,
-    30,
-    31,
-    30,
-    31,
-    31,
-    30,
-    31,
-    30,
-    31,
-  ];
+  const [year, month, day, hour, minute, second] = match
+    .slice(1, 7)
+    .map(Number);
+  const offsetHour = Number(match[7] ?? 0);
+  const offsetMinute = Number(match[8] ?? 0);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const parsed = Date.parse(raw);
   if (
+    !Number.isFinite(parsed) ||
+    year < 1 ||
+    year > 9999 ||
     month < 1 ||
     month > 12 ||
     day < 1 ||
-    day > monthDays[month - 1] ||
+    day > daysInMonth ||
     hour > 23 ||
     minute > 59 ||
     second > 59 ||
@@ -2037,51 +2056,37 @@ function parseLoopTimestamp(value: string, flag: 'start' | 'until'): string {
     offsetMinute > 59
   ) {
     throw new CliUsageError(
-      `--${flag} must be a valid RFC3339 timestamp, got '${value}'`,
-      'loop'
+      `--${flag} must be a valid RFC3339 timestamp with a timezone`,
+      'schedule'
     );
   }
-  const timestamp = Date.parse(raw);
-  if (!Number.isFinite(timestamp)) {
-    throw new CliUsageError(
-      `--${flag} must be a valid RFC3339 timestamp, got '${value}'`,
-      'loop'
-    );
-  }
-  return new Date(timestamp).toISOString();
+  return new Date(parsed).toISOString();
 }
 
-function parseLoopRuns(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (!/^[1-9]\d*$/.test(value)) {
-    throw new CliUsageError('--runs must be a positive integer', 'loop');
-  }
-  const runs = Number(value);
-  if (!Number.isSafeInteger(runs) || runs > 2_147_483_647) {
-    throw new CliUsageError('--runs is too large', 'loop');
-  }
-  return runs;
-}
-
-// loopCronjobName derives a valid cronjob name (1-63 lowercase alphanumeric or
-// hyphens, no leading/trailing hyphen) from the goal, unless --name is given.
-function loopCronjobName(flags: Record<string, string>, goal: string): string {
-  if (flags['name'] !== undefined) return flags['name']; // backend validates
-  const base = goal
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  const slug = (base ? `loop-${base}` : 'loop')
-    .slice(0, 63)
-    .replace(/-+$/g, '');
-  return slug || 'loop';
-}
-
-function loopAutomationDescription(goal: string): string {
-  const prefix = 'Channel loop: ';
-  const maxDescriptionRunes = 4096;
-  const availableGoalRunes = maxDescriptionRunes - Array.from(prefix).length;
-  return prefix + Array.from(goal).slice(0, availableGoalRunes).join('');
+function scheduleBoundsFromFlags(flags: Record<string, string>):
+  | {
+      startsAt?: string;
+      until?: string;
+      maxOccurrences?: number;
+    }
+  | undefined {
+  const startsAt =
+    flags['starts-at'] !== undefined
+      ? parseScheduleTimestamp(flags['starts-at'], 'starts-at')
+      : undefined;
+  const until =
+    flags['until'] !== undefined
+      ? parseScheduleTimestamp(flags['until'], 'until')
+      : undefined;
+  const maxOccurrences =
+    flags['max-occurrences'] !== undefined
+      ? requirePositiveIntegerFlag(flags, 'max-occurrences', 'schedule put')
+      : undefined;
+  return startsAt !== undefined ||
+    until !== undefined ||
+    maxOccurrences !== undefined
+    ? { startsAt, until, maxOccurrences }
+    : undefined;
 }
 
 function parseCreditsItemsParams(flags: Record<string, string>): {
@@ -2815,100 +2820,67 @@ export async function executeParsedCommand(
       }
     }
 
-    case 'loop': {
-      if (!subcommand)
-        throw new CliUsageError('Missing subcommand for loop', 'loop');
+    case 'schedule': {
+      if (!subcommand) {
+        throw new CliUsageError('Missing subcommand for schedule', 'schedule');
+      }
       switch (subcommand) {
-        case 'create': {
-          if (flags['expires-in'] !== undefined) {
-            throw new CliUsageError(
-              'Unknown flag --expires-in; use --until and/or --runs',
-              'loop'
-            );
-          }
-          const goal = requireFlag(flags, 'goal', 'loop create');
-          const cron = requireFlag(flags, 'cron', 'loop create');
-          const channelId = flags['channel-id'];
-          const startRaw = (flags['start'] ?? 'now').trim();
-          const startAt =
-            startRaw.toLowerCase() === 'now'
-              ? undefined
-              : parseLoopTimestamp(startRaw, 'start');
-          const endAt = flags['until']
-            ? parseLoopTimestamp(flags['until'], 'until')
-            : undefined;
-          const maxRuns = parseLoopRuns(flags['runs']);
-          if (endAt === undefined && maxRuns === undefined) {
-            throw new CliUsageError(
-              'loop create requires at least one of --until or --runs',
-              'loop'
-            );
-          }
+        case 'list': {
+          const channelId = await scheduleChannelId(client, flags);
+          return client.schedules.list({ channelId });
+        }
+        case 'put': {
+          const rule = scheduleRuleFromFlags(flags);
+          const bounds = scheduleBoundsFromFlags(flags);
           if (
-            startAt !== undefined &&
-            endAt !== undefined &&
-            endAt <= startAt
+            (rule.kind === 'at' || rule.kind === 'after') &&
+            bounds !== undefined
           ) {
             throw new CliUsageError(
-              '--until must be later than --start',
-              'loop'
+              `${rule.kind} does not accept recurring bounds`,
+              'schedule'
             );
           }
-          const name = loopCronjobName(flags, goal);
-          // Seed the shared loop-runner first (idempotent — stable content).
-          // Aborting here beats creating a cron that points at a missing script.
-          await client.fs.write({
-            path: LOOP_RUNNER_PATH,
-            data: LOOP_RUNNER_SRC,
-            mkdir_parents: true,
-          });
-          const cronjob = await client.deploy.create({
+          const name = requireFlag(flags, 'name', 'schedule put');
+          const text = requireFlag(flags, 'message', 'schedule put');
+          const channelId = await scheduleChannelId(client, flags);
+          return client.schedules.put({
+            channelId,
             name,
-            path: LOOP_RUNNER_PATH,
-            cron_expression: cron,
-            args: channelId ? { goal, channelId } : { goal },
-            start_at: startAt,
-            end_at: endAt,
-            max_runs: maxRuns,
+            text,
+            rule,
+            bounds,
           });
-          try {
-            const automation = await client.automation.publish({
-              name,
-              version: '1.0.0',
-              cronjob_id: cronjob.id,
-              description: loopAutomationDescription(goal),
-              skip_auto_trigger: true,
-            });
-            return {
-              name,
-              automation_id: String(automation.feed_id),
-              cronjob_id: cronjob.id,
-            };
-          } catch (publishError) {
-            const publishMessage =
-              publishError instanceof Error
-                ? publishError.message
-                : String(publishError);
-            try {
-              await client.deploy.delete({ id: cronjob.id });
-            } catch (rollbackError) {
-              const rollbackMessage =
-                rollbackError instanceof Error
-                  ? rollbackError.message
-                  : String(rollbackError);
-              throw new Error(
-                `failed to publish loop "${name}" as an automation after creating cronjob ${cronjob.id}: ${publishMessage}; automatic rollback failed: ${rollbackMessage}; cronjob ${cronjob.id} may still exist; run \`alva deploy delete --id ${cronjob.id}\``
-              );
-            }
-            throw new Error(
-              `failed to publish loop "${name}" as an automation; rolled back cronjob ${cronjob.id}: ${publishMessage}`
-            );
-          }
+        }
+        case 'pause': {
+          const name = requireFlag(flags, 'name', 'schedule pause');
+          const channelId = await scheduleChannelId(client, flags);
+          return client.schedules.pause({
+            channelId,
+            name,
+          });
+        }
+        case 'resume': {
+          const name = requireFlag(flags, 'name', 'schedule resume');
+          const channelId = await scheduleChannelId(client, flags);
+          return client.schedules.resume({
+            channelId,
+            name,
+          });
+        }
+        case 'delete': {
+          const name = requireFlag(flags, 'name', 'schedule delete');
+          const channelId = await scheduleChannelId(client, flags);
+          await client.schedules.delete({
+            channelId,
+            name,
+          });
+          return { deleted: true };
         }
         default:
           throw new CliUsageError(
-            `Unknown subcommand: loop ${subcommand}`,
-            'loop'
+            `Unknown subcommand: schedule ${subcommand}`,
+            'schedule'
           );
       }
     }

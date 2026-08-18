@@ -180,6 +180,25 @@ function makeClient(
     .fn()
     .mockResolvedValue({ id: '42', status: 'ACTIVE' });
   client.automation.delete = vi.fn().mockResolvedValue({ id: '42' });
+  const schedule = {
+    name: 'heartbeat',
+    rule: { kind: 'every' as const, interval: 'PT3600S' },
+    bounds: {},
+    text: 'check',
+    status: 'active' as const,
+    occurrencesUsed: 0,
+    nextFireAt: '2026-08-11T05:00:00.000Z',
+    createdAt: '2026-08-11T04:00:00.000Z',
+    updatedAt: '2026-08-11T04:00:00.000Z',
+  };
+  client.schedules.agentChannelId = vi.fn().mockResolvedValue('91');
+  client.schedules.list = vi.fn().mockResolvedValue([schedule]);
+  client.schedules.put = vi.fn().mockResolvedValue(schedule);
+  client.schedules.pause = vi
+    .fn()
+    .mockResolvedValue({ ...schedule, status: 'paused' });
+  client.schedules.resume = vi.fn().mockResolvedValue(schedule);
+  client.schedules.delete = vi.fn().mockResolvedValue(undefined);
   client.credits.wallet = vi.fn().mockResolvedValue({
     balance: 100,
     totalRemaining: 100,
@@ -564,204 +583,167 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('loop create seeds the runner and creates a run-bounded cron starting now', async () => {
+  it('dispatches schedule list through the explicit Channel scope', async () => {
     const client = makeClient();
-    const result = await dispatch(client, [
-      'loop',
-      'create',
-      '--channel-id',
-      '7284',
-      '--goal',
-      'Watch NVDA pre-market',
-      '--cron',
-      '0 * * * *',
-      '--runs',
-      '12',
-    ]);
-    // Runner is seeded before the cron is created.
-    expect(client.fs.write).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: '~/loops/_runner/index.js',
-        mkdir_parents: true,
-      })
-    );
-    const call = (client.deploy.create as ReturnType<typeof vi.fn>).mock
-      .calls[0][0];
-    expect(call).toMatchObject({
-      name: 'loop-watch-nvda-pre-market',
-      path: '~/loops/_runner/index.js',
-      cron_expression: '0 * * * *',
-      args: { goal: 'Watch NVDA pre-market', channelId: '7284' },
-      max_runs: 12,
-    });
-    // `now` is resolved by the server, so the client omits start_at.
-    expect(call.start_at).toBeUndefined();
-    expect(call.end_at).toBeUndefined();
-    expect(client.automation.publish).toHaveBeenCalledWith({
-      name: 'loop-watch-nvda-pre-market',
-      version: '1.0.0',
-      cronjob_id: 1,
-      description: 'Channel loop: Watch NVDA pre-market',
-      skip_auto_trigger: true,
-    });
-    expect(client.deploy.delete).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      name: 'loop-watch-nvda-pre-market',
-      automation_id: '1',
-      cronjob_id: 1,
-    });
+    await dispatch(client, ['schedule', 'list', '--channel-id', '7284']);
+    expect(client.schedules.list).toHaveBeenCalledWith({ channelId: '7284' });
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
   });
 
-  it('loop create accepts explicit start/until and omits channelId from args', async () => {
+  it('schedule put resolves the default Agent Channel and parses one rule', async () => {
     const client = makeClient();
     await dispatch(client, [
-      'loop',
-      'create',
-      '--goal',
-      'daily digest',
+      'schedule',
+      'put',
+      '--name',
+      'market-open',
+      '--message',
+      'Review the market open',
       '--cron',
-      '0 8 * * *',
-      '--start',
+      '30 9 * * 1-5',
+      '--timezone',
+      'America/New_York',
+      '--starts-at',
       '2026-07-15T08:00:00-04:00',
       '--until',
       '2026-07-15T10:00:00-04:00',
+      '--max-occurrences',
+      '5',
     ]);
-    const call = (client.deploy.create as ReturnType<typeof vi.fn>).mock
-      .calls[0][0];
-    expect(call.args).toEqual({ goal: 'daily digest' });
-    expect(call.start_at).toBe('2026-07-15T12:00:00.000Z');
-    expect(call.end_at).toBe('2026-07-15T14:00:00.000Z');
+    expect(client.schedules.put).toHaveBeenCalledWith({
+      channelId: '91',
+      name: 'market-open',
+      text: 'Review the market open',
+      rule: {
+        kind: 'cron',
+        expression: '30 9 * * 1-5',
+        timezone: 'America/New_York',
+      },
+      bounds: {
+        startsAt: '2026-07-15T12:00:00.000Z',
+        until: '2026-07-15T14:00:00.000Z',
+        maxOccurrences: 5,
+      },
+    });
   });
 
-  it('loop create rolls back its cronjob when automation publish fails', async () => {
+  it('dispatches explicit schedule lifecycle operations', async () => {
     const client = makeClient();
-    client.automation.publish = vi
-      .fn()
-      .mockRejectedValue(new Error('feed name already exists'));
+    await dispatch(client, ['schedule', 'pause', '--name', 'heartbeat']);
+    await dispatch(client, ['schedule', 'resume', '--name', 'heartbeat']);
+    await dispatch(client, ['schedule', 'delete', '--name', 'heartbeat']);
+    expect(client.schedules.pause).toHaveBeenCalledWith({
+      channelId: '91',
+      name: 'heartbeat',
+    });
+    expect(client.schedules.resume).toHaveBeenCalledWith({
+      channelId: '91',
+      name: 'heartbeat',
+    });
+    expect(client.schedules.delete).toHaveBeenCalledWith({
+      channelId: '91',
+      name: 'heartbeat',
+    });
+  });
 
+  it('schedule put rejects mixed rules before the resource call', async () => {
+    const client = makeClient();
     await expect(
       dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'watch BTC',
-        '--cron',
-        '*/5 * * * *',
-        '--runs',
-        '2',
+        'schedule',
+        'put',
+        '--name',
+        'mixed',
+        '--message',
+        'x',
+        '--after',
+        'PT1H',
+        '--every',
+        'PT1H',
       ])
-    ).rejects.toThrow(
-      'failed to publish loop "loop-watch-btc" as an automation; rolled back cronjob 1: feed name already exists'
+    ).rejects.toThrow(/exactly one/);
+    expect(client.schedules.put).not.toHaveBeenCalled();
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
+  });
+
+  it('schedule put rejects timezone for non-cron rules', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'schedule',
+        'put',
+        '--name',
+        'heartbeat',
+        '--message',
+        'x',
+        '--every',
+        'PT1H',
+        '--timezone',
+        'UTC',
+      ])
+    ).rejects.toThrow(/only valid with --cron/);
+    expect(client.schedules.put).not.toHaveBeenCalled();
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
+  });
+
+  it('schedule put validates required fields before resolving the default channel', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'schedule',
+        'put',
+        '--name',
+        'missing-message',
+        '--every',
+        'PT1H',
+      ])
+    ).rejects.toThrow(/--message/);
+    expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
+  });
+
+  it('schedule put accepts lowercase RFC3339 timezone markers', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'schedule',
+      'put',
+      '--name',
+      'lowercase-time',
+      '--message',
+      'x',
+      '--at',
+      '2026-08-11t04:00:00z',
+    ]);
+    expect(client.schedules.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00.000Z' },
+      })
     );
-    expect(client.deploy.delete).toHaveBeenCalledWith({ id: 1 });
   });
 
-  it('loop create reports the orphan id when publish rollback also fails', async () => {
-    const client = makeClient();
-    client.automation.publish = vi
-      .fn()
-      .mockRejectedValue(new Error('publish unavailable'));
-    client.deploy.delete = vi
-      .fn()
-      .mockRejectedValue(new Error('delete unavailable'));
-
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'watch ETH',
-        '--cron',
-        '*/5 * * * *',
-        '--runs',
-        '2',
-      ])
-    ).rejects.toThrow(
-      'cronjob 1 may still exist; run `alva deploy delete --id 1`'
-    );
-  });
-
-  it('loop create requires --until or --runs', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'forever',
-        '--cron',
-        '0 * * * *',
-      ])
-    ).rejects.toThrow(/--until.*--runs|--runs.*--until/);
-  });
-
-  it('loop create rejects the removed --expires-in flag', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--runs',
-        '1',
-        '--expires-in',
-        '7d',
-      ])
-    ).rejects.toThrow(/Unknown flag.*expires-in/);
-  });
-
-  it('loop create rejects timestamps without a timezone', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--start',
-        '2026-07-15T08:00:00',
-        '--runs',
-        '1',
-      ])
-    ).rejects.toThrow(/timezone/);
-  });
-
-  it('loop create rejects invalid RFC3339 calendar dates', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--until',
-        '2026-02-30T08:00:00Z',
-      ])
-    ).rejects.toThrow(/valid RFC3339/);
-  });
-
-  it('loop create rejects non-positive --runs', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'loop',
-        'create',
-        '--goal',
-        'x',
-        '--cron',
-        '0 * * * *',
-        '--runs',
-        '0',
-      ])
-    ).rejects.toThrow(/--runs/);
-  });
+  it.each([
+    ['until', '--until'],
+    ['max occurrences', '--max-occurrences'],
+  ])(
+    'schedule put rejects an explicitly empty %s bound',
+    async (_label, flag) => {
+      const client = makeClient();
+      await expect(
+        dispatch(client, [
+          'schedule',
+          'put',
+          '--name',
+          'bounded',
+          '--message',
+          'x',
+          '--every',
+          'PT1H',
+          flag,
+          '',
+        ])
+      ).rejects.toThrow();
+      expect(client.schedules.put).not.toHaveBeenCalled();
+    }
+  );
 
   it('dispatches secrets create with --name and --value', async () => {
     const client = makeClient();
