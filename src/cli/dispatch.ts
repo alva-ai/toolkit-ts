@@ -2060,7 +2060,10 @@ function parseScheduleTimestamp(value: string, flag: string): string {
       'schedule'
     );
   }
-  return new Date(parsed).toISOString();
+  // Schedule semantic timestamps are canonical whole seconds end-to-end.
+  // Date#toISOString always appends `.000Z`, which the schedule resource
+  // correctly rejects as fractional-second syntax even when the value is zero.
+  return new Date(parsed).toISOString().replace('.000Z', 'Z');
 }
 
 function scheduleBoundsFromFlags(flags: Record<string, string>):

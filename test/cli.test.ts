@@ -620,8 +620,8 @@ describe('CLI dispatch', () => {
         timezone: 'America/New_York',
       },
       bounds: {
-        startsAt: '2026-07-15T12:00:00.000Z',
-        until: '2026-07-15T14:00:00.000Z',
+        startsAt: '2026-07-15T12:00:00Z',
+        until: '2026-07-15T14:00:00Z',
         maxOccurrences: 5,
       },
     });
@@ -715,7 +715,113 @@ describe('CLI dispatch', () => {
     ]);
     expect(client.schedules.put).toHaveBeenCalledWith(
       expect.objectContaining({
-        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00.000Z' },
+        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00Z' },
+      })
+    );
+  });
+
+  it('passes canonical whole-second timestamps through the real schedule resource', async () => {
+    const client = new AlvaClient({ apiKey: 'test-key' });
+    const request = vi.fn().mockResolvedValue({
+      data: {
+        updateChannelSchedule: {
+          schedule: {
+            id: 'AgentSchedule:91:market-open',
+            channel: { id: '91' },
+            name: 'market-open',
+            rule: {
+              kind: 'CRON',
+              atMs: null,
+              everyIntervalSeconds: null,
+              cronExpression: '30 9 * * 1-5',
+              cronTimezone: 'America/New_York',
+            },
+            bounds: {
+              startsAtMs: Date.parse('2026-07-15T12:00:00Z'),
+              untilMs: Date.parse('2026-07-15T14:00:00Z'),
+              maxOccurrences: null,
+            },
+            message: { text: 'Review the market open' },
+            status: 'ACTIVE',
+            failureCode: null,
+            failureAtMs: null,
+            occurrencesUsed: 0,
+            nextFireAtMs: Date.parse('2026-07-15T13:30:00Z'),
+            createdAtMs: Date.parse('2026-07-15T11:00:00.123Z'),
+            updatedAtMs: Date.parse('2026-07-15T11:00:00.456Z'),
+          },
+        },
+      },
+    });
+    client._request = request;
+
+    await dispatch(client, [
+      'schedule',
+      'put',
+      '--channel-id',
+      '91',
+      '--name',
+      'market-open',
+      '--message',
+      'Review the market open',
+      '--cron',
+      '30 9 * * 1-5',
+      '--timezone',
+      'America/New_York',
+      '--starts-at',
+      '2026-07-15T08:00:00-04:00',
+      '--until',
+      '2026-07-15T10:00:00-04:00',
+    ]);
+
+    expect(request).toHaveBeenCalledWith(
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: expect.objectContaining({
+            input: expect.objectContaining({
+              definition: expect.objectContaining({
+                bounds: {
+                  startsAtMs: Date.parse('2026-07-15T12:00:00Z'),
+                  untilMs: Date.parse('2026-07-15T14:00:00Z'),
+                },
+              }),
+            }),
+          }),
+        }),
+      })
+    );
+
+    await dispatch(client, [
+      'schedule',
+      'put',
+      '--channel-id',
+      '91',
+      '--name',
+      'one-shot',
+      '--message',
+      'Run once',
+      '--at',
+      '2026-07-15T08:00:00-04:00',
+    ]);
+
+    expect(request).toHaveBeenLastCalledWith(
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: expect.objectContaining({
+            input: expect.objectContaining({
+              definition: expect.objectContaining({
+                rule: {
+                  kind: 'AT',
+                  atMs: Date.parse('2026-07-15T12:00:00Z'),
+                },
+              }),
+            }),
+          }),
+        }),
       })
     );
   });
