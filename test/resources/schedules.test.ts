@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
+import { AlvaError } from '../../src/error.js';
 
 const wireSchedule = {
   id: 'AgentSchedule:91:heartbeat',
@@ -112,6 +113,54 @@ describe('SchedulesResource', () => {
         }),
       })
     );
+  });
+
+  it('preserves canonical Gateway error codes and retry status', async () => {
+    request.mockResolvedValue({
+      errors: [
+        {
+          message: 'internal error',
+          path: ['viewer', 'channel', 'schedules'],
+          extensions: { code: 'INTERNAL' },
+        },
+      ],
+    });
+
+    const error = await client.schedules
+      .list({ channelId: '91' })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(AlvaError);
+    expect(error).toMatchObject({ code: 'INTERNAL', status: 500 });
+  });
+
+  it('treats an unclassified GraphQL failure as an upstream error', async () => {
+    request.mockResolvedValue({
+      errors: [{ message: 'unclassified failure' }],
+    });
+
+    const error = await client.schedules
+      .list({ channelId: '91' })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(AlvaError);
+    expect(error).toMatchObject({ code: 'GRAPHQL_ERROR', status: 502 });
+  });
+
+  it('treats mixed classified and unclassified failures as upstream errors', async () => {
+    request.mockResolvedValue({
+      errors: [
+        { message: 'missing', extensions: { code: 'NOT_FOUND' } },
+        { message: 'unclassified failure' },
+      ],
+    });
+
+    const error = await client.schedules
+      .list({ channelId: '91' })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(AlvaError);
+    expect(error).toMatchObject({ code: 'GRAPHQL_ERROR', status: 502 });
   });
 
   it('converts after to an absolute at before the mutation', async () => {

@@ -91,6 +91,7 @@ const ISO_DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
 
 interface GraphQLErrorPayload {
   message?: unknown;
+  extensions?: { code?: unknown; [key: string]: unknown } | null;
   [key: string]: unknown;
 }
 
@@ -98,6 +99,22 @@ interface GraphQLResponse<T> {
   data?: T | null;
   errors?: GraphQLErrorPayload[];
 }
+
+const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
+  INVALID_ARGUMENT: 400,
+  UNAUTHENTICATED: 401,
+  PERMISSION_DENIED: 403,
+  NOT_FOUND: 404,
+  ALREADY_EXISTS: 409,
+  ABORTED: 409,
+  FAILED_PRECONDITION: 412,
+  RESOURCE_EXHAUSTED: 429,
+  INTERNAL: 500,
+  UNKNOWN: 500,
+  DATA_LOSS: 500,
+  UNAVAILABLE: 503,
+  DEADLINE_EXCEEDED: 504,
+};
 
 interface WireSchedule {
   id: string;
@@ -245,13 +262,26 @@ export class SchedulesResource {
       body: variables === undefined ? { query } : { query, variables },
     })) as GraphQLResponse<T>;
     if (response.errors?.length) {
+      const codes = response.errors.map((error) => error.extensions?.code);
+      const distinctCodes = new Set(codes);
+      const canonicalCode =
+        distinctCodes.size === 1 && typeof codes[0] === 'string'
+          ? codes[0]
+          : undefined;
+      const canonicalStatus = canonicalCode
+        ? GRAPHQL_STATUS_BY_CODE[canonicalCode]
+        : undefined;
+      const errorCode =
+        canonicalCode !== undefined && canonicalStatus !== undefined
+          ? canonicalCode
+          : 'GRAPHQL_ERROR';
       throw new AlvaError(
-        'GRAPHQL_ERROR',
+        errorCode,
         response.errors
           .map((error) => error.message)
           .filter((message): message is string => typeof message === 'string')
           .join('; ') || 'GraphQL request failed',
-        400,
+        canonicalStatus ?? 502,
         { errors: response.errors }
       );
     }
