@@ -82,6 +82,33 @@ function closestFlag(
   return distance <= threshold ? closest : undefined;
 }
 
+const TOP_LEVEL_COMMAND_SUGGESTIONS: Readonly<Record<string, string>> = {
+  market: 'markets',
+  data: 'data-skills',
+  feeds: 'automation',
+};
+
+function closestCommand(
+  input: string,
+  available: ReadonlyMap<string, CommandNode>
+): string | undefined {
+  const terminology = TOP_LEVEL_COMMAND_SUGGESTIONS[input];
+  if (terminology !== undefined && available.has(terminology)) {
+    return terminology;
+  }
+  let closest: string | undefined;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const candidate of available.keys()) {
+    const candidateDistance = editDistance(input, candidate);
+    if (candidateDistance < distance) {
+      closest = candidate;
+      distance = candidateDistance;
+    }
+  }
+  const threshold = input.length <= 4 ? 1 : 2;
+  return distance <= threshold ? closest : undefined;
+}
+
 function mergeFlags(
   definition: CommandDefinition,
   globalFlags: Readonly<Record<string, FlagKind>>
@@ -111,7 +138,12 @@ function resolveCommand(
     if (node.definition !== undefined && node.children.size === 0) break;
 
     if (consumed === 0) {
-      throw new CliUsageError(`Unknown command: '${input}'`);
+      const suggestion = closestCommand(input, node.children);
+      const recovery =
+        suggestion === undefined
+          ? " Run 'alva --help' to list command families."
+          : ` Did you mean '${suggestion}'?`;
+      throw new CliUsageError(`Unknown command: '${input}'.${recovery}`);
     }
     const group = args[0]!;
     const command = args.slice(0, consumed).join(' ');

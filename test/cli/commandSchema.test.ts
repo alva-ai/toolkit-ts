@@ -28,6 +28,21 @@ describe('declarative CLI command parser', () => {
     );
   });
 
+  it('suggests canonical top-level command families without accepting aliases', () => {
+    expect(() => parseCommand(['market', '--help'])).toThrow(
+      /Unknown command: 'market'.*Did you mean 'markets'/
+    );
+    expect(() => parseCommand(['data', '--help'])).toThrow(
+      /Unknown command: 'data'.*Did you mean 'data-skills'/
+    );
+    expect(() => parseCommand(['feeds', '--help'])).toThrow(
+      /Unknown command: 'feeds'.*Did you mean 'automation'/
+    );
+    expect(() => parseCommand(['search', '--help'])).toThrow(
+      /Unknown command: 'search'.*alva --help/
+    );
+  });
+
   it('rejects a globally known flag when the resolved leaf does not support it', () => {
     expect(() =>
       parseCommand(['agent', 'list', '--automation-ids', '10'])
