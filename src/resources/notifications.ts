@@ -9,8 +9,8 @@ export class NotificationsResource {
 
   /**
    * List the caller's notification history for one feed
-   * `(username, name)`. Authorization is alfs read on
-   * `/alva/home/<username>/feeds/<name>`.
+   * `(username, name)`. Authorization uses the backend's canonical Feed read
+   * decision (owner, public, bundled paid access, Plan, or Access Group).
    */
   async listFeed(
     params: NotificationListParams
