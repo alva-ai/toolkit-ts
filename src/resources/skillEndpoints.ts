@@ -731,6 +731,36 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     method: 'POST',
     path: '/api/v1/social-feeds/x/handles',
   },
+  {
+    skill: 'arrays-data-api-equity-events',
+    file: 'event-transcripts',
+    method: 'GET',
+    path: '/api/v1/stocks/event-transcripts',
+  },
+  {
+    skill: 'arrays-data-api-macro-and-economics',
+    file: 'macro-index-symbol-list',
+    method: 'GET',
+    path: '/api/v1/macro/index/symbols',
+  },
+  {
+    skill: 'arrays-data-api-podcast-transcripts',
+    file: 'podcast-shows',
+    method: 'GET',
+    path: '/api/v1/other/podcast/shows',
+  },
+  {
+    skill: 'arrays-data-api-podcast-transcripts',
+    file: 'podcast-transcripts',
+    method: 'GET',
+    path: '/api/v1/other/podcast/transcripts',
+  },
+  {
+    skill: 'arrays-data-api-podcast-transcripts',
+    file: 'podcast-persons',
+    method: 'GET',
+    path: '/api/v1/persons',
+  },
 ];
 
 export function getSkillEndpointMetadata(
