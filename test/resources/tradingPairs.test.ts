@@ -113,10 +113,10 @@ describe('TradingPairsResource', () => {
     client._request.mockResolvedValue({
       trading_pairs: [
         {
-          base: 'RKLB',
+          base: 'M_COIN',
           quote: 'USD',
-          symbol: 'US_SPOT_RKLB_USD',
-          exchange: 'US',
+          symbol: 'COINBASE_SPOT_M_COIN_USD',
+          exchange: 'COINBASE',
           type: 'spot',
         },
       ],
@@ -124,15 +124,59 @@ describe('TradingPairsResource', () => {
 
     await expect(
       new TradingPairsResource(client).resolve({
-        pair: 'US_SPOT_RKLB_USD',
+        pair: 'COINBASE_SPOT_M_COIN_USD',
       })
-    ).resolves.toMatchObject({ tradingPair: 'US_SPOT_RKLB_USD' });
+    ).resolves.toMatchObject({ tradingPair: 'COINBASE_SPOT_M_COIN_USD' });
 
     expect(client._request).toHaveBeenCalledWith(
       'GET',
       '/api/v1/trading-pairs/search',
-      { query: { q: 'RKLB', strict: true } }
+      { query: { q: 'M_COIN', strict: true } }
     );
+  });
+
+  it('infers an underscored symbol when the gateway omits the base field', async () => {
+    const client = makeClient();
+    client._request.mockResolvedValue({
+      trading_pairs: [
+        {
+          trading_pair: 'COINBASE_SPOT_M_COIN_USD',
+          quote: 'USD',
+          exchange: 'COINBASE',
+          instrument_type: 'spot',
+        },
+      ],
+    });
+
+    await expect(
+      new TradingPairsResource(client).search({ symbol: 'M_COIN' })
+    ).resolves.toMatchObject({
+      candidates: [
+        expect.objectContaining({
+          symbol: 'M_COIN',
+          tradingPair: 'COINBASE_SPOT_M_COIN_USD',
+        }),
+      ],
+    });
+  });
+
+  it('returns a typed error for missing runtime parameters', async () => {
+    const client = makeClient();
+    const resource = new TradingPairsResource(client);
+
+    await expect(
+      resource.search({ symbol: undefined as never })
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      status: 400,
+    });
+    await expect(
+      resource.resolve({ pair: undefined as never })
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      status: 400,
+    });
+    expect(client._request).not.toHaveBeenCalled();
   });
 
   it('fails closed when resolve is not unique', async () => {

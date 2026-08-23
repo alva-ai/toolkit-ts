@@ -87,7 +87,11 @@ function normalizeCandidate(
   const symbol =
     stringValue(raw.base) ??
     outerSymbol ??
-    (parts.length >= 3 ? parts[2] : tradingPair);
+    (parts.length >= 4
+      ? parts.slice(2, -1).join('_')
+      : parts.length === 3
+        ? parts[2]
+        : tradingPair);
   const market =
     stringValue(raw.market) ?? stringValue(raw.exchange) ?? parts[0] ?? '';
   const quote = stringValue(raw.quote) ?? parts[parts.length - 1] ?? '';
@@ -167,9 +171,9 @@ function flattenResponse(value: unknown): TradingPairCandidate[] {
 
 function matchesQuery(candidate: TradingPairCandidate, query: string): boolean {
   const expected = query.trim();
-  // A complete pair is an identity and must match byte-for-byte. Ticker
-  // discovery remains case-insensitive for normal human input.
-  if (expected.includes('_')) return candidate.tradingPair === expected;
+  // A complete pair is an identity and must match byte-for-byte. If the
+  // query is a ticker containing underscores, fall through to ticker matching.
+  if (candidate.tradingPair === expected) return true;
   return upper(candidate.symbol) === upper(expected);
 }
 
@@ -196,7 +200,12 @@ function pairSearchParams(
   const parts = pair.split('_');
   const market = parts[0];
   const instrumentType = parts[1];
-  const symbol = parts[2];
+  const symbol =
+    parts.length >= 4
+      ? parts.slice(2, -1).join('_')
+      : parts.length === 3
+        ? parts[2]
+        : undefined;
   const quote = parts.at(-1);
   if (!market || !instrumentType || !symbol || !quote) {
     return { symbol: pair, ...params };
@@ -218,7 +227,8 @@ export class TradingPairsResource {
     params: TradingPairSearchParams
   ): Promise<TradingPairSearchResponse> {
     this.client._requireAuth();
-    const query = params.symbol.trim();
+    const rawSymbol = isRecord(params) ? params.symbol : undefined;
+    const query = typeof rawSymbol === 'string' ? rawSymbol.trim() : '';
     if (!query)
       throw new AlvaError('INVALID_ARGUMENT', 'symbol is required', 400);
 
@@ -252,7 +262,10 @@ export class TradingPairsResource {
       | ({ pair: string } & Omit<TradingPairSearchParams, 'symbol'>)
       | TradingPairSearchParams
   ): Promise<TradingPairCandidate> {
-    const pair = 'pair' in params ? params.pair.trim() : undefined;
+    const pair =
+      isRecord(params) && typeof params.pair === 'string'
+        ? params.pair.trim()
+        : undefined;
     const searchParams: TradingPairSearchParams =
       pair === undefined
         ? (params as TradingPairSearchParams)
