@@ -14,6 +14,7 @@ Commands:
   data-skills   Discover structured Arrays data endpoints
   skillhub      Discover curated methodology blueprints
   markets       Read market narrative and earnings context
+  trading-pairs Discover and strictly verify canonical trading pairs
   automation    Create and operate scheduled automations
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
@@ -60,6 +61,45 @@ Subcommands:
 Subcommands:
   narrative
   earnings`,
+
+  'trading-pairs': `Usage: alva trading-pairs <subcommand>
+
+Subcommands:
+  search   Discover matching candidates; multiple results are normal
+  resolve  Require exactly one canonical tradingPair
+
+Run 'alva trading-pairs search --help' and
+'alva trading-pairs resolve --help' for flags and examples.`,
+
+  'trading-pairs search': `Usage: alva trading-pairs search [options]
+
+Return all matching candidates. Multiple results are normal; this command
+does not select a venue or construct a tradingPair.
+
+Flags:
+  --symbol <ticker>             Ticker/query (required)
+  --market <market>             Optional market filter
+  --instrument-type <type>      Optional spot/perp/option filter
+  --underlying-type <type>      Optional stock/crypto filter
+  --quote <currency>             Optional quote filter
+  --limit <n>                    Optional result limit
+  --json                         Return machine-readable JSON`,
+
+  'trading-pairs resolve': `Usage: alva trading-pairs resolve [options]
+
+Require exactly one canonical tradingPair. Pass either a complete --pair or a
+--symbol with enough filters to make the result unique.
+
+Flags:
+  --pair <trading-pair>          Verify one complete pair
+  --symbol <ticker>              Discover then require one match
+  --market <market>              Market filter
+  --instrument-type <type>       Spot/perp/option filter
+  --underlying-type <type>       Stock/crypto filter
+  --quote <currency>              Quote filter
+  --json                          Return machine-readable JSON
+
+Zero or multiple distinct pairs fail. Never use the first result.`,
 
   automation: `Usage: alva automation <subcommand>
 

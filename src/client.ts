@@ -29,6 +29,7 @@ import { FunctionsResource } from './resources/functions.js';
 import { CreditsResource } from './resources/credits.js';
 import { MarketsResource } from './resources/markets.js';
 import { SchedulesResource } from './resources/schedules.js';
+import { TradingPairsResource } from './resources/tradingPairs.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -176,6 +177,7 @@ export class AlvaClient {
   private _credits?: CreditsResource;
   private _markets?: MarketsResource;
   private _schedules?: SchedulesResource;
+  private _tradingPairs?: TradingPairsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -276,6 +278,9 @@ export class AlvaClient {
   }
   get markets(): MarketsResource {
     return (this._markets ??= new MarketsResource(this));
+  }
+  get tradingPairs(): TradingPairsResource {
+    return (this._tradingPairs ??= new TradingPairsResource(this));
   }
   get schedules(): SchedulesResource {
     return (this._schedules ??= new SchedulesResource(this));

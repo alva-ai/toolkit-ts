@@ -476,6 +476,29 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['ticker', 'event', 'fiscal-year', 'fiscal-quarter'],
   }),
 
+  command('trading-pairs search', {
+    values: [
+      'symbol',
+      'market',
+      'instrument-type',
+      'underlying-type',
+      'quote',
+      'limit',
+    ],
+    booleans: ['json'],
+  }),
+  command('trading-pairs resolve', {
+    values: [
+      'pair',
+      'symbol',
+      'market',
+      'instrument-type',
+      'underlying-type',
+      'quote',
+    ],
+    booleans: ['json'],
+  }),
+
   command('trading accounts'),
   command('trading portfolio', { values: ['account-id'] }),
   command('trading orders', {

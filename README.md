@@ -348,6 +348,9 @@ alva remix --child-username <u> --child-name <n> --parents <json>
 alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
 alva markets narrative --ticker <symbol>
 alva markets earnings --ticker <symbol> [--event <latest-completed|next-confirmed> | --fiscal-year <year> --fiscal-quarter <Q1|Q2|Q3|Q4>]
+alva trading-pairs search --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]
+alva trading-pairs resolve --pair <trading-pair> [--json]
+alva trading-pairs resolve --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]
 alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
 ```
 
