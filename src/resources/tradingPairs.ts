@@ -193,9 +193,30 @@ function dedupe(candidates: TradingPairCandidate[]): TradingPairCandidate[] {
   });
 }
 
+type TradingPairResolveFilters = Omit<
+  TradingPairSearchParams,
+  'symbol' | 'limit'
+>;
+
+function resolveFilters(params: unknown): TradingPairResolveFilters {
+  const record = isRecord(params) ? params : {};
+  return {
+    market: typeof record.market === 'string' ? record.market : undefined,
+    instrumentType:
+      typeof record.instrumentType === 'string'
+        ? record.instrumentType
+        : undefined,
+    underlyingType:
+      typeof record.underlyingType === 'string'
+        ? record.underlyingType
+        : undefined,
+    quote: typeof record.quote === 'string' ? record.quote : undefined,
+  };
+}
+
 function pairSearchParams(
   pair: string,
-  params: Omit<TradingPairSearchParams, 'symbol'>
+  params: TradingPairResolveFilters
 ): TradingPairSearchParams {
   const parts = pair.split('_');
   const market = parts[0];
@@ -259,17 +280,20 @@ export class TradingPairsResource {
 
   async resolve(
     params:
-      | ({ pair: string } & Omit<TradingPairSearchParams, 'symbol'>)
-      | TradingPairSearchParams
+      | ({ pair: string } & TradingPairResolveFilters)
+      | Omit<TradingPairSearchParams, 'limit'>
   ): Promise<TradingPairCandidate> {
+    const record: RawRecord = isRecord(params) ? params : {};
     const pair =
-      isRecord(params) && typeof params.pair === 'string'
-        ? params.pair.trim()
-        : undefined;
+      typeof record.pair === 'string' ? record.pair.trim() : undefined;
+    const filters = resolveFilters(params);
     const searchParams: TradingPairSearchParams =
       pair === undefined
-        ? (params as TradingPairSearchParams)
-        : pairSearchParams(pair, params);
+        ? {
+            symbol: typeof record.symbol === 'string' ? record.symbol : '',
+            ...filters,
+          }
+        : pairSearchParams(pair, filters);
     const result = await this.search(searchParams);
     const candidates =
       pair === undefined

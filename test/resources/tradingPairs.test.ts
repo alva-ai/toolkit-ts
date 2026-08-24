@@ -201,7 +201,10 @@ describe('TradingPairsResource', () => {
     });
 
     await expect(
-      new TradingPairsResource(client).resolve({ symbol: 'BTC' })
+      new TradingPairsResource(client).resolve({
+        symbol: 'BTC',
+        limit: 1,
+      } as never)
     ).rejects.toMatchObject({
       code: 'TRADING_PAIR_NOT_UNIQUE',
       status: 409,
