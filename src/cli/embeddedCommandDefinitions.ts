@@ -180,6 +180,28 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('markets earnings', 'markets earnings', {
       values: ['ticker', 'event', 'fiscal-year', 'fiscal-quarter'],
     }),
+    route('trading-pairs search', 'trading-pairs search', {
+      values: [
+        'symbol',
+        'market',
+        'instrument-type',
+        'underlying-type',
+        'quote',
+        'limit',
+      ],
+      booleans: ['json'],
+    }),
+    route('trading-pairs resolve', 'trading-pairs resolve', {
+      values: [
+        'pair',
+        'symbol',
+        'market',
+        'instrument-type',
+        'underlying-type',
+        'quote',
+      ],
+      booleans: ['json'],
+    }),
     action(
       'automation create',
       {

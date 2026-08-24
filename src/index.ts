@@ -14,6 +14,12 @@ export {
 export { AlertsResource } from './resources/alerts.js';
 export { MarketsResource } from './resources/markets.js';
 export {
+  TradingPairsResource,
+  type TradingPairCandidate,
+  type TradingPairSearchParams,
+  type TradingPairSearchResponse,
+} from './resources/tradingPairs.js';
+export {
   SchedulesResource,
   type AgentSchedule,
   type AgentScheduleBounds,

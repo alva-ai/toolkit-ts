@@ -39,6 +39,10 @@ import {
 import { formatReport } from '../lint/report.js';
 import { handleLintPlaybook, lintBeforeRelease } from './lintCore.js';
 import { validateSerializedArgs } from '../jsonPayload.js';
+import {
+  formatTradingPairResolved,
+  formatTradingPairSearch,
+} from './tradingPairsFormat.js';
 
 export { CliUsageError } from '../error.js';
 
@@ -123,6 +127,7 @@ Commands:
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
   markets     Company narrative and earnings context (narrative, earnings)
+  trading-pairs  Discover and strictly verify canonical trading pairs (search, resolve)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   broker      Agentic order execution — venue-native passthrough to trex (accounts, quote, order, balance, positions, ...; run 'alva broker describe')
   auth        Authentication (login)
@@ -1292,6 +1297,35 @@ Examples:
   alva markets earnings --ticker AAPL
   alva markets earnings --ticker AAPL --event next-confirmed
   alva markets earnings --ticker AAPL --fiscal-year 2026 --fiscal-quarter Q3`,
+
+  'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
+
+Discover canonical trading-pair identities before backtesting or trading.
+The returned tradingPair is the exact value to use in OHLCV, Altra targets,
+positions, and orders. This command never constructs aliases or picks the
+first result.
+
+Subcommands:
+  search       Return all matching candidates; multiple results are normal
+  resolve      Require exactly one matching canonical tradingPair
+
+Search and resolve flags:
+  --symbol <ticker>             Underlying ticker/query (for example RKLB)
+  --market <market>             Venue/market filter (for example US, BINANCE)
+  --instrument-type <type>      spot, perp, option, ...
+  --underlying-type <type>      stock, crypto, ...
+  --quote <currency>             USD, USDT, USDC, ...
+  --json                         Return the machine-readable result
+
+Search-only flags:
+  --limit <n>                    Limit returned candidates; truncation is reported
+
+Resolve forms:
+  alva trading-pairs resolve --pair US_SPOT_RKLB_USD --json
+  alva trading-pairs resolve --symbol RKLB --market US --instrument-type spot --quote USD --json
+
+Resolve fails when zero or multiple distinct pairs remain. Existing holdings
+must keep their stored full tradingPair instead of being resolved again.`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
@@ -4129,6 +4163,67 @@ export async function executeParsedCommand(
           throw new CliUsageError(
             `Unknown subcommand: markets ${subcommand}`,
             'markets'
+          );
+      }
+    }
+
+    case 'trading-pairs': {
+      if (!subcommand) {
+        throw new CliUsageError(
+          'Missing subcommand for trading-pairs',
+          'trading-pairs'
+        );
+      }
+      const asJson = boolFlag(flags['json']) ?? false;
+      const filters = {
+        market: flags['market'],
+        instrumentType: flags['instrument-type'],
+        underlyingType: flags['underlying-type'],
+        quote: flags['quote'],
+      };
+      switch (subcommand) {
+        case 'search': {
+          const limit =
+            flags['limit'] === undefined
+              ? undefined
+              : requirePositiveIntegerFlag(
+                  flags,
+                  'limit',
+                  'trading-pairs search'
+                );
+          const result = await client.tradingPairs.search({
+            symbol: requireFlag(flags, 'symbol', 'trading-pairs search'),
+            ...filters,
+            limit,
+          });
+          return asJson ? result : formatTradingPairSearch(result);
+        }
+        case 'resolve': {
+          const pair = flags['pair'];
+          const symbol = flags['symbol'];
+          if (pair !== undefined && symbol !== undefined) {
+            throw new CliUsageError(
+              "'trading-pairs resolve' accepts either --pair or --symbol, not both",
+              'trading-pairs'
+            );
+          }
+          if (pair === undefined && symbol === undefined) {
+            throw new CliUsageError(
+              "'trading-pairs resolve' requires --pair or --symbol",
+              'trading-pairs'
+            );
+          }
+          const result = await client.tradingPairs.resolve(
+            pair !== undefined
+              ? { pair, ...filters }
+              : { symbol: symbol!, ...filters }
+          );
+          return asJson ? result : formatTradingPairResolved(result);
+        }
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: trading-pairs ${subcommand}`,
+            'trading-pairs'
           );
       }
     }
