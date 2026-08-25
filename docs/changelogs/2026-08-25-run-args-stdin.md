@@ -393,11 +393,17 @@ publication gates are recorded below.
   security/compatibility, migration, and documentation review is clean. The
   staged secret scan and dependency-ordered publication remain for the next
   workflow stage.
+- **PR/CI outcome:** Published as PR #169 at head `f25a71c31e55301deacf9ca53d3f5a1e38811862`
+  against `main`; it is open, non-draft, and mergeable. The hosted consumer is
+  published separately as PR #252 at head `9644a4fad352119c7b13a6ed7adf04d97b34a442`
+  and must follow this PR. At this record point toolkit CI is running and the
+  hosted PR is awaiting its required review/checks; neither PR is merged.
 
 ## 8. Remaining Work
 
 - Commit and publish the toolkit change first, then the hosted consumer change
   after the AlDev review gates pass.
-- Obtain human review/merge authorization and, after the new toolkit binary is
-  available, let the owner decide whether to run the existing bounded hosted
-  canary. No live canary is part of this review evidence.
+- Monitor both current PR heads until CI/review is terminal and clean, then
+  obtain human merge authorization in the stated order. After the new toolkit
+  binary is available, let the owner decide whether to run the existing
+  bounded hosted canary. No live canary is part of this review evidence.
