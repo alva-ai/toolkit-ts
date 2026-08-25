@@ -353,6 +353,7 @@ Options:
   --entry-path <path>    Path to a script file on ALFS (home-relative)
   --working-dir <dir>    Working directory for require() (inline code only)
   --args <json>          JSON object passed to require("env").args
+  --args-stdin           Read the JSON object from stdin (mutually exclusive with --args)
   --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
   --timeout-ms <ms>      Client HTTP timeout for /api/v1/run (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
 
@@ -386,6 +387,7 @@ Examples:
   alva run --entry-path "~/feeds/my-feed/v1/src/index.js"
   alva run --entry-path "~/tasks/analyze/src/index.js" --args '{"symbol":"NVDA","limit":50}'
   alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'
+  printf '%s' '{"symbol":"BTC"}' | alva run --local-file ./my-script.js --args-stdin
   alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024
   alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000`,
 
@@ -1472,14 +1474,15 @@ function boolFlag(val: string | undefined): boolean | undefined {
 
 function serializedJSONFlag(
   value: string | undefined,
-  command: string
+  command: string,
+  flag = '--args'
 ): string | undefined {
   if (value === undefined) return undefined;
   try {
     validateSerializedArgs(value);
   } catch (error) {
     throw new CliUsageError(
-      `--args must contain valid JSON for '${command}': ${error instanceof Error ? error.message : String(error)}`,
+      `${flag} must contain valid JSON for '${command}': ${error instanceof Error ? error.message : String(error)}`,
       command.split(' ')[0]
     );
   }
@@ -2731,7 +2734,30 @@ export async function executeParsedCommand(
         ),
         timeout_ms,
       };
-      const serializedArgs = serializedJSONFlag(flags['args'], 'run');
+      const argsFromStdin = boolFlag(flags['args-stdin']) === true;
+      if (argsFromStdin && flags['args'] !== undefined) {
+        throw new CliUsageError(
+          '--args and --args-stdin are mutually exclusive',
+          'run'
+        );
+      }
+      let serializedArgs = serializedJSONFlag(flags['args'], 'run');
+      if (argsFromStdin) {
+        if (!deps?.readStdin) {
+          throw new CliUsageError(
+            '--args-stdin requires a Node.js runtime adapter',
+            'run'
+          );
+        }
+        const stdin = await deps.readStdin();
+        serializedArgs = serializedJSONFlag(stdin, 'run', '--args-stdin');
+        if (serializedArgs === undefined) {
+          throw new CliUsageError(
+            '--args-stdin requires JSON input from stdin',
+            'run'
+          );
+        }
+      }
       return serializedArgs === undefined
         ? client.run.execute(params)
         : client.run._executeSerializedArgs(params, serializedArgs);

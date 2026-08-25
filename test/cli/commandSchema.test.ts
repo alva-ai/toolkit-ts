@@ -20,6 +20,12 @@ describe('declarative CLI command parser', () => {
     expect(parsed.positionals).toEqual([]);
   });
 
+  it('parses run --args-stdin as a boolean without consuming a value', () => {
+    expect(
+      parseCommand(['run', '--args-stdin', '--code', '1+1']).flags
+    ).toEqual({ 'args-stdin': 'true', code: '1+1' });
+  });
+
   it('rejects an unknown flag and suggests a flag from the same leaf', () => {
     expect(() =>
       parseCommand(['alert', 'enable', '--automation-idss', '10,11'])
