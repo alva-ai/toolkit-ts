@@ -366,15 +366,19 @@ publication gates are recorded below.
 - **Implementation deviations:** No behavior or ownership deviation from the
   approved sections 1-6. A review pass found that the public `README.md` run
   synopsis omitted the new mutually exclusive mode; it was updated without
-  changing the CLI behavior. The hosted worktree temporarily symlinked an
+  changing the CLI behavior. A follow-up review also required the stdin path
+  to fail closed when a runtime adapter returns `undefined`; the dispatch now
+  raises the same usage error instead of falling through to no-args execution,
+  with a regression test proving neither client dispatch path is called. The
+  hosted worktree temporarily symlinked an
   already-installed dependency tree solely for local SDK checks; the symlink
   was removed before review and is not part of either diff.
 - **Verification and E2E:**
   - `npm exec vitest run test/cli.test.ts test/cli/commandSchema.test.ts` — 2
-    files, 382 tests passed.
-  - `npm test` — 46 files, 861 tests passed.
+    files, 383 tests passed.
+  - `npm test` — 46 files, 862 tests passed.
   - `npm run typecheck`, `npm run build`, and `npm run format:check` — passed
-    after the README correction; the build/vendor step produced no tracked
+    after the stdin fail-closed fix; the build/vendor step produced no tracked
     generated diff.
   - `git diff --check` — passed in both worktrees. The hosted worktree also
     passed `node --check orchestrator/hosted-trading-automation.js`.
@@ -390,19 +394,19 @@ publication gates are recorded below.
   and the linked hosted local record remain the authoritative implementation/
   outcome documentation.
 - **Review/publication state:** The main-agent behavior, architecture, test,
-  security/compatibility, migration, and documentation review is clean. The
-  staged secret scan and dependency-ordered publication remain for the next
-  workflow stage.
-- **PR/CI outcome:** Published as PR #169 at head `f25a71c31e55301deacf9ca53d3f5a1e38811862`
-  against `main`; it is open, non-draft, and mergeable. The hosted consumer is
-  published separately as PR #252 at head `9644a4fad352119c7b13a6ed7adf04d97b34a442`
-  and must follow this PR. At this record point toolkit CI is running and the
-  hosted PR is awaiting its required review/checks; neither PR is merged.
+  security/compatibility, migration, and documentation review is clean after
+  the fail-closed stdin feedback fix. The dependency-ordered publication
+  remains in progress; the final candidate will receive a fresh secret scan.
+- **PR/CI outcome:** PR #169 remains open and non-draft; its prior published
+  head was `f25a71c31e55301deacf9ca53d3f5a1e38811862` and the feedback fix is
+  being published as an additive head. The hosted consumer remains separately
+  published as PR #252 at its prior head `9644a4fad352119c7b13a6ed7adf04d97b34a442`
+  and must follow this PR. Neither PR is merged.
 
 ## 8. Remaining Work
 
-- Commit and publish the toolkit change first, then the hosted consumer change
-  after the AlDev review gates pass.
+- Publish the reviewed toolkit feedback fix first, then the hosted consumer
+  feedback fix after the dependency-ordered AlDev gates pass.
 - Monitor both current PR heads until CI/review is terminal and clean, then
   obtain human merge authorization in the stated order. After the new toolkit
   binary is available, let the owner decide whether to run the existing
