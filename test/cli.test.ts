@@ -920,6 +920,85 @@ describe('CLI dispatch', () => {
     );
   });
 
+  it('dispatches run with --args-stdin preserving exact large UTF-8 text', async () => {
+    const client = makeClient();
+    // Keep whitespace and escape spelling noncanonical so reserialization
+    // would change the bytes and fail this boundary assertion.
+    const args = `{
+  "evidence": "${'\\u96ea'.repeat(150_000)}",
+  "channel_id": "2087608331744604161"
+}`;
+    const readStdin = vi.fn().mockResolvedValue(args);
+
+    await dispatch(
+      client,
+      ['run', '--code', 'require("env").args', '--args-stdin'],
+      undefined,
+      { readStdin }
+    );
+
+    expect(readStdin).toHaveBeenCalledTimes(1);
+    expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'require("env").args' }),
+      args
+    );
+    expect(client.run.execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['', '{bad', 'null', '[]', '{"channel_id":2087608331744604161}'])(
+    'rejects invalid --args-stdin before dispatch: %s',
+    async (args) => {
+      const client = makeClient();
+      const readStdin = vi.fn().mockResolvedValue(args);
+
+      await expect(
+        dispatch(client, ['run', '--code', '1+1', '--args-stdin'], undefined, {
+          readStdin,
+        })
+      ).rejects.toThrow(/--args-stdin/);
+      expect(readStdin).toHaveBeenCalledTimes(1);
+      expect(client.run._executeSerializedArgs).not.toHaveBeenCalled();
+      expect(client.run.execute).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects conflicting run argument transports before reading stdin', async () => {
+    const client = makeClient();
+    const readStdin = vi.fn().mockResolvedValue('{"symbol":"BTC"}');
+
+    await expect(
+      dispatch(
+        client,
+        ['run', '--code', '1+1', '--args', '{"symbol":"BTC"}', '--args-stdin'],
+        undefined,
+        { readStdin }
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof CliUsageError &&
+        error.command === 'run' &&
+        error.message.includes('mutually exclusive')
+    );
+    expect(readStdin).not.toHaveBeenCalled();
+    expect(client.run._executeSerializedArgs).not.toHaveBeenCalled();
+  });
+
+  it('rejects --args-stdin when the runtime has no stdin adapter', async () => {
+    const client = makeClient();
+
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--args-stdin'], undefined, {
+        readStdin: undefined,
+      })
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof CliUsageError &&
+        error.command === 'run' &&
+        error.message.includes('--args-stdin requires')
+    );
+    expect(client.run._executeSerializedArgs).not.toHaveBeenCalled();
+  });
+
   it('dispatches run with --max-heap-size-mb', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -1280,6 +1359,7 @@ describe('CLI dispatch', () => {
       text: string;
     };
     expect(result.text).toContain('--max-heap-size-mb');
+    expect(result.text).toContain('--args-stdin');
     expect(result.text).toContain('--timeout-ms');
     expect(result.text).toContain('ALVA_RUN_TIMEOUT_MS');
   });

@@ -109,6 +109,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'max-heap-size-mb',
       'timeout-ms',
     ],
+    booleans: ['args-stdin'],
   }),
 
   command('deploy create', {
