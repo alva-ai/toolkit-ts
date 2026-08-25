@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parseCommand } from '../../src/cli/commandSchema.js';
 import { parseEmbeddedCommand } from '../../src/cli/embeddedCommandSchema.js';
 import { embeddedCommandArgv } from '../../src/cli/agentCommandDefinitions.js';
+import { agentHelpFor } from '../../src/cli/agentHelp.js';
 import * as embeddedDispatch from '../../src/cli/embeddedDispatch.js';
 
 describe('Slim Alva Agent command profile', () => {
@@ -137,6 +138,16 @@ describe('Slim Alva Agent command profile', () => {
       'feedback',
       'submit',
     ]);
+  });
+
+  it('keeps terminal-only stdin arguments out of the Agent profile', () => {
+    expect(parseCommand(['run', '--args-stdin']).flags).toEqual({
+      'args-stdin': 'true',
+    });
+    expect(() => parseEmbeddedCommand(['run', '--args-stdin'])).toThrow(
+      /--args-stdin is not supported/
+    );
+    expect(agentHelpFor(['run', '--help'])).not.toContain('--args-stdin');
   });
 
   it('moves portfolio reads out of trading', () => {

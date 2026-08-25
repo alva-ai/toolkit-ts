@@ -109,10 +109,12 @@ contract:
 3. `src/resources/run.ts` and `src/jsonPayload.ts` remain the single request
    boundary. They receive the raw string and preserve its exact JSON text as
    `env.args`; no parser or serializer is added to the resource layer.
-4. `test/cli.test.ts` and `test/cli/commandSchema.test.ts` cover the terminal
-   grammar, dispatch branches, and no-request failure behavior. The linked
-   trading repository owns the consumer change and its child-process tests;
-   its local record is `2026-08-25-hosted-args-stdin.md`.
+4. `test/cli.test.ts`, `test/cli/commandSchema.test.ts`, and
+   `test/cli/agentCommandProfile.test.ts` cover the terminal grammar, dispatch
+   branches, no-request failure behavior, and the absence of the terminal-only
+   flag from the embedded parser and help. The linked trading repository owns
+   the consumer change and its child-process tests; its local record is
+   `2026-08-25-hosted-args-stdin.md`.
 
 The representative successful path is:
 
@@ -376,6 +378,9 @@ publication gates are recorded below.
 - **Verification and E2E:**
   - `npm exec vitest run test/cli.test.ts test/cli/commandSchema.test.ts` — 2
     files, 383 tests passed.
+  - `npm exec vitest run test/cli/agentCommandProfile.test.ts` — 1 file, 14
+    tests passed; the embedded parser rejects `--args-stdin` and the Slim run
+    help omits it.
   - `npm test` — 46 files, 862 tests passed.
   - `npm run typecheck`, `npm run build`, and `npm run format:check` — passed
     after the stdin fail-closed fix; the build/vendor step produced no tracked
