@@ -397,16 +397,17 @@ publication gates are recorded below.
   security/compatibility, migration, and documentation review is clean after
   the fail-closed stdin feedback fix. The dependency-ordered publication
   remains in progress; the final candidate will receive a fresh secret scan.
-- **PR/CI outcome:** PR #169 remains open and non-draft; its prior published
-  head was `f25a71c31e55301deacf9ca53d3f5a1e38811862` and the feedback fix is
-  being published as an additive head. The hosted consumer remains separately
-  published as PR #252 at its prior head `9644a4fad352119c7b13a6ed7adf04d97b34a442`
-  and must follow this PR. Neither PR is merged.
+- **PR/CI outcome:** PR #169 is published at head
+  `1ce2c9f182741af8d7ef2487507c540253710d17`; it is open, non-draft,
+  mergeable, and its current-head toolkit CI is green (three build jobs).
+  The hosted consumer remains separately published as PR #252 at head
+  `5c30ad66b440bd533a3e09db427a822692d11602` and must follow this PR. Neither
+  PR is merged.
 
 ## 8. Remaining Work
 
-- Publish the reviewed toolkit feedback fix first, then the hosted consumer
-  feedback fix after the dependency-ordered AlDev gates pass.
+- Monitor both current PR heads until CI/review is terminal and clean, then
+  obtain human merge authorization in the stated order.
 - Monitor both current PR heads until CI/review is terminal and clean, then
   obtain human merge authorization in the stated order. After the new toolkit
   binary is available, let the owner decide whether to run the existing
