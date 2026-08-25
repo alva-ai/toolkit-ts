@@ -999,6 +999,25 @@ describe('CLI dispatch', () => {
     expect(client.run._executeSerializedArgs).not.toHaveBeenCalled();
   });
 
+  it('rejects --args-stdin when an adapter returns no value', async () => {
+    const client = makeClient();
+    const readStdin = (() =>
+      Promise.resolve(undefined)) as unknown as () => Promise<string>;
+
+    await expect(
+      dispatch(client, ['run', '--code', '1+1', '--args-stdin'], undefined, {
+        readStdin,
+      })
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof CliUsageError &&
+        error.command === 'run' &&
+        error.message.includes('JSON input')
+    );
+    expect(client.run._executeSerializedArgs).not.toHaveBeenCalled();
+    expect(client.run.execute).not.toHaveBeenCalled();
+  });
+
   it('dispatches run with --max-heap-size-mb', async () => {
     const client = makeClient();
     await dispatch(client, [

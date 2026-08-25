@@ -2749,11 +2749,14 @@ export async function executeParsedCommand(
             'run'
           );
         }
-        serializedArgs = serializedJSONFlag(
-          await deps.readStdin(),
-          'run',
-          '--args-stdin'
-        );
+        const stdin = await deps.readStdin();
+        serializedArgs = serializedJSONFlag(stdin, 'run', '--args-stdin');
+        if (serializedArgs === undefined) {
+          throw new CliUsageError(
+            '--args-stdin requires JSON input from stdin',
+            'run'
+          );
+        }
       }
       return serializedArgs === undefined
         ? client.run.execute(params)
