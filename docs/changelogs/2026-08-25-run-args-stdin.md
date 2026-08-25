@@ -397,9 +397,10 @@ publication gates are recorded below.
   security/compatibility, migration, and documentation review is clean after
   the fail-closed stdin feedback fix. The dependency-ordered publication
   remains in progress; the final candidate will receive a fresh secret scan.
-- **PR/CI outcome:** PR #169 is published at head
-  `1ce2c9f182741af8d7ef2487507c540253710d17`; it is open, non-draft,
-  mergeable, and its current-head toolkit CI is green (three build jobs).
+- **PR/CI outcome:** PR #169 contains implementation feedback head
+  `1ce2c9f182741af8d7ef2487507c540253710d17` plus a docs-only publication
+  reconciliation; it is open, non-draft, mergeable, and its current-head
+  toolkit CI is green (three build jobs).
   The hosted consumer remains separately published as PR #252 at head
   `5c30ad66b440bd533a3e09db427a822692d11602` and must follow this PR. Neither
   PR is merged.
