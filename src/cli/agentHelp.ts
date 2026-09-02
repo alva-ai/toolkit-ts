@@ -16,6 +16,7 @@ Commands:
   markets       Read market narrative and earnings context
   trading-pairs Discover and strictly verify canonical trading pairs
   automation    Create and operate scheduled automations
+  schedule      Manage future messages for this Session Inbox
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
   portfolio     Read connected accounts, assets, activity, and history
@@ -24,6 +25,23 @@ Commands:
 Run 'alva <command> --help' for a command tree.`;
 
 export const AGENT_COMMAND_HELP: Readonly<Record<string, string>> = {
+  schedule: `Usage: alva schedule <subcommand> [options]
+
+Schedule a future follow-up for this Session's host-attached Inbox.
+Commands: list, put, pause, resume, delete.
+
+put requires --name, --message, and exactly one of --after <ISO duration>,
+--at <RFC3339>, --every <ISO duration>, or --cron <five fields>.
+--cron requires --timezone <IANA>. Recurrences may use --starts-at, --until,
+and --max-occurrences. pause/resume/delete require --name.
+
+No target, identity, profile or endpoint overrides are available.
+Saved means scheduled, not processed. pause/delete do not retract accepted
+Inbox messages. Agent execution failure ends the current wake without an
+automatic execution retry; unacknowledged input may run on later recovery.
+
+Example: alva schedule put --name review --message "Review status" --after PT30M`,
+
   account: `Usage: alva account <subcommand>
 
 Subcommands:

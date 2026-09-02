@@ -5,6 +5,7 @@ import type {
 } from './commandDefinitions.js';
 
 export type EmbeddedCommandAction =
+  | 'schedule-self'
   | 'automation-create'
   | 'automation-inspect'
   | 'automation-update'
@@ -84,6 +85,28 @@ function action(
  */
 export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] =
   [
+    action('schedule list', {}, 'schedule-self'),
+    action(
+      'schedule put',
+      {
+        values: [
+          'name',
+          'message',
+          'after',
+          'at',
+          'every',
+          'cron',
+          'timezone',
+          'starts-at',
+          'until',
+          'max-occurrences',
+        ],
+      },
+      'schedule-self'
+    ),
+    action('schedule pause', { values: ['name'] }, 'schedule-self'),
+    action('schedule resume', { values: ['name'] }, 'schedule-self'),
+    action('schedule delete', { values: ['name'] }, 'schedule-self'),
     route('account whoami', 'whoami'),
     route('account credits wallet', 'credits wallet'),
     route('account credits items', 'credits items', {

@@ -147,6 +147,8 @@ export class AlvaClient {
   readonly originSessionId?: string;
   /** Session profile kind associated with originSessionId. */
   readonly originSessionKind?: string;
+  /** Host-attached file Session target, distinct from the chat origin header. */
+  readonly originInboxPath?: string;
 
   private _fs?: FsResource;
   private _run?: RunResource;
@@ -191,6 +193,7 @@ export class AlvaClient {
     this.signal = config.signal;
     this.originSessionId = config.originSessionId;
     this.originSessionKind = config.originSessionKind;
+    this.originInboxPath = config.originInboxPath;
   }
 
   get fs(): FsResource {

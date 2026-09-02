@@ -34,6 +34,71 @@ describe('SchedulesResource', () => {
     client._request = request;
   });
 
+  it('uses the separate Session graph without changing the SDK result shape', async () => {
+    const inboxPath = '/alva/home/alice/original.inbox.jsonl';
+    request.mockResolvedValue({
+      data: {
+        viewer: {
+          sessionSchedules: {
+            edges: [{ node: { ...wireSchedule, inboxPath } }],
+            pageInfo: { hasNextPage: false },
+          },
+        },
+      },
+    });
+    const schedules = await client.schedules.list({ inboxPath });
+    expect(schedules[0]).toMatchObject({ name: 'heartbeat', status: 'active' });
+    expect(schedules[0]).not.toHaveProperty('inboxPath');
+    expect(request.mock.calls[0][2].body).toMatchObject({
+      query: expect.stringContaining('sessionSchedules(inboxPath: $inboxPath'),
+      variables: { inboxPath, after: null },
+    });
+    expect(request.mock.calls[0][2].body.query).not.toContain('channel {');
+
+    request.mockResolvedValue({
+      data: {
+        updateSessionSchedule: { schedule: wireSchedule, deleted: true },
+      },
+    });
+    await client.schedules.put({
+      inboxPath,
+      name: 'heartbeat',
+      rule: { kind: 'every', interval: 'PT1H' },
+      text: 'Check.',
+    });
+    await client.schedules.pause({ inboxPath, name: 'heartbeat' });
+    await client.schedules.resume({ inboxPath, name: 'heartbeat' });
+    await client.schedules.delete({ inboxPath, name: 'heartbeat' });
+    for (const [, , { body }] of request.mock.calls.slice(1)) {
+      expect(body.query).toContain('updateSessionSchedule(input: $input)');
+      expect(body.variables.input).toMatchObject({
+        inboxPath,
+        name: 'heartbeat',
+      });
+      expect(body.variables.input).not.toHaveProperty('channelId');
+    }
+  });
+
+  it('rejects ambiguous and malformed targets before any request', async () => {
+    for (const target of [
+      {},
+      { channelId: 91, inboxPath: '/alva/home/alice/original.inbox.jsonl' },
+      { inboxPath: '' },
+      { inboxPath: 'relative.inbox.jsonl' },
+      { inboxPath: '/alva/home/alice/../alice/original.inbox.jsonl' },
+      { inboxPath: '/alva/home/alice//original.inbox.jsonl' },
+      { inboxPath: '/alva/home/alice/original.jsonl' },
+      { inboxPath: '/alva/home/alice/original.jsonl.inbox' },
+    ]) {
+      await expect(
+        client.schedules.list(
+          target as Parameters<typeof client.schedules.list>[0]
+        )
+      ).rejects.toThrow();
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('lists canonical schedules through the owner-scoped Channel graph', async () => {
     request.mockResolvedValue({
       data: {

@@ -472,7 +472,17 @@ async function dispatchEmbeddedTarget(
 ): Promise<unknown> {
   const definition = embeddedCommandDefinition(parsed.path);
   let target: ParsedCommand;
-  if (definition.action === 'notification-set-preference') {
+  if (definition.action === 'schedule-self') {
+    if (!client.originInboxPath)
+      throw new CliUsageError(
+        'schedule requires a host-attached Session Inbox',
+        'schedule'
+      );
+    target = {
+      ...parsed,
+      flags: { ...parsed.flags, 'inbox-path': client.originInboxPath },
+    };
+  } else if (definition.action === 'notification-set-preference') {
     const value = parsed.flags['session-completed'];
     if (value !== 'enabled' && value !== 'disabled') {
       throw new CliUsageError(
