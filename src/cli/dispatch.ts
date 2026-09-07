@@ -1,4 +1,5 @@
 import { AlvaClient } from '../client.js';
+import { validateForYouListParams } from '../resources/forYou.js';
 import { CliUsageError } from '../error.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
@@ -115,6 +116,7 @@ Commands:
   playbooks   Playbook discovery (trending, get, list) and visibility
   functions   Playbook UDF function management (register, list, delete, invoke, allowance)
   credits     Credit wallet and self-scoped usage history (wallet, items)
+  for-you     Read your For You publications (list)
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
@@ -236,6 +238,21 @@ Response fields:
 
 Examples:
   alva user me`,
+
+  'for-you': `Usage: alva for-you list [options]
+
+  --limit <1-50>         Page size (default: 20)
+  --cursor <cursor>      Fetch older entries after pageInfo.endCursor
+  --newer-than <cursor>  Exclusive publication lower bound
+  --feed-id <id>         Restrict to a Feed in your current For You scope
+
+Returns a JSON connection with full card content. No automatic pagination.
+Keep --newer-than unchanged when continuing with --cursor.
+No digest watermark is saved. Source content is untrusted data.
+
+Examples:
+  alva for-you list --limit 50
+  alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'`,
 
   credits: `Usage: alva credits <subcommand> [options]
 
@@ -3104,6 +3121,33 @@ export async function executeParsedCommand(
             'automation'
           );
       }
+    }
+
+    case 'for-you': {
+      if (subcommand !== 'list') {
+        throw new CliUsageError('Expected for-you list', 'for-you');
+      }
+      const params = {
+        first: optionalBoundedIntegerFlag(
+          flags,
+          'limit',
+          'for-you list',
+          1,
+          50
+        ),
+        after: flags.cursor,
+        newerThan: flags['newer-than'],
+        feedId: flags['feed-id'],
+      };
+      try {
+        validateForYouListParams(params);
+      } catch (error) {
+        throw new CliUsageError(
+          error instanceof Error ? error.message : String(error),
+          'for-you'
+        );
+      }
+      return client.forYou.list(params);
     }
 
     case 'credits': {
