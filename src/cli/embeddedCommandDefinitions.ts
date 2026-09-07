@@ -392,6 +392,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['first', 'cursor'],
       booleans: ['json'],
     }),
+    route('for-you list', 'for-you list', {
+      values: ['limit', 'cursor', 'newer-than', 'feed-id'],
+    }),
     route('alert enable', 'alert enable', {
       values: ['automation', 'automation-ids', 'channel-id'],
     }),

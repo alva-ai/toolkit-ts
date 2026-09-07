@@ -226,6 +226,10 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('automation delete', { values: ['id'] }),
 
   command('credits wallet'),
+  command('for-you'),
+  command('for-you list', {
+    values: ['limit', 'cursor', 'newer-than', 'feed-id'],
+  }),
   command('credits items', {
     values: ['last', 'start', 'end', 'session-id', 'first', 'after'],
     booleans: ['today'],
