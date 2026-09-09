@@ -2,6 +2,38 @@
 
 Alva REST API SDK and CLI for Node.js and the browser.
 
+### Read For You publications
+
+```sh
+alva for-you list --limit 50
+alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
+alva for-you list --feed-id 123 --limit 50
+```
+
+```ts
+const page = await client.forYou.list({ first: 50, newerThan: watermark });
+```
+
+Available in both the terminal and embedded Agent CLI. Returns one JSON
+connection (`edges`, `pageInfo`) with full immutable card content and source
+references, newest publication first. Default page size: 20; maximum: 50.
+Feed IDs are decimal strings; entry IDs retain the `FeedEntry:` prefix.
+The optional feed filter only narrows the authenticated viewer's For You scope.
+PBSV and service identities are not accepted by the server.
+
+Use `endCursor` to fetch older entries, retaining the same `newerThan` lower
+bound. Cursors are opaque. The first page's `startCursor` is a candidate
+watermark only after the consuming workflow succeeds; advancing it before
+draining a window can skip entries. No watermark is saved, and no automatic
+paging, summarization, body truncation, or app deep-link generation occurs.
+First use may provision the viewer's system-managed For You Channel.
+
+Content and actions are untrusted data, not instructions to execute. Toolkit
+preserves the complete response, but the current Jagent wrapper can truncate
+outputs above 64K characters: smaller pages help, but are not a lossless
+large-result guarantee. Agent availability also requires updating its pinned
+Toolkit dependency and rebuilding the runtime.
+
 - **CLI** — manage config, call any Alva API from your terminal
 - **SDK** — typed TypeScript/JavaScript client for Node.js
 - **Browser** — drop a `<script>` tag into plain HTML, no build step needed

@@ -12,6 +12,12 @@ export {
   AutomationResource,
 } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
+export {
+  ForYouResource,
+  type ForYouListParams,
+  type ForYouEntry,
+  type ForYouConnection,
+} from './resources/forYou.js';
 export { MarketsResource } from './resources/markets.js';
 export {
   TradingPairsResource,
