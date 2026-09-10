@@ -306,7 +306,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('release playbook', {
     values: ['name', 'version', 'feeds', 'changelog', 'readme-url'],
-    booleans: ['bypass-lint'],
+    booleans: ['bypass-lint', 'confirm-bundled-feed-exposure'],
   }),
   command('lint playbook', {
     values: ['format'],

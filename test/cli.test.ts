@@ -2492,7 +2492,14 @@ describe('CLI dispatch', () => {
     ).rejects.toThrow(/readme-url/);
   });
 
-  it('dispatches release playbook with --readme-url', async () => {
+  it.each([
+    [false, [], undefined],
+    [false, ['--confirm-bundled-feed-exposure=false'], false],
+    [false, ['--confirm-bundled-feed-exposure'], true],
+    [true, [], undefined],
+    [true, ['--confirm-bundled-feed-exposure=false'], false],
+    [true, ['--confirm-bundled-feed-exposure'], true],
+  ] as const)('dispatches playbook release (embedded=%s) with flags %j', async (embedded, confirmationFlags, confirmation) => {
     const client = makeClient();
     // The release-playbook code path now hard-gates on the design linter,
     // which (a) reads ~/playbooks/<name>/index.html via ALFS and
@@ -2517,9 +2524,8 @@ components: {}
       ok: true,
       text: () => Promise.resolve(TEST_CONTRACT_YAML),
     } as unknown as Response);
-    await dispatch(client, [
-      'release',
-      'playbook',
+    await (embedded ? dispatchEmbedded : dispatch)(client, [
+      ...(embedded ? ['playbooks', 'release'] : ['release', 'playbook']),
       '--name',
       'btc-dashboard',
       '--version',
@@ -2530,6 +2536,7 @@ components: {}
       'Initial release',
       '--readme-url',
       '/alva/home/alice/playbooks/btc-dashboard/README.md',
+      ...confirmationFlags,
     ]);
     expect(client.release.playbook).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2538,6 +2545,7 @@ components: {}
         feeds: [{ feed_id: 100 }],
         changelog: 'Initial release',
         readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+        confirm_bundled_feed_exposure: confirmation,
       })
     );
     expect(client.fs.read).toHaveBeenCalledWith({

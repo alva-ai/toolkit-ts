@@ -397,10 +397,11 @@ describe('ReleaseResource', () => {
     );
   });
 
-  it('playbook() sends POST /api/v1/release/playbook', async () => {
+  it.each([undefined, false, true])('playbook() forwards exposure consent %s', async (confirmation) => {
     const client = makeClient();
     const release = new ReleaseResource(client);
     await release.playbook({
+      confirm_bundled_feed_exposure: confirmation,
       name: 'btc-dashboard',
       version: 'v1.0.0',
       feeds: [{ feed_id: 1 }],
@@ -417,6 +418,7 @@ describe('ReleaseResource', () => {
           feeds: [{ feed_id: 1 }],
           changelog: 'Initial release',
           readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+          confirm_bundled_feed_exposure: confirmation,
         },
       }
     );

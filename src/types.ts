@@ -631,6 +631,8 @@ export interface PlaybookDraftResponse {
 }
 
 export interface PlaybookReleaseRequest {
+  /** Explicit consent to deliver bundled non-public Feeds to the Playbook audience. */
+  confirm_bundled_feed_exposure?: boolean;
   name: string;
   version: string;
   feeds: Array<{ feed_id: number; feed_major?: number }>;
