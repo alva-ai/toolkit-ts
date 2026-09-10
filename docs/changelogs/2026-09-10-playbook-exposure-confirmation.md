@@ -64,5 +64,10 @@ The managed full run `e2e-437272-dlbi5q3stb3h` passed
 `TestCLI_ReleaseFeedAndPlaybook` (9.19s), including HTTP 412 / FAILED_PRECONDITION
 without consent and successful publication of the same version with consent.
 `TestCLI_PlaybookComments`, `TestCLI_Remix`, and the missing-HTML negative test
-also passed. The remainder of full E2E is in progress; publication awaits its
-required result.
+also passed. Full E2E stopped after 793.032s at the separate existing
+`TestConversationUsageProviderParity/claude`: the 180-second request returned no
+PONG text. Sandbox readiness completed in 2.4s; the remaining provider/runtime
+failure is not diagnosed by this change. There were 69 passed outcomes, 29
+historical quarantined skips, and 2 failures (the subtest and its parent).
+Owned cleanup passed in 8.716s. No retry, timeout increase, or new quarantine was
+introduced. Required full coverage remains incomplete, so publication is blocked.
