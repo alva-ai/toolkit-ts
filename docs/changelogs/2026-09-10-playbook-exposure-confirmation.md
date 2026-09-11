@@ -52,11 +52,11 @@ serialization, existing gateway forwarding, and backend enforcement. There is no
 automatic confirmation or retry. Omitted values remain omitted on the wire.
 No backend/gateway product modification or deployment ordering requirement exists.
 
-| Intent | Evidence | Status |
-| --- | --- | --- |
-| Explicit SDK consent | Omitted/false/true resource tests | DONE |
-| Both CLI routes | Six route/boolean boundary cases | DONE |
-| Preserve backend guard | Real negative/positive E2E | DONE |
+| Intent                 | Evidence                          | Status |
+| ---------------------- | --------------------------------- | ------ |
+| Explicit SDK consent   | Omitted/false/true resource tests | DONE   |
+| Both CLI routes        | Six route/boolean boundary cases  | DONE   |
+| Preserve backend guard | Real negative/positive E2E        | DONE   |
 
 ## 8. Remaining Work
 

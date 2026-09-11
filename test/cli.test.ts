@@ -2499,19 +2499,21 @@ describe('CLI dispatch', () => {
     [true, [], undefined],
     [true, ['--confirm-bundled-feed-exposure=false'], false],
     [true, ['--confirm-bundled-feed-exposure'], true],
-  ] as const)('dispatches playbook release (embedded=%s) with flags %j', async (embedded, confirmationFlags, confirmation) => {
-    const client = makeClient();
-    // The release-playbook code path now hard-gates on the design linter,
-    // which (a) reads ~/playbooks/<name>/index.html via ALFS and
-    // (b) fetches the active design contract from the CDN. Stub both so
-    // the test stays hermetic.
-    client.fs.read = vi
-      .fn()
-      .mockResolvedValue(
-        '<html><head><style>body{font-family:Delight}</style></head>' +
-          '<body><div class="playbook-container"><p>ok</p></div></body></html>'
-      );
-    const TEST_CONTRACT_YAML = `
+  ] as const)(
+    'dispatches playbook release (embedded=%s) with flags %j',
+    async (embedded, confirmationFlags, confirmation) => {
+      const client = makeClient();
+      // The release-playbook code path now hard-gates on the design linter,
+      // which (a) reads ~/playbooks/<name>/index.html via ALFS and
+      // (b) fetches the active design contract from the CDN. Stub both so
+      // the test stays hermetic.
+      client.fs.read = vi
+        .fn()
+        .mockResolvedValue(
+          '<html><head><style>body{font-family:Delight}</style></head>' +
+            '<body><div class="playbook-container"><p>ok</p></div></body></html>'
+        );
+      const TEST_CONTRACT_YAML = `
 version: 1
 global:
   required-container: { selector: ".playbook-container", must-exist: true }
@@ -2520,39 +2522,40 @@ global:
   links: { anchor-required-attrs: ["target", "rel"] }
 components: {}
 `;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(TEST_CONTRACT_YAML),
-    } as unknown as Response);
-    await (embedded ? dispatchEmbedded : dispatch)(client, [
-      ...(embedded ? ['playbooks', 'release'] : ['release', 'playbook']),
-      '--name',
-      'btc-dashboard',
-      '--version',
-      'v1.0.0',
-      '--feeds',
-      '[{"feed_id":100}]',
-      '--changelog',
-      'Initial release',
-      '--readme-url',
-      '/alva/home/alice/playbooks/btc-dashboard/README.md',
-      ...confirmationFlags,
-    ]);
-    expect(client.release.playbook).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc-dashboard',
-        version: 'v1.0.0',
-        feeds: [{ feed_id: 100 }],
-        changelog: 'Initial release',
-        readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
-        confirm_bundled_feed_exposure: confirmation,
-      })
-    );
-    expect(client.fs.read).toHaveBeenCalledWith({
-      path: '~/playbooks/btc-dashboard/index.html',
-    });
-    fetchSpy.mockRestore();
-  });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(TEST_CONTRACT_YAML),
+      } as unknown as Response);
+      await (embedded ? dispatchEmbedded : dispatch)(client, [
+        ...(embedded ? ['playbooks', 'release'] : ['release', 'playbook']),
+        '--name',
+        'btc-dashboard',
+        '--version',
+        'v1.0.0',
+        '--feeds',
+        '[{"feed_id":100}]',
+        '--changelog',
+        'Initial release',
+        '--readme-url',
+        '/alva/home/alice/playbooks/btc-dashboard/README.md',
+        ...confirmationFlags,
+      ]);
+      expect(client.release.playbook).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'btc-dashboard',
+          version: 'v1.0.0',
+          feeds: [{ feed_id: 100 }],
+          changelog: 'Initial release',
+          readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+          confirm_bundled_feed_exposure: confirmation,
+        })
+      );
+      expect(client.fs.read).toHaveBeenCalledWith({
+        path: '~/playbooks/btc-dashboard/index.html',
+      });
+      fetchSpy.mockRestore();
+    }
+  );
 
   it('dispatches sdk partitions', async () => {
     const client = makeClient();
