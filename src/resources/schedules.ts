@@ -32,22 +32,23 @@ export interface AgentSchedule {
   updatedAt: string;
 }
 
-export interface PutAgentScheduleParams {
-  channelId: string | number;
+export type AgentScheduleTarget =
+  | { channelId: string | number; inboxPath?: never }
+  | { inboxPath: string; channelId?: never };
+
+export type PutAgentScheduleParams = AgentScheduleTarget & {
   name: string;
   rule: AgentScheduleRule | { kind: 'after'; duration: string };
   bounds?: AgentScheduleBounds;
   text: string;
-}
+};
 
-export interface ManageAgentScheduleParams {
-  channelId: string | number;
+export type ManageAgentScheduleParams = AgentScheduleTarget & {
   name: string;
-}
+};
 
 const SCHEDULE_FIELDS = `
   id
-  channel { id }
   name
   rule { kind atMs everyIntervalSeconds cronExpression cronTimezone }
   bounds { startsAtMs untilMs maxOccurrences }
@@ -65,7 +66,7 @@ const LIST_SCHEDULES = `
 query ToolkitListAgentSchedules($channelId: ID!, $after: String) {
   viewer { channel(id: $channelId) {
     schedules(input: { first: 64, after: $after }) {
-      edges { node { ${SCHEDULE_FIELDS} } }
+      edges { node { channel { id } ${SCHEDULE_FIELDS} } }
       pageInfo { hasNextPage endCursor }
     }
   } }
@@ -74,6 +75,22 @@ query ToolkitListAgentSchedules($channelId: ID!, $after: String) {
 const UPDATE_SCHEDULE = `
 mutation ToolkitUpdateAgentSchedule($input: UpdateChannelScheduleInput!) {
   updateChannelSchedule(input: $input) {
+    schedule { channel { id } ${SCHEDULE_FIELDS} }
+    deleted
+  }
+}`.trim();
+
+const LIST_SESSION_SCHEDULES = `
+query ToolkitListSessionSchedules($inboxPath: String!, $after: String) {
+  viewer { sessionSchedules(inboxPath: $inboxPath, input: { first: 64, after: $after }) {
+    edges { node { ${SCHEDULE_FIELDS} } }
+    pageInfo { hasNextPage endCursor }
+  } }
+}`.trim();
+
+const UPDATE_SESSION_SCHEDULE = `
+mutation ToolkitUpdateSessionSchedule($input: UpdateSessionScheduleInput!) {
+  updateSessionSchedule(input: $input) {
     schedule { ${SCHEDULE_FIELDS} }
     deleted
   }
@@ -118,7 +135,6 @@ const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
 
 interface WireSchedule {
   id: string;
-  channel: { id: string };
   name: string;
   rule: {
     kind: 'AT' | 'EVERY' | 'CRON';
@@ -157,25 +173,33 @@ interface ScheduleConnection {
 interface ListSchedulesData {
   viewer?: {
     channel?: { schedules?: ScheduleConnection | null } | null;
+    sessionSchedules?: ScheduleConnection | null;
   } | null;
+}
+
+interface ScheduleMutationResult {
+  schedule?: WireSchedule | null;
+  deleted?: boolean;
 }
 
 export class SchedulesResource {
   constructor(private client: AlvaClient) {}
 
-  async list(params: { channelId: string | number }): Promise<AgentSchedule[]> {
+  async list(params: AgentScheduleTarget): Promise<AgentSchedule[]> {
     this.client._requireAuth();
-    const id = channelID(params.channelId);
+    const target = targetInput(params);
+    const inbox = 'inboxPath' in target;
     const schedules: AgentSchedule[] = [];
     let after: string | null = null;
     const seenCursors = new Set<string>();
     for (;;) {
       const data: ListSchedulesData = await this.graphql<ListSchedulesData>(
-        LIST_SCHEDULES,
-        { channelId: id, after }
+        inbox ? LIST_SESSION_SCHEDULES : LIST_SCHEDULES,
+        { ...target, after }
       );
-      const connection: ScheduleConnection | null | undefined =
-        data.viewer?.channel?.schedules;
+      const connection: ScheduleConnection | null | undefined = inbox
+        ? data.viewer?.sessionSchedules
+        : data.viewer?.channel?.schedules;
       if (!connection?.edges) throw scheduleNotFound();
       for (const edge of connection.edges) {
         if (!edge?.node) throw scheduleEmptyResponse();
@@ -192,17 +216,14 @@ export class SchedulesResource {
   async put(params: PutAgentScheduleParams): Promise<AgentSchedule> {
     this.client._requireAuth();
     const input = {
-      channelId: channelID(params.channelId),
+      ...targetInput(params),
       name: requireName(params.name),
       definition: {
         ...ruleInput(params.rule, params.bounds),
         message: { text: requireText(params.text) },
       },
     };
-    const data = await this.graphql<{
-      updateChannelSchedule?: { schedule?: WireSchedule | null } | null;
-    }>(UPDATE_SCHEDULE, { input });
-    const schedule = data.updateChannelSchedule?.schedule;
+    const schedule = (await this.update(input))?.schedule;
     if (!schedule) throw scheduleEmptyResponse();
     return fromWireSchedule(schedule);
   }
@@ -217,13 +238,11 @@ export class SchedulesResource {
 
   async delete(params: ManageAgentScheduleParams): Promise<void> {
     this.client._requireAuth();
-    const data = await this.graphql<{
-      updateChannelSchedule?: { deleted?: boolean } | null;
-    }>(UPDATE_SCHEDULE, {
-      input: { ...managementInput(params), lifecycle: 'REMOVED' },
+    const result = await this.update({
+      ...managementInput(params),
+      lifecycle: 'REMOVED',
     });
-    if (data.updateChannelSchedule?.deleted !== true)
-      throw scheduleEmptyResponse();
+    if (result?.deleted !== true) throw scheduleEmptyResponse();
   }
 
   /** Resolve the authenticated viewer's unique Agent Channel for CLI defaults. */
@@ -244,14 +263,22 @@ export class SchedulesResource {
     params: ManageAgentScheduleParams
   ): Promise<AgentSchedule> {
     this.client._requireAuth();
-    const data = await this.graphql<{
-      updateChannelSchedule?: { schedule?: WireSchedule | null } | null;
-    }>(UPDATE_SCHEDULE, {
-      input: { ...managementInput(params), lifecycle },
-    });
-    const schedule = data.updateChannelSchedule?.schedule;
+    const schedule = (
+      await this.update({ ...managementInput(params), lifecycle })
+    )?.schedule;
     if (!schedule) throw scheduleEmptyResponse();
     return fromWireSchedule(schedule);
+  }
+
+  private async update(
+    input: Record<string, unknown>
+  ): Promise<ScheduleMutationResult | null | undefined> {
+    const inbox = 'inboxPath' in input;
+    const data = await this.graphql<{
+      updateChannelSchedule?: ScheduleMutationResult | null;
+      updateSessionSchedule?: ScheduleMutationResult | null;
+    }>(inbox ? UPDATE_SESSION_SCHEDULE : UPDATE_SCHEDULE, { input });
+    return inbox ? data.updateSessionSchedule : data.updateChannelSchedule;
   }
 
   private async graphql<T>(
@@ -446,9 +473,43 @@ function managementInput(
   params: ManageAgentScheduleParams
 ): Record<string, string> {
   return {
-    channelId: channelID(params.channelId),
+    ...targetInput(params),
     name: requireName(params.name),
   };
+}
+
+function targetInput(target: AgentScheduleTarget): Record<string, string> {
+  if ((target.channelId !== undefined) === (target.inboxPath !== undefined))
+    throw invalid('exactly one of channelId or inboxPath is required');
+  if (target.channelId !== undefined)
+    return { channelId: channelID(target.channelId) };
+  const path = target.inboxPath;
+  const size = typeof path === 'string' ? utf8Size(path) : undefined;
+  if (
+    typeof path !== 'string' ||
+    size === undefined ||
+    size > 2048 ||
+    !path.startsWith('/') ||
+    path.includes('\0') ||
+    path
+      .slice(1)
+      .split('/')
+      .some((segment) => segment === '' || segment === '.' || segment === '..')
+  )
+    throw invalid('inboxPath must be a canonical absolute ALFS Inbox path');
+  const transcript = path.endsWith('.inbox.jsonl')
+    ? path.slice(0, -'.inbox.jsonl'.length) + '.jsonl'
+    : path.endsWith('.inbox') && !path.endsWith('.jsonl.inbox')
+      ? path.slice(0, -'.inbox'.length)
+      : undefined;
+  if (
+    transcript === undefined ||
+    /\.inbox(?:\.jsonl)?$/.test(transcript) ||
+    /\.lock(?:\.recovery|\.heartbeat-[^/]+|\.stale-[^/]+)?$/.test(transcript) ||
+    transcript.endsWith('/.jsonl')
+  )
+    throw invalid('inboxPath must identify a standard Session Inbox sidecar');
+  return { inboxPath: path };
 }
 
 function channelID(value: string | number): string {

@@ -32,6 +32,7 @@ export {
   type AgentScheduleFailureCode,
   type AgentScheduleRule,
   type AgentScheduleStatus,
+  type AgentScheduleTarget,
   type ManageAgentScheduleParams,
   type PutAgentScheduleParams,
 } from './resources/schedules.js';
