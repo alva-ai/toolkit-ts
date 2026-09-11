@@ -315,7 +315,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     }),
     route('playbooks release', 'release playbook', {
       values: ['name', 'version', 'feeds', 'changelog', 'readme-url'],
-      booleans: ['bypass-lint'],
+      booleans: ['bypass-lint', 'confirm-bundled-feed-exposure'],
     }),
     route('playbooks lint', 'lint playbook', {
       values: ['format'],
