@@ -15,6 +15,8 @@ export interface AlvaClientConfig {
   originSessionId?: string;
   /** Session profile kind used to gate attached-context CLI commands. */
   originSessionKind?: string;
+  /** Host-attached canonical Session Inbox path; embedded scheduling is self-only. */
+  originInboxPath?: string;
 }
 
 // --- User ---

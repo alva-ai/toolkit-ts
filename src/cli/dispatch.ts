@@ -506,7 +506,7 @@ Build-time verify (fire once, then poll up to 5 minutes):
 
   schedule: `Usage: alva schedule <subcommand> [options]
 
-Manage named future and recurring work for an Alva Channel Agent.
+Manage named future and recurring work for an Alva Channel Agent or Session Inbox.
 
 Subcommands:
   list       List schedules
@@ -517,6 +517,7 @@ Subcommands:
 
 Common flags:
   --channel-id <id>      Target Channel; omit for your Agent Channel
+  --inbox-path <path>    Existing Session Inbox; mutually exclusive with --channel-id
   --name <name>          Stable schedule name
 
 Put flags:
@@ -532,6 +533,7 @@ Examples:
   alva schedule put --name review --message "Review status" --after PT30M
   alva schedule put --name market-open --message "Review the open" --cron "30 9 * * 1-5" --timezone America/New_York
   alva schedule list
+  alva schedule put --inbox-path /alva/home/alice/session.inbox.jsonl --name review --message "Review status" --after PT30M
   alva schedule pause --name market-open`,
 
   'service-account': `Usage: alva service-account <subcommand> [options]
@@ -2031,11 +2033,23 @@ function parseCreditsDurationMs(value: string): number {
   return durationMs;
 }
 
-async function scheduleChannelId(
+async function scheduleTarget(
   client: AlvaClient,
   flags: Record<string, string>
-): Promise<string> {
-  return flags['channel-id'] ?? client.schedules.agentChannelId();
+): Promise<import('../resources/schedules.js').AgentScheduleTarget> {
+  if (flags['inbox-path'] !== undefined) {
+    if (flags['channel-id'] !== undefined)
+      throw new CliUsageError(
+        '--inbox-path and --channel-id are mutually exclusive',
+        'schedule'
+      );
+    if (flags['inbox-path'] === '')
+      throw new CliUsageError('--inbox-path must not be empty', 'schedule');
+    return { inboxPath: flags['inbox-path'] };
+  }
+  return {
+    channelId: flags['channel-id'] ?? (await client.schedules.agentChannelId()),
+  };
 }
 
 function scheduleRuleFromFlags(
@@ -2906,8 +2920,7 @@ export async function executeParsedCommand(
       }
       switch (subcommand) {
         case 'list': {
-          const channelId = await scheduleChannelId(client, flags);
-          return client.schedules.list({ channelId });
+          return client.schedules.list(await scheduleTarget(client, flags));
         }
         case 'put': {
           const rule = scheduleRuleFromFlags(flags);
@@ -2923,9 +2936,9 @@ export async function executeParsedCommand(
           }
           const name = requireFlag(flags, 'name', 'schedule put');
           const text = requireFlag(flags, 'message', 'schedule put');
-          const channelId = await scheduleChannelId(client, flags);
+          const target = await scheduleTarget(client, flags);
           return client.schedules.put({
-            channelId,
+            ...target,
             name,
             text,
             rule,
@@ -2934,25 +2947,25 @@ export async function executeParsedCommand(
         }
         case 'pause': {
           const name = requireFlag(flags, 'name', 'schedule pause');
-          const channelId = await scheduleChannelId(client, flags);
+          const target = await scheduleTarget(client, flags);
           return client.schedules.pause({
-            channelId,
+            ...target,
             name,
           });
         }
         case 'resume': {
           const name = requireFlag(flags, 'name', 'schedule resume');
-          const channelId = await scheduleChannelId(client, flags);
+          const target = await scheduleTarget(client, flags);
           return client.schedules.resume({
-            channelId,
+            ...target,
             name,
           });
         }
         case 'delete': {
           const name = requireFlag(flags, 'name', 'schedule delete');
-          const channelId = await scheduleChannelId(client, flags);
+          const target = await scheduleTarget(client, flags);
           await client.schedules.delete({
-            channelId,
+            ...target,
             name,
           });
           return { deleted: true };
