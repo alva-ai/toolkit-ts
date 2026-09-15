@@ -13,7 +13,7 @@ describe('StewardResource', () => {
   it('records a decision through the gateway mutation', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
-      data: { stewardDecideDelivery: { state: 'consumed' } },
+      data: { updateStewardDelivery: { delivery: { state: 'consumed' } } },
     });
     const result = await c.steward.decide({
       inboxPath,
@@ -24,13 +24,12 @@ describe('StewardResource', () => {
     expect(result).toEqual({ state: 'consumed' });
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
-        query: expect.stringContaining('stewardDecideDelivery'),
+        query: expect.stringContaining('updateStewardDelivery'),
         variables: {
           input: {
             inboxPath,
             deliveryId: '123',
-            decision: 'DIGEST',
-            reason: 'routine event',
+            decision: { decision: 'DIGEST', reason: 'routine event' },
           },
         },
       },
@@ -43,12 +42,16 @@ describe('StewardResource', () => {
       .spyOn(c, '_request')
       .mockResolvedValueOnce({
         data: {
-          stewardForwardAlert: { channelMessageId: '77', state: 'sent' },
+          updateStewardDelivery: {
+            delivery: { state: 'sent', channelMessageId: '77' },
+          },
         },
       })
       .mockResolvedValueOnce({
         data: {
-          stewardSendChannelMessage: { channelMessageId: '78', requestId: 'x' },
+          postStewardMessage: {
+            message: { channelMessageId: '78', requestId: 'x' },
+          },
         },
       });
     await c.steward.forward({ inboxPath, deliveryId: '5' });
@@ -56,9 +59,9 @@ describe('StewardResource', () => {
     const uuid = /^[0-9a-f-]{36}$/;
     const forwardInput = (
       request.mock.calls[0][2] as {
-        body: { variables: { input: { requestId: string } } };
+        body: { variables: { input: { forward: { requestId: string } } } };
       }
-    ).body.variables.input;
+    ).body.variables.input.forward;
     const sendInput = (
       request.mock.calls[1][2] as {
         body: {

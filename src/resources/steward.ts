@@ -108,18 +108,18 @@ const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
 };
 
 const DECIDE = `
-mutation ToolkitStewardDecide($input: StewardDecideDeliveryInput!) {
-  stewardDecideDelivery(input: $input) { state }
+mutation ToolkitStewardDecide($input: UpdateStewardDeliveryInput!) {
+  updateStewardDelivery(input: $input) { delivery { deliveryId state } }
 }`.trim();
 
 const FORWARD = `
-mutation ToolkitStewardForward($input: StewardForwardAlertInput!) {
-  stewardForwardAlert(input: $input) { channelMessageId state }
+mutation ToolkitStewardForward($input: UpdateStewardDeliveryInput!) {
+  updateStewardDelivery(input: $input) { delivery { deliveryId state channelMessageId } }
 }`.trim();
 
 const SEND = `
-mutation ToolkitStewardSend($input: StewardSendChannelMessageInput!) {
-  stewardSendChannelMessage(input: $input) { channelMessageId requestId }
+mutation ToolkitStewardSend($input: PostStewardMessageInput!) {
+  postStewardMessage(input: $input) { message { channelMessageId requestId } }
 }`.trim();
 
 const PENDING = `
@@ -138,8 +138,8 @@ query ToolkitStewardPending($inboxPath: String!, $input: StewardDigestPendingInp
 }`.trim();
 
 const BRIEFED = `
-mutation ToolkitStewardBriefed($input: StewardMarkBriefedInput!) {
-  stewardMarkBriefed(input: $input) { ok }
+mutation ToolkitStewardBriefed($input: CompleteStewardBriefInput!) {
+  completeStewardBrief(input: $input) { ok }
 }`.trim();
 
 const DECISIONS: ReadonlySet<string> = new Set([
@@ -233,50 +233,60 @@ export class StewardResource {
     const reason = params.reason?.trim();
     if (!reason) throw invalid('a decision reason is required');
     const data = await this.graphql<{
-      stewardDecideDelivery?: StewardDecideResult | null;
+      updateStewardDelivery?: { delivery?: { state: string } | null } | null;
     }>(DECIDE, {
       input: {
         inboxPath: requireInboxPath(params),
         deliveryId: requireDeliveryId(params.deliveryId),
-        decision: requireDecision(params.decision).toUpperCase(),
-        reason,
+        decision: {
+          decision: requireDecision(params.decision).toUpperCase(),
+          reason,
+        },
       },
     });
-    if (!data.stewardDecideDelivery) throw emptyResponse();
-    return data.stewardDecideDelivery;
+    const delivery = data.updateStewardDelivery?.delivery;
+    if (!delivery) throw emptyResponse();
+    return { state: delivery.state };
   }
 
   async forward(params: StewardForwardParams): Promise<StewardForwardResult> {
     this.client._requireAuth();
     const data = await this.graphql<{
-      stewardForwardAlert?: StewardForwardResult | null;
+      updateStewardDelivery?: {
+        delivery?: { state: string; channelMessageId?: string | null } | null;
+      } | null;
     }>(FORWARD, {
       input: {
         inboxPath: requireInboxPath(params),
         deliveryId: requireDeliveryId(params.deliveryId),
-        requestId: requireRequestId(params.requestId),
+        forward: { requestId: requireRequestId(params.requestId) },
       },
     });
-    if (!data.stewardForwardAlert) throw emptyResponse();
-    return data.stewardForwardAlert;
+    const delivery = data.updateStewardDelivery?.delivery;
+    if (!delivery || !delivery.channelMessageId) throw emptyResponse();
+    return {
+      channelMessageId: delivery.channelMessageId,
+      state: delivery.state,
+    };
   }
 
   async send(params: StewardSendParams): Promise<StewardSendResult> {
     this.client._requireAuth();
-    const body = params.body?.trim();
-    if (!body) throw invalid('a message body is required');
+    if (typeof params.body !== 'string' || params.body.trim() === '')
+      throw invalid('a message body is required');
     const data = await this.graphql<{
-      stewardSendChannelMessage?: StewardSendResult | null;
+      postStewardMessage?: { message?: StewardSendResult | null } | null;
     }>(SEND, {
       input: {
         inboxPath: requireInboxPath(params),
         requestId: requireRequestId(params.requestId),
-        body,
+        body: params.body,
         deliveryIds: requireDeliveryIds(params.deliveryIds),
       },
     });
-    if (!data.stewardSendChannelMessage) throw emptyResponse();
-    return data.stewardSendChannelMessage;
+    const message = data.postStewardMessage?.message;
+    if (!message) throw emptyResponse();
+    return message;
   }
 
   async pending(params: StewardPendingParams): Promise<StewardPendingPage> {
@@ -321,7 +331,7 @@ export class StewardResource {
     const digestRunId = params.digestRunId?.trim();
     if (!digestRunId) throw invalid('a digest run id is required');
     const data = await this.graphql<{
-      stewardMarkBriefed?: { ok?: boolean } | null;
+      completeStewardBrief?: { ok?: boolean } | null;
     }>(BRIEFED, {
       input: {
         inboxPath: requireInboxPath(params),
@@ -329,7 +339,7 @@ export class StewardResource {
         digestRunId,
       },
     });
-    if (data.stewardMarkBriefed?.ok !== true) throw emptyResponse();
+    if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
     return { ok: true };
   }
 
