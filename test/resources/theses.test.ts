@@ -125,7 +125,11 @@ describe('ThesesResource', () => {
         },
       ],
       ['DELETE', `/api/v1/theses/${MAX_ID}`],
-      ['POST', '/api/v1/theses/rewrite', { body: { body: 'draft' } }],
+      [
+        'POST',
+        '/api/v1/theses/rewrite',
+        { body: { body: 'draft', mode: 'reformat' } },
+      ],
     ]);
   });
 
@@ -288,6 +292,58 @@ describe('ThesesResource', () => {
       ).rejects.toMatchObject({
         code: 'INVALID_RESPONSE',
       });
+    }
+  );
+
+  it.each(['reformat', 'shorten', 'enrich'] as const)(
+    'sends canonical rewrite mode %s exactly once',
+    async (mode) => {
+      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+        _request: ReturnType<typeof vi.fn>;
+      };
+      client._request = vi.fn().mockResolvedValue({ body: 'candidate' });
+
+      await expect(
+        client.theses.rewrite({ body: 'draft', mode })
+      ).resolves.toEqual({
+        body: 'candidate',
+      });
+      expect(client._request).toHaveBeenCalledTimes(1);
+      expect(client._request).toHaveBeenCalledWith(
+        'POST',
+        '/api/v1/theses/rewrite',
+        { body: { body: 'draft', mode } }
+      );
+    }
+  );
+
+  it('sends reformat when rewrite mode is omitted', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue({ body: 'candidate' });
+
+    await client.theses.rewrite({ body: 'draft' });
+
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/theses/rewrite',
+      { body: { body: 'draft', mode: 'reformat' } }
+    );
+  });
+
+  it.each(['', ' ', 'rewrite', null])(
+    'rejects invalid rewrite mode %j without an HTTP request',
+    async (mode) => {
+      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+        _request: ReturnType<typeof vi.fn>;
+      };
+      client._request = vi.fn();
+
+      await expect(
+        client.theses.rewrite({ body: 'draft', mode: mode as never })
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(client._request).not.toHaveBeenCalled();
     }
   );
 });

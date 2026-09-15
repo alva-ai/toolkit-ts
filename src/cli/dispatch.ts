@@ -24,7 +24,10 @@ import {
   type PlaybookVisibility,
   type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
-import type { ThesisVisibility } from '../resources/theses.js';
+import type {
+  ThesisRewriteMode,
+  ThesisVisibility,
+} from '../resources/theses.js';
 
 import {
   formatTrendingPlaybooks,
@@ -1443,7 +1446,7 @@ Subcommands:
   update   Replaces document fields: body, title, entities, visibility (all sent in full)
   close    Close the current author version with an optional note
   delete   Delete a thesis
-  rewrite  Explicitly request a body rewrite; never called by another command
+  rewrite  Explicitly request a candidate body rewrite; never called by another command
 
 Body input (create, update, rewrite): choose exactly one:
   --body <text>         Literal text
@@ -1462,7 +1465,14 @@ Other flags:
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
   close   --id <id> --expected-author-version-id <id> [--note <text>]
   delete  --id <id>
-  rewrite --body ...
+  rewrite --body ... [--mode reformat|shorten|enrich]
+
+Rewrite mode defaults only when omitted, and the toolkit always sends the
+canonical default \`reformat\`. \`shorten\` removes redundancy while retaining the
+core view, reasons, and qualifiers. \`enrich\` only expands supplied reasoning;
+it must not invent factual evidence, numbers, or citations. Rewrite returns a
+candidate only: it never creates, updates, retries, or chooses a mode from body
+length or errors.
 
 IDs are decimal strings, never JavaScript numbers; provide at most 20 entity
 IDs. Body text must be nonblank,
@@ -1472,7 +1482,7 @@ valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 Examples:
   alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
   alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
-  printf '%s' 'Draft body' | alva thesis rewrite --body-stdin`,
+  printf '%s' 'Draft body' | alva thesis rewrite --body-stdin --mode shorten`,
 };
 
 export type DispatchRuntime = 'nodejs' | 'jagent';
@@ -2036,6 +2046,16 @@ function thesisVisibility(value: string): ThesisVisibility {
   if (value === 'public' || value === 'private') return value;
   throw new CliUsageError(
     `--visibility must be public or private for 'thesis', got '${value}'`,
+    'thesis'
+  );
+}
+
+function thesisRewriteMode(value: string): ThesisRewriteMode {
+  if (value === 'reformat' || value === 'shorten' || value === 'enrich') {
+    return value;
+  }
+  throw new CliUsageError(
+    `--mode must be reformat, shorten, or enrich for 'thesis rewrite', got '${value}'`,
     'thesis'
   );
 }
@@ -3165,6 +3185,10 @@ export async function executeParsedCommand(
         case 'rewrite':
           return client.theses.rewrite({
             body: await thesisBodyFromFlags(flags, 'thesis rewrite', deps),
+            mode:
+              flags.mode === undefined
+                ? 'reformat'
+                : thesisRewriteMode(flags.mode),
           });
         default:
           throw new CliUsageError(

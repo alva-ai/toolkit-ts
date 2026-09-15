@@ -16,6 +16,7 @@ export {
   ThesesResource,
   type Thesis,
   type ThesisID,
+  type ThesisRewriteMode,
   type ThesisVisibility,
   type ThesisResponse,
   type CreateThesisParams,

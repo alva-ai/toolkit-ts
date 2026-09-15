@@ -4,6 +4,8 @@ import { AlvaError } from '../error.js';
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
 export type ThesisVisibility = 'public' | 'private';
+/** Canonical server-supported candidate rewrite operation. */
+export type ThesisRewriteMode = 'reformat' | 'shorten' | 'enrich';
 
 export interface Thesis {
   id: ThesisID;
@@ -52,6 +54,8 @@ export interface CloseThesisParams {
 
 export interface RewriteThesisParams {
   body: string;
+  /** Omitted selects the canonical `reformat` mode. */
+  mode?: ThesisRewriteMode;
 }
 
 export interface RewriteThesisResponse {
@@ -141,11 +145,15 @@ export class ThesesResource {
   async rewrite(params: RewriteThesisParams): Promise<RewriteThesisResponse> {
     this.client._requireAuth();
     const body = requireBody(params.body);
+    // Only omission selects the default. Empty, whitespace, null, and unknown
+    // runtime values must remain visible validation failures.
+    const mode =
+      params.mode === undefined ? 'reformat' : requireRewriteMode(params.mode);
     const response = await this.client._request(
       'POST',
       '/api/v1/theses/rewrite',
       {
-        body: { body },
+        body: { body, mode },
       }
     );
     if (!isRecord(response) || typeof response.body !== 'string') {
@@ -256,6 +264,14 @@ function requireVisibility(value: string): ThesisVisibility {
     throw invalidArgument('visibility must be public or private');
   }
   return visibility;
+}
+
+function requireRewriteMode(value: unknown): ThesisRewriteMode {
+  const mode = requireText(value, 'mode');
+  if (mode === 'reformat' || mode === 'shorten' || mode === 'enrich') {
+    return mode;
+  }
+  throw invalidArgument('mode must be reformat, shorten, or enrich');
 }
 
 function requireText(value: unknown, field: string): string {
