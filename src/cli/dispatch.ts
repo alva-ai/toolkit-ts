@@ -1472,7 +1472,8 @@ Examples:
   thesis: `Usage: alva thesis <subcommand> [options]
 
 Create, read, update, close, delete, or explicitly rewrite an authored thesis.
-No Signal or Alert is created, and create/update never rewrite text automatically.
+Backend owns Signal/Alert setup; the CLI never starts them separately.
+Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
@@ -1501,7 +1502,8 @@ Other flags:
   delete  --id <id>
   rewrite --body ...
 
-IDs are decimal strings, never JavaScript numbers. Body text must be nonblank,
+IDs are decimal strings, never JavaScript numbers; provide at most 20 entity
+IDs. Body text must be nonblank,
 valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
 

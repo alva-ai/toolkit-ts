@@ -176,6 +176,14 @@ describe('ThesesResource', () => {
         entity_ids: ['9223372036854775808'],
       },
     ],
+    [
+      'more than 20 entity IDs',
+      {
+        request_id: REQUEST_ID,
+        body: 'draft',
+        entity_ids: Array.from({ length: 21 }, (_, index) => String(index + 1)),
+      },
+    ],
     ['blank body', { request_id: REQUEST_ID, body: ' \r\n\t' }],
     ['body NUL', { request_id: REQUEST_ID, body: 'draft\0body' }],
     ['title NUL', { request_id: REQUEST_ID, body: 'draft', title: 'a\0b' }],
@@ -200,6 +208,21 @@ describe('ThesesResource', () => {
     await expect(client.theses.create(params)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
+    expect(client._request).not.toHaveBeenCalled();
+  });
+
+  it('rejects NUL in a close note before the HTTP boundary', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn();
+
+    await expect(
+      client.theses.close(MAX_ID, {
+        expected_author_version_id: '9223372036854775806',
+        note: 'done\0now',
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(client._request).not.toHaveBeenCalled();
   });
 
