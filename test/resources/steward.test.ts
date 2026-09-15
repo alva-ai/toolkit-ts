@@ -71,37 +71,47 @@ describe('StewardResource', () => {
     expect(sendInput.deliveryIds).toEqual(['5', '6']);
   });
 
-  it('pages pending deliveries by cursor and clamps the page size', async () => {
+  it('reads one connection page and returns the next opaque cursor', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
       data: {
-        stewardDigestPending: {
-          items: [
-            {
-              deliveryId: '5',
-              feedEntryId: '9',
-              source: { kind: 'feed', id: '3' },
-              decisionReason: 'low urgency',
-              consumedAtMs: 1788710000000,
-            },
-          ],
-          nextAfterId: '5',
+        viewer: {
+          stewardDigestPending: {
+            edges: [
+              {
+                cursor: 'cur-5',
+                node: {
+                  deliveryId: '5',
+                  feedEntryId: '9',
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'low urgency',
+                  consumedAtMs: 1788710000000,
+                },
+              },
+            ],
+            pageInfo: { hasNextPage: true, endCursor: 'cur-5' },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
         },
       },
     });
-    const page = await c.steward.pending({ inboxPath, afterDeliveryId: '0' });
-    expect(page.nextAfterId).toBe('5');
+    const page = await c.steward.pending({ inboxPath, untilMs: 1788720000000 });
+    expect(page.nextCursor).toBe('cur-5');
     expect(page.items[0].deliveryId).toBe('5');
+    expect(page.windowUntilMs).toBe(1788720000000);
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
         query: expect.stringContaining('stewardDigestPending'),
-        variables: {
-          inboxPath,
-          afterDeliveryId: null,
-          sinceMs: null,
-          untilMs: null,
-          first: 50,
-        },
+        variables: { inboxPath, input: { first: 50, untilMs: 1788720000000 } },
+      },
+    });
+    // A continuation passes only the cursor; the window travels inside it.
+    await c.steward.pending({ inboxPath, after: 'cur-5', untilMs: 1 });
+    expect(request).toHaveBeenLastCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('stewardDigestPending'),
+        variables: { inboxPath, input: { first: 50, after: 'cur-5' } },
       },
     });
     await expect(c.steward.pending({ inboxPath, first: 500 })).rejects.toThrow(
@@ -149,5 +159,28 @@ describe('StewardResource', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AlvaError);
     expect((error as AlvaError).status).toBe(403);
+  });
+});
+
+describe('generateRequestId', () => {
+  it('produces RFC 4122 v4 ids even without crypto.randomUUID', async () => {
+    const { generateRequestId } =
+      await import('../../src/resources/steward.js');
+    const v4 =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(generateRequestId()).toMatch(v4);
+    const original = globalThis.crypto;
+    Object.defineProperty(globalThis, 'crypto', {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      expect(generateRequestId()).toMatch(v4);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+      });
+    }
   });
 });

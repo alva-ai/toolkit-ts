@@ -1,6 +1,7 @@
 import { AlvaClient } from '../client.js';
 import { validateForYouListParams } from '../resources/forYou.js';
 import { requireDecision } from '../resources/steward.js';
+import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { CliUsageError } from '../error.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
@@ -177,19 +178,19 @@ Flags:
   --reason <text>           Short audit note stored with the decision
   --body <markdown>         Message body (send)
   --request-id <uuid>       Idempotency key; generated when omitted
-  --after <id>              Cursor from the previous page's nextAfterId (pending)
-  --since <RFC3339>         Lower bound on decision time (pending)
-  --until <RFC3339>         Fixed upper bound of the Brief window; repeat it on every page (pending)
+  --after <cursor>          Opaque cursor from the previous page's nextCursor (pending)
+  --since <RFC3339>         First page only: lower bound on decision time (pending)
+  --until <RFC3339>         First page only: fixed upper bound of the Brief window; later pages inherit it through the cursor (pending)
   --first <n>               Page size, 1-100 (pending)
   --digest-run-id <id>      The request id echoed by the send that carried these deliveries (briefed)
 
-Examples:
-  alva steward decide --delivery-id 123 --decision immediate --reason "guidance cut 15%"
-  alva steward forward --delivery-id 123
-  alva steward send --delivery-ids 124,125 --body "Two related moves..."
-  alva steward pending --after 0
-  alva steward pending --after 0 --until 2026-09-15T13:00:00Z
-  alva steward briefed --digest-run-id <request id from send> --delivery-ids 124,125`,
+Examples (terminal; the embedded Agent tool omits --inbox-path):
+  alva steward decide --inbox-path /alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl --delivery-id 123 --decision immediate --reason "guidance cut 15%"
+  alva steward forward --inbox-path <inbox> --delivery-id 123
+  alva steward send --inbox-path <inbox> --delivery-ids 124,125 --body "Two related moves..."
+  alva steward pending --inbox-path <inbox> --until 2026-09-15T13:00:00Z
+  alva steward pending --inbox-path <inbox> --after <nextCursor from the previous page>
+  alva steward briefed --inbox-path <inbox> --digest-run-id <request id echoed by send> --delivery-ids 124,125`,
   configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
 Save API credentials to ~/.config/alva/config.json (mode 0600).
@@ -3056,20 +3057,20 @@ export async function executeParsedCommand(
           const parseTime = (name: 'since' | 'until'): number | undefined => {
             const value = flags[name];
             if (value === undefined) return undefined;
-            const ms = Date.parse(value);
-            if (Number.isNaN(ms)) {
+            try {
+              return parseRfc3339Milliseconds(value);
+            } catch {
               throw new CliUsageError(
-                `--${name} must be an RFC3339 timestamp`,
+                `--${name} must be an RFC3339 timestamp with a timezone`,
                 'steward'
               );
             }
-            return ms;
           };
           const first =
             flags.first === undefined ? undefined : Number(flags.first);
           return client.steward.pending({
             inboxPath,
-            afterDeliveryId: flags.after,
+            after: flags.after,
             sinceMs: parseTime('since'),
             untilMs: parseTime('until'),
             first,

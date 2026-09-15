@@ -32,10 +32,14 @@ export interface StewardSendParams extends StewardTarget {
   requestId?: string;
 }
 
+export type StewardSourceKind = 'FEED' | 'MARKET_ENTITY' | 'THESIS_FEED';
+
 export interface StewardPendingParams extends StewardTarget {
-  afterDeliveryId?: string;
+  /** Opaque cursor from the previous page's `nextCursor`; carries the window. */
+  after?: string;
+  /** First page only: lower bound on decision time. */
   sinceMs?: number;
-  /** Fixed upper bound of the Brief window; pass the same value on every page. */
+  /** First page only: fixed upper bound of the Brief window (the digest_request's untilMs). */
   untilMs?: number;
   first?: number;
 }
@@ -63,7 +67,7 @@ export interface StewardSendResult {
 export interface StewardPendingItem {
   deliveryId: string;
   feedEntryId: string;
-  source: { kind: string; id: string };
+  source: { kind: StewardSourceKind; id: string };
   decisionReason: string;
   consumedAtMs: number;
 }
@@ -71,7 +75,10 @@ export interface StewardPendingItem {
 export interface StewardPendingPage {
   items: StewardPendingItem[];
   /** Cursor for the next page; `null` when this page was the last. */
-  nextAfterId: string | null;
+  nextCursor: string | null;
+  /** The window every page of this Brief was read with. */
+  windowSinceMs: number;
+  windowUntilMs: number;
 }
 
 interface GraphQLErrorPayload {
@@ -116,10 +123,17 @@ mutation ToolkitStewardSend($input: StewardSendChannelMessageInput!) {
 }`.trim();
 
 const PENDING = `
-query ToolkitStewardPending($inboxPath: String!, $afterDeliveryId: ID, $sinceMs: TimestampMs, $untilMs: TimestampMs, $first: Int) {
-  stewardDigestPending(inboxPath: $inboxPath, afterDeliveryId: $afterDeliveryId, sinceMs: $sinceMs, untilMs: $untilMs, first: $first) {
-    items { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
-    nextAfterId
+query ToolkitStewardPending($inboxPath: String!, $input: StewardDigestPendingInput) {
+  viewer {
+    stewardDigestPending(inboxPath: $inboxPath, input: $input) {
+      edges {
+        cursor
+        node { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
+      }
+      pageInfo { hasNextPage endCursor }
+      windowSinceMs
+      windowUntilMs
+    }
   }
 }`.trim();
 
@@ -140,7 +154,11 @@ function invalid(message: string): AlvaError {
 }
 
 function requireInboxPath(target: StewardTarget): string {
-  if (typeof target.inboxPath !== 'string' || target.inboxPath === '')
+  if (
+    !target ||
+    typeof target.inboxPath !== 'string' ||
+    target.inboxPath === ''
+  )
     throw invalid('steward commands require the steward Session Inbox path');
   return target.inboxPath;
 }
@@ -172,8 +190,28 @@ export function requireDecision(value: string): StewardDecision {
   return value as StewardDecision;
 }
 
+/** RFC 4122 v4 UUID without assuming `crypto.randomUUID` (absent on Node 18 and older browsers). */
+export function generateRequestId(): string {
+  const webcrypto = (globalThis as { crypto?: Crypto }).crypto;
+  if (typeof webcrypto?.randomUUID === 'function')
+    return webcrypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof webcrypto?.getRandomValues === 'function') {
+    webcrypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1)
+      bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
+    ''
+  );
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function requireRequestId(value: string | undefined): string {
-  if (value === undefined) return globalThis.crypto.randomUUID();
+  if (value === undefined) return generateRequestId();
   if (
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       value
@@ -246,22 +284,35 @@ export class StewardResource {
     const first = params.first ?? 50;
     if (!Number.isInteger(first) || first < 1 || first > 100)
       throw invalid('first must be an integer between 1 and 100');
+    const input: Record<string, unknown> = { first };
+    if (params.after !== undefined && params.after !== '') {
+      input.after = params.after;
+    } else {
+      if (params.sinceMs !== undefined) input.sinceMs = params.sinceMs;
+      if (params.untilMs !== undefined) input.untilMs = params.untilMs;
+    }
     const data = await this.graphql<{
-      stewardDigestPending?: StewardPendingPage | null;
-    }>(PENDING, {
-      inboxPath: requireInboxPath(params),
-      afterDeliveryId:
-        params.afterDeliveryId === undefined || params.afterDeliveryId === '0'
-          ? null
-          : requireDeliveryId(params.afterDeliveryId, 'after'),
-      sinceMs: params.sinceMs ?? null,
-      untilMs: params.untilMs ?? null,
-      first,
-    });
-    if (!data.stewardDigestPending) throw emptyResponse();
+      viewer?: {
+        stewardDigestPending?: {
+          edges?: Array<{ cursor: string; node: StewardPendingItem }>;
+          pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+          windowSinceMs?: number;
+          windowUntilMs?: number;
+        } | null;
+      } | null;
+    }>(PENDING, { inboxPath: requireInboxPath(params), input });
+    const page = data.viewer?.stewardDigestPending;
+    if (!page || !Array.isArray(page.edges)) throw emptyResponse();
+    const items = page.edges.map((edge) => edge.node);
+    const nextCursor =
+      page.pageInfo?.hasNextPage === true && page.pageInfo.endCursor
+        ? page.pageInfo.endCursor
+        : null;
     return {
-      items: data.stewardDigestPending.items ?? [],
-      nextAfterId: data.stewardDigestPending.nextAfterId ?? null,
+      items,
+      nextCursor,
+      windowSinceMs: page.windowSinceMs ?? 0,
+      windowUntilMs: page.windowUntilMs ?? 0,
     };
   }
 
@@ -288,7 +339,8 @@ export class StewardResource {
   ): Promise<T> {
     const response = (await this.client._request('POST', '/query', {
       body: { query, variables },
-    })) as GraphQLResponse<T>;
+    })) as GraphQLResponse<T> | null | undefined;
+    if (!response || typeof response !== 'object') throw emptyResponse();
     if (response.errors?.length) {
       const codes = response.errors.map((error) => error.extensions?.code);
       const canonicalCode =

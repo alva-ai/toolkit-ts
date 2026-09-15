@@ -571,6 +571,11 @@ function durationMilliseconds(value: string, minimumSeconds: number): number {
   return result;
 }
 
+/** Strict RFC 3339 (with timezone) → epoch milliseconds; throws INVALID_ARGUMENT otherwise. */
+export function parseRfc3339Milliseconds(value: string): number {
+  return timestampMilliseconds(value);
+}
+
 function timestampMilliseconds(value: string): number {
   const match = RFC3339.exec(value);
   if (!match) throw invalid('timestamp must be RFC3339 with a timezone');
