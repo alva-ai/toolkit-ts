@@ -153,7 +153,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['id', 'expected-author-version-id', 'note'],
     }),
     route('thesis delete', 'thesis delete', { values: ['id'] }),
-    route('thesis rewrite', 'thesis rewrite', { values: ['body'] }),
+    route('thesis rewrite', 'thesis rewrite', { values: ['body', 'mode'] }),
     route('account whoami', 'whoami'),
     route('account credits wallet', 'credits wallet'),
     route('account credits items', 'credits items', {

@@ -126,7 +126,10 @@ describe('thesis terminal dispatch', () => {
       note: 'done',
     });
     expect(calls.remove).toHaveBeenCalledWith(THESIS.thesis.id);
-    expect(calls.rewrite).toHaveBeenCalledWith({ body: 'stdin\r\nbody' });
+    expect(calls.rewrite).toHaveBeenCalledWith({
+      body: 'stdin\r\nbody',
+      mode: 'reformat',
+    });
     expect(calls.rewrite).toHaveBeenCalledTimes(1);
   });
 
@@ -277,7 +280,48 @@ describe('thesis terminal dispatch', () => {
     expect(result.text).toContain('Replaces document fields');
     expect(result.text).toContain('response is ambiguous');
     expect(result.text).toContain('defaults --visibility to public');
+    expect(result.text).toContain('--mode reformat|shorten|enrich');
+    expect(result.text).toContain('candidate only');
   });
+
+  it.each(['reformat', 'shorten', 'enrich'] as const)(
+    'dispatches terminal rewrite mode %s without automatic selection',
+    async (mode) => {
+      const value = client();
+      const calls = mockLifecycle(value);
+
+      await dispatchTerminal(value, [
+        'thesis',
+        'rewrite',
+        '--body',
+        'draft',
+        '--mode',
+        mode,
+      ]);
+
+      expect(calls.rewrite).toHaveBeenCalledWith({ body: 'draft', mode });
+    }
+  );
+
+  it.each(['', ' ', 'rewrite'])(
+    'rejects terminal rewrite mode %j before the resource call',
+    async (mode) => {
+      const value = client();
+      const calls = mockLifecycle(value);
+
+      await expect(
+        dispatchTerminal(value, [
+          'thesis',
+          'rewrite',
+          '--body',
+          'draft',
+          '--mode',
+          mode,
+        ])
+      ).rejects.toThrow(/--mode must be reformat, shorten, or enrich/);
+      expect(calls.rewrite).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('thesis embedded dispatch', () => {
@@ -339,7 +383,10 @@ describe('thesis embedded dispatch', () => {
         editorial: false,
       })
     );
-    expect(calls.rewrite).toHaveBeenCalledWith({ body: 'rewrite' });
+    expect(calls.rewrite).toHaveBeenCalledWith({
+      body: 'rewrite',
+      mode: 'reformat',
+    });
   });
 
   it('rejects unsupported body transports instead of inventing filesystem support', async () => {
@@ -362,5 +409,46 @@ describe('thesis embedded dispatch', () => {
     };
     expect(result.text).toContain('never creates request IDs or retries');
     expect(result.text).toContain('Create defaults --visibility to public');
+    expect(result.text).toContain('--mode reformat|shorten|enrich');
+    expect(result.text).toContain('candidate only');
   });
+
+  it.each(['reformat', 'shorten', 'enrich'] as const)(
+    'dispatches embedded rewrite mode %s without automatic selection',
+    async (mode) => {
+      const value = client();
+      const calls = mockLifecycle(value);
+
+      await dispatchEmbedded(value, [
+        'thesis',
+        'rewrite',
+        '--body',
+        'draft',
+        '--mode',
+        mode,
+      ]);
+
+      expect(calls.rewrite).toHaveBeenCalledWith({ body: 'draft', mode });
+    }
+  );
+
+  it.each(['', ' ', 'rewrite'])(
+    'rejects embedded rewrite mode %j before the resource call',
+    async (mode) => {
+      const value = client();
+      const calls = mockLifecycle(value);
+
+      await expect(
+        dispatchEmbedded(value, [
+          'thesis',
+          'rewrite',
+          '--body',
+          'draft',
+          '--mode',
+          mode,
+        ])
+      ).rejects.toThrow(/--mode must be reformat, shorten, or enrich/);
+      expect(calls.rewrite).not.toHaveBeenCalled();
+    }
+  );
 });

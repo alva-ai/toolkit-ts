@@ -214,7 +214,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('thesis delete', { values: ['id'] }),
   command('thesis rewrite', {
-    values: ['body', 'body-file'],
+    values: ['body', 'body-file', 'mode'],
     booleans: ['body-stdin'],
   }),
 
