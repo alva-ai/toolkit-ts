@@ -35,6 +35,8 @@ export interface StewardSendParams extends StewardTarget {
 export interface StewardPendingParams extends StewardTarget {
   afterDeliveryId?: string;
   sinceMs?: number;
+  /** Fixed upper bound of the Brief window; pass the same value on every page. */
+  untilMs?: number;
   first?: number;
 }
 
@@ -54,6 +56,8 @@ export interface StewardForwardResult {
 
 export interface StewardSendResult {
   channelMessageId: string;
+  /** The idempotency key used; pass it as digestRunId to `briefed`. */
+  requestId: string;
 }
 
 export interface StewardPendingItem {
@@ -108,12 +112,12 @@ mutation ToolkitStewardForward($input: StewardForwardAlertInput!) {
 
 const SEND = `
 mutation ToolkitStewardSend($input: StewardSendChannelMessageInput!) {
-  stewardSendChannelMessage(input: $input) { channelMessageId }
+  stewardSendChannelMessage(input: $input) { channelMessageId requestId }
 }`.trim();
 
 const PENDING = `
-query ToolkitStewardPending($inboxPath: String!, $afterDeliveryId: ID, $sinceMs: TimestampMs, $first: Int) {
-  stewardDigestPending(inboxPath: $inboxPath, afterDeliveryId: $afterDeliveryId, sinceMs: $sinceMs, first: $first) {
+query ToolkitStewardPending($inboxPath: String!, $afterDeliveryId: ID, $sinceMs: TimestampMs, $untilMs: TimestampMs, $first: Int) {
+  stewardDigestPending(inboxPath: $inboxPath, afterDeliveryId: $afterDeliveryId, sinceMs: $sinceMs, untilMs: $untilMs, first: $first) {
     items { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
     nextAfterId
   }
@@ -251,6 +255,7 @@ export class StewardResource {
           ? null
           : requireDeliveryId(params.afterDeliveryId, 'after'),
       sinceMs: params.sinceMs ?? null,
+      untilMs: params.untilMs ?? null,
       first,
     });
     if (!data.stewardDigestPending) throw emptyResponse();

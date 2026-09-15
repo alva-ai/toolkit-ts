@@ -179,15 +179,17 @@ Flags:
   --request-id <uuid>       Idempotency key; generated when omitted
   --after <id>              Cursor from the previous page's nextAfterId (pending)
   --since <RFC3339>         Lower bound on decision time (pending)
+  --until <RFC3339>         Fixed upper bound of the Brief window; repeat it on every page (pending)
   --first <n>               Page size, 1-100 (pending)
-  --digest-run-id <id>      The brief run being recorded (briefed)
+  --digest-run-id <id>      The request id echoed by the send that carried these deliveries (briefed)
 
 Examples:
   alva steward decide --delivery-id 123 --decision immediate --reason "guidance cut 15%"
   alva steward forward --delivery-id 123
   alva steward send --delivery-ids 124,125 --body "Two related moves..."
   alva steward pending --after 0
-  alva steward briefed --digest-run-id digest-555-42 --delivery-ids 124,125`,
+  alva steward pending --after 0 --until 2026-09-15T13:00:00Z
+  alva steward briefed --digest-run-id <request id from send> --delivery-ids 124,125`,
   configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
 Save API credentials to ~/.config/alva/config.json (mode 0600).
@@ -3051,20 +3053,25 @@ export async function executeParsedCommand(
             requestId: flags['request-id'],
           });
         case 'pending': {
-          const since = flags.since;
-          const sinceMs = since === undefined ? undefined : Date.parse(since);
-          if (sinceMs !== undefined && Number.isNaN(sinceMs)) {
-            throw new CliUsageError(
-              '--since must be an RFC3339 timestamp',
-              'steward'
-            );
-          }
+          const parseTime = (name: 'since' | 'until'): number | undefined => {
+            const value = flags[name];
+            if (value === undefined) return undefined;
+            const ms = Date.parse(value);
+            if (Number.isNaN(ms)) {
+              throw new CliUsageError(
+                `--${name} must be an RFC3339 timestamp`,
+                'steward'
+              );
+            }
+            return ms;
+          };
           const first =
             flags.first === undefined ? undefined : Number(flags.first);
           return client.steward.pending({
             inboxPath,
             afterDeliveryId: flags.after,
-            sinceMs,
+            sinceMs: parseTime('since'),
+            untilMs: parseTime('until'),
             first,
           });
         }

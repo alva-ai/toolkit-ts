@@ -47,7 +47,9 @@ describe('StewardResource', () => {
         },
       })
       .mockResolvedValueOnce({
-        data: { stewardSendChannelMessage: { channelMessageId: '78' } },
+        data: {
+          stewardSendChannelMessage: { channelMessageId: '78', requestId: 'x' },
+        },
       });
     await c.steward.forward({ inboxPath, deliveryId: '5' });
     await c.steward.send({ inboxPath, body: 'x', deliveryIds: ['5', '6'] });
@@ -97,6 +99,7 @@ describe('StewardResource', () => {
           inboxPath,
           afterDeliveryId: null,
           sinceMs: null,
+          untilMs: null,
           first: 50,
         },
       },

@@ -121,7 +121,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     ),
     action(
       'steward pending',
-      { values: ['after', 'since', 'first'] },
+      { values: ['after', 'since', 'until', 'first'] },
       'steward-self'
     ),
     action(

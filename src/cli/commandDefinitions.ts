@@ -178,7 +178,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['inbox-path', 'body', 'delivery-ids', 'request-id'],
   }),
   command('steward pending', {
-    values: ['inbox-path', 'after', 'since', 'first'],
+    values: ['inbox-path', 'after', 'since', 'until', 'first'],
   }),
   command('steward briefed', {
     values: ['inbox-path', 'delivery-ids', 'digest-run-id'],

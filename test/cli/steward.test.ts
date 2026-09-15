@@ -16,7 +16,9 @@ function clientWithSteward(attached = false) {
   client.steward.forward = vi
     .fn()
     .mockResolvedValue({ channelMessageId: '77', state: 'sent' });
-  client.steward.send = vi.fn().mockResolvedValue({ channelMessageId: '78' });
+  client.steward.send = vi
+    .fn()
+    .mockResolvedValue({ channelMessageId: '78', requestId: 'r' });
   client.steward.pending = vi
     .fn()
     .mockResolvedValue({ items: [], nextAfterId: null });
@@ -76,6 +78,8 @@ describe('steward CLI', () => {
       'pending',
       '--after',
       '0',
+      '--until',
+      '2026-09-15T13:00:00Z',
       '--first',
       '20',
     ]);
@@ -83,6 +87,7 @@ describe('steward CLI', () => {
       inboxPath,
       afterDeliveryId: '0',
       sinceMs: undefined,
+      untilMs: Date.parse('2026-09-15T13:00:00Z'),
       first: 20,
     });
 
