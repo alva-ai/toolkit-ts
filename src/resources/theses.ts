@@ -124,7 +124,7 @@ export class ThesesResource {
     );
   }
 
-  async delete(id: ThesisID): Promise<{}> {
+  async delete(id: ThesisID): Promise<Record<string, never>> {
     this.client._requireAuth();
     const response = await this.client._request(
       'DELETE',

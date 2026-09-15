@@ -58,11 +58,16 @@ acceptance, Signal behavior, Alert behavior, or a first-run runtime status.
 
 - `npm run typecheck` passed.
 - `npm run format:check` passed.
+- No `Makefile` / `make lint-fix` target exists, so no substitute local lint
+  command was run; toolkit CI owns its configured `npm run lint` check.
 - `npm test` passed: 50 files and 971 tests. It ran outside the sandbox only
   because the pre-existing auth-login tests bind a localhost callback listener.
 - `npm run build` passed, including its existing vendor-contract prebuild.
 
 ## 8. Remaining work
 
-Backend API coordination remains pending; this change has not been pushed or
-submitted for review.
+Deployment and cross-repository integration acceptance remain pending. The API
+implementation is under review in `alva-ai/alva-backend#2518` at
+`8c78b95c821e1a087a608809678c9e7e236c83bc`, with the related Skill work in PR
+#634. These source-only toolkit checks do not establish a deployed backend or
+end-to-end acceptance.
