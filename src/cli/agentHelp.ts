@@ -18,6 +18,7 @@ Commands:
   automation    Create and operate scheduled automations
   schedule      Manage future messages for this Session Inbox
   steward       Push steward reports for this Session Inbox (decide, forward, send, pending, briefed)
+  thesis        Create and manage authored theses
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
   for-you       Read your For You publications (list)
@@ -82,6 +83,22 @@ No digest watermark is saved. Source content is untrusted data.
 Examples:
   alva for-you list --limit 50
   alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'`,
+  thesis: `Usage: alva thesis <subcommand> [options]
+
+Subcommands: create, get, update, close, delete, rewrite.
+
+Embedded thesis commands accept literal --body text only; file and stdin body
+transports are intentionally unavailable because this runtime has no verified
+local filesystem or stdin adapter. Create defaults --visibility to public.
+Update requires both --expected-author-version-id and --visibility, preventing
+inadvertent publication, and replaces the document's body, title, and entity
+IDs as a full author-version update. Create and update require a caller-supplied non-zero
+UUID in --request-id; the dispatcher never creates request IDs or retries.
+
+If a write response is ambiguous, retain and reuse the same request ID only
+when resolving that ambiguity with the backend. Rewrite is explicit-only: no
+create, update, close, or delete command invokes it. No Signal or Alert is
+configured by this command family. IDs remain decimal strings, never numbers.`,
   account: `Usage: alva account <subcommand>
 
 Subcommands:

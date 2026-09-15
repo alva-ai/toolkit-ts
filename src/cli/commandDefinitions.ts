@@ -184,6 +184,40 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['inbox-path', 'delivery-ids', 'digest-run-id'],
   }),
 
+  command('thesis create', {
+    values: [
+      'request-id',
+      'body',
+      'body-file',
+      'title',
+      'entity-ids',
+      'visibility',
+    ],
+    booleans: ['body-stdin'],
+  }),
+  command('thesis get', { values: ['id'] }),
+  command('thesis update', {
+    values: [
+      'id',
+      'request-id',
+      'expected-author-version-id',
+      'body',
+      'body-file',
+      'title',
+      'entity-ids',
+      'visibility',
+    ],
+    booleans: ['body-stdin', 'editorial'],
+  }),
+  command('thesis close', {
+    values: ['id', 'expected-author-version-id', 'note'],
+  }),
+  command('thesis delete', { values: ['id'] }),
+  command('thesis rewrite', {
+    values: ['body', 'body-file'],
+    booleans: ['body-stdin'],
+  }),
+
   command('service-account create', { values: ['name'] }),
   command('service-account list'),
   command('service-account delete', { values: ['id'] }),

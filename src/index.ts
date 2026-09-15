@@ -13,6 +13,18 @@ export {
 } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
 export {
+  ThesesResource,
+  type Thesis,
+  type ThesisID,
+  type ThesisVisibility,
+  type ThesisResponse,
+  type CreateThesisParams,
+  type UpdateThesisParams,
+  type CloseThesisParams,
+  type RewriteThesisParams,
+  type RewriteThesisResponse,
+} from './resources/theses.js';
+export {
   ForYouResource,
   type ForYouListParams,
   type ForYouEntry,
