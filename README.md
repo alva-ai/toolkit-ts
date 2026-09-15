@@ -220,7 +220,8 @@ the live tree. The independent system CLI continues to expose feedback.
 
 The embedded surface is aligned with ALFS-native tools: local-file flags such as
 `--local-file`, `--file`, `--params-schema-file`, and screenshot `--out` are
-absent. Use inline data or prepare content in ALFS before dispatching the
+absent. Thesis commands likewise accept literal `--body` only: local files and
+stdin have no verified embedded adapter. Use inline data or prepare content in ALFS before dispatching the
 command; Agent screenshots return image content directly. `dispatch()` throws
 `CliUsageError` for command-line usage errors and `AlvaError` for API errors.
 Managed commands reject unknown flags before invoking an API. `trading broker`
@@ -334,6 +335,7 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 | `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
 | `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
 | `client.playbooks`  | `trending()`                                                                                                                                                       |
+| `client.theses`     | `create()`, `get()`, `update()`, `close()`, `delete()`, `rewrite()`                                                                                                |
 | `client.functions`  | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
 | `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
 | `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
@@ -369,6 +371,7 @@ alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json
 alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
+alva thesis <create|get|update|close|delete|rewrite>
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>

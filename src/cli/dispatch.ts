@@ -24,6 +24,7 @@ import {
   type PlaybookVisibility,
   type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
+import type { ThesisVisibility } from '../resources/theses.js';
 
 import {
   formatTrendingPlaybooks,
@@ -107,6 +108,7 @@ Commands:
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
+  thesis      Authored thesis lifecycle (create, get, update, close, delete, rewrite)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -1428,6 +1430,47 @@ Subcommands:
 Examples:
   alva arrays token ensure
   alva arrays token status`,
+
+  thesis: `Usage: alva thesis <subcommand> [options]
+
+Create, read, update, close, delete, or explicitly rewrite an authored thesis.
+No Signal or Alert is created, and create/update never rewrite text automatically.
+
+Subcommands:
+  create   Create a thesis
+  get      Get one thesis
+  update   Replaces document fields: body, title, entities, visibility (all sent in full)
+  close    Close the current author version with an optional note
+  delete   Delete a thesis
+  rewrite  Explicitly request a body rewrite; never called by another command
+
+Body input (create, update, rewrite): choose exactly one:
+  --body <text>         Literal text
+  --body-file <path>    Local UTF-8 text file (terminal CLI only; malformed bytes fail)
+  --body-stdin          Read UTF-8 text from stdin (terminal CLI only; malformed bytes fail)
+
+Create and update require --request-id: a caller-supplied non-zero UUID. The
+toolkit does not generate or retry request IDs. If a response is ambiguous
+after a write, reuse the same request ID only after resolving that ambiguity with
+the backend; do not send a fresh ID. Create defaults --visibility to public.
+Update requires --visibility explicitly so it cannot inadvertently publish.
+
+Other flags:
+  create  --request-id <uuid> --body ... [--title <text>] [--entity-ids <id,id>] [--visibility <value>]
+  get     --id <signed-int64-decimal>
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
+  close   --id <id> --expected-author-version-id <id> [--note <text>]
+  delete  --id <id>
+  rewrite --body ...
+
+IDs are decimal strings, never JavaScript numbers. Body text must be nonblank,
+valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
+500 UTF-8 bytes. Text is passed without trimming or newline conversion.
+
+Examples:
+  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
+  alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
+  printf '%s' 'Draft body' | alva thesis rewrite --body-stdin`,
 };
 
 export type DispatchRuntime = 'nodejs' | 'jagent';
@@ -1444,6 +1487,8 @@ export interface DispatchRuntimeDeps {
   stderr?: { write(value: string): unknown };
   localFiles?: DispatchLocalFiles;
   readStdin?: () => Promise<string>;
+  /** Raw stdin bytes for commands that must reject malformed UTF-8. */
+  readStdinBytes?: () => Promise<Uint8Array>;
   randomUUID?: () => string;
   configureFetchTimeout?: (timeoutMs: number) => void;
   writeBrokerResult?: (envelope: unknown, exitCode: number) => Promise<void>;
@@ -1985,6 +2030,14 @@ function feedVisibility(val: string): 'public' | 'private' {
   );
 }
 
+function thesisVisibility(value: string): ThesisVisibility {
+  if (value === 'public' || value === 'private') return value;
+  throw new CliUsageError(
+    `--visibility must be public or private for 'thesis', got '${value}'`,
+    'thesis'
+  );
+}
+
 function parseCreditsTimestamp(
   value: string,
   flag: string,
@@ -2333,6 +2386,77 @@ function readLocalTextFile(
     throw new Error('Local file access requires a Node.js runtime adapter.');
   }
   return deps.localFiles.readText(path);
+}
+
+async function thesisBodyFromFlags(
+  flags: Record<string, string>,
+  command: 'thesis create' | 'thesis update' | 'thesis rewrite',
+  deps?: DispatchRuntimeDeps
+): Promise<string> {
+  const sources = [
+    flags.body !== undefined ? 'body' : undefined,
+    flags['body-file'] !== undefined ? 'body-file' : undefined,
+    flags['body-stdin'] === 'true' ? 'body-stdin' : undefined,
+  ].filter((source): source is string => source !== undefined);
+  if (sources.length !== 1) {
+    throw new CliUsageError(
+      `${command} requires exactly one of --body, --body-file, or --body-stdin`,
+      'thesis'
+    );
+  }
+  if (sources[0] === 'body') return flags.body!;
+  if (sources[0] === 'body-file') {
+    assertLocalFileAvailable(command, '--body-file', deps);
+    if (!deps?.localFiles) {
+      throw new Error('Local file access requires a Node.js runtime adapter.');
+    }
+    return strictThesisUTF8(
+      deps.localFiles.readBytes(flags['body-file']!),
+      command,
+      '--body-file'
+    );
+  }
+  if (deps?.runtime === 'jagent') {
+    throw localFileUnsupported(command, '--body-stdin');
+  }
+  if (!deps?.readStdinBytes) {
+    throw new Error('Thesis stdin requires a Node.js byte-stdin adapter.');
+  }
+  return strictThesisUTF8(await deps.readStdinBytes(), command, '--body-stdin');
+}
+
+function thesisEntityIDs(flags: Record<string, string>): string[] {
+  const raw = flags['entity-ids'];
+  return raw === undefined || raw === '' ? [] : raw.split(',');
+}
+
+function strictThesisUTF8(
+  value: unknown,
+  command: string,
+  flag: '--body-file' | '--body-stdin'
+): string {
+  const bytes = toByteView(value);
+  if (bytes === undefined) {
+    throw new Error(`${flag} requires a byte-capable Node.js runtime adapter.`);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+      bytes
+    );
+  } catch {
+    throw new CliUsageError(
+      `${flag} must contain valid UTF-8 for '${command}'`,
+      'thesis'
+    );
+  }
+}
+
+function toByteView(value: unknown): Uint8Array | undefined {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return undefined;
 }
 
 function readLocalFileBytes(
@@ -2974,6 +3098,68 @@ export async function executeParsedCommand(
           throw new CliUsageError(
             `Unknown subcommand: schedule ${subcommand}`,
             'schedule'
+          );
+      }
+    }
+
+    case 'thesis': {
+      if (!subcommand) {
+        throw new CliUsageError('Missing subcommand for thesis', 'thesis');
+      }
+      switch (subcommand) {
+        case 'create':
+          return client.theses.create({
+            request_id: requireFlag(flags, 'request-id', 'thesis create'),
+            body: await thesisBodyFromFlags(flags, 'thesis create', deps),
+            title: flags.title ?? '',
+            entity_ids: thesisEntityIDs(flags),
+            visibility:
+              flags.visibility === undefined
+                ? 'public'
+                : thesisVisibility(flags.visibility),
+          });
+        case 'get':
+          return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
+        case 'update':
+          return client.theses.update(
+            requireFlag(flags, 'id', 'thesis update'),
+            {
+              request_id: requireFlag(flags, 'request-id', 'thesis update'),
+              expected_author_version_id: requireFlag(
+                flags,
+                'expected-author-version-id',
+                'thesis update'
+              ),
+              body: await thesisBodyFromFlags(flags, 'thesis update', deps),
+              title: flags.title ?? '',
+              entity_ids: thesisEntityIDs(flags),
+              visibility: thesisVisibility(
+                requireFlag(flags, 'visibility', 'thesis update')
+              ),
+              editorial: boolFlag(flags.editorial) ?? false,
+            }
+          );
+        case 'close':
+          return client.theses.close(requireFlag(flags, 'id', 'thesis close'), {
+            expected_author_version_id: requireFlag(
+              flags,
+              'expected-author-version-id',
+              'thesis close'
+            ),
+            note: flags.note,
+          });
+        case 'delete':
+          return client.theses.delete(
+            requireFlag(flags, 'id', 'thesis delete')
+          );
+        case 'rewrite':
+          return client.theses.rewrite({
+            body: await thesisBodyFromFlags(flags, 'thesis rewrite', deps),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: thesis ${subcommand}`,
+            'thesis'
           );
       }
     }
