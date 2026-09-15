@@ -2467,7 +2467,15 @@ async function thesisBodyFromFlags(
 
 function thesisEntityIDs(flags: Record<string, string>): string[] {
   const raw = flags['entity-ids'];
-  return raw === undefined || raw === '' ? [] : raw.split(',');
+  if (raw === undefined || raw === '') return [];
+  const entityIDs = raw.split(',').map((id) => id.trim());
+  if (entityIDs.some((id) => id === '')) {
+    throw new CliUsageError(
+      '--entity-ids must not contain empty IDs',
+      'thesis'
+    );
+  }
+  return entityIDs;
 }
 
 function strictThesisUTF8(

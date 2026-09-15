@@ -130,6 +130,8 @@ export class ThesesResource {
       'DELETE',
       `/api/v1/theses/${requireID(id, 'id')}`
     );
+    // _request returns undefined only for a successful HTTP 204 response.
+    if (response === undefined) return {};
     if (!isRecord(response) || Object.keys(response).length !== 0) {
       throw invalidResponse('delete response must be {}');
     }
@@ -193,8 +195,8 @@ function thesisResponse(response: unknown): ThesisResponse {
       thesis.material_version_id,
       'thesis.material_version_id'
     ),
-    title: responseText(thesis.title, 'thesis.title'),
-    body: responseText(thesis.body, 'thesis.body'),
+    title: responseTitle(thesis.title),
+    body: responseBody(thesis.body),
     entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
     visibility: responseVisibility(thesis.visibility),
     closed: responseBoolean(thesis.closed, 'thesis.closed'),
@@ -319,7 +321,17 @@ function responseBody(value: unknown): string {
     return requireBody(value as string);
   } catch {
     throw invalidResponse(
-      'rewrite response body must be nonblank valid text at most 65536 UTF-8 bytes'
+      'response body must be nonblank valid text at most 65536 UTF-8 bytes'
+    );
+  }
+}
+
+function responseTitle(value: unknown): string {
+  try {
+    return requireTitle(value as string);
+  } catch {
+    throw invalidResponse(
+      'response title must be valid text at most 500 UTF-8 bytes'
     );
   }
 }
