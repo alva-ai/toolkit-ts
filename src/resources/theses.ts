@@ -66,7 +66,7 @@ const encoder = new TextEncoder();
 
 /**
  * Thesis CRUD and explicit text rewriting. This resource never retries,
- * creates Signals/Alerts, or invokes rewrite as a side effect of CRUD.
+ * starts Signal/Alert setup, or invokes rewrite as a side effect of CRUD.
  */
 export class ThesesResource {
   constructor(private client: AlvaClient) {}
@@ -225,6 +225,9 @@ function requireID(value: unknown, field: string): ThesisID {
 
 function requireIDs(value: unknown, field: string): ThesisID[] {
   if (!Array.isArray(value)) throw invalidArgument(`${field} must be an array`);
+  if (value.length > 20) {
+    throw invalidArgument(`${field} must contain at most 20 IDs`);
+  }
   return value.map((item, index) => requireID(item, `${field}[${index}]`));
 }
 
@@ -259,7 +262,10 @@ function requireText(value: unknown, field: string): string {
   if (UNPAIRED_SURROGATE.test(value)) {
     throw invalidArgument(`${field} contains invalid Unicode`);
   }
-  if ((field === 'body' || field === 'title') && value.includes('\0')) {
+  if (
+    (field === 'body' || field === 'title' || field === 'note') &&
+    value.includes('\0')
+  ) {
     throw invalidArgument(`${field} must not contain NUL`);
   }
   return value;
@@ -280,6 +286,9 @@ function responseID(value: unknown, field: string): ThesisID {
 
 function responseIDs(value: unknown, field: string): ThesisID[] {
   if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
+  if (value.length > 20) {
+    throw invalidResponse(`${field} must contain at most 20 IDs`);
+  }
   return value.map((item, index) => responseID(item, `${field}[${index}]`));
 }
 

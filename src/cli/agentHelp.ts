@@ -72,8 +72,9 @@ UUID in --request-id; the dispatcher never creates request IDs or retries.
 
 If a write response is ambiguous, retain and reuse the same request ID only
 when resolving that ambiguity with the backend. Rewrite is explicit-only: no
-create, update, close, or delete command invokes it. No Signal or Alert is
-configured by this command family. IDs remain decimal strings, never numbers.`,
+create, update, close, or delete command invokes it. Backend owns Signal/Alert
+setup; the CLI never starts them separately. IDs remain decimal strings, never
+numbers.`,
   account: `Usage: alva account <subcommand>
 
 Subcommands:
