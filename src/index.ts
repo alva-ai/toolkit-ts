@@ -36,6 +36,18 @@ export {
   type ManageAgentScheduleParams,
   type PutAgentScheduleParams,
 } from './resources/schedules.js';
+export {
+  StewardResource,
+  type StewardBriefedParams,
+  type StewardDecideParams,
+  type StewardDecision,
+  type StewardForwardParams,
+  type StewardPendingItem,
+  type StewardPendingPage,
+  type StewardPendingParams,
+  type StewardSendParams,
+  type StewardTarget,
+} from './resources/steward.js';
 export type {
   AlvaClientConfig,
   FsReadParams,

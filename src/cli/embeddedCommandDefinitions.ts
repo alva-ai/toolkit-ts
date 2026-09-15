@@ -6,6 +6,7 @@ import type {
 
 export type EmbeddedCommandAction =
   | 'schedule-self'
+  | 'steward-self'
   | 'automation-create'
   | 'automation-inspect'
   | 'automation-update'
@@ -107,6 +108,27 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     action('schedule pause', { values: ['name'] }, 'schedule-self'),
     action('schedule resume', { values: ['name'] }, 'schedule-self'),
     action('schedule delete', { values: ['name'] }, 'schedule-self'),
+    action(
+      'steward decide',
+      { values: ['delivery-id', 'decision', 'reason'] },
+      'steward-self'
+    ),
+    action('steward forward', { values: ['delivery-id'] }, 'steward-self'),
+    action(
+      'steward send',
+      { values: ['body', 'delivery-ids'] },
+      'steward-self'
+    ),
+    action(
+      'steward pending',
+      { values: ['after', 'since', 'first'] },
+      'steward-self'
+    ),
+    action(
+      'steward briefed',
+      { values: ['delivery-ids', 'digest-run-id'] },
+      'steward-self'
+    ),
     route('account whoami', 'whoami'),
     route('account credits wallet', 'credits wallet'),
     route('account credits items', 'credits items', {

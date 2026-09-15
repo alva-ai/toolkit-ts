@@ -168,6 +168,21 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('schedule pause', { values: ['channel-id', 'inbox-path', 'name'] }),
   command('schedule resume', { values: ['channel-id', 'inbox-path', 'name'] }),
   command('schedule delete', { values: ['channel-id', 'inbox-path', 'name'] }),
+  command('steward decide', {
+    values: ['inbox-path', 'delivery-id', 'decision', 'reason'],
+  }),
+  command('steward forward', {
+    values: ['inbox-path', 'delivery-id', 'request-id'],
+  }),
+  command('steward send', {
+    values: ['inbox-path', 'body', 'delivery-ids', 'request-id'],
+  }),
+  command('steward pending', {
+    values: ['inbox-path', 'after', 'since', 'first'],
+  }),
+  command('steward briefed', {
+    values: ['inbox-path', 'delivery-ids', 'digest-run-id'],
+  }),
 
   command('service-account create', { values: ['name'] }),
   command('service-account list'),
