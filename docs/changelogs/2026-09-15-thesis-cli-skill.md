@@ -21,6 +21,9 @@ alter another repository or a submodule pointer.
   malformed bytes fail rather than silently becoming U+FFFD.
 - F1b: entity IDs are capped at 20, matching the gateway boundary; close notes
   reject NUL locally.
+- F1c: CRUD response body/title fields receive the same blank, Unicode, NUL,
+  and byte-limit checks as requests; a successful HTTP 204 delete normalizes
+  to `{}`.
 - F2: writes require a caller-supplied stable canonical UUID and do not retry;
   update requires explicit public/private visibility.
 
@@ -45,7 +48,9 @@ alter another repository or a submodule pointer.
 Tests cover CRLF preservation, large IDs, positive-ID validation, UUIDv7,
 explicit rewrite, no retry after HTTP failure, update visibility, terminal
 file/stdin body transport (including malformed UTF-8), and embedded rejection
-of unsupported transports.
+of unsupported transports. Terminal entity-ID CSV input trims each nonempty
+token while rejecting empty entries; the delete boundary is checked with an
+actual 204 `Response`.
 No test claims a first-run backend state or accepted running state.
 
 ## 6. Pending integration
@@ -60,7 +65,7 @@ acceptance, Signal behavior, Alert behavior, or a first-run runtime status.
 - `npm run format:check` passed.
 - No `Makefile` / `make lint-fix` target exists, so no substitute local lint
   command was run; toolkit CI owns its configured `npm run lint` check.
-- `npm test` passed: 50 files and 971 tests. It ran outside the sandbox only
+- `npm test` passed: 50 files and 979 tests. It ran outside the sandbox only
   because the pre-existing auth-login tests bind a localhost callback listener.
 - `npm run build` passed, including its existing vendor-contract prebuild.
 

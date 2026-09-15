@@ -233,6 +233,43 @@ describe('thesis terminal dispatch', () => {
     );
   });
 
+  it('trims entity ID CSV tokens without changing body text and rejects empty tokens', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+
+    await dispatchTerminal(value, [
+      'thesis',
+      'create',
+      '--request-id',
+      REQUEST_ID,
+      '--body',
+      'first\r\nsecond',
+      '--entity-ids',
+      '123, 456',
+    ]);
+
+    expect(calls.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: 'first\r\nsecond',
+        entity_ids: ['123', '456'],
+      })
+    );
+
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'first\r\nsecond',
+        '--entity-ids',
+        '123,,456',
+      ])
+    ).rejects.toThrow(/must not contain empty IDs/);
+    expect(calls.create).toHaveBeenCalledTimes(1);
+  });
+
   it('returns terminal help that documents replacement fields and ambiguity handling', async () => {
     const result = (await dispatchTerminal(client(), ['thesis', '--help'])) as {
       text: string;

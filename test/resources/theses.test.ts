@@ -129,6 +129,36 @@ describe('ThesesResource', () => {
     ]);
   });
 
+  it('normalizes an actual HTTP 204 delete response to an empty object', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetch;
+
+    await expect(
+      new AlvaClient({
+        apiKey: 'key',
+        baseUrl: 'https://api.test',
+      }).theses.delete(MAX_ID)
+    ).resolves.toEqual({});
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed delete responses and preserves request errors', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue({ deleted: true });
+
+    await expect(client.theses.delete(MAX_ID)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+
+    const error = new AlvaError('UNAVAILABLE', 'backend down', 503);
+    client._request.mockRejectedValueOnce(error);
+    await expect(client.theses.delete(MAX_ID)).rejects.toBe(error);
+  });
+
   it('rejects any numeric response ID instead of losing int64 precision', async () => {
     const response = thesis() as { thesis: Record<string, unknown> };
     response.thesis.id = 9_007_199_254_740_992;
@@ -138,6 +168,25 @@ describe('ThesesResource', () => {
       new AlvaClient({ apiKey: 'key' }).theses.get(MAX_ID)
     ).rejects.toMatchObject({
       name: 'AlvaError',
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
+  it.each([
+    ['blank body', { body: ' \r\n\t' }],
+    ['oversize body', { body: 'a'.repeat(65_537) }],
+    ['NUL body', { body: 'draft\0body' }],
+    ['oversize title', { title: 'a'.repeat(501) }],
+    ['NUL title', { title: 'thesis\0title' }],
+  ])('rejects %s in a CRUD thesis response', async (_name, patch) => {
+    const response = thesis() as { thesis: Record<string, unknown> };
+    Object.assign(response.thesis, patch);
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(response);
+
+    await expect(client.theses.get(MAX_ID)).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
     });
   });
