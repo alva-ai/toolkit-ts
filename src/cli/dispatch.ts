@@ -1,5 +1,7 @@
 import { AlvaClient } from '../client.js';
 import { validateForYouListParams } from '../resources/forYou.js';
+import { requireDecision } from '../resources/steward.js';
+import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { CliUsageError } from '../error.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
@@ -107,6 +109,7 @@ Commands:
   run         Execute code in the Alva runtime
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
+  steward     Push steward reports for a Session Inbox (decide, forward, send, pending, briefed)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -153,6 +156,41 @@ Quick start:
   alva whoami`;
 
 export const COMMAND_HELP: Record<string, string> = {
+  steward: `Usage: alva steward <subcommand> [options]
+
+Report a push steward's decisions for Feed alerts routed to its Session Inbox,
+forward or send messages to the steward's own Channel, and run the Daily Brief.
+Embedded commands target the host-attached Inbox; the terminal CLI requires
+--inbox-path.
+
+Subcommands:
+  decide     Record the decision for one delivery (required before forward/send)
+  forward    Re-post the original alert card by reference (immediate only)
+  send       Post steward-authored Markdown covering the listed deliveries
+  pending    Page deliveries decided "digest" that no brief has covered yet
+  briefed    Record that a Daily Brief covered the listed deliveries
+
+Flags:
+  --inbox-path <path>       Steward Session Inbox (terminal CLI only)
+  --delivery-id <id>        One delivery (decide, forward)
+  --delivery-ids <a,b,c>    Comma-separated deliveries (send, briefed)
+  --decision <immediate|digest|suppress>
+  --reason <text>           Short audit note stored with the decision
+  --body <markdown>         Message body (send)
+  --request-id <uuid>       Idempotency key; generated when omitted
+  --after <cursor>          Opaque cursor from the previous page's nextCursor (pending)
+  --since <RFC3339>         First page only: lower bound on decision time (pending)
+  --until <RFC3339>         First page only: fixed upper bound of the Brief window; later pages inherit it through the cursor (pending)
+  --first <n>               Page size, 1-100 (pending)
+  --digest-run-id <id>      The request id echoed by the send that carried these deliveries (briefed)
+
+Examples (terminal; the embedded Agent tool omits --inbox-path):
+  alva steward decide --inbox-path /alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl --delivery-id 123 --decision immediate --reason "guidance cut 15%"
+  alva steward forward --inbox-path <inbox> --delivery-id 123
+  alva steward send --inbox-path <inbox> --delivery-ids 124,125 --body "Two related moves..."
+  alva steward pending --inbox-path <inbox> --until 2026-09-15T13:00:00Z
+  alva steward pending --inbox-path <inbox> --after <nextCursor from the previous page>
+  alva steward briefed --inbox-path <inbox> --digest-run-id <request id echoed by send> --delivery-ids 124,125`,
   configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
 Save API credentials to ~/.config/alva/config.json (mode 0600).
@@ -2974,6 +3012,80 @@ export async function executeParsedCommand(
           throw new CliUsageError(
             `Unknown subcommand: schedule ${subcommand}`,
             'schedule'
+          );
+      }
+    }
+
+    case 'steward': {
+      if (!subcommand) {
+        throw new CliUsageError('Missing subcommand for steward', 'steward');
+      }
+      const inboxPath = requireFlag(
+        flags,
+        'inbox-path',
+        `steward ${subcommand}`
+      );
+      const ids = (name: string): string[] =>
+        requireFlag(flags, name, `steward ${subcommand}`)
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value !== '');
+      switch (subcommand) {
+        case 'decide':
+          return client.steward.decide({
+            inboxPath,
+            deliveryId: requireFlag(flags, 'delivery-id', 'steward decide'),
+            decision: requireDecision(
+              requireFlag(flags, 'decision', 'steward decide')
+            ),
+            reason: requireFlag(flags, 'reason', 'steward decide'),
+          });
+        case 'forward':
+          return client.steward.forward({
+            inboxPath,
+            deliveryId: requireFlag(flags, 'delivery-id', 'steward forward'),
+            requestId: flags['request-id'],
+          });
+        case 'send':
+          return client.steward.send({
+            inboxPath,
+            body: requireFlag(flags, 'body', 'steward send'),
+            deliveryIds: ids('delivery-ids'),
+            requestId: flags['request-id'],
+          });
+        case 'pending': {
+          const parseTime = (name: 'since' | 'until'): number | undefined => {
+            const value = flags[name];
+            if (value === undefined) return undefined;
+            try {
+              return parseRfc3339Milliseconds(value);
+            } catch {
+              throw new CliUsageError(
+                `--${name} must be an RFC3339 timestamp with a timezone`,
+                'steward'
+              );
+            }
+          };
+          const first =
+            flags.first === undefined ? undefined : Number(flags.first);
+          return client.steward.pending({
+            inboxPath,
+            after: flags.after,
+            sinceMs: parseTime('since'),
+            untilMs: parseTime('until'),
+            first,
+          });
+        }
+        case 'briefed':
+          return client.steward.briefed({
+            inboxPath,
+            deliveryIds: ids('delivery-ids'),
+            digestRunId: requireFlag(flags, 'digest-run-id', 'steward briefed'),
+          });
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: steward ${subcommand}`,
+            'steward'
           );
       }
     }

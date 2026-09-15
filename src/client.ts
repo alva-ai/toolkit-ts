@@ -30,6 +30,7 @@ import { FunctionsResource } from './resources/functions.js';
 import { CreditsResource } from './resources/credits.js';
 import { MarketsResource } from './resources/markets.js';
 import { SchedulesResource } from './resources/schedules.js';
+import { StewardResource } from './resources/steward.js';
 import { TradingPairsResource } from './resources/tradingPairs.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
@@ -181,6 +182,7 @@ export class AlvaClient {
   private _credits?: CreditsResource;
   private _markets?: MarketsResource;
   private _schedules?: SchedulesResource;
+  private _steward?: StewardResource;
   private _tradingPairs?: TradingPairsResource;
 
   constructor(config: AlvaClientConfig) {
@@ -289,6 +291,9 @@ export class AlvaClient {
   }
   get schedules(): SchedulesResource {
     return (this._schedules ??= new SchedulesResource(this));
+  }
+  get steward(): StewardResource {
+    return (this._steward ??= new StewardResource(this));
   }
 
   _requireAuth(): void {

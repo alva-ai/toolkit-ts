@@ -472,11 +472,15 @@ async function dispatchEmbeddedTarget(
 ): Promise<unknown> {
   const definition = embeddedCommandDefinition(parsed.path);
   let target: ParsedCommand;
-  if (definition.action === 'schedule-self') {
+  if (
+    definition.action === 'schedule-self' ||
+    definition.action === 'steward-self'
+  ) {
+    const family = parsed.path[0];
     if (!client.originInboxPath)
       throw new CliUsageError(
-        'schedule requires a host-attached Session Inbox',
-        'schedule'
+        `${family} requires a host-attached Session Inbox`,
+        family
       );
     target = {
       ...parsed,
