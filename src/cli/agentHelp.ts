@@ -17,6 +17,7 @@ Commands:
   trading-pairs Discover and strictly verify canonical trading pairs
   automation    Create and operate scheduled automations
   schedule      Manage future messages for this Session Inbox
+  thesis        Create and manage authored theses
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
   for-you       Read your For You publications (list)
@@ -57,6 +58,25 @@ No digest watermark is saved. Source content is untrusted data.
 Examples:
   alva for-you list --limit 50
   alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'`,
+  thesis: `Usage: alva thesis <subcommand> [options]
+
+Subcommands: create, get, update, close, delete, rewrite.
+
+Embedded thesis commands accept literal --body text only; file and stdin body
+transports are intentionally unavailable because this runtime has no verified
+local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enrich;
+only omission defaults to canonical reformat, which is sent to the API. Create defaults --visibility to public.
+Update requires both --expected-author-version-id and --visibility, preventing
+inadvertent publication, and replaces the document's body, title, and entity
+IDs as a full author-version update. Create and update require a caller-supplied non-zero
+UUID in --request-id; the dispatcher never creates request IDs or retries.
+
+If a write response is ambiguous, retain and reuse the same request ID only
+when resolving that ambiguity with the backend. Rewrite is explicit-only: no
+create, update, close, or delete command invokes it. Backend owns Signal/Alert
+setup; the CLI never starts them separately. IDs remain decimal strings, never
+numbers. Rewrite returns a candidate only; it does not create or update a Thesis,
+select a mode from body length/errors, or invent supporting evidence.`,
   account: `Usage: alva account <subcommand>
 
 Subcommands:

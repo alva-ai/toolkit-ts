@@ -60,9 +60,13 @@ function configureFetchTimeout(timeoutMs: number): void {
 }
 
 async function readAllStdin(): Promise<string> {
+  return Buffer.from(await readAllStdinBytes()).toString('utf8');
+}
+
+async function readAllStdinBytes(): Promise<Uint8Array> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 const nodeRuntimeDeps: DispatchRuntimeDeps = {
@@ -75,6 +79,7 @@ const nodeRuntimeDeps: DispatchRuntimeDeps = {
     writeBytes: (path, data) => fs.writeFileSync(path, data),
   },
   readStdin: readAllStdin,
+  readStdinBytes: readAllStdinBytes,
   randomUUID: () => crypto.randomUUID(),
   configureFetchTimeout,
   writeBrokerResult: async (envelope, exitCode) => {

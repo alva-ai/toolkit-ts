@@ -107,6 +107,27 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     action('schedule pause', { values: ['name'] }, 'schedule-self'),
     action('schedule resume', { values: ['name'] }, 'schedule-self'),
     action('schedule delete', { values: ['name'] }, 'schedule-self'),
+    route('thesis create', 'thesis create', {
+      values: ['request-id', 'body', 'title', 'entity-ids', 'visibility'],
+    }),
+    route('thesis get', 'thesis get', { values: ['id'] }),
+    route('thesis update', 'thesis update', {
+      values: [
+        'id',
+        'request-id',
+        'expected-author-version-id',
+        'body',
+        'title',
+        'entity-ids',
+        'visibility',
+      ],
+      booleans: ['editorial'],
+    }),
+    route('thesis close', 'thesis close', {
+      values: ['id', 'expected-author-version-id', 'note'],
+    }),
+    route('thesis delete', 'thesis delete', { values: ['id'] }),
+    route('thesis rewrite', 'thesis rewrite', { values: ['body', 'mode'] }),
     route('account whoami', 'whoami'),
     route('account credits wallet', 'credits wallet'),
     route('account credits items', 'credits items', {
