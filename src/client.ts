@@ -32,6 +32,7 @@ import { MarketsResource } from './resources/markets.js';
 import { SchedulesResource } from './resources/schedules.js';
 import { StewardResource } from './resources/steward.js';
 import { TradingPairsResource } from './resources/tradingPairs.js';
+import { ThesesResource } from './resources/theses.js';
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
 export const DEFAULT_ARRAYS_BASE_URL = 'https://data-tools.prd.space.id';
@@ -184,6 +185,7 @@ export class AlvaClient {
   private _schedules?: SchedulesResource;
   private _steward?: StewardResource;
   private _tradingPairs?: TradingPairsResource;
+  private _theses?: ThesesResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -294,6 +296,9 @@ export class AlvaClient {
   }
   get steward(): StewardResource {
     return (this._steward ??= new StewardResource(this));
+  }
+  get theses(): ThesesResource {
+    return (this._theses ??= new ThesesResource(this));
   }
 
   _requireAuth(): void {
