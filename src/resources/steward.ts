@@ -298,6 +298,19 @@ export class StewardResource {
     if (params.after !== undefined && params.after !== '') {
       input.after = params.after;
     } else {
+      for (const [label, value] of [
+        ['sinceMs', params.sinceMs],
+        ['untilMs', params.untilMs],
+      ] as const) {
+        if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0))
+          throw invalid(`${label} must be a positive safe integer timestamp`);
+      }
+      if (
+        params.sinceMs !== undefined &&
+        params.untilMs !== undefined &&
+        params.untilMs <= params.sinceMs
+      )
+        throw invalid('untilMs must be after sinceMs');
       if (params.sinceMs !== undefined) input.sinceMs = params.sinceMs;
       if (params.untilMs !== undefined) input.untilMs = params.untilMs;
     }
@@ -313,6 +326,15 @@ export class StewardResource {
     }>(PENDING, { inboxPath: requireInboxPath(params), input });
     const page = data.viewer?.stewardDigestPending;
     if (!page || !Array.isArray(page.edges)) throw emptyResponse();
+    const windowSinceMs = page.windowSinceMs ?? 0;
+    const windowUntilMs = page.windowUntilMs ?? 0;
+    if (
+      !Number.isSafeInteger(windowSinceMs) ||
+      !Number.isSafeInteger(windowUntilMs) ||
+      windowSinceMs <= 0 ||
+      windowUntilMs <= windowSinceMs
+    )
+      throw emptyResponse();
     const items = page.edges.map((edge) => edge.node);
     const nextCursor =
       page.pageInfo?.hasNextPage === true && page.pageInfo.endCursor
@@ -321,8 +343,8 @@ export class StewardResource {
     return {
       items,
       nextCursor,
-      windowSinceMs: page.windowSinceMs ?? 0,
-      windowUntilMs: page.windowUntilMs ?? 0,
+      windowSinceMs,
+      windowUntilMs,
     };
   }
 

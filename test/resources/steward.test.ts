@@ -122,6 +122,36 @@ describe('StewardResource', () => {
     );
   });
 
+  it('rejects invalid first-page bounds before transport', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request');
+    for (const params of [
+      { sinceMs: -1 },
+      { untilMs: 1.5 },
+      { sinceMs: 10, untilMs: 10 },
+    ]) {
+      await expect(
+        c.steward.pending({ inboxPath, ...params })
+      ).rejects.toThrow();
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing or invalid response windows', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request');
+    for (const bounds of [
+      {},
+      { windowSinceMs: 10, windowUntilMs: 10 },
+      { windowSinceMs: 1, windowUntilMs: 1.5 },
+    ]) {
+      request.mockResolvedValue({
+        data: { viewer: { stewardDigestPending: { edges: [], ...bounds } } },
+      });
+      await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+    }
+  });
+
   it('validates ids, decisions, and the inbox path before calling the gateway', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request');
