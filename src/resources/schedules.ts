@@ -104,6 +104,9 @@ query ToolkitAgentChannel {
 const SCHEDULE_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const RFC3339 =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(Z|[+-](\d{2}):(\d{2}))$/i;
+// Digest windows carry millisecond precision; schedule semantics stay second-based.
+const RFC3339_FRACTIONAL =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-](\d{2}):(\d{2}))$/i;
 const ISO_DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
 
 interface GraphQLErrorPayload {
@@ -573,11 +576,11 @@ function durationMilliseconds(value: string, minimumSeconds: number): number {
 
 /** Strict RFC 3339 (with timezone) → epoch milliseconds; throws INVALID_ARGUMENT otherwise. */
 export function parseRfc3339Milliseconds(value: string): number {
-  return timestampMilliseconds(value);
+  return timestampMilliseconds(value, true);
 }
 
-function timestampMilliseconds(value: string): number {
-  const match = RFC3339.exec(value);
+function timestampMilliseconds(value: string, fractional = false): number {
+  const match = (fractional ? RFC3339_FRACTIONAL : RFC3339).exec(value);
   if (!match) throw invalid('timestamp must be RFC3339 with a timezone');
   const [year, month, day, hour, minute, second] = match
     .slice(1, 7)

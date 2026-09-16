@@ -30,6 +30,32 @@ function clientWithSteward(attached = false) {
 }
 
 describe('steward CLI', () => {
+  it('preserves millisecond digest windows from the runtime', async () => {
+    const client = clientWithSteward(true);
+    await dispatchEmbedded(client, [
+      'steward',
+      'pending',
+      '--since',
+      '2026-09-16T07:33:59.123Z',
+      '--until',
+      '2026-09-16T16:33:59.456+08:00',
+    ]);
+    expect(client.steward.pending).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sinceMs: Date.parse('2026-09-16T07:33:59.123Z'),
+        untilMs: Date.parse('2026-09-16T16:33:59.456+08:00'),
+      })
+    );
+    await expect(
+      dispatchEmbedded(client, [
+        'steward',
+        'pending',
+        '--since',
+        '2026-02-30T07:33:59.123Z',
+      ])
+    ).rejects.toThrow(CliUsageError);
+  });
+
   it('embedded commands always target the host-attached Inbox', async () => {
     const client = clientWithSteward(true);
     await dispatchEmbedded(client, [
