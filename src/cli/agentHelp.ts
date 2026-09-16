@@ -17,6 +17,7 @@ Commands:
   trading-pairs Discover and strictly verify canonical trading pairs
   automation    Create and operate scheduled automations
   schedule      Manage future messages for this Session Inbox
+  steward       Push steward reports for this Session Inbox (decide, forward, send, pending, briefed)
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
   for-you       Read your For You publications (list)
@@ -26,6 +27,30 @@ Commands:
 Run 'alva <command> --help' for a command tree.`;
 
 export const AGENT_COMMAND_HELP: Readonly<Record<string, string>> = {
+  steward: `Usage: alva steward <subcommand> [options]
+
+Report this push steward's decisions for Feed alerts routed to its Inbox and
+deliver messages to its own Channel. The host supplies the Inbox; no target,
+identity, profile or endpoint overrides are available.
+
+decide   --delivery-id <id> --decision <immediate|digest|suppress> --reason <text>
+         Record the decision first; forward/send are rejected without it.
+forward  --delivery-id <id> [--request-id <uuid>]
+         Re-post the original alert card by reference (immediate only).
+send     --delivery-ids <a,b,c> --body <markdown> [--request-id <uuid>]
+         Post your own Markdown covering the listed deliveries; the response
+         echoes requestId — pass it to briefed.
+pending  [--after <cursor>] [--since <RFC3339>] [--until <RFC3339>] [--first <1-100>]
+         Deliveries held for the Daily Brief. Repeat with --after <nextCursor>
+         until nextCursor is null; the cursor carries the window.
+briefed  --digest-run-id <id> --delivery-ids <a,b,c>
+         Mark every reviewed delivery covered: use the requestId echoed by send,
+         or the digest_request run id when nothing was worth sending.
+
+request ids are generated when omitted; pass one to retry an unclear result.
+
+Example: alva steward decide --delivery-id 123 --decision digest --reason "routine event"`,
+
   schedule: `Usage: alva schedule <subcommand> [options]
 
 Schedule a future follow-up for this Session's host-attached Inbox.

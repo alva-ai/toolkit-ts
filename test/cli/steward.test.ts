@@ -19,9 +19,12 @@ function clientWithSteward(attached = false) {
   client.steward.send = vi
     .fn()
     .mockResolvedValue({ channelMessageId: '78', requestId: 'r' });
-  client.steward.pending = vi
-    .fn()
-    .mockResolvedValue({ items: [], nextAfterId: null });
+  client.steward.pending = vi.fn().mockResolvedValue({
+    items: [],
+    nextCursor: null,
+    windowSinceMs: 1,
+    windowUntilMs: 2,
+  });
   client.steward.briefed = vi.fn().mockResolvedValue({ ok: true });
   return client;
 }
@@ -77,7 +80,7 @@ describe('steward CLI', () => {
       'steward',
       'pending',
       '--after',
-      '0',
+      'c1',
       '--until',
       '2026-09-15T13:00:00Z',
       '--first',
@@ -85,7 +88,7 @@ describe('steward CLI', () => {
     ]);
     expect(client.steward.pending).toHaveBeenCalledWith({
       inboxPath,
-      afterDeliveryId: '0',
+      after: 'c1',
       sinceMs: undefined,
       untilMs: Date.parse('2026-09-15T13:00:00Z'),
       first: 20,
@@ -195,5 +198,53 @@ describe('steward CLI', () => {
         'x',
       ])
     ).rejects.toThrow(/decision must be one of/);
+  });
+});
+
+describe('steward CLI details', () => {
+  it('embedded forward and send accept --request-id for retries', async () => {
+    const client = clientWithSteward(true);
+    await dispatchEmbedded(client, [
+      'steward',
+      'forward',
+      '--delivery-id',
+      '5',
+      '--request-id',
+      '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
+    ]);
+    expect(client.steward.forward).toHaveBeenCalledWith({
+      inboxPath,
+      deliveryId: '5',
+      requestId: '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
+    });
+    await dispatchEmbedded(client, [
+      'steward',
+      'send',
+      '--delivery-ids',
+      '5',
+      '--body',
+      'x',
+      '--request-id',
+      '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a78',
+    ]);
+    expect(client.steward.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a78',
+      })
+    );
+  });
+
+  it('rejects --since/--until that are not RFC3339 with a timezone', async () => {
+    const client = clientWithSteward(true);
+    for (const value of [
+      '2026-09-15T12:00:00',
+      'yesterday',
+      '2026-13-01T00:00:00Z',
+    ]) {
+      await expect(
+        dispatchEmbedded(client, ['steward', 'pending', '--until', value])
+      ).rejects.toThrow(/RFC3339/);
+    }
+    expect(client.steward.pending).not.toHaveBeenCalled();
   });
 });

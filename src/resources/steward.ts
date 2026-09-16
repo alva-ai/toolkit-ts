@@ -32,10 +32,14 @@ export interface StewardSendParams extends StewardTarget {
   requestId?: string;
 }
 
+export type StewardSourceKind = 'FEED' | 'MARKET_ENTITY' | 'THESIS_FEED';
+
 export interface StewardPendingParams extends StewardTarget {
-  afterDeliveryId?: string;
+  /** Opaque cursor from the previous page's `nextCursor`; carries the window. */
+  after?: string;
+  /** First page only: lower bound on decision time. */
   sinceMs?: number;
-  /** Fixed upper bound of the Brief window; pass the same value on every page. */
+  /** First page only: fixed upper bound of the Brief window (the digest_request's untilMs). */
   untilMs?: number;
   first?: number;
 }
@@ -63,7 +67,7 @@ export interface StewardSendResult {
 export interface StewardPendingItem {
   deliveryId: string;
   feedEntryId: string;
-  source: { kind: string; id: string };
+  source: { kind: StewardSourceKind; id: string };
   decisionReason: string;
   consumedAtMs: number;
 }
@@ -71,7 +75,8 @@ export interface StewardPendingItem {
 export interface StewardPendingPage {
   items: StewardPendingItem[];
   /** Cursor for the next page; `null` when this page was the last. */
-  nextAfterId: string | null;
+  nextCursor: string | null;
+  /** The window every page of this Brief was read with. */
   windowSinceMs: number;
   windowUntilMs: number;
 }
@@ -103,33 +108,38 @@ const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
 };
 
 const DECIDE = `
-mutation ToolkitStewardDecide($input: StewardDecideDeliveryInput!) {
-  stewardDecideDelivery(input: $input) { state }
+mutation ToolkitStewardDecide($input: UpdateStewardDeliveryInput!) {
+  updateStewardDelivery(input: $input) { delivery { deliveryId state } }
 }`.trim();
 
 const FORWARD = `
-mutation ToolkitStewardForward($input: StewardForwardAlertInput!) {
-  stewardForwardAlert(input: $input) { channelMessageId state }
+mutation ToolkitStewardForward($input: UpdateStewardDeliveryInput!) {
+  updateStewardDelivery(input: $input) { delivery { deliveryId state channelMessageId } }
 }`.trim();
 
 const SEND = `
-mutation ToolkitStewardSend($input: StewardSendChannelMessageInput!) {
-  stewardSendChannelMessage(input: $input) { channelMessageId requestId }
+mutation ToolkitStewardSend($input: PostStewardMessageInput!) {
+  postStewardMessage(input: $input) { message { channelMessageId requestId } }
 }`.trim();
 
 const PENDING = `
-query ToolkitStewardPending($inboxPath: String!, $afterDeliveryId: ID, $sinceMs: TimestampMs, $untilMs: TimestampMs, $first: Int) {
-  stewardDigestPending(inboxPath: $inboxPath, afterDeliveryId: $afterDeliveryId, sinceMs: $sinceMs, untilMs: $untilMs, first: $first) {
-    items { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
-    nextAfterId
-    windowSinceMs
-    windowUntilMs
+query ToolkitStewardPending($inboxPath: String!, $input: StewardDigestPendingInput) {
+  viewer {
+    stewardDigestPending(inboxPath: $inboxPath, input: $input) {
+      edges {
+        cursor
+        node { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
+      }
+      pageInfo { hasNextPage endCursor }
+      windowSinceMs
+      windowUntilMs
+    }
   }
 }`.trim();
 
 const BRIEFED = `
-mutation ToolkitStewardBriefed($input: StewardMarkBriefedInput!) {
-  stewardMarkBriefed(input: $input) { ok }
+mutation ToolkitStewardBriefed($input: CompleteStewardBriefInput!) {
+  completeStewardBrief(input: $input) { ok }
 }`.trim();
 
 const DECISIONS: ReadonlySet<string> = new Set([
@@ -144,7 +154,11 @@ function invalid(message: string): AlvaError {
 }
 
 function requireInboxPath(target: StewardTarget): string {
-  if (typeof target.inboxPath !== 'string' || target.inboxPath === '')
+  if (
+    !target ||
+    typeof target.inboxPath !== 'string' ||
+    target.inboxPath === ''
+  )
     throw invalid('steward commands require the steward Session Inbox path');
   return target.inboxPath;
 }
@@ -176,8 +190,28 @@ export function requireDecision(value: string): StewardDecision {
   return value as StewardDecision;
 }
 
+/** RFC 4122 v4 UUID without assuming `crypto.randomUUID` (absent on Node 18 and older browsers). */
+export function generateRequestId(): string {
+  const webcrypto = (globalThis as { crypto?: Crypto }).crypto;
+  if (typeof webcrypto?.randomUUID === 'function')
+    return webcrypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof webcrypto?.getRandomValues === 'function') {
+    webcrypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1)
+      bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
+    ''
+  );
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function requireRequestId(value: string | undefined): string {
-  if (value === undefined) return globalThis.crypto.randomUUID();
+  if (value === undefined) return generateRequestId();
   if (
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       value
@@ -199,50 +233,60 @@ export class StewardResource {
     const reason = params.reason?.trim();
     if (!reason) throw invalid('a decision reason is required');
     const data = await this.graphql<{
-      stewardDecideDelivery?: StewardDecideResult | null;
+      updateStewardDelivery?: { delivery?: { state: string } | null } | null;
     }>(DECIDE, {
       input: {
         inboxPath: requireInboxPath(params),
         deliveryId: requireDeliveryId(params.deliveryId),
-        decision: requireDecision(params.decision).toUpperCase(),
-        reason,
+        decision: {
+          decision: requireDecision(params.decision).toUpperCase(),
+          reason,
+        },
       },
     });
-    if (!data.stewardDecideDelivery) throw emptyResponse();
-    return data.stewardDecideDelivery;
+    const delivery = data.updateStewardDelivery?.delivery;
+    if (!delivery) throw emptyResponse();
+    return { state: delivery.state };
   }
 
   async forward(params: StewardForwardParams): Promise<StewardForwardResult> {
     this.client._requireAuth();
     const data = await this.graphql<{
-      stewardForwardAlert?: StewardForwardResult | null;
+      updateStewardDelivery?: {
+        delivery?: { state: string; channelMessageId?: string | null } | null;
+      } | null;
     }>(FORWARD, {
       input: {
         inboxPath: requireInboxPath(params),
         deliveryId: requireDeliveryId(params.deliveryId),
-        requestId: requireRequestId(params.requestId),
+        forward: { requestId: requireRequestId(params.requestId) },
       },
     });
-    if (!data.stewardForwardAlert) throw emptyResponse();
-    return data.stewardForwardAlert;
+    const delivery = data.updateStewardDelivery?.delivery;
+    if (!delivery || !delivery.channelMessageId) throw emptyResponse();
+    return {
+      channelMessageId: delivery.channelMessageId,
+      state: delivery.state,
+    };
   }
 
   async send(params: StewardSendParams): Promise<StewardSendResult> {
     this.client._requireAuth();
-    const body = params.body?.trim();
-    if (!body) throw invalid('a message body is required');
+    if (typeof params.body !== 'string' || params.body.trim() === '')
+      throw invalid('a message body is required');
     const data = await this.graphql<{
-      stewardSendChannelMessage?: StewardSendResult | null;
+      postStewardMessage?: { message?: StewardSendResult | null } | null;
     }>(SEND, {
       input: {
         inboxPath: requireInboxPath(params),
         requestId: requireRequestId(params.requestId),
-        body,
+        body: params.body,
         deliveryIds: requireDeliveryIds(params.deliveryIds),
       },
     });
-    if (!data.stewardSendChannelMessage) throw emptyResponse();
-    return data.stewardSendChannelMessage;
+    const message = data.postStewardMessage?.message;
+    if (!message) throw emptyResponse();
+    return message;
   }
 
   async pending(params: StewardPendingParams): Promise<StewardPendingPage> {
@@ -250,39 +294,40 @@ export class StewardResource {
     const first = params.first ?? 50;
     if (!Number.isInteger(first) || first < 1 || first > 100)
       throw invalid('first must be an integer between 1 and 100');
-    const continuing =
-      params.afterDeliveryId !== undefined && params.afterDeliveryId !== '0';
-    if (
-      continuing &&
-      (params.sinceMs === undefined || params.untilMs === undefined)
-    )
-      throw invalid(
-        'continuation requires sinceMs and untilMs from the first page'
-      );
-    for (const bound of [params.sinceMs, params.untilMs]) {
-      if (bound !== undefined && (!Number.isSafeInteger(bound) || bound <= 0))
-        throw invalid('window bounds must be positive integer timestamps');
+    const input: Record<string, unknown> = { first };
+    if (params.after !== undefined && params.after !== '') {
+      input.after = params.after;
+    } else {
+      for (const [label, value] of [
+        ['sinceMs', params.sinceMs],
+        ['untilMs', params.untilMs],
+      ] as const) {
+        if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0))
+          throw invalid(`${label} must be a positive safe integer timestamp`);
+      }
+      if (
+        params.sinceMs !== undefined &&
+        params.untilMs !== undefined &&
+        params.untilMs <= params.sinceMs
+      )
+        throw invalid('untilMs must be after sinceMs');
+      if (params.sinceMs !== undefined) input.sinceMs = params.sinceMs;
+      if (params.untilMs !== undefined) input.untilMs = params.untilMs;
     }
-    if (
-      params.sinceMs !== undefined &&
-      params.untilMs !== undefined &&
-      params.untilMs <= params.sinceMs
-    )
-      throw invalid('untilMs must be after sinceMs');
     const data = await this.graphql<{
-      stewardDigestPending?: StewardPendingPage | null;
-    }>(PENDING, {
-      inboxPath: requireInboxPath(params),
-      afterDeliveryId:
-        params.afterDeliveryId === undefined || params.afterDeliveryId === '0'
-          ? null
-          : requireDeliveryId(params.afterDeliveryId, 'after'),
-      sinceMs: params.sinceMs ?? null,
-      untilMs: params.untilMs ?? null,
-      first,
-    });
-    if (!data.stewardDigestPending) throw emptyResponse();
-    const { windowSinceMs, windowUntilMs } = data.stewardDigestPending;
+      viewer?: {
+        stewardDigestPending?: {
+          edges?: Array<{ cursor: string; node: StewardPendingItem }>;
+          pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+          windowSinceMs?: number;
+          windowUntilMs?: number;
+        } | null;
+      } | null;
+    }>(PENDING, { inboxPath: requireInboxPath(params), input });
+    const page = data.viewer?.stewardDigestPending;
+    if (!page || !Array.isArray(page.edges)) throw emptyResponse();
+    const windowSinceMs = page.windowSinceMs ?? 0;
+    const windowUntilMs = page.windowUntilMs ?? 0;
     if (
       !Number.isSafeInteger(windowSinceMs) ||
       !Number.isSafeInteger(windowUntilMs) ||
@@ -290,11 +335,16 @@ export class StewardResource {
       windowUntilMs <= windowSinceMs
     )
       throw emptyResponse();
+    const items = page.edges.map((edge) => edge.node);
+    const nextCursor =
+      page.pageInfo?.hasNextPage === true && page.pageInfo.endCursor
+        ? page.pageInfo.endCursor
+        : null;
     return {
+      items,
+      nextCursor,
       windowSinceMs,
       windowUntilMs,
-      items: data.stewardDigestPending.items ?? [],
-      nextAfterId: data.stewardDigestPending.nextAfterId ?? null,
     };
   }
 
@@ -303,7 +353,7 @@ export class StewardResource {
     const digestRunId = params.digestRunId?.trim();
     if (!digestRunId) throw invalid('a digest run id is required');
     const data = await this.graphql<{
-      stewardMarkBriefed?: { ok?: boolean } | null;
+      completeStewardBrief?: { ok?: boolean } | null;
     }>(BRIEFED, {
       input: {
         inboxPath: requireInboxPath(params),
@@ -311,7 +361,7 @@ export class StewardResource {
         digestRunId,
       },
     });
-    if (data.stewardMarkBriefed?.ok !== true) throw emptyResponse();
+    if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
     return { ok: true };
   }
 
@@ -321,7 +371,8 @@ export class StewardResource {
   ): Promise<T> {
     const response = (await this.client._request('POST', '/query', {
       body: { query, variables },
-    })) as GraphQLResponse<T>;
+    })) as GraphQLResponse<T> | null | undefined;
+    if (!response || typeof response !== 'object') throw emptyResponse();
     if (response.errors?.length) {
       const codes = response.errors.map((error) => error.extensions?.code);
       const canonicalCode =

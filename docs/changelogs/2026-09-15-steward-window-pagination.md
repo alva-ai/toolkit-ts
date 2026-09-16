@@ -6,7 +6,7 @@ Complete #940 tool pagination on Alan #173 (1fd0af6), using Gateway #944 operati
 
 ## 2. Behavior
 
-Each call returns one page, nextAfterId and effective windowSinceMs/windowUntilMs. Continuations require both bounds; every batch uses the original window. Reviewed-but-unsent receipts follow Alan #2520; sends keep stable UUIDs.
+Each call returns one page, nextCursor and effective windowSinceMs/windowUntilMs. The opaque continuation cursor carries both bounds; every batch uses the original window. Reviewed-but-unsent receipts follow Alan #2520; sends keep stable UUIDs.
 
 ## 3. Dependencies
 
@@ -14,11 +14,11 @@ Backend and Gateway effective-window response fields must deploy before this con
 
 ## 4. Design
 
-Reuse StewardPendingPage and existing sinceMs/untilMs/afterDeliveryId. Validate numeric bounds and response window. No new storage or unbounded automatic page aggregation.
+Reuse StewardPendingPage and upstream sinceMs/untilMs/after. Validate numeric bounds and response window. No new storage or unbounded automatic page aggregation.
 
 ## 5. Validation
 
-Node 22, npm lockfile; typecheck/test/lint/format:check/build. Resource tests prove window echo and continuation validation; embedded CLI tests prove host target.
+Node 22, npm lockfile; typecheck/test/lint/format:check/build. Resource tests prove first-page/response window validation and opaque continuation; embedded CLI tests prove host target.
 
 ## 6. Checklist
 
@@ -45,3 +45,7 @@ Node 22：npm run typecheck、npm test（954 tests / 50 files）、npm run lint�
 ## 2026-09-16 本地提交保存点
 
 按用户要求保存当前实现与验证记录为本地提交。尚未推送、创建 PR、合并或部署；上述未通过的跨服务验收与待更新依赖仍未完成。本次提交不表示 #936/#940 已完成。
+
+## Main alignment (2026-09-16)
+
+Aligned with upstream business mutations and opaque cursor pagination. Preserved retry UUID coverage and strict window validation. Node 22 typecheck, 959 tests, lint, format:check and build passed. Full live acceptance and published ALPI Toolkit pin remain pending.

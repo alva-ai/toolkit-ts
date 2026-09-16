@@ -13,7 +13,7 @@ describe('StewardResource', () => {
   it('records a decision through the gateway mutation', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
-      data: { stewardDecideDelivery: { state: 'consumed' } },
+      data: { updateStewardDelivery: { delivery: { state: 'consumed' } } },
     });
     const result = await c.steward.decide({
       inboxPath,
@@ -24,13 +24,12 @@ describe('StewardResource', () => {
     expect(result).toEqual({ state: 'consumed' });
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
-        query: expect.stringContaining('stewardDecideDelivery'),
+        query: expect.stringContaining('updateStewardDelivery'),
         variables: {
           input: {
             inboxPath,
             deliveryId: '123',
-            decision: 'DIGEST',
-            reason: 'routine event',
+            decision: { decision: 'DIGEST', reason: 'routine event' },
           },
         },
       },
@@ -43,12 +42,16 @@ describe('StewardResource', () => {
       .spyOn(c, '_request')
       .mockResolvedValueOnce({
         data: {
-          stewardForwardAlert: { channelMessageId: '77', state: 'sent' },
+          updateStewardDelivery: {
+            delivery: { state: 'sent', channelMessageId: '77' },
+          },
         },
       })
       .mockResolvedValueOnce({
         data: {
-          stewardSendChannelMessage: { channelMessageId: '78', requestId: 'x' },
+          postStewardMessage: {
+            message: { channelMessageId: '78', requestId: 'x' },
+          },
         },
       });
     await c.steward.forward({ inboxPath, deliveryId: '5' });
@@ -56,9 +59,9 @@ describe('StewardResource', () => {
     const uuid = /^[0-9a-f-]{36}$/;
     const forwardInput = (
       request.mock.calls[0][2] as {
-        body: { variables: { input: { requestId: string } } };
+        body: { variables: { input: { forward: { requestId: string } } } };
       }
-    ).body.variables.input;
+    ).body.variables.input.forward;
     const sendInput = (
       request.mock.calls[1][2] as {
         body: {
@@ -71,68 +74,82 @@ describe('StewardResource', () => {
     expect(sendInput.deliveryIds).toEqual(['5', '6']);
   });
 
-  it('pages pending deliveries by cursor and clamps the page size', async () => {
+  it('reads one connection page and returns the next opaque cursor', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
       data: {
-        stewardDigestPending: {
-          items: [
-            {
-              deliveryId: '5',
-              feedEntryId: '9',
-              source: { kind: 'feed', id: '3' },
-              decisionReason: 'low urgency',
-              consumedAtMs: 1788710000000,
-            },
-          ],
-          nextAfterId: '5',
-          windowSinceMs: 1788700000000,
-          windowUntilMs: 1788720000000,
+        viewer: {
+          stewardDigestPending: {
+            edges: [
+              {
+                cursor: 'cur-5',
+                node: {
+                  deliveryId: '5',
+                  feedEntryId: '9',
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'low urgency',
+                  consumedAtMs: 1788710000000,
+                },
+              },
+            ],
+            pageInfo: { hasNextPage: true, endCursor: 'cur-5' },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
         },
       },
     });
-    const page = await c.steward.pending({ inboxPath, afterDeliveryId: '0' });
-    expect(page.nextAfterId).toBe('5');
+    const page = await c.steward.pending({ inboxPath, untilMs: 1788720000000 });
+    expect(page.nextCursor).toBe('cur-5');
     expect(page.items[0].deliveryId).toBe('5');
-    expect(page.windowSinceMs).toBe(1788700000000);
     expect(page.windowUntilMs).toBe(1788720000000);
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
         query: expect.stringContaining('stewardDigestPending'),
-        variables: {
-          inboxPath,
-          afterDeliveryId: null,
-          sinceMs: null,
-          untilMs: null,
-          first: 50,
-        },
+        variables: { inboxPath, input: { first: 50, untilMs: 1788720000000 } },
       },
     });
-    await expect(
-      c.steward.pending({ inboxPath, afterDeliveryId: '5' })
-    ).rejects.toThrow(/continuation requires/);
-    await c.steward.pending({
-      inboxPath,
-      afterDeliveryId: page.nextAfterId!,
-      sinceMs: page.windowSinceMs,
-      untilMs: page.windowUntilMs,
+    // A continuation passes only the cursor; the window travels inside it.
+    await c.steward.pending({ inboxPath, after: 'cur-5', untilMs: 1 });
+    expect(request).toHaveBeenLastCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('stewardDigestPending'),
+        variables: { inboxPath, input: { first: 50, after: 'cur-5' } },
+      },
     });
-    expect(request).toHaveBeenLastCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: expect.objectContaining({
-            afterDeliveryId: '5',
-            sinceMs: page.windowSinceMs,
-            untilMs: page.windowUntilMs,
-          }),
-        }),
-      })
-    );
     await expect(c.steward.pending({ inboxPath, first: 500 })).rejects.toThrow(
       /between 1 and 100/
     );
+  });
+
+  it('rejects invalid first-page bounds before transport', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request');
+    for (const params of [
+      { sinceMs: -1 },
+      { untilMs: 1.5 },
+      { sinceMs: 10, untilMs: 10 },
+    ]) {
+      await expect(
+        c.steward.pending({ inboxPath, ...params })
+      ).rejects.toThrow();
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing or invalid response windows', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request');
+    for (const bounds of [
+      {},
+      { windowSinceMs: 10, windowUntilMs: 10 },
+      { windowSinceMs: 1, windowUntilMs: 1.5 },
+    ]) {
+      request.mockResolvedValue({
+        data: { viewer: { stewardDigestPending: { edges: [], ...bounds } } },
+      });
+      await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+    }
   });
 
   it('validates ids, decisions, and the inbox path before calling the gateway', async () => {
@@ -175,5 +192,28 @@ describe('StewardResource', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AlvaError);
     expect((error as AlvaError).status).toBe(403);
+  });
+});
+
+describe('generateRequestId', () => {
+  it('produces RFC 4122 v4 ids even without crypto.randomUUID', async () => {
+    const { generateRequestId } =
+      await import('../../src/resources/steward.js');
+    const v4 =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(generateRequestId()).toMatch(v4);
+    const original = globalThis.crypto;
+    Object.defineProperty(globalThis, 'crypto', {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      expect(generateRequestId()).toMatch(v4);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+      });
+    }
   });
 });
