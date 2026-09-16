@@ -123,6 +123,44 @@ describe('steward CLI', () => {
     expect(attached.steward.pending).not.toHaveBeenCalled();
   });
 
+  it('embedded retries preserve the caller request ID for forward and send', async () => {
+    const client = clientWithSteward(true);
+    const requestId = '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77';
+    for (let retry = 0; retry < 2; retry++) {
+      await dispatchEmbedded(client, [
+        'steward',
+        'forward',
+        '--delivery-id',
+        '123',
+        '--request-id',
+        requestId,
+      ]);
+      await dispatchEmbedded(client, [
+        'steward',
+        'send',
+        '--delivery-ids',
+        '124,125',
+        '--body',
+        'Two moves',
+        '--request-id',
+        requestId,
+      ]);
+    }
+    expect(client.steward.forward).toHaveBeenCalledTimes(2);
+    expect(client.steward.forward).toHaveBeenNthCalledWith(2, {
+      inboxPath,
+      deliveryId: '123',
+      requestId,
+    });
+    expect(client.steward.send).toHaveBeenCalledTimes(2);
+    expect(client.steward.send).toHaveBeenNthCalledWith(2, {
+      inboxPath,
+      deliveryIds: ['124', '125'],
+      body: 'Two moves',
+      requestId,
+    });
+  });
+
   it('terminal commands require an explicit --inbox-path', async () => {
     const client = clientWithSteward();
     await expect(

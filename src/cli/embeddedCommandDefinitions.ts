@@ -113,10 +113,14 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       { values: ['delivery-id', 'decision', 'reason'] },
       'steward-self'
     ),
-    action('steward forward', { values: ['delivery-id'] }, 'steward-self'),
+    action(
+      'steward forward',
+      { values: ['delivery-id', 'request-id'] },
+      'steward-self'
+    ),
     action(
       'steward send',
-      { values: ['body', 'delivery-ids'] },
+      { values: ['body', 'delivery-ids', 'request-id'] },
       'steward-self'
     ),
     action(

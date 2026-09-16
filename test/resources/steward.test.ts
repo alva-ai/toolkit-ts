@@ -86,12 +86,16 @@ describe('StewardResource', () => {
             },
           ],
           nextAfterId: '5',
+          windowSinceMs: 1788700000000,
+          windowUntilMs: 1788720000000,
         },
       },
     });
     const page = await c.steward.pending({ inboxPath, afterDeliveryId: '0' });
     expect(page.nextAfterId).toBe('5');
     expect(page.items[0].deliveryId).toBe('5');
+    expect(page.windowSinceMs).toBe(1788700000000);
+    expect(page.windowUntilMs).toBe(1788720000000);
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
         query: expect.stringContaining('stewardDigestPending'),
@@ -104,6 +108,28 @@ describe('StewardResource', () => {
         },
       },
     });
+    await expect(
+      c.steward.pending({ inboxPath, afterDeliveryId: '5' })
+    ).rejects.toThrow(/continuation requires/);
+    await c.steward.pending({
+      inboxPath,
+      afterDeliveryId: page.nextAfterId!,
+      sinceMs: page.windowSinceMs,
+      untilMs: page.windowUntilMs,
+    });
+    expect(request).toHaveBeenLastCalledWith(
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: expect.objectContaining({
+            afterDeliveryId: '5',
+            sinceMs: page.windowSinceMs,
+            untilMs: page.windowUntilMs,
+          }),
+        }),
+      })
+    );
     await expect(c.steward.pending({ inboxPath, first: 500 })).rejects.toThrow(
       /between 1 and 100/
     );

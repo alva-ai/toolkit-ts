@@ -72,6 +72,8 @@ export interface StewardPendingPage {
   items: StewardPendingItem[];
   /** Cursor for the next page; `null` when this page was the last. */
   nextAfterId: string | null;
+  windowSinceMs: number;
+  windowUntilMs: number;
 }
 
 interface GraphQLErrorPayload {
@@ -120,6 +122,8 @@ query ToolkitStewardPending($inboxPath: String!, $afterDeliveryId: ID, $sinceMs:
   stewardDigestPending(inboxPath: $inboxPath, afterDeliveryId: $afterDeliveryId, sinceMs: $sinceMs, untilMs: $untilMs, first: $first) {
     items { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
     nextAfterId
+    windowSinceMs
+    windowUntilMs
   }
 }`.trim();
 
@@ -246,6 +250,25 @@ export class StewardResource {
     const first = params.first ?? 50;
     if (!Number.isInteger(first) || first < 1 || first > 100)
       throw invalid('first must be an integer between 1 and 100');
+    const continuing =
+      params.afterDeliveryId !== undefined && params.afterDeliveryId !== '0';
+    if (
+      continuing &&
+      (params.sinceMs === undefined || params.untilMs === undefined)
+    )
+      throw invalid(
+        'continuation requires sinceMs and untilMs from the first page'
+      );
+    for (const bound of [params.sinceMs, params.untilMs]) {
+      if (bound !== undefined && (!Number.isSafeInteger(bound) || bound <= 0))
+        throw invalid('window bounds must be positive integer timestamps');
+    }
+    if (
+      params.sinceMs !== undefined &&
+      params.untilMs !== undefined &&
+      params.untilMs <= params.sinceMs
+    )
+      throw invalid('untilMs must be after sinceMs');
     const data = await this.graphql<{
       stewardDigestPending?: StewardPendingPage | null;
     }>(PENDING, {
@@ -259,7 +282,17 @@ export class StewardResource {
       first,
     });
     if (!data.stewardDigestPending) throw emptyResponse();
+    const { windowSinceMs, windowUntilMs } = data.stewardDigestPending;
+    if (
+      !Number.isSafeInteger(windowSinceMs) ||
+      !Number.isSafeInteger(windowUntilMs) ||
+      windowSinceMs <= 0 ||
+      windowUntilMs <= windowSinceMs
+    )
+      throw emptyResponse();
     return {
+      windowSinceMs,
+      windowUntilMs,
       items: data.stewardDigestPending.items ?? [],
       nextAfterId: data.stewardDigestPending.nextAfterId ?? null,
     };
