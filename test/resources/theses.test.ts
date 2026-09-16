@@ -182,6 +182,7 @@ describe('ThesesResource', () => {
     ['NUL body', { body: 'draft\0body' }],
     ['oversize title', { title: 'a'.repeat(501) }],
     ['NUL title', { title: 'thesis\0title' }],
+    ['NUL closing note', { closing_note: 'done\0unsafe' }],
   ])('rejects %s in a CRUD thesis response', async (_name, patch) => {
     const response = thesis() as { thesis: Record<string, unknown> };
     Object.assign(response.thesis, patch);

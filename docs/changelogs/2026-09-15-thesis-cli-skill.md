@@ -20,7 +20,7 @@ alter another repository or a submodule pointer.
 - F1a: terminal file/stdin body transports decode bytes with fatal UTF-8;
   malformed bytes fail rather than silently becoming U+FFFD.
 - F1b: entity IDs are capped at 20, matching the gateway boundary; close notes
-  reject NUL locally.
+  reject NUL at both request and malformed-response boundaries.
 - F1c: CRUD response body/title fields receive the same blank, Unicode, NUL,
   and byte-limit checks as requests; a successful HTTP 204 delete normalizes
   to `{}`.
@@ -41,7 +41,8 @@ alter another repository or a submodule pointer.
 - [x] Add `ThesesResource`, response validation, exports, and `client.theses`.
 - [x] Add terminal and embedded catalog/help/dispatch leaves.
 - [x] Add SDK/HTTP-boundary and actual terminal/embedded dispatch tests.
-- [x] Run typecheck, test, and build after restoring the declared dependencies.
+- [x] Run typecheck, format, lint, test, and build after restoring the declared
+      dependencies.
 
 ## 5. Verification design
 
@@ -63,16 +64,14 @@ acceptance, Signal behavior, Alert behavior, or a first-run runtime status.
 
 - `npm run typecheck` passed.
 - `npm run format:check` passed.
-- No `Makefile` / `make lint-fix` target exists, so no substitute local lint
-  command was run; toolkit CI owns its configured `npm run lint` check.
-- `npm test` passed: 50 files and 979 tests. It ran outside the sandbox only
+- `npm run lint` passed.
+- Focused Thesis and embedded-command coverage passed: 3 files and 69 tests.
+- `npm test` passed: 52 files and 1011 tests. It ran outside the sandbox only
   because the pre-existing auth-login tests bind a localhost callback listener.
 - `npm run build` passed, including its existing vendor-contract prebuild.
 
 ## 8. Remaining work
 
-Deployment and cross-repository integration acceptance remain pending. The API
-implementation is under review in `alva-ai/alva-backend#2518` at
-`8c78b95c821e1a087a608809678c9e7e236c83bc`, with the related Skill work in PR
-#634. These source-only toolkit checks do not establish a deployed backend or
-end-to-end acceptance.
+Deployment and cross-repository integration acceptance remain pending. These
+source-only toolkit checks do not establish a deployed backend, a live model
+rewrite, or end-to-end acceptance.

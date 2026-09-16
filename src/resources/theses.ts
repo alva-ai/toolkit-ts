@@ -208,7 +208,7 @@ function thesisResponse(response: unknown): ThesisResponse {
     entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
     visibility: responseVisibility(thesis.visibility),
     closed: responseBoolean(thesis.closed, 'thesis.closed'),
-    closing_note: responseText(thesis.closing_note, 'thesis.closing_note'),
+    closing_note: responseClosingNote(thesis.closing_note),
     author_kind: responseText(thesis.author_kind, 'thesis.author_kind'),
     author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
   };
@@ -315,6 +315,14 @@ function responseText(value: unknown, field: string): string {
     return requireText(value, field);
   } catch {
     throw invalidResponse(`${field} must be valid text`);
+  }
+}
+
+function responseClosingNote(value: unknown): string {
+  try {
+    return requireText(value, 'note');
+  } catch {
+    throw invalidResponse('thesis.closing_note must be valid text');
   }
 }
 
