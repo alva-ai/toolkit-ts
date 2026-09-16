@@ -42,7 +42,6 @@ Not published or deployed.
 
 Node 22：npm run typecheck、npm test（954 tests / 50 files）、npm run lint、npm run format:check、npm run build 全部通过。构建包含实际 embedded dispatch；vendor-contract 生成文件没有差异。尚未发布或在 ALPI 运行服务上验收。
 
-
 ## 2026-09-16 本地提交保存点
 
 按用户要求保存当前实现与验证记录为本地提交。尚未推送、创建 PR、合并或部署；上述未通过的跨服务验收与待更新依赖仍未完成。本次提交不表示 #936/#940 已完成。
