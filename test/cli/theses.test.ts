@@ -19,6 +19,14 @@ const THESIS = {
     author_kind: 'user',
     author_ref: 'alice',
   },
+  author: {
+    id: '42',
+    kind: 'user',
+    display_name: 'Alice',
+    avatar_url: 'https://example.com/alice.png',
+    username: 'alice',
+  },
+  entities: [],
 };
 
 function client() {

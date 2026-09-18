@@ -23,6 +23,28 @@ function thesis() {
   };
 }
 
+function thesisGet() {
+  return {
+    ...thesis(),
+    author: {
+      id: '42',
+      kind: 'user',
+      display_name: 'Alice',
+      avatar_url: 'https://example.com/alice.png',
+      username: 'alice',
+    },
+    entities: [
+      {
+        id: '9223372036854775804',
+        ticker: 'NVDA',
+        name: 'NVIDIA Corporation',
+        icon_url: 'https://example.com/nvda.svg',
+        kind: 'STOCK',
+      },
+    ],
+  };
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -77,7 +99,7 @@ describe('ThesesResource', () => {
     };
     client._request = vi
       .fn()
-      .mockResolvedValueOnce(thesis())
+      .mockResolvedValueOnce(thesisGet())
       .mockResolvedValueOnce(thesis())
       .mockResolvedValueOnce(thesis())
       .mockResolvedValueOnce({})
