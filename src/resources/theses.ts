@@ -25,6 +25,27 @@ export interface ThesisResponse {
   thesis: Thesis;
 }
 
+export interface ThesisAuthor {
+  id: ThesisID;
+  kind: string;
+  display_name: string;
+  avatar_url: string;
+  username: string;
+}
+
+export interface ThesisEntity {
+  id: ThesisID;
+  ticker: string;
+  name: string;
+  icon_url: string;
+  kind: string;
+}
+
+export interface ThesisGetResponse extends ThesisResponse {
+  author: ThesisAuthor;
+  entities: ThesisEntity[];
+}
+
 export interface CreateThesisParams {
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
@@ -83,9 +104,9 @@ export class ThesesResource {
     );
   }
 
-  async get(id: ThesisID): Promise<ThesisResponse> {
+  async get(id: ThesisID): Promise<ThesisGetResponse> {
     this.client._requireAuth();
-    return thesisResponse(
+    return thesisGetResponse(
       await this.client._request('GET', `/api/v1/theses/${requireID(id, 'id')}`)
     );
   }
@@ -213,6 +234,46 @@ function thesisResponse(response: unknown): ThesisResponse {
     author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
   };
   return { thesis: value };
+}
+
+function thesisGetResponse(response: unknown): ThesisGetResponse {
+  const base = thesisResponse(response);
+  if (!isRecord(response) || !isRecord(response.author)) {
+    throw invalidResponse('response must contain author');
+  }
+  const authorRecord = response.author;
+  const author: ThesisAuthor = {
+    id: responseID(authorRecord.id, 'author.id'),
+    kind: responseText(authorRecord.kind, 'author.kind'),
+    display_name: responseText(
+      authorRecord.display_name,
+      'author.display_name'
+    ),
+    avatar_url: responseText(authorRecord.avatar_url, 'author.avatar_url'),
+    username: responseText(authorRecord.username, 'author.username'),
+  };
+  if (!Array.isArray(response.entities)) {
+    throw invalidResponse('response must contain entities');
+  }
+  if (response.entities.length !== base.thesis.entity_ids.length) {
+    throw invalidResponse('entities must match thesis.entity_ids');
+  }
+  const entities = response.entities.map((item, index) => {
+    if (!isRecord(item))
+      throw invalidResponse(`entities[${index}] must be an object`);
+    const entity: ThesisEntity = {
+      id: responseID(item.id, `entities[${index}].id`),
+      ticker: responseText(item.ticker, `entities[${index}].ticker`),
+      name: responseText(item.name, `entities[${index}].name`),
+      icon_url: responseText(item.icon_url, `entities[${index}].icon_url`),
+      kind: responseText(item.kind, `entities[${index}].kind`),
+    };
+    if (entity.id !== base.thesis.entity_ids[index]) {
+      throw invalidResponse('entities must preserve thesis.entity_ids order');
+    }
+    return entity;
+  });
+  return { thesis: base.thesis, author, entities };
 }
 
 function requireRequestID(value: string): string {
