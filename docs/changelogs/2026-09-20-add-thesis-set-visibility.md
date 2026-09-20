@@ -168,14 +168,14 @@
   - otherwise write the existing thesisResponse shape.
 - Auth matrix:
 
-  | Caller | Gateway result | Backend authority |
-  |---|---|---|
-  | Guest | deny before RPC | none |
-  | User | allow to RPC | owner/lifecycle check |
-  | Admin | allow to RPC | Backend maintenance authorization |
-  | API key | allow as authenticated user | owner/lifecycle check for resolved user |
-  | PBSV/group guest | deny before RPC | none |
-  | Service | no public HTTP credential/path | internal callers use gRPC directly |
+  | Caller           | Gateway result                 | Backend authority                       |
+  | ---------------- | ------------------------------ | --------------------------------------- |
+  | Guest            | deny before RPC                | none                                    |
+  | User             | allow to RPC                   | owner/lifecycle check                   |
+  | Admin            | allow to RPC                   | Backend maintenance authorization       |
+  | API key          | allow as authenticated user    | owner/lifecycle check for resolved user |
+  | PBSV/group guest | deny before RPC                | none                                    |
+  | Service          | no public HTTP credential/path | internal callers use gRPC directly      |
 
 - Error/security/observability: do not accept caller identity in JSON, do not
   log body content, do not retry, and preserve existing gRPC-to-HTTP error
@@ -198,15 +198,15 @@
 ### Serial Implementation Checklist
 
 - [x] Gateway: add the REST handler/client method and behavior-first handler
-  tests for B1/B2/F1/F2/F3; run focused handler tests and repository lint-fix.
+      tests for B1/B2/F1/F2/F3; run focused handler tests and repository lint-fix.
 - [x] Toolkit: add the resource type/method/export, terminal and embedded
-  command definitions/dispatch/help, and SDK/CLI/profile tests for B1/B2/B4 and
-  F1/F3; run focused tests, typecheck, build, and lint-fix.
+      command definitions/dispatch/help, and SDK/CLI/profile tests for B1/B2/B4 and
+      F1/F3; run focused tests, typecheck, build, and lint-fix.
 - [x] Skills: add the get/set/get workflow and eval case for B3/F2 without
-  weakening create confirmation or GET-only preview rules; run all documented
-  skill evals.
+      weakening create confirmation or GET-only preview rules; run all documented
+      skill evals.
 - [x] Review all three final diffs in dependency order, reconcile sections 7-8,
-  and record the explicit E2E exclusion.
+      and record the explicit E2E exclusion.
 
 ## 5. Verification and E2E Design
 
@@ -231,7 +231,7 @@
 - Representative Toolkit tests:
   - setVisibility(MAX_ID, {visibility: "private"}) sends one POST to
     /api/v1/theses/{MAX_ID}/visibility and returns thesisResponse;
-  - invalid ID or visibility rejects before _request;
+  - invalid ID or visibility rejects before \_request;
   - malformed or wrong-ID response rejects INVALID_RESPONSE. The resource
     method explicitly compares response.thesis.id with the requested ID;
   - terminal and embedded commands call setVisibility with exact strings and
@@ -265,15 +265,15 @@
       node --test evals/alva-skill-docs/durable-agent.test.mjs
       git diff --check
 
-| Behavior/failure | Evidence |
-|---|---|
-| B1 | Gateway happy-path RPC test + Toolkit resource/CLI tests |
-| B2 | Gateway unchanged response fields + Toolkit response validation tests |
-| B3 | Skills reference eval for get/set/get and immutable comparisons |
-| B4 | Existing Gateway handler and Toolkit Thesis suites remain green |
-| F1 | Gateway no-RPC invalid-input table + Toolkit pre-request rejection |
-| F2 | Gateway PermissionDenied mapping + Skills no-fallback/no-retry eval |
-| F3 | Gateway nil/invalid/wrong-ID tests + Toolkit invalid-response tests |
+| Behavior/failure | Evidence                                                              |
+| ---------------- | --------------------------------------------------------------------- |
+| B1               | Gateway happy-path RPC test + Toolkit resource/CLI tests              |
+| B2               | Gateway unchanged response fields + Toolkit response validation tests |
+| B3               | Skills reference eval for get/set/get and immutable comparisons       |
+| B4               | Existing Gateway handler and Toolkit Thesis suites remain green       |
+| F1               | Gateway no-RPC invalid-input table + Toolkit pre-request rejection    |
+| F2               | Gateway PermissionDenied mapping + Skills no-fallback/no-retry eval   |
+| F3               | Gateway nil/invalid/wrong-ID tests + Toolkit invalid-response tests   |
 
 - Intentionally excluded: alva-local-dev source/test changes, full local-stack
   E2E, staging calls, deployment, and production proof, per explicit human
@@ -301,18 +301,18 @@
   public/private changes through get/set/get verification.
 - Reconciliation:
 
-  | ID | Implementation/evidence | Status |
-  |---|---|---|
-  | B1 | Gateway handler and Toolkit SDK/CLI command call the dedicated setter | DONE |
-  | B2 | Gateway/Toolkit validate canonical returned Thesis and target visibility; Backend contract remains version-preserving | DONE |
-  | B3 | Thesis reference and target eval require get/set/get and immutable-field comparison | DONE |
-  | B4 | Existing handler suite and focused Toolkit Thesis suites remain green | DONE |
-  | F1 | Gateway invalid-input table and Toolkit pre-request/flag rejection | DONE |
-  | F2 | Gateway PermissionDenied mapping plus Skill stop/no-fallback rule | DONE |
-  | F3 | Gateway nil/invalid/wrong-ID/wrong-visibility tests and Toolkit mismatched-response tests | DONE |
-  | D1-D3 | Thesis-specific REST adapter, canonical response, direct explicit Skill workflow | DONE |
-  | R1 | Deploy order is documented; no deployment was authorized or performed | UNVERIFIABLE |
-  | R2 | Current Gateway Backend API module contains SetThesisVisibility | DONE |
+  | ID    | Implementation/evidence                                                                                               | Status       |
+  | ----- | --------------------------------------------------------------------------------------------------------------------- | ------------ |
+  | B1    | Gateway handler and Toolkit SDK/CLI command call the dedicated setter                                                 | DONE         |
+  | B2    | Gateway/Toolkit validate canonical returned Thesis and target visibility; Backend contract remains version-preserving | DONE         |
+  | B3    | Thesis reference and target eval require get/set/get and immutable-field comparison                                   | DONE         |
+  | B4    | Existing handler suite and focused Toolkit Thesis suites remain green                                                 | DONE         |
+  | F1    | Gateway invalid-input table and Toolkit pre-request/flag rejection                                                    | DONE         |
+  | F2    | Gateway PermissionDenied mapping plus Skill stop/no-fallback rule                                                     | DONE         |
+  | F3    | Gateway nil/invalid/wrong-ID/wrong-visibility tests and Toolkit mismatched-response tests                             | DONE         |
+  | D1-D3 | Thesis-specific REST adapter, canonical response, direct explicit Skill workflow                                      | DONE         |
+  | R1    | Deploy order is documented; no deployment was authorized or performed                                                 | UNVERIFIABLE |
+  | R2    | Current Gateway Backend API module contains SetThesisVisibility                                                       | DONE         |
 
 - Review findings fixed: added direct auth-boundary coverage for the new
   Gateway route and explicit missing-ID CLI coverage. No unresolved code

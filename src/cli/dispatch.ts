@@ -3270,11 +3270,7 @@ export async function executeParsedCommand(
             requireFlag(flags, 'id', 'thesis set-visibility'),
             {
               visibility: thesisVisibility(
-                requireFlag(
-                  flags,
-                  'visibility',
-                  'thesis set-visibility'
-                )
+                requireFlag(flags, 'visibility', 'thesis set-visibility')
               ),
             }
           );
