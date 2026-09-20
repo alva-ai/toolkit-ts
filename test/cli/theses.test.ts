@@ -37,6 +37,9 @@ function mockLifecycle(value: AlvaClient) {
   return {
     create: vi.spyOn(value.theses, 'create').mockResolvedValue(THESIS),
     get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
+    setVisibility: vi
+      .spyOn(value.theses, 'setVisibility')
+      .mockResolvedValue(THESIS),
     update: vi.spyOn(value.theses, 'update').mockResolvedValue(THESIS),
     close: vi.spyOn(value.theses, 'close').mockResolvedValue(THESIS),
     remove: vi.spyOn(value.theses, 'delete').mockResolvedValue({}),
@@ -67,6 +70,14 @@ describe('thesis terminal dispatch', () => {
       '9223372036854775807,42',
     ]);
     await dispatchTerminal(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'set-visibility',
+      '--id',
+      THESIS.thesis.id,
+      '--visibility',
+      'private',
+    ]);
     await dispatchTerminal(
       value,
       [
@@ -120,6 +131,9 @@ describe('thesis terminal dispatch', () => {
       visibility: 'public',
     });
     expect(calls.get).toHaveBeenCalledWith(THESIS.thesis.id);
+    expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
+      visibility: 'private',
+    });
     expect(calls.update).toHaveBeenCalledWith(THESIS.thesis.id, {
       request_id: REQUEST_ID,
       expected_author_version_id: THESIS.thesis.author_version_id,
@@ -172,6 +186,31 @@ describe('thesis terminal dispatch', () => {
     ).rejects.toThrow(/exactly one/);
     expect(calls.update).not.toHaveBeenCalled();
     expect(calls.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing or invalid set-visibility flags before resource calls', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'set-visibility',
+        '--id',
+        THESIS.thesis.id,
+      ])
+    ).rejects.toBeInstanceOf(CliUsageError);
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'set-visibility',
+        '--id',
+        THESIS.thesis.id,
+        '--visibility',
+        'paid',
+      ])
+    ).rejects.toBeInstanceOf(CliUsageError);
+    expect(calls.setVisibility).not.toHaveBeenCalled();
   });
 
   it('rejects malformed UTF-8 file and stdin bytes without calling the resource', async () => {
@@ -348,6 +387,14 @@ describe('thesis embedded dispatch', () => {
     await dispatchEmbedded(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
     await dispatchEmbedded(value, [
       'thesis',
+      'set-visibility',
+      '--id',
+      THESIS.thesis.id,
+      '--visibility',
+      'private',
+    ]);
+    await dispatchEmbedded(value, [
+      'thesis',
       'update',
       '--id',
       THESIS.thesis.id,
@@ -383,6 +430,9 @@ describe('thesis embedded dispatch', () => {
       entity_ids: [],
       visibility: 'public',
     });
+    expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
+      visibility: 'private',
+    });
     expect(calls.update).toHaveBeenCalledWith(
       THESIS.thesis.id,
       expect.objectContaining({
@@ -417,6 +467,8 @@ describe('thesis embedded dispatch', () => {
     };
     expect(result.text).toContain('never creates request IDs or retries');
     expect(result.text).toContain('Create defaults --visibility to public');
+    expect(result.text).toContain('changes current access without publishing');
+    expect(result.text).toContain('never uses a request ID');
     expect(result.text).toContain('--mode reformat|shorten|enrich');
     expect(result.text).toContain('candidate only');
   });

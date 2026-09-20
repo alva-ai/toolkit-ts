@@ -5,7 +5,7 @@ import { AlvaError } from '../../src/error.js';
 const REQUEST_ID = '123e4567-e89b-72d3-c456-426614174000';
 const MAX_ID = '9223372036854775807';
 
-function thesis() {
+function thesis(visibility: 'public' | 'private' = 'public') {
   return {
     thesis: {
       id: MAX_ID,
@@ -14,7 +14,7 @@ function thesis() {
       title: 'Thesis',
       body: 'line one\r\nline two',
       entity_ids: ['9223372036854775804'],
-      visibility: 'public' as const,
+      visibility,
       closed: false,
       closing_note: '',
       author_kind: 'user',
@@ -100,12 +100,14 @@ describe('ThesesResource', () => {
     client._request = vi
       .fn()
       .mockResolvedValueOnce(thesisGet())
+      .mockResolvedValueOnce(thesis('private'))
       .mockResolvedValueOnce(thesis())
       .mockResolvedValueOnce(thesis())
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ body: 'rewritten' });
 
     await client.theses.get(MAX_ID);
+    await client.theses.setVisibility(MAX_ID, { visibility: 'private' });
     await client.theses.update(MAX_ID, {
       request_id: REQUEST_ID,
       expected_author_version_id: '9223372036854775806',
@@ -121,6 +123,11 @@ describe('ThesesResource', () => {
 
     expect(client._request.mock.calls).toEqual([
       ['GET', `/api/v1/theses/${MAX_ID}`],
+      [
+        'POST',
+        `/api/v1/theses/${MAX_ID}/visibility`,
+        { body: { visibility: 'private' } },
+      ],
       [
         'PUT',
         `/api/v1/theses/${MAX_ID}`,
@@ -153,6 +160,33 @@ describe('ThesesResource', () => {
         { body: { body: 'draft', mode: 'reformat' } },
       ],
     ]);
+  });
+
+  it('rejects invalid visibility requests and mismatched responses', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn();
+
+    await expect(
+      client.theses.setVisibility('0', { visibility: 'private' })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(
+      client.theses.setVisibility(MAX_ID, { visibility: 'paid' as never })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(client._request).not.toHaveBeenCalled();
+
+    client._request.mockResolvedValueOnce(thesis());
+    await expect(
+      client.theses.setVisibility(MAX_ID, { visibility: 'private' })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+
+    const wrongID = thesis('private') as { thesis: Record<string, unknown> };
+    wrongID.thesis.id = '1';
+    client._request.mockResolvedValueOnce(wrongID);
+    await expect(
+      client.theses.setVisibility(MAX_ID, { visibility: 'private' })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('normalizes an actual HTTP 204 delete response to an empty object', async () => {

@@ -85,12 +85,14 @@ Examples:
   alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: create, get, update, close, delete, rewrite.
+Subcommands: create, get, set-visibility, update, close, delete, rewrite.
 
 Embedded thesis commands accept literal --body text only; file and stdin body
 transports are intentionally unavailable because this runtime has no verified
 local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enrich;
 only omission defaults to canonical reformat, which is sent to the API. Create defaults --visibility to public.
+Set-visibility changes current access without publishing a new author version.
+It requires --id and --visibility public|private and never uses a request ID.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
 IDs as a full author-version update. Create and update require a caller-supplied non-zero

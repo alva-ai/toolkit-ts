@@ -114,7 +114,7 @@ Commands:
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
   steward     Push steward reports for a Session Inbox (decide, forward, send, pending, briefed)
-  thesis      Authored thesis lifecycle (create, get, update, close, delete, rewrite)
+  thesis      Authored thesis lifecycle (create, get, set-visibility, update, close, delete, rewrite)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -1481,6 +1481,7 @@ Create and update never rewrite text automatically.
 Subcommands:
   create   Create a thesis
   get      Get one thesis
+  set-visibility  Change current access without publishing a version
   update   Replaces document fields: body, title, entities, visibility (all sent in full)
   close    Close the current author version with an optional note
   delete   Delete a thesis
@@ -1500,6 +1501,7 @@ Update requires --visibility explicitly so it cannot inadvertently publish.
 Other flags:
   create  --request-id <uuid> --body ... [--title <text>] [--entity-ids <id,id>] [--visibility <value>]
   get     --id <signed-int64-decimal>
+  set-visibility --id <id> --visibility public|private
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
   close   --id <id> --expected-author-version-id <id> [--note <text>]
   delete  --id <id>
@@ -1519,6 +1521,7 @@ valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 
 Examples:
   alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
+  alva thesis set-visibility --id 9223372036854775807 --visibility private
   alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
   printf '%s' 'Draft body' | alva thesis rewrite --body-stdin --mode shorten`,
 };
@@ -3262,6 +3265,19 @@ export async function executeParsedCommand(
           });
         case 'get':
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
+        case 'set-visibility':
+          return client.theses.setVisibility(
+            requireFlag(flags, 'id', 'thesis set-visibility'),
+            {
+              visibility: thesisVisibility(
+                requireFlag(
+                  flags,
+                  'visibility',
+                  'thesis set-visibility'
+                )
+              ),
+            }
+          );
         case 'update':
           return client.theses.update(
             requireFlag(flags, 'id', 'thesis update'),

@@ -137,6 +137,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['request-id', 'body', 'title', 'entity-ids', 'visibility'],
     }),
     route('thesis get', 'thesis get', { values: ['id'] }),
+    route('thesis set-visibility', 'thesis set-visibility', {
+      values: ['id', 'visibility'],
+    }),
     route('thesis update', 'thesis update', {
       values: [
         'id',
