@@ -137,6 +137,9 @@ export class ThesesResource {
     params: SetThesisVisibilityParams
   ): Promise<ThesisResponse> {
     this.client._requireAuth();
+    if (!params) {
+      throw invalidArgument('params is required');
+    }
     const thesisID = requireID(id, 'id');
     const visibility = requireVisibility(params.visibility);
     const response = thesisResponse(

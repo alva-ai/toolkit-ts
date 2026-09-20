@@ -315,8 +315,10 @@
   | R2    | Current Gateway Backend API module contains SetThesisVisibility                                                       | DONE         |
 
 - Review findings fixed: added direct auth-boundary coverage for the new
-  Gateway route and explicit missing-ID CLI coverage. No unresolved code
-  findings remain after restarting the review.
+  Gateway route, explicit missing-ID CLI coverage, and a reviewer-requested
+  runtime guard that maps an undefined SDK params object to INVALID_ARGUMENT
+  instead of a native TypeError. No unresolved code findings remain after
+  restarting the review.
 - Gateway verification in code/backend/alva-gateway:
   - go test ./pkg/handler -run 'TestThesisSetVisibility' -count=1 — passed.
   - go test ./pkg/handler -count=1 — passed.

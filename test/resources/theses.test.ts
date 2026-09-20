@@ -174,6 +174,9 @@ describe('ThesesResource', () => {
     await expect(
       client.theses.setVisibility(MAX_ID, { visibility: 'paid' as never })
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(
+      client.theses.setVisibility(MAX_ID, undefined as never)
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(client._request).not.toHaveBeenCalled();
 
     client._request.mockResolvedValueOnce(thesis());
