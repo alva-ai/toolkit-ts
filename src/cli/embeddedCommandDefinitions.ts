@@ -134,7 +134,14 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       'steward-self'
     ),
     route('thesis create', 'thesis create', {
-      values: ['request-id', 'body', 'title', 'entity-ids', 'visibility'],
+      values: [
+        'request-id',
+        'body',
+        'title',
+        'entity-ids',
+        'tickers',
+        'visibility',
+      ],
     }),
     route('thesis get', 'thesis get', { values: ['id'] }),
     route('thesis set-visibility', 'thesis set-visibility', {

@@ -77,6 +77,7 @@ describe('ThesesResource', () => {
         body: 'line one\r\nline two',
         title: 'Thesis',
         entity_ids: [MAX_ID],
+        tickers: ['NVDA', 'AAPL'],
       })
     ).resolves.toEqual(thesis());
 
@@ -89,8 +90,23 @@ describe('ThesesResource', () => {
       body: 'line one\r\nline two',
       title: 'Thesis',
       entity_ids: [MAX_ID],
+      tickers: ['NVDA', 'AAPL'],
       visibility: 'public',
     });
+  });
+
+  it('omits the optional tickers field when the caller does not supply it', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
+    globalThis.fetch = fetch;
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api.test',
+    });
+
+    await client.theses.create({ request_id: REQUEST_ID, body: 'view' });
+
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).not.toHaveProperty('tickers');
   });
 
   it('uses the agreed CRUD, close, delete, and explicit rewrite routes', async () => {
@@ -298,6 +314,11 @@ describe('ThesesResource', () => {
       },
     ],
     ['blank body', { request_id: REQUEST_ID, body: ' \r\n\t' }],
+    ['blank ticker', { request_id: REQUEST_ID, body: 'draft', tickers: [' '] }],
+    [
+      'ticker NUL',
+      { request_id: REQUEST_ID, body: 'draft', tickers: ['A\0B'] },
+    ],
     ['body NUL', { request_id: REQUEST_ID, body: 'draft\0body' }],
     ['title NUL', { request_id: REQUEST_ID, body: 'draft', title: 'a\0b' }],
     [

@@ -52,6 +52,8 @@ export interface CreateThesisParams {
   body: string;
   title?: string;
   entity_ids?: ThesisID[];
+  /** Exact STOCK ticker symbols resolved by Backend during creation. */
+  tickers?: string[];
   /** Omitted means public, as defined by the REST contract. */
   visibility?: ThesisVisibility;
 }
@@ -216,14 +218,21 @@ export class ThesesResource {
   }
 }
 
-function createBody(params: CreateThesisParams): Required<CreateThesisParams> {
-  return {
+function createBody(
+  params: CreateThesisParams
+): Required<Omit<CreateThesisParams, 'tickers'>> & { tickers?: string[] } {
+  const body: Required<Omit<CreateThesisParams, 'tickers'>> & {
+    tickers?: string[];
+  } = {
     request_id: requireRequestID(params.request_id),
     body: requireBody(params.body),
     title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requireVisibility(params.visibility ?? 'public'),
   };
+  if (params.tickers !== undefined)
+    body.tickers = requireTickers(params.tickers);
+  return body;
 }
 
 function updateBody(params: UpdateThesisParams): Required<UpdateThesisParams> {
@@ -332,6 +341,20 @@ function requireIDs(value: unknown, field: string): ThesisID[] {
     throw invalidArgument(`${field} must contain at most 20 IDs`);
   }
   return value.map((item, index) => requireID(item, `${field}[${index}]`));
+}
+
+function requireTickers(value: unknown): string[] {
+  if (!Array.isArray(value)) throw invalidArgument('tickers must be an array');
+  if (value.length > 100) {
+    throw invalidArgument('tickers must contain at most 100 values');
+  }
+  return value.map((item, index) => {
+    const ticker = requireText(item, `tickers[${index}]`);
+    if (ticker.trim() === '' || ticker.includes('\0')) {
+      throw invalidArgument(`tickers[${index}] must be non-empty`);
+    }
+    return ticker;
+  });
 }
 
 function requireBody(value: string): string {

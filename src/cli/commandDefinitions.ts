@@ -191,6 +191,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'body-file',
       'title',
       'entity-ids',
+      'tickers',
       'visibility',
     ],
     booleans: ['body-stdin'],

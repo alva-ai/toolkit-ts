@@ -1499,7 +1499,7 @@ the backend; do not send a fresh ID. Create defaults --visibility to public.
 Update requires --visibility explicitly so it cannot inadvertently publish.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--title <text>] [--entity-ids <id,id>] [--visibility <value>]
+  create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--visibility <value>]
   get     --id <signed-int64-decimal>
   set-visibility --id <id> --visibility public|private
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
@@ -2501,6 +2501,19 @@ function thesisEntityIDs(flags: Record<string, string>): string[] {
   return entityIDs;
 }
 
+function thesisTickers(flags: Record<string, string>): string[] | undefined {
+  const raw = flags.tickers;
+  if (raw === undefined) return undefined;
+  const tickers = raw.split(',').map((ticker) => ticker.trim());
+  if (tickers.some((ticker) => ticker === '')) {
+    throw new CliUsageError(
+      '--tickers must not contain empty tickers',
+      'thesis'
+    );
+  }
+  return tickers;
+}
+
 function strictThesisUTF8(
   value: unknown,
   command: string,
@@ -3258,6 +3271,7 @@ export async function executeParsedCommand(
             body: await thesisBodyFromFlags(flags, 'thesis create', deps),
             title: flags.title ?? '',
             entity_ids: thesisEntityIDs(flags),
+            tickers: thesisTickers(flags),
             visibility:
               flags.visibility === undefined
                 ? 'public'
