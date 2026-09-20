@@ -68,6 +68,10 @@ export interface UpdateThesisParams {
   editorial?: boolean;
 }
 
+export interface SetThesisVisibilityParams {
+  visibility: ThesisVisibility;
+}
+
 export interface CloseThesisParams {
   expected_author_version_id: ThesisID;
   note?: string;
@@ -126,6 +130,34 @@ export class ThesesResource {
         }
       )
     );
+  }
+
+  async setVisibility(
+    id: ThesisID,
+    params: SetThesisVisibilityParams
+  ): Promise<ThesisResponse> {
+    this.client._requireAuth();
+    if (!params) {
+      throw invalidArgument('params is required');
+    }
+    const thesisID = requireID(id, 'id');
+    const visibility = requireVisibility(params.visibility);
+    const response = thesisResponse(
+      await this.client._request(
+        'POST',
+        `/api/v1/theses/${thesisID}/visibility`,
+        { body: { visibility } }
+      )
+    );
+    if (
+      response.thesis.id !== thesisID ||
+      response.thesis.visibility !== visibility
+    ) {
+      throw invalidResponse(
+        'visibility response must match the requested thesis and visibility'
+      );
+    }
+    return response;
   }
 
   async close(

@@ -24,6 +24,7 @@ export {
   type ThesisEntity,
   type CreateThesisParams,
   type UpdateThesisParams,
+  type SetThesisVisibilityParams,
   type CloseThesisParams,
   type RewriteThesisParams,
   type RewriteThesisResponse,

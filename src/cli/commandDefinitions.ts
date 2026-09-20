@@ -196,6 +196,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     booleans: ['body-stdin'],
   }),
   command('thesis get', { values: ['id'] }),
+  command('thesis set-visibility', { values: ['id', 'visibility'] }),
   command('thesis update', {
     values: [
       'id',
