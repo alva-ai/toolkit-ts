@@ -95,6 +95,20 @@ describe('ThesesResource', () => {
     });
   });
 
+  it('omits the optional tickers field when the caller does not supply it', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
+    globalThis.fetch = fetch;
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api.test',
+    });
+
+    await client.theses.create({ request_id: REQUEST_ID, body: 'view' });
+
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).not.toHaveProperty('tickers');
+  });
+
   it('uses the agreed CRUD, close, delete, and explicit rewrite routes', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;

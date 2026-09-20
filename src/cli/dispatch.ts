@@ -2501,9 +2501,9 @@ function thesisEntityIDs(flags: Record<string, string>): string[] {
   return entityIDs;
 }
 
-function thesisTickers(flags: Record<string, string>): string[] {
+function thesisTickers(flags: Record<string, string>): string[] | undefined {
   const raw = flags.tickers;
-  if (raw === undefined) return [];
+  if (raw === undefined) return undefined;
   const tickers = raw.split(',').map((ticker) => ticker.trim());
   if (tickers.some((ticker) => ticker === '')) {
     throw new CliUsageError(

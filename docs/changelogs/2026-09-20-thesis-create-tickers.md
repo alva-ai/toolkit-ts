@@ -35,7 +35,7 @@ Primary design: [Backend Thesis create tickers](https://github.com/alva-ai/alva-
 
 ## 7. Outcome and Evidence
 
-- SDK create transports optional `tickers`; normal and embedded CLI create accept comma-separated `--tickers` with IDs, reject both empty tokens and an explicitly empty flag value, while update rejects it. On the rebased final tree, 58 focused tests, typecheck, build and Prettier check passed. No repository `make lint-fix` target exists.
+- SDK create transports optional `tickers`; normal and embedded CLI create accept comma-separated `--tickers` with IDs, reject both empty tokens and an explicitly empty flag value, while update rejects it. Omitting the flag keeps the SDK value undefined and omits `tickers` from the REST JSON rather than sending an empty array. After rebasing with the adjacent set-visibility change, 61 focused Thesis tests, typecheck, build and Prettier check passed. No repository `make lint-fix` target exists.
 
 ## 8. Remaining Work
 

@@ -333,6 +333,10 @@ describe('thesis terminal dispatch', () => {
         entity_ids: ['123', '456'],
       })
     );
+    expect(calls.create.mock.calls[0]?.[0]).toHaveProperty(
+      'tickers',
+      undefined
+    );
 
     await expect(
       dispatchTerminal(value, [
