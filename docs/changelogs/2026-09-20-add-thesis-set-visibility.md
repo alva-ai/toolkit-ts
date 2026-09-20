@@ -205,7 +205,7 @@
 - [x] Skills: add the get/set/get workflow and eval case for B3/F2 without
   weakening create confirmation or GET-only preview rules; run all documented
   skill evals.
-- [ ] Review all three final diffs in dependency order, reconcile sections 7-8,
+- [x] Review all three final diffs in dependency order, reconcile sections 7-8,
   and record the explicit E2E exclusion.
 
 ## 5. Verification and E2E Design
@@ -292,3 +292,62 @@
   The human explicitly directed: “不管localdev了”. Therefore alva-local-dev is
   excluded, component tests are required, and final reporting must state that
   full-stack/deployed behavior was not verified.
+
+## 7. Outcome and Evidence
+
+- Result: Gateway now exposes the existing Thesis visibility domain operation
+  through authenticated REST; Toolkit exports a typed SDK method plus terminal
+  and embedded thesis set-visibility command; Skills routes explicit
+  public/private changes through get/set/get verification.
+- Reconciliation:
+
+  | ID | Implementation/evidence | Status |
+  |---|---|---|
+  | B1 | Gateway handler and Toolkit SDK/CLI command call the dedicated setter | DONE |
+  | B2 | Gateway/Toolkit validate canonical returned Thesis and target visibility; Backend contract remains version-preserving | DONE |
+  | B3 | Thesis reference and target eval require get/set/get and immutable-field comparison | DONE |
+  | B4 | Existing handler suite and focused Toolkit Thesis suites remain green | DONE |
+  | F1 | Gateway invalid-input table and Toolkit pre-request/flag rejection | DONE |
+  | F2 | Gateway PermissionDenied mapping plus Skill stop/no-fallback rule | DONE |
+  | F3 | Gateway nil/invalid/wrong-ID/wrong-visibility tests and Toolkit mismatched-response tests | DONE |
+  | D1-D3 | Thesis-specific REST adapter, canonical response, direct explicit Skill workflow | DONE |
+  | R1 | Deploy order is documented; no deployment was authorized or performed | UNVERIFIABLE |
+  | R2 | Current Gateway Backend API module contains SetThesisVisibility | DONE |
+
+- Review findings fixed: added direct auth-boundary coverage for the new
+  Gateway route and explicit missing-ID CLI coverage. No unresolved code
+  findings remain after restarting the review.
+- Gateway verification in code/backend/alva-gateway:
+  - go test ./pkg/handler -run 'TestThesisSetVisibility' -count=1 — passed.
+  - go test ./pkg/handler -count=1 — passed.
+  - make lint-fix — passed with 0 issues.
+  - go build ./... — passed.
+  - git diff --check — passed.
+- Toolkit verification in code/public/toolkit-ts:
+  - npm run lint:fix — passed.
+  - npm test -- test/resources/theses.test.ts test/cli/theses.test.ts
+    test/cli/agentCommandProfile.test.ts — 3 files, 71 tests passed.
+  - npm run typecheck — passed.
+  - npm run build — passed; vendor-contract refresh produced no tracked
+    fallback-contract/bundle diff.
+  - git diff --check — passed.
+- Skills verification in code/public/skills:
+  - node evals/alva-skill-docs/skill-doc-eval.mjs --skill-dir skills/alva —
+    93/93 cases and 994/994 checks passed.
+  - node evals/alva-skill-docs/mutation-smoke.mjs --skill-dir skills/alva —
+    21/21 mutations failed as expected.
+  - node --test evals/alva-skill-docs/durable-agent.test.mjs — 5/5 passed.
+  - git diff --check — passed.
+- E2E: not run and no alva-local-dev test was added, per explicit human scope.
+  This evidence proves component contracts, not a live Gateway-to-Backend or
+  deployed command execution.
+- Migration/rollout: no migration, proto, GraphQL, generated API, config, or
+  deployment artifact changed. Gateway must be available before Toolkit users
+  can execute the command; Skills remains operationally dependent on both.
+- PR/CI/review outcome: pending push stage.
+
+## 8. Remaining Work
+
+- Create the three dependency-ordered PRs and report current CI/review state.
+- Deployment and a real authenticated end-to-end execution remain outside this
+  task. Gateway must deploy before the Toolkit command becomes operational.
