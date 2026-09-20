@@ -68,6 +68,8 @@ describe('thesis terminal dispatch', () => {
       'first\r\nsecond',
       '--entity-ids',
       '9223372036854775807,42',
+      '--tickers',
+      ' AAPL,NVDA ',
     ]);
     await dispatchTerminal(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
     await dispatchTerminal(value, [
@@ -128,6 +130,7 @@ describe('thesis terminal dispatch', () => {
       body: 'first\r\nsecond',
       title: '',
       entity_ids: ['9223372036854775807', '42'],
+      tickers: ['AAPL', 'NVDA'],
       visibility: 'public',
     });
     expect(calls.get).toHaveBeenCalledWith(THESIS.thesis.id);
@@ -184,6 +187,24 @@ describe('thesis terminal dispatch', () => {
         '--body-stdin',
       ])
     ).rejects.toThrow(/exactly one/);
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'update',
+        '--id',
+        '1',
+        '--request-id',
+        REQUEST_ID,
+        '--expected-author-version-id',
+        '2',
+        '--body',
+        'draft',
+        '--visibility',
+        'private',
+        '--tickers',
+        'AAPL',
+      ])
+    ).rejects.toThrow(/--tickers is not supported for 'thesis update'/);
     expect(calls.update).not.toHaveBeenCalled();
     expect(calls.create).not.toHaveBeenCalled();
   });
@@ -328,6 +349,51 @@ describe('thesis terminal dispatch', () => {
     expect(calls.create).toHaveBeenCalledTimes(1);
   });
 
+  it('trims ticker CSV tokens and rejects empty tickers before create', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+
+    await dispatchTerminal(value, [
+      'thesis',
+      'create',
+      '--request-id',
+      REQUEST_ID,
+      '--body',
+      'view',
+      '--tickers',
+      ' AAPL, NVDA ',
+    ]);
+    expect(calls.create).toHaveBeenCalledWith(
+      expect.objectContaining({ tickers: ['AAPL', 'NVDA'] })
+    );
+
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'view',
+        '--tickers',
+        'AAPL,,NVDA',
+      ])
+    ).rejects.toThrow(/must not contain empty tickers/);
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'view',
+        '--tickers',
+        '',
+      ])
+    ).rejects.toThrow(/must not contain empty tickers/);
+    expect(calls.create).toHaveBeenCalledTimes(1);
+  });
+
   it('returns terminal help that documents replacement fields and ambiguity handling', async () => {
     const result = (await dispatchTerminal(client(), ['thesis', '--help'])) as {
       text: string;
@@ -335,6 +401,7 @@ describe('thesis terminal dispatch', () => {
     expect(result.text).toContain('Replaces document fields');
     expect(result.text).toContain('response is ambiguous');
     expect(result.text).toContain('defaults --visibility to public');
+    expect(result.text).toContain('--tickers <ticker,ticker>');
     expect(result.text).toContain('--mode reformat|shorten|enrich');
     expect(result.text).toContain('candidate only');
   });
@@ -391,6 +458,8 @@ describe('thesis embedded dispatch', () => {
       REQUEST_ID,
       '--body',
       'embedded\r\nbody',
+      '--tickers',
+      'AAPL,NVDA',
     ]);
     await dispatchEmbedded(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
     await dispatchEmbedded(value, [
@@ -436,6 +505,7 @@ describe('thesis embedded dispatch', () => {
       body: 'embedded\r\nbody',
       title: '',
       entity_ids: [],
+      tickers: ['AAPL', 'NVDA'],
       visibility: 'public',
     });
     expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {

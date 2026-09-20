@@ -77,6 +77,7 @@ describe('ThesesResource', () => {
         body: 'line one\r\nline two',
         title: 'Thesis',
         entity_ids: [MAX_ID],
+        tickers: ['NVDA', 'AAPL'],
       })
     ).resolves.toEqual(thesis());
 
@@ -89,6 +90,7 @@ describe('ThesesResource', () => {
       body: 'line one\r\nline two',
       title: 'Thesis',
       entity_ids: [MAX_ID],
+      tickers: ['NVDA', 'AAPL'],
       visibility: 'public',
     });
   });
@@ -298,6 +300,11 @@ describe('ThesesResource', () => {
       },
     ],
     ['blank body', { request_id: REQUEST_ID, body: ' \r\n\t' }],
+    ['blank ticker', { request_id: REQUEST_ID, body: 'draft', tickers: [' '] }],
+    [
+      'ticker NUL',
+      { request_id: REQUEST_ID, body: 'draft', tickers: ['A\0B'] },
+    ],
     ['body NUL', { request_id: REQUEST_ID, body: 'draft\0body' }],
     ['title NUL', { request_id: REQUEST_ID, body: 'draft', title: 'a\0b' }],
     [
