@@ -344,10 +344,12 @@
 - Migration/rollout: no migration, proto, GraphQL, generated API, config, or
   deployment artifact changed. Gateway must be available before Toolkit users
   can execute the command; Skills remains operationally dependent on both.
-- PR/CI/review outcome: pending push stage.
+- PR/CI/review outcome: Ready PRs alva-gateway#987, toolkit-ts#178, and
+  skills#639 were created in dependency order. Current-head CI/review state is
+  monitored in the push stage; no merge or deployment was authorized.
 
 ## 8. Remaining Work
 
-- Create the three dependency-ordered PRs and report current CI/review state.
+- Merge alva-gateway#987 before toolkit-ts#178, then merge skills#639.
 - Deployment and a real authenticated end-to-end execution remain outside this
   task. Gateway must deploy before the Toolkit command becomes operational.
