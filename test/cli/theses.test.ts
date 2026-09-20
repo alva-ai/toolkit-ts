@@ -196,6 +196,14 @@ describe('thesis terminal dispatch', () => {
       dispatchTerminal(value, [
         'thesis',
         'set-visibility',
+        '--visibility',
+        'private',
+      ])
+    ).rejects.toBeInstanceOf(CliUsageError);
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'set-visibility',
         '--id',
         THESIS.thesis.id,
       ])
