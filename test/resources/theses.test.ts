@@ -45,6 +45,38 @@ function thesisGet() {
   };
 }
 
+function thesisSignals() {
+  return {
+    research: { state: 'partial', pending_work: 2, read_complete: false },
+    entries: [
+      {
+        feed_entry_id: '77',
+        cursor: 'cursor-77',
+        signal: {
+          id: '88',
+          thesis_id: MAX_ID,
+          author_version_id: '9223372036854775806',
+          statement_snapshot: 'NVDA compounds',
+          stance: 'supports',
+          explanation: 'evidence',
+          information_kind: 'fact',
+          evidence_excerpt: {
+            text: 'exact passage',
+            omitted_before: false,
+            omitted_after: true,
+          },
+          source: {
+            title: 'Source',
+            url: 'https://example.test/a',
+            published_at_ms: 1725811000000,
+          },
+        },
+      },
+    ],
+    next_cursor: 'cursor-77',
+  };
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -107,6 +139,50 @@ describe('ThesesResource', () => {
 
     const [, init] = fetch.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).not.toHaveProperty('tickers');
+  });
+
+  it('lists enriched Signal history through the Thesis REST resource', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesisSignals()));
+    globalThis.fetch = fetch;
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api.test',
+    });
+
+    await expect(
+      client.theses.signals(MAX_ID, { first: 1, cursor: 'after' })
+    ).resolves.toEqual(thesisSignals());
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      'https://api.test/api/v1/theses/9223372036854775807/signals?first=1&cursor=after'
+    );
+    expect(init.method).toBe('GET');
+  });
+
+  it.each([0, 51, 1.5])(
+    'rejects invalid Signal page size %s before HTTP',
+    async (first) => {
+      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+        _request: ReturnType<typeof vi.fn>;
+      };
+      client._request = vi.fn();
+      await expect(
+        client.theses.signals(MAX_ID, { first })
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(client._request).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects a Signal response for another Thesis', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    const response = thesisSignals();
+    response.entries[0].signal.thesis_id = '42';
+    client._request = vi.fn().mockResolvedValue(response);
+    await expect(client.theses.signals(MAX_ID)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
   });
 
   it('uses the agreed CRUD, close, delete, and explicit rewrite routes', async () => {

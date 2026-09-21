@@ -114,7 +114,7 @@ Commands:
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
   steward     Push steward reports for a Session Inbox (decide, forward, send, pending, briefed)
-  thesis      Authored thesis lifecycle (create, get, set-visibility, update, close, delete, rewrite)
+  thesis      Authored thesis lifecycle (create, get, signals, set-visibility, update, close, delete, rewrite)
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -1474,13 +1474,14 @@ Examples:
 
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Create, read, update, close, delete, or explicitly rewrite an authored thesis.
+Create, read, inspect Signals, update, close, delete, or explicitly rewrite an authored thesis.
 Backend owns Signal/Alert setup; the CLI never starts them separately.
 Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
   get      Get one thesis
+  signals  Read published Signal history
   set-visibility  Change current access without publishing a version
   update   Replaces document fields: body, title, entities, visibility (all sent in full)
   close    Close the current author version with an optional note
@@ -1501,6 +1502,7 @@ Update requires --visibility explicitly so it cannot inadvertently publish.
 Other flags:
   create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--visibility <value>]
   get     --id <signed-int64-decimal>
+  signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   set-visibility --id <id> --visibility public|private
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
   close   --id <id> --expected-author-version-id <id> [--note <text>]
@@ -3279,6 +3281,15 @@ export async function executeParsedCommand(
           });
         case 'get':
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
+        case 'signals':
+          return client.theses.signals(
+            requireFlag(flags, 'id', 'thesis signals'),
+            {
+              first:
+                flags.first === undefined ? undefined : Number(flags.first),
+              cursor: flags.cursor,
+            }
+          );
         case 'set-visibility':
           return client.theses.setVisibility(
             requireFlag(flags, 'id', 'thesis set-visibility'),
