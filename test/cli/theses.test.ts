@@ -28,6 +28,11 @@ const THESIS = {
   },
   entities: [],
 };
+const SIGNALS = {
+  research: { state: 'ready', pending_work: 0, read_complete: true },
+  entries: [],
+  next_cursor: '',
+};
 
 function client() {
   return new AlvaClient({ apiKey: 'key' });
@@ -37,6 +42,7 @@ function mockLifecycle(value: AlvaClient) {
   return {
     create: vi.spyOn(value.theses, 'create').mockResolvedValue(THESIS),
     get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
+    signals: vi.spyOn(value.theses, 'signals').mockResolvedValue(SIGNALS),
     setVisibility: vi
       .spyOn(value.theses, 'setVisibility')
       .mockResolvedValue(THESIS),
@@ -72,6 +78,16 @@ describe('thesis terminal dispatch', () => {
       ' AAPL,NVDA ',
     ]);
     await dispatchTerminal(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'signals',
+      '--id',
+      THESIS.thesis.id,
+      '--first',
+      '10',
+      '--cursor',
+      'after',
+    ]);
     await dispatchTerminal(value, [
       'thesis',
       'set-visibility',
@@ -134,6 +150,10 @@ describe('thesis terminal dispatch', () => {
       visibility: 'public',
     });
     expect(calls.get).toHaveBeenCalledWith(THESIS.thesis.id);
+    expect(calls.signals).toHaveBeenCalledWith(THESIS.thesis.id, {
+      first: 10,
+      cursor: 'after',
+    });
     expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
       visibility: 'private',
     });

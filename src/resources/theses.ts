@@ -46,6 +46,55 @@ export interface ThesisGetResponse extends ThesisResponse {
   entities: ThesisEntity[];
 }
 
+export interface ThesisResearchStatus {
+  state: string;
+  pending_work: number;
+  read_complete: boolean;
+  last_attempt_ms?: number;
+  last_completed_ms?: number;
+}
+
+export interface ThesisSignalEvidenceExcerpt {
+  text: string;
+  omitted_before: boolean;
+  omitted_after: boolean;
+}
+
+export interface ThesisSignalSource {
+  title: string;
+  url?: string;
+  published_at_ms?: number;
+}
+
+export interface ThesisSignal {
+  id: ThesisID;
+  thesis_id: ThesisID;
+  author_version_id: ThesisID;
+  statement_snapshot: string;
+  stance: string;
+  explanation: string;
+  information_kind: string;
+  evidence_excerpt?: ThesisSignalEvidenceExcerpt;
+  source: ThesisSignalSource;
+}
+
+export interface ThesisSignalEntry {
+  feed_entry_id: ThesisID;
+  cursor: string;
+  signal: ThesisSignal;
+}
+
+export interface ListThesisSignalsParams {
+  first?: number;
+  cursor?: string;
+}
+
+export interface ThesisSignalsResponse {
+  research: ThesisResearchStatus;
+  entries: ThesisSignalEntry[];
+  next_cursor: string;
+}
+
 export interface CreateThesisParams {
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
@@ -114,6 +163,34 @@ export class ThesesResource {
     this.client._requireAuth();
     return thesisGetResponse(
       await this.client._request('GET', `/api/v1/theses/${requireID(id, 'id')}`)
+    );
+  }
+
+  async signals(
+    id: ThesisID,
+    params: ListThesisSignalsParams = {}
+  ): Promise<ThesisSignalsResponse> {
+    this.client._requireAuth();
+    const first = params.first ?? 20;
+    if (!Number.isInteger(first) || first < 1 || first > 50) {
+      throw invalidArgument('first must be an integer between 1 and 50');
+    }
+    if (params.cursor !== undefined && typeof params.cursor !== 'string') {
+      throw invalidArgument('cursor must be a string');
+    }
+    return thesisSignalsResponse(
+      await this.client._request(
+        'GET',
+        `/api/v1/theses/${requireID(id, 'id')}/signals`,
+        {
+          query: {
+            first,
+            ...(params.cursor === undefined ? {} : { cursor: params.cursor }),
+          },
+        }
+      ),
+      id,
+      first
     );
   }
 
@@ -315,6 +392,129 @@ function thesisGetResponse(response: unknown): ThesisGetResponse {
     return entity;
   });
   return { thesis: base.thesis, author, entities };
+}
+
+function thesisSignalsResponse(
+  response: unknown,
+  thesisID: ThesisID,
+  first: number
+): ThesisSignalsResponse {
+  if (
+    !isRecord(response) ||
+    !isRecord(response.research) ||
+    !Array.isArray(response.entries) ||
+    response.entries.length > first
+  ) {
+    throw invalidResponse('invalid Signal history response');
+  }
+  const research = response.research;
+  const status: ThesisResearchStatus = {
+    state: responseText(research.state, 'research.state'),
+    pending_work: responseNonnegativeInteger(
+      research.pending_work,
+      'research.pending_work'
+    ),
+    read_complete: responseBoolean(
+      research.read_complete,
+      'research.read_complete'
+    ),
+  };
+  if (research.last_attempt_ms !== undefined)
+    status.last_attempt_ms = responseNonnegativeInteger(
+      research.last_attempt_ms,
+      'research.last_attempt_ms'
+    );
+  if (research.last_completed_ms !== undefined)
+    status.last_completed_ms = responseNonnegativeInteger(
+      research.last_completed_ms,
+      'research.last_completed_ms'
+    );
+
+  const entries = response.entries.map((raw): ThesisSignalEntry => {
+    if (
+      !isRecord(raw) ||
+      !isRecord(raw.signal) ||
+      !isRecord(raw.signal.source)
+    ) {
+      throw invalidResponse('entry must include a Signal and source');
+    }
+    const signal = raw.signal;
+    const source = signal.source as Record<string, unknown>;
+    const signalID = responseID(signal.thesis_id, 'signal.thesis_id');
+    if (signalID !== thesisID)
+      throw invalidResponse('Signal belongs to another Thesis');
+    const cursor = responseNonemptyText(raw.cursor, 'entry.cursor');
+    const mappedSource: ThesisSignalSource = {
+      title: responseText(source.title, 'source.title'),
+    };
+    if (source.url !== undefined)
+      mappedSource.url = responseText(source.url, 'source.url');
+    if (source.published_at_ms !== undefined)
+      mappedSource.published_at_ms = responseNonnegativeInteger(
+        source.published_at_ms,
+        'source.published_at_ms'
+      );
+    const mappedSignal: ThesisSignal = {
+      id: responseID(signal.id, 'signal.id'),
+      thesis_id: signalID,
+      author_version_id: responseID(
+        signal.author_version_id,
+        'signal.author_version_id'
+      ),
+      statement_snapshot: responseNonemptyText(
+        signal.statement_snapshot,
+        'signal.statement_snapshot'
+      ),
+      stance: responseText(signal.stance, 'signal.stance'),
+      explanation: responseText(signal.explanation, 'signal.explanation'),
+      information_kind: responseText(
+        signal.information_kind,
+        'signal.information_kind'
+      ),
+      source: mappedSource,
+    };
+    if (signal.evidence_excerpt !== undefined) {
+      if (!isRecord(signal.evidence_excerpt))
+        throw invalidResponse('invalid evidence excerpt');
+      mappedSignal.evidence_excerpt = {
+        text: responseNonemptyText(
+          signal.evidence_excerpt.text,
+          'evidence_excerpt.text'
+        ),
+        omitted_before: responseBoolean(
+          signal.evidence_excerpt.omitted_before,
+          'evidence_excerpt.omitted_before'
+        ),
+        omitted_after: responseBoolean(
+          signal.evidence_excerpt.omitted_after,
+          'evidence_excerpt.omitted_after'
+        ),
+      };
+    }
+    return {
+      feed_entry_id: responseID(raw.feed_entry_id, 'feed_entry_id'),
+      cursor,
+      signal: mappedSignal,
+    };
+  });
+  const nextCursor = responseText(response.next_cursor, 'next_cursor');
+  if (nextCursor && nextCursor !== entries[entries.length - 1]?.cursor) {
+    throw invalidResponse('next_cursor must match the final entry');
+  }
+  return { research: status, entries, next_cursor: nextCursor };
+}
+
+function responseNonnegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw invalidResponse(field + ' must be a nonnegative safe integer');
+  }
+  return value;
+}
+
+function responseNonemptyText(value: unknown, field: string): string {
+  const valueText = responseText(value, field);
+  if (!valueText.trim()) throw invalidResponse(field + ' must be nonempty');
+  return valueText;
 }
 
 function requireRequestID(value: string): string {
