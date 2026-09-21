@@ -371,7 +371,8 @@ alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json
 alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
-alva thesis <create|get|update|close|delete|rewrite>
+alva thesis <create|get|signals|set-visibility|update|close|delete|rewrite>
+alva thesis version get --id <thesis-id> --author-version-id <version-id>
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>

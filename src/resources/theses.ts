@@ -166,6 +166,30 @@ export class ThesesResource {
     );
   }
 
+  async getVersion(
+    id: ThesisID,
+    authorVersionID: ThesisID
+  ): Promise<ThesisResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const versionID = requireID(authorVersionID, 'author_version_id');
+    const response = thesisResponse(
+      await this.client._request(
+        'GET',
+        `/api/v1/theses/${thesisID}/versions/${versionID}`
+      )
+    );
+    if (
+      response.thesis.id !== thesisID ||
+      response.thesis.author_version_id !== versionID
+    ) {
+      throw invalidResponse(
+        'version response must match the requested thesis and author version'
+      );
+    }
+    return response;
+  }
+
   async signals(
     id: ThesisID,
     params: ListThesisSignalsParams = {}

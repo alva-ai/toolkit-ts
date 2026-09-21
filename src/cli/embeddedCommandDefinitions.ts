@@ -144,6 +144,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       ],
     }),
     route('thesis get', 'thesis get', { values: ['id'] }),
+    route('thesis version get', 'thesis version get', {
+      values: ['id', 'author-version-id'],
+    }),
     route('thesis signals', 'thesis signals', {
       values: ['id', 'first', 'cursor'],
     }),
