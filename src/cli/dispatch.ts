@@ -1474,13 +1474,14 @@ Examples:
 
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Create, read, inspect Signals, update, close, delete, or explicitly rewrite an authored thesis.
+Create, read, inspect Signals and exact author versions, update, close, delete, or explicitly rewrite an authored thesis.
 Backend owns Signal/Alert setup; the CLI never starts them separately.
 Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
   get      Get one thesis
+  version get  Get one exact author version
   signals  Read published Signal history
   set-visibility  Change current access without publishing a version
   update   Replaces document fields: body, title, entities, visibility (all sent in full)
@@ -1502,6 +1503,7 @@ Update requires --visibility explicitly so it cannot inadvertently publish.
 Other flags:
   create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--visibility <value>]
   get     --id <signed-int64-decimal>
+  version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   set-visibility --id <id> --visibility public|private
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
@@ -3281,6 +3283,11 @@ export async function executeParsedCommand(
           });
         case 'get':
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
+        case 'version':
+          return client.theses.getVersion(
+            requireFlag(flags, 'id', 'thesis version get'),
+            requireFlag(flags, 'author-version-id', 'thesis version get')
+          );
         case 'signals':
           return client.theses.signals(
             requireFlag(flags, 'id', 'thesis signals'),

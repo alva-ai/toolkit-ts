@@ -42,6 +42,7 @@ function mockLifecycle(value: AlvaClient) {
   return {
     create: vi.spyOn(value.theses, 'create').mockResolvedValue(THESIS),
     get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
+    getVersion: vi.spyOn(value.theses, 'getVersion').mockResolvedValue(THESIS),
     signals: vi.spyOn(value.theses, 'signals').mockResolvedValue(SIGNALS),
     setVisibility: vi
       .spyOn(value.theses, 'setVisibility')
@@ -78,6 +79,15 @@ describe('thesis terminal dispatch', () => {
       ' AAPL,NVDA ',
     ]);
     await dispatchTerminal(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'version',
+      'get',
+      '--id',
+      THESIS.thesis.id,
+      '--author-version-id',
+      THESIS.thesis.author_version_id,
+    ]);
     await dispatchTerminal(value, [
       'thesis',
       'signals',
@@ -150,6 +160,10 @@ describe('thesis terminal dispatch', () => {
       visibility: 'public',
     });
     expect(calls.get).toHaveBeenCalledWith(THESIS.thesis.id);
+    expect(calls.getVersion).toHaveBeenCalledWith(
+      THESIS.thesis.id,
+      THESIS.thesis.author_version_id
+    );
     expect(calls.signals).toHaveBeenCalledWith(THESIS.thesis.id, {
       first: 10,
       cursor: 'after',
@@ -486,6 +500,15 @@ describe('thesis embedded dispatch', () => {
       'AAPL,NVDA',
     ]);
     await dispatchEmbedded(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
+    await dispatchEmbedded(value, [
+      'thesis',
+      'version',
+      'get',
+      '--id',
+      THESIS.thesis.id,
+      '--author-version-id',
+      THESIS.thesis.author_version_id,
+    ]);
     await dispatchEmbedded(value, [
       'thesis',
       'set-visibility',

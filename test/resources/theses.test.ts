@@ -159,6 +159,32 @@ describe('ThesesResource', () => {
     expect(init.method).toBe('GET');
   });
 
+  it('gets one exact author version without falling back to the current version', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(thesis());
+
+    await expect(
+      client.theses.getVersion(MAX_ID, '9223372036854775806')
+    ).resolves.toEqual(thesis());
+    expect(client._request).toHaveBeenCalledWith(
+      'GET',
+      `/api/v1/theses/${MAX_ID}/versions/9223372036854775806`
+    );
+  });
+
+  it('rejects an exact-version response that does not match the requested version', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(thesis());
+
+    await expect(client.theses.getVersion(MAX_ID, '42')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
   it.each([0, 51, 1.5])(
     'rejects invalid Signal page size %s before HTTP',
     async (first) => {

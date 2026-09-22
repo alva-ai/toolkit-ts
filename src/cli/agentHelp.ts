@@ -85,7 +85,7 @@ Examples:
   alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: create, get, signals, set-visibility, update, close, delete, rewrite.
+Subcommands: create, get, version get, signals, set-visibility, update, close, delete, rewrite.
 
 Embedded thesis commands accept literal --body text only; file and stdin body
 transports are intentionally unavailable because this runtime has no verified
