@@ -237,28 +237,12 @@ not their catalogs, parsers, or help.
 
 ### Shipping embedded CLI changes to ALPI
 
-Merging here or publishing the npm CLI does **not** update the deployed Agent.
-Its executor is published independently as `@alva/toolkit-dispatch` from the
-Toolkit submodule pinned by sdk-monorepo.
+Merging Toolkit or publishing its npm CLI does not update ALPI. Update
+`sdks/toolkit-dispatch/toolkit` in sdk-monorepo, bump the Dispatch package version,
+and release it there: merge to main for STG, then use the package release tag
+for PRD. Publish Dispatch before any Slim Skill/Pi release that depends on it.
 
-- Verify the embedded catalog, parser, shared SDK validation, and Backend
-  contract together. Terminal help/tests do not establish embedded support.
-  Cover omitted versus empty arguments, pagination, idempotency, and permission
-  boundaries where relevant, using mocked transports for side-effecting calls.
-- Coordinate the sdk-monorepo Toolkit gitlink update and Dispatch version bump
-  when shipping changed artifact contents. Update affected Slim Skill guidance
-  and its `runtime.json` minimum compatible executor version; verify API-version
-  compatibility as well.
-- Confirm Backend prerequisites, publish and verify Dispatch, then release
-  dependent Skill/Pi changes separately in STG and PRD. Compatible executor
-  changes alone do not require a Pi/JAgent rebuild. An existing ALPI runtime
-  keeps its resolved executor until it closes.
-- Include source revision, artifact version/hash, workflow links, and actual
-  consumer readback in the handoff. Distinguish merged, published, and verified;
-  explicitly record deferred features and notification failures.
-
-See the [SDK delivery checklist](https://github.com/alva-ai/sdk-monorepo#skill-and-embedded-cli-delivery-checklist)
-and [coordination issue #191](https://github.com/alva-ai/sdk-monorepo/issues/191).
+See [SDK release instructions](https://github.com/alva-ai/sdk-monorepo#package-scoped-production-releases).
 
 ## SDK Usage (Node.js)
 
