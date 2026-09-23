@@ -55,6 +55,7 @@ export class ReleaseResource {
         feeds: params.feeds,
         changelog: params.changelog,
         readme_url: params.readme_url,
+        confirm_bundled_feed_exposure: params.confirm_bundled_feed_exposure,
       },
     }) as Promise<PlaybookReleaseResponse>;
   }

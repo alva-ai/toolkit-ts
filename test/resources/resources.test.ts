@@ -397,30 +397,35 @@ describe('ReleaseResource', () => {
     );
   });
 
-  it('playbook() sends POST /api/v1/release/playbook', async () => {
-    const client = makeClient();
-    const release = new ReleaseResource(client);
-    await release.playbook({
-      name: 'btc-dashboard',
-      version: 'v1.0.0',
-      feeds: [{ feed_id: 1 }],
-      changelog: 'Initial release',
-      readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
-    });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/release/playbook',
-      {
-        body: {
-          name: 'btc-dashboard',
-          version: 'v1.0.0',
-          feeds: [{ feed_id: 1 }],
-          changelog: 'Initial release',
-          readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
-        },
-      }
-    );
-  });
+  it.each([undefined, false, true])(
+    'playbook() forwards exposure consent %s',
+    async (confirmation) => {
+      const client = makeClient();
+      const release = new ReleaseResource(client);
+      await release.playbook({
+        confirm_bundled_feed_exposure: confirmation,
+        name: 'btc-dashboard',
+        version: 'v1.0.0',
+        feeds: [{ feed_id: 1 }],
+        changelog: 'Initial release',
+        readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+      });
+      expect(client._request).toHaveBeenCalledWith(
+        'POST',
+        '/api/v1/release/playbook',
+        {
+          body: {
+            name: 'btc-dashboard',
+            version: 'v1.0.0',
+            feeds: [{ feed_id: 1 }],
+            changelog: 'Initial release',
+            readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+            confirm_bundled_feed_exposure: confirmation,
+          },
+        }
+      );
+    }
+  );
 });
 
 describe('FeedResource', () => {

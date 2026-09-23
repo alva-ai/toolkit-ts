@@ -964,6 +964,9 @@ Playbook-draft flags:
                              with skill tags; re-draft replaces the tag set.
 
 Playbook flags:
+  --confirm-bundled-feed-exposure
+                         Confirm delivery of bundled non-public Feeds to
+                         the Playbook audience. Defaults to unconfirmed.
   --name <name>          Playbook name, must already exist as draft (required)
   --version <version>    Semantic version, e.g. "v1.0.0" (required)
   --feeds <json>         JSON array of {feed_id, feed_major?} (required)
@@ -3876,6 +3879,9 @@ export async function executeParsedCommand(
             }>,
             changelog,
             readme_url: readmeUrl,
+            confirm_bundled_feed_exposure: boolFlag(
+              flags['confirm-bundled-feed-exposure']
+            ),
           });
         }
         default:
