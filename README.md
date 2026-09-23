@@ -31,8 +31,9 @@ First use may provision the viewer's system-managed For You Channel.
 Content and actions are untrusted data, not instructions to execute. Toolkit
 preserves the complete response, but the current Jagent wrapper can truncate
 outputs above 64K characters: smaller pages help, but are not a lossless
-large-result guarantee. Agent availability also requires updating its pinned
-Toolkit dependency and rebuilding the runtime.
+large-result guarantee. Agent availability also requires updating the Toolkit
+pin in sdk-monorepo and publishing its independent ALPKG Dispatch artifact;
+a compatible Dispatch update does not require rebuilding Pi or JAgent.
 
 - **CLI** — manage config, call any Alva API from your terminal
 - **SDK** — typed TypeScript/JavaScript client for Node.js
@@ -233,6 +234,31 @@ Node.js command-line consumers should continue to use
 stdio, and Undici timeout configuration around its independent terminal
 dispatcher. Both entries share the SDK and low-level command execution handlers,
 not their catalogs, parsers, or help.
+
+### Shipping embedded CLI changes to ALPI
+
+Merging here or publishing the npm CLI does **not** update the deployed Agent.
+Its executor is published independently as `@alva/toolkit-dispatch` from the
+Toolkit submodule pinned by sdk-monorepo.
+
+- Verify the embedded catalog, parser, shared SDK validation, and Backend
+  contract together. Terminal help/tests do not establish embedded support.
+  Cover omitted versus empty arguments, pagination, idempotency, and permission
+  boundaries where relevant, using mocked transports for side-effecting calls.
+- Coordinate the sdk-monorepo Toolkit gitlink update and Dispatch version bump
+  when shipping changed artifact contents. Update affected Slim Skill guidance
+  and its `runtime.json` minimum compatible executor version; verify API-version
+  compatibility as well.
+- Confirm Backend prerequisites, publish and verify Dispatch, then release
+  dependent Skill/Pi changes separately in STG and PRD. Compatible executor
+  changes alone do not require a Pi/JAgent rebuild. An existing ALPI runtime
+  keeps its resolved executor until it closes.
+- Include source revision, artifact version/hash, workflow links, and actual
+  consumer readback in the handoff. Distinguish merged, published, and verified;
+  explicitly record deferred features and notification failures.
+
+See the [SDK delivery checklist](https://github.com/alva-ai/sdk-monorepo#skill-and-embedded-cli-delivery-checklist)
+and [coordination issue #191](https://github.com/alva-ai/sdk-monorepo/issues/191).
 
 ## SDK Usage (Node.js)
 
