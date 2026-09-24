@@ -89,12 +89,20 @@ describe('StewardResource', () => {
       deliveryIds: [],
       requestId: '11111111-1111-4111-8111-111111111111',
     });
-    const sendInput = (
-      request.mock.calls[0][2] as {
-        body: { variables: { input: { deliveryIds: string[] } } };
-      }
-    ).body.variables.input;
-    expect(sendInput.deliveryIds).toEqual([]);
+    // Omitting deliveryIds entirely is equivalent to an empty set.
+    await c.steward.send({
+      inboxPath,
+      body: 'For You only',
+      requestId: '22222222-2222-4222-8222-222222222222',
+    });
+    for (const call of [request.mock.calls[0], request.mock.calls[1]]) {
+      const sendInput = (
+        call[2] as {
+          body: { variables: { input: { deliveryIds: string[] } } };
+        }
+      ).body.variables.input;
+      expect(sendInput.deliveryIds).toEqual([]);
+    }
 
     await expect(
       c.steward.briefed({ inboxPath, deliveryIds: [], digestRunId: 'run' })

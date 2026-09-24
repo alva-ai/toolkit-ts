@@ -28,7 +28,8 @@ export interface StewardForwardParams extends StewardTarget {
 
 export interface StewardSendParams extends StewardTarget {
   body: string;
-  deliveryIds: string[];
+  /** Omit or pass [] for a For-You-only Brief that covers no ledger delivery. */
+  deliveryIds?: string[];
   requestId?: string;
 }
 
@@ -285,9 +286,10 @@ export class StewardResource {
         inboxPath: requireInboxPath(params),
         requestId: requireRequestId(params.requestId),
         body: params.body,
-        // A For-You-only Brief covers no ledger delivery, so an empty set is
-        // valid here; the backend accepts it. `briefed` still requires ids.
-        deliveryIds: normalizeDeliveryIds(params.deliveryIds),
+        // A For-You-only Brief covers no ledger delivery, so an empty (or
+        // omitted) set is valid here; the backend accepts it. `briefed` still
+        // requires ids.
+        deliveryIds: normalizeDeliveryIds(params.deliveryIds ?? []),
       },
     });
     const message = data.postStewardMessage?.message;
