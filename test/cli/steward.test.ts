@@ -104,6 +104,19 @@ describe('steward CLI', () => {
 
     await dispatchEmbedded(client, [
       'steward',
+      'send',
+      '--body',
+      'For You only',
+    ]);
+    expect(client.steward.send).toHaveBeenLastCalledWith({
+      inboxPath,
+      body: 'For You only',
+      deliveryIds: [],
+      requestId: undefined,
+    });
+
+    await dispatchEmbedded(client, [
+      'steward',
       'pending',
       '--after',
       'c1',

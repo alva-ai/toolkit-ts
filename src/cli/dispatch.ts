@@ -178,7 +178,7 @@ Subcommands:
 Flags:
   --inbox-path <path>       Steward Session Inbox (terminal CLI only)
   --delivery-id <id>        One delivery (decide, forward)
-  --delivery-ids <a,b,c>    Comma-separated deliveries (send, briefed)
+  --delivery-ids <a,b,c>    Comma-separated deliveries (briefed; optional for send — omit for a For-You-only Brief)
   --decision <immediate|digest|suppress>
   --reason <text>           Short audit note stored with the decision
   --body <markdown>         Message body (send)
@@ -193,6 +193,7 @@ Examples (terminal; the embedded Agent tool omits --inbox-path):
   alva steward decide --inbox-path /alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl --delivery-id 123 --decision immediate --reason "guidance cut 15%"
   alva steward forward --inbox-path <inbox> --delivery-id 123
   alva steward send --inbox-path <inbox> --delivery-ids 124,125 --body "Two related moves..."
+  alva steward send --inbox-path <inbox> --body "For You: ..."   # For-You-only Brief, no ledger delivery
   alva steward pending --inbox-path <inbox> --until 2026-09-15T13:00:00Z
   alva steward pending --inbox-path <inbox> --after <nextCursor from the previous page>
   alva steward briefed --inbox-path <inbox> --digest-run-id <request id echoed by send> --delivery-ids 124,125`,
@@ -3202,11 +3203,19 @@ export async function executeParsedCommand(
         'inbox-path',
         `steward ${subcommand}`
       );
-      const ids = (name: string): string[] =>
-        requireFlag(flags, name, `steward ${subcommand}`)
+      const splitIds = (raw: string): string[] =>
+        raw
           .split(',')
           .map((value) => value.trim())
           .filter((value) => value !== '');
+      const ids = (name: string): string[] =>
+        splitIds(requireFlag(flags, name, `steward ${subcommand}`));
+      // A For-You-only Brief omits --delivery-ids entirely; treat the missing
+      // flag as an empty set rather than a usage error. `briefed` keeps `ids`.
+      const optionalIds = (name: string): string[] => {
+        const raw = flags[name];
+        return raw === undefined ? [] : splitIds(raw);
+      };
       switch (subcommand) {
         case 'decide':
           return client.steward.decide({
@@ -3227,7 +3236,7 @@ export async function executeParsedCommand(
           return client.steward.send({
             inboxPath,
             body: requireFlag(flags, 'body', 'steward send'),
-            deliveryIds: ids('delivery-ids'),
+            deliveryIds: optionalIds('delivery-ids'),
             requestId: flags['request-id'],
           });
         case 'pending': {
