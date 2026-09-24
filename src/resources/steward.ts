@@ -172,9 +172,7 @@ export function requireDeliveryId(
   return value;
 }
 
-export function requireDeliveryIds(values: string[]): string[] {
-  if (values.length === 0)
-    throw invalid('at least one delivery id is required');
+export function normalizeDeliveryIds(values: string[]): string[] {
   const unique = new Set<string>();
   for (const value of values) {
     requireDeliveryId(value);
@@ -182,6 +180,12 @@ export function requireDeliveryIds(values: string[]): string[] {
     unique.add(value);
   }
   return [...unique];
+}
+
+export function requireDeliveryIds(values: string[]): string[] {
+  if (values.length === 0)
+    throw invalid('at least one delivery id is required');
+  return normalizeDeliveryIds(values);
 }
 
 export function requireDecision(value: string): StewardDecision {
@@ -281,7 +285,9 @@ export class StewardResource {
         inboxPath: requireInboxPath(params),
         requestId: requireRequestId(params.requestId),
         body: params.body,
-        deliveryIds: requireDeliveryIds(params.deliveryIds),
+        // A For-You-only Brief covers no ledger delivery, so an empty set is
+        // valid here; the backend accepts it. `briefed` still requires ids.
+        deliveryIds: normalizeDeliveryIds(params.deliveryIds),
       },
     });
     const message = data.postStewardMessage?.message;

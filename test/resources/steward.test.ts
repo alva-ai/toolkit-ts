@@ -74,6 +74,33 @@ describe('StewardResource', () => {
     expect(sendInput.deliveryIds).toEqual(['5', '6']);
   });
 
+  it('send accepts an empty delivery set (For-You-only Brief) but briefed does not', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        postStewardMessage: {
+          message: { channelMessageId: '90', requestId: 'x' },
+        },
+      },
+    });
+    await c.steward.send({
+      inboxPath,
+      body: 'For You only',
+      deliveryIds: [],
+      requestId: '11111111-1111-4111-8111-111111111111',
+    });
+    const sendInput = (
+      request.mock.calls[0][2] as {
+        body: { variables: { input: { deliveryIds: string[] } } };
+      }
+    ).body.variables.input;
+    expect(sendInput.deliveryIds).toEqual([]);
+
+    await expect(
+      c.steward.briefed({ inboxPath, deliveryIds: [], digestRunId: 'run' })
+    ).rejects.toThrow(/at least one delivery id/);
+  });
+
   it('reads one connection page and returns the next opaque cursor', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
