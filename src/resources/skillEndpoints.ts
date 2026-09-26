@@ -204,12 +204,6 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     path: '/api/v1/stocks/company/income-statements',
   },
   {
-    skill: 'arrays-data-api-equity-fundamentals',
-    file: 'company-kpi',
-    method: 'GET',
-    path: '/api/v1/stocks/company/kpi',
-  },
-  {
     skill: 'arrays-data-api-equity-events',
     file: 'crowdfunding-offerings',
     method: 'GET',
@@ -730,6 +724,54 @@ const SKILL_ENDPOINT_METADATA: SkillEndpointMetadata[] = [
     file: 'x-handles',
     method: 'POST',
     path: '/api/v1/social-feeds/x/handles',
+  },
+  {
+    skill: 'arrays-data-api-crypto-futures-data',
+    file: 'hyperliquid-perp-funding-rate',
+    method: 'GET',
+    path: '/api/v1/crypto/hyperliquid/perp/funding-rate',
+  },
+  {
+    skill: 'arrays-data-api-equity-events',
+    file: 'event-transcripts',
+    method: 'GET',
+    path: '/api/v1/stocks/event-transcripts',
+  },
+  {
+    skill: 'arrays-data-api-equity-fundamentals',
+    file: 'sec-filings',
+    method: 'GET',
+    path: '/api/v1/stocks/sec-filings',
+  },
+  {
+    skill: 'arrays-data-api-macro-and-economics',
+    file: 'macro-index-symbol-list',
+    method: 'GET',
+    path: '/api/v1/macro/index/symbols',
+  },
+  {
+    skill: 'arrays-data-api-news',
+    file: 'tv-news',
+    method: 'GET',
+    path: '/api/v1/stocks/tv-news',
+  },
+  {
+    skill: 'arrays-data-api-podcast-transcripts',
+    file: 'podcast-shows',
+    method: 'GET',
+    path: '/api/v1/other/podcast/shows',
+  },
+  {
+    skill: 'arrays-data-api-podcast-transcripts',
+    file: 'podcast-transcripts',
+    method: 'GET',
+    path: '/api/v1/other/podcast/transcripts',
+  },
+  {
+    skill: 'arrays-data-api-podcast-transcripts',
+    file: 'persons',
+    method: 'GET',
+    path: '/api/v1/persons',
   },
 ];
 
