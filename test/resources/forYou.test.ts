@@ -722,10 +722,19 @@ describe.each([
     const { client, request } = setupTheses();
     // The command help carries the semantics; the subcommand help is generated
     // from the flag table in embedded mode, so assert each where it lives.
-    expect(await dispatch(client, ['for-you', '--help'])).toMatchObject({
-      _help: true,
-      text: expect.stringContaining('exhausted'),
-    });
+    // The two profiles serve two separate strings -- terminal reads dispatch's
+    // COMMAND_HELP, embedded reads AGENT_COMMAND_HELP -- so running this under
+    // both is what keeps the pair from drifting.
+    const help = (await dispatch(client, ['for-you', '--help'])) as {
+      _help: boolean;
+      text: string;
+    };
+    expect(help._help).toBe(true);
+    // `scanLimited` means the server stopped at its scan budget and more
+    // remains, so it must never be offered as a second stop condition beside
+    // `exhausted`: a reader that stops there silently drops recommendations.
+    expect(help.text).toContain('only stop condition');
+    expect(help.text).toContain('more remains, so keep paging');
     expect(
       await dispatch(client, ['for-you', 'theses', '--help'])
     ).toMatchObject({ _help: true, text: expect.stringContaining('--cursor') });

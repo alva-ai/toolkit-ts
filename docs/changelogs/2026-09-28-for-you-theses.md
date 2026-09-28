@@ -125,11 +125,22 @@ Added `client.forYou.theses` and the `for-you theses` terminal/embedded
 command. Verification passed: 1103 tests across 52 files (143 in the For You
 file), lint, format check, typecheck, build and diff check.
 
-Automated review on the first commit found two real defects, both fixed here:
-the partially-selected `items` list described in section 3, and a validator
-that accepted any object for `snapshotRelease` and skipped `categoryIds`,
-`entities`, `medias` and the publisher fields while the public type declared
-them. CI also failed `npm run format:check`, which `npm run lint:fix` does not
+Automated review found three real defects, all fixed here:
+
+1. The partially-selected `items` list described in section 3.
+2. A validator that accepted any object for `snapshotRelease` and skipped
+   `categoryIds`, `entities`, `medias` and the publisher fields while the
+   public type declared them.
+3. The CLI help offered `scanLimited` as a second stop condition beside
+   `exhausted`. It is the opposite: the mixer sets it as
+   `scanned >= ScanBudget && !Exhausted`
+   (`recommendation_mixer.go:273`), so it means this page stopped early and
+   more remains. A reader that stopped there would silently drop
+   recommendations. `exhausted` is now the only stop condition in the help,
+   which is what the SDK type doc already said; the help now also states that
+   an empty page is not the end. A test asserts both phrases.
+
+CI also failed `npm run format:check`, which `npm run lint:fix` does not
 cover; the verification list below now names it.
 
 ## 8. Remaining Work
