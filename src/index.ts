@@ -41,6 +41,12 @@ export {
   type ForYouListParams,
   type ForYouEntry,
   type ForYouConnection,
+  type ForYouThesesParams,
+  type ThesisRecommendation,
+  type ThesisRecommendationPage,
+  type ThesisPublicationSummary,
+  type ThesisPublisher,
+  type ThesisSourceReference,
 } from './resources/forYou.js';
 export { MarketsResource } from './resources/markets.js';
 export {

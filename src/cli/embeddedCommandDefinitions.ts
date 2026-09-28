@@ -481,6 +481,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('for-you list', 'for-you list', {
       values: ['limit', 'cursor', 'newer-than', 'feed-id'],
     }),
+    route('for-you theses', 'for-you theses', {
+      values: ['limit', 'cursor'],
+    }),
     route('alert enable', 'alert enable', {
       values: ['automation', 'automation-ids', 'channel-id'],
     }),

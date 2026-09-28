@@ -197,6 +197,300 @@ function connection(value: unknown): ForYouConnection {
   return value as unknown as ForYouConnection;
 }
 
+export interface ForYouThesesParams {
+  first?: number;
+  after?: string;
+}
+
+/** Interface fields shared by user and curated-person publisher profiles. */
+export interface ThesisPublisher {
+  id: string;
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+  followersCount: number;
+  viewerState: { following: boolean | null };
+}
+
+export interface ThesisSourceReference {
+  title: string | null;
+  sourceKind: string;
+  sourceContentId: string;
+  publicUrl: string;
+  sourceTimeMs: number | null;
+  locator: string;
+}
+
+/** The exact author version this recommendation renders, not the mutable Thesis. */
+export interface ThesisPublicationSummary {
+  thesisId: string;
+  playbookId: string;
+  authorVersionId: string;
+  materialVersionId: string;
+  itemKey: string;
+  title: string;
+  body: string;
+  publishedAtMs: number;
+  changeKind: string;
+  visibility: string;
+  closed: boolean;
+  archived: boolean;
+  note: string;
+  closingNote: string;
+  researchPaused: boolean;
+  entityIds: string[];
+  categoryIds: string[];
+  entityStances: {
+    entityId: string;
+    stance: 'UNKNOWN' | 'BULLISH' | 'BEARISH';
+  }[];
+  entities: { id: string; ticker: string; name: string }[];
+  publisher: ThesisPublisher;
+  medias: {
+    type: 'PRICE_CHART' | 'IMAGE' | 'AUDIO' | 'VIDEO';
+    coverUrl: string;
+    url: string | null;
+  }[];
+  signalFeed: { id: string } | null;
+  snapshotRelease: {
+    versionId: string;
+    materialVersionId: string;
+    publishedAtMs: number;
+    changeKind: string;
+    sourceRefs: ThesisSourceReference[];
+  };
+}
+
+export interface ThesisRecommendation {
+  itemKey: string;
+  publication: ThesisPublicationSummary;
+}
+
+/**
+ * A ranked page, not a chronological one. `exhausted` is the only end of the
+ * candidate pool; `scanLimited` means this page stopped at its scan budget and
+ * more remains. A page may be empty while `hasNextPage` is still true, because
+ * `endCursor` advances past scanned references that current visibility hides.
+ */
+export interface ThesisRecommendationPage {
+  edges: { cursor: string; node: ThesisRecommendation }[];
+  items: ThesisRecommendation[];
+  pageInfo: {
+    startCursor: string;
+    endCursor: string;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+  listId: string;
+  pageCursor: string;
+  nextCursor: string | null;
+  exhausted: boolean;
+  scanLimited: boolean;
+}
+
+/**
+ * Selects no exposure input. `pendingEvents` and `seenItemKeys` are the only
+ * way this read records that the viewer saw a publication, so the SDK never
+ * sends them: a Toolkit read must not consume the reader's own feed.
+ */
+const THESIS_RECOMMENDATION_QUERY = `
+query ToolkitForYouTheses($input: ThesisRecommendationInput) {
+  viewer {
+    thesisRecommendations(input: $input) {
+      listId pageCursor nextCursor exhausted scanLimited
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      items { itemKey }
+      edges {
+        cursor
+        node {
+          itemKey
+          publication {
+            thesisId playbookId authorVersionId materialVersionId itemKey
+            title body publishedAtMs changeKind visibility
+            closed archived note closingNote researchPaused
+            entityIds categoryIds
+            entityStances { entityId stance }
+            entities { id ticker name }
+            publisher {
+              id displayName avatarUrl bio followersCount
+              viewerState { following }
+            }
+            medias { type coverUrl url }
+            signalFeed { id }
+            snapshotRelease {
+              versionId materialVersionId publishedAtMs changeKind
+              sourceRefs {
+                title sourceKind sourceContentId publicUrl sourceTimeMs locator
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`.trim();
+
+/** Shared by the SDK and CLI. Gateway caps the page at 10; reject earlier. */
+export function validateForYouThesesParams(params: ForYouThesesParams): void {
+  if (!record(params)) throw new Error('Thesis parameters must be an object');
+  const first = params.first === undefined ? 10 : params.first;
+  if (
+    typeof first !== 'number' ||
+    !Number.isInteger(first) ||
+    first < 1 ||
+    first > 10
+  ) {
+    throw new Error('first must be an integer between 1 and 10');
+  }
+  if (
+    params.after !== undefined &&
+    (typeof params.after !== 'string' || !params.after.trim())
+  ) {
+    throw new Error('after must be a non-empty cursor');
+  }
+}
+
+/**
+ * Shared GraphQL envelope handling. A partial `errors` array fails closed even
+ * when `data` is present, and an absent viewer field is a 502 rather than an
+ * empty result, so a caller never mistakes a broken read for "nothing new".
+ */
+function graphqlViewerField(response: unknown, field: string): unknown {
+  if (!record(response)) {
+    throw new AlvaError(
+      'GRAPHQL_INVALID_RESPONSE',
+      `GraphQL returned an invalid viewer.${field} response`,
+      502
+    );
+  }
+  if (response.errors !== undefined) {
+    if (!Array.isArray(response.errors)) {
+      throw new AlvaError(
+        'GRAPHQL_INVALID_RESPONSE',
+        `GraphQL returned an invalid viewer.${field} response`,
+        502
+      );
+    }
+    if (response.errors.length > 0) {
+      const messages = response.errors.flatMap((error: unknown) =>
+        record(error) && typeof error.message === 'string'
+          ? [error.message]
+          : []
+      );
+      throw new AlvaError(
+        'GRAPHQL_ERROR',
+        messages.join('; ') || 'GraphQL request failed',
+        400,
+        { errors: response.errors }
+      );
+    }
+  }
+  if (
+    !record(response.data) ||
+    !record(response.data.viewer) ||
+    response.data.viewer[field] == null
+  ) {
+    throw new AlvaError(
+      'GRAPHQL_EMPTY_RESPONSE',
+      `GraphQL response did not include viewer.${field}`,
+      502
+    );
+  }
+  return response.data.viewer[field];
+}
+
+function invalidPage(): never {
+  throw new AlvaError(
+    'GRAPHQL_INVALID_RESPONSE',
+    'GraphQL returned an invalid Thesis recommendation page',
+    502
+  );
+}
+
+function publication(value: unknown): boolean {
+  if (!record(value)) return false;
+  for (const field of [
+    'thesisId',
+    'playbookId',
+    'authorVersionId',
+    'materialVersionId',
+  ] as const) {
+    if (!isPositiveInt64(value[field])) return false;
+  }
+  if (
+    typeof value.itemKey !== 'string' ||
+    !value.itemKey.trim() ||
+    typeof value.title !== 'string' ||
+    typeof value.body !== 'string' ||
+    typeof value.publishedAtMs !== 'number' ||
+    !Number.isFinite(value.publishedAtMs)
+  ) {
+    return false;
+  }
+  for (const field of ['closed', 'archived', 'researchPaused'] as const) {
+    if (typeof value[field] !== 'boolean') return false;
+  }
+  if (!Array.isArray(value.entityIds) || !Array.isArray(value.entityStances)) {
+    return false;
+  }
+  if (!value.entityIds.every(isPositiveInt64)) return false;
+  if (
+    !record(value.publisher) ||
+    typeof value.publisher.displayName !== 'string'
+  ) {
+    return false;
+  }
+  return record(value.snapshotRelease);
+}
+
+function recommendationPage(value: unknown): ThesisRecommendationPage {
+  if (
+    !record(value) ||
+    !Array.isArray(value.edges) ||
+    !Array.isArray(value.items) ||
+    !record(value.pageInfo) ||
+    typeof value.listId !== 'string' ||
+    typeof value.pageCursor !== 'string' ||
+    typeof value.exhausted !== 'boolean' ||
+    typeof value.scanLimited !== 'boolean' ||
+    (value.nextCursor !== null && typeof value.nextCursor !== 'string')
+  ) {
+    return invalidPage();
+  }
+  const page = value.pageInfo;
+  if (
+    typeof page.startCursor !== 'string' ||
+    typeof page.endCursor !== 'string' ||
+    typeof page.hasNextPage !== 'boolean' ||
+    typeof page.hasPreviousPage !== 'boolean' ||
+    page.hasNextPage !== (value.nextCursor !== null)
+  ) {
+    return invalidPage();
+  }
+  if (value.edges.length !== value.items.length) return invalidPage();
+  for (const [index, edge] of value.edges.entries()) {
+    if (
+      !record(edge) ||
+      typeof edge.cursor !== 'string' ||
+      !edge.cursor.trim() ||
+      !record(edge.node) ||
+      typeof edge.node.itemKey !== 'string' ||
+      !edge.node.itemKey.trim() ||
+      !publication(edge.node.publication)
+    ) {
+      return invalidPage();
+    }
+    const item = value.items[index];
+    if (!record(item) || item.itemKey !== edge.node.itemKey) {
+      return invalidPage();
+    }
+  }
+  const first = value.edges[0];
+  if (page.startCursor !== (first?.cursor ?? '')) return invalidPage();
+  return value as unknown as ThesisRecommendationPage;
+}
+
 export class ForYouResource {
   constructor(private client: AlvaClient) {}
 
@@ -217,34 +511,31 @@ export class ForYouResource {
         },
       },
     });
-    if (!record(response)) return invalidResponse();
-    if (response.errors !== undefined) {
-      if (!Array.isArray(response.errors)) return invalidResponse();
-      if (response.errors.length > 0) {
-        const messages = response.errors.flatMap((error: unknown) =>
-          record(error) && typeof error.message === 'string'
-            ? [error.message]
-            : []
-        );
-        throw new AlvaError(
-          'GRAPHQL_ERROR',
-          messages.join('; ') || 'GraphQL request failed',
-          400,
-          { errors: response.errors }
-        );
-      }
-    }
-    if (
-      !record(response.data) ||
-      !record(response.data.viewer) ||
-      response.data.viewer.forYou == null
-    ) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include viewer.forYou',
-        502
-      );
-    }
-    return connection(response.data.viewer.forYou);
+    return connection(graphqlViewerField(response, 'forYou'));
+  }
+
+  /**
+   * One ranked page of Thesis recommendations -- the stream the Feed App reads,
+   * which is not the chronological `list` stream. Page to `exhausted` and filter
+   * on `publication.publishedAtMs` yourself; the order is slot-mixed, so a time
+   * bound is never a reason to stop paging. Publications the viewer already saw
+   * are withheld by an upstream cooldown, so a window read is "recommended and
+   * recent", not every publication in the window.
+   */
+  async theses(
+    params: ForYouThesesParams = {}
+  ): Promise<ThesisRecommendationPage> {
+    validateForYouThesesParams(params);
+    this.client._requireAuth();
+    const response = await this.client._request('POST', '/query', {
+      body: {
+        query: THESIS_RECOMMENDATION_QUERY,
+        variables: {
+          input: { first: params.first ?? 10, after: params.after },
+        },
+      },
+    });
+    const field = graphqlViewerField(response, 'thesisRecommendations');
+    return recommendationPage(field);
   }
 }

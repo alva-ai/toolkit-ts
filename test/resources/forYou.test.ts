@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
-import type { ForYouListParams } from '../../src/resources/forYou.js';
+import type {
+  ForYouListParams,
+  ForYouThesesParams,
+} from '../../src/resources/forYou.js';
 import { dispatch as terminal } from '../../src/cli/index.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 import { CliUsageError } from '../../src/error.js';
@@ -296,4 +299,335 @@ it('keeps host-owned auth overrides out of the embedded profile', async () => {
     embedded(client, ['for-you', 'list', '--api-key', 'other'])
   ).rejects.toBeInstanceOf(CliUsageError);
   expect(request).not.toHaveBeenCalled();
+});
+
+const thesisId = '7100000000000000001';
+const materialVersionId = '7100000000000000004';
+const entityId = '7100000000000000010';
+function publication() {
+  return {
+    thesisId,
+    playbookId: '7100000000000000002',
+    authorVersionId: '7100000000000000003',
+    materialVersionId,
+    itemKey: `thesis:${thesisId}:${materialVersionId}`,
+    title: 'Compute capex is under-modelled',
+    body: 'Full **thesis** body',
+    publishedAtMs: 1788710100000,
+    changeKind: 'UPDATE',
+    visibility: 'PUBLIC',
+    closed: false,
+    archived: false,
+    note: '',
+    closingNote: '',
+    researchPaused: false,
+    entityIds: [entityId],
+    categoryIds: ['7100000000000000011'],
+    entityStances: [{ entityId, stance: 'BULLISH' }],
+    entities: [{ id: entityId, ticker: 'NVDA', name: 'NVIDIA' }],
+    publisher: {
+      id: '7100000000000000020',
+      displayName: 'Ada',
+      avatarUrl: '',
+      bio: '',
+      followersCount: 12,
+      viewerState: { following: null },
+    },
+    medias: [
+      { type: 'PRICE_CHART', coverUrl: 'https://example.com/c.png', url: null },
+    ],
+    signalFeed: null,
+    snapshotRelease: {
+      versionId: '7100000000000000003',
+      materialVersionId,
+      publishedAtMs: 1788710100000,
+      changeKind: 'UPDATE',
+      sourceRefs: [
+        {
+          title: null,
+          sourceKind: 'WEB',
+          sourceContentId: '7100000000000000030',
+          publicUrl: 'https://example.com',
+          sourceTimeMs: null,
+          locator: '',
+        },
+      ],
+    },
+  };
+}
+function thesisPage(overrides: Record<string, unknown> = {}) {
+  const node = { itemKey: publication().itemKey, publication: publication() };
+  return {
+    edges: [{ cursor: 'signed:1', node }],
+    items: [node],
+    pageInfo: {
+      startCursor: 'signed:1',
+      endCursor: 'signed:1',
+      hasNextPage: false,
+      hasPreviousPage: false,
+    },
+    listId: 'for-you:v7',
+    pageCursor: 'signed:page',
+    nextCursor: null,
+    exhausted: true,
+    scanLimited: false,
+    ...overrides,
+  };
+}
+function setupTheses(result: unknown = thesisPage()) {
+  const client = new AlvaClient({ apiKey: 'test-key' });
+  const request = vi.spyOn(client, '_request').mockResolvedValue({
+    data: { viewer: { thesisRecommendations: result } },
+  });
+  return { client, request };
+}
+
+describe('ForYouResource.theses', () => {
+  it('reads one ranked page without recording exposure', async () => {
+    const result = thesisPage();
+    const { client, request } = setupTheses(result);
+    expect(await client.forYou.theses()).toEqual(result);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('query ToolkitForYouTheses'),
+        variables: { input: { first: 10 } },
+      },
+    });
+    const { query } = request.mock.calls[0][2]?.body as { query: string };
+    for (const field of [
+      'listId pageCursor nextCursor exhausted scanLimited',
+      'publishedAtMs',
+      'entityStances { entityId stance }',
+      'snapshotRelease',
+      'sourceRefs',
+      'publisher',
+    ]) {
+      expect(query).toContain(field);
+    }
+    // Exposure is caller-supplied; the SDK must never let a read consume the
+    // reader's own feed, and must never offer the feedback mutation.
+    for (const forbidden of [
+      'pendingEvents',
+      'seenItemKeys',
+      'recordContentFeedback',
+      'isRead',
+    ]) {
+      expect(query).not.toContain(forbidden);
+    }
+  });
+
+  it('continues an existing list session with the signed cursor', async () => {
+    const { client, request } = setupTheses();
+    await client.forYou.theses({ first: 3, after: 'signed:next' });
+    expect(request.mock.calls[0][2]?.body).toMatchObject({
+      variables: { input: { first: 3, after: 'signed:next' } },
+    });
+  });
+
+  it('accepts an empty page whose cursor still advances', async () => {
+    // Legitimate here, unlike `list`: endCursor advances past scanned
+    // references that current visibility hides, so a mid-session page can be
+    // empty while more remains.
+    const empty = thesisPage({
+      edges: [],
+      items: [],
+      pageInfo: {
+        startCursor: '',
+        endCursor: 'signed:advanced',
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
+      nextCursor: 'signed:next',
+      exhausted: false,
+      scanLimited: true,
+    });
+    const { client } = setupTheses(empty);
+    expect(await client.forYou.theses()).toEqual(empty);
+  });
+
+  it.each([
+    ...[0, 11, -1, 1.5, Infinity, NaN, null, '10'].map((first) => ({ first })),
+    ...['', ' ', null, 42].map((after) => ({ after })),
+  ])('rejects invalid SDK input before I/O: %j', async (input) => {
+    const { client, request } = setupTheses();
+    await expect(
+      client.forYou.theses(input as ForYouThesesParams)
+    ).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('requires authentication without attempting the request', async () => {
+    const client = new AlvaClient({});
+    const request = vi.spyOn(client, '_request');
+    await expect(client.forYou.theses()).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on partial GraphQL errors', async () => {
+    const { client, request } = setupTheses();
+    request.mockResolvedValue({
+      data: { viewer: { thesisRecommendations: thesisPage() } },
+      errors: [{ message: 'refresh the expired list' }],
+    });
+    await expect(client.forYou.theses()).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      message: 'refresh the expired list',
+    });
+  });
+
+  it('names the absent field instead of returning an empty page', async () => {
+    const { client, request } = setupTheses();
+    request.mockResolvedValue({ data: { viewer: { thesisRecommendations: null } } });
+    await expect(client.forYou.theses()).rejects.toMatchObject({
+      code: 'GRAPHQL_EMPTY_RESPONSE',
+      message: 'GraphQL response did not include viewer.thesisRecommendations',
+    });
+  });
+
+  it.each([null, {}, { data: null }, { data: { viewer: null } }, { errors: 'invalid' }])(
+    'rejects missing or malformed GraphQL envelope: %j',
+    async (response) => {
+      const { client, request } = setupTheses();
+      request.mockResolvedValue(response);
+      await expect(client.forYou.theses()).rejects.toThrow();
+    }
+  );
+
+  it.each([
+    thesisPage({ edges: null }),
+    thesisPage({ items: null }),
+    thesisPage({ listId: null }),
+    thesisPage({ exhausted: 'true' }),
+    thesisPage({ scanLimited: null }),
+    thesisPage({ nextCursor: 42 }),
+    // hasNextPage and nextCursor are one fact; disagreement means a broken read.
+    thesisPage({ nextCursor: 'signed:next' }),
+    thesisPage({ items: [] }),
+    thesisPage({
+      items: [{ ...publication(), itemKey: 'thesis:other:1' }],
+    }),
+    thesisPage({
+      pageInfo: {
+        startCursor: 'wrong',
+        endCursor: 'signed:1',
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    }),
+    thesisPage({ edges: [{ cursor: '', node: thesisPage().edges[0].node }] }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: { itemKey: '', publication: publication() },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), publishedAtMs: null },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), entityIds: ['0'] },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), snapshotRelease: null },
+          },
+        },
+      ],
+    }),
+  ])('rejects inconsistent recommendation pages: %#', async (invalid) => {
+    const { client } = setupTheses(invalid);
+    await expect(client.forYou.theses()).rejects.toMatchObject({
+      code: 'GRAPHQL_INVALID_RESPONSE',
+    });
+  });
+});
+
+describe.each([
+  ['terminal', terminal],
+  ['embedded', embedded],
+] as const)('%s For You theses command', (_name, dispatch) => {
+  it('returns full JSON and maps every flag to the shared resource', async () => {
+    const result = thesisPage();
+    const { client, request } = setupTheses(result);
+    expect(
+      await dispatch(client, [
+        'for-you',
+        'theses',
+        '--limit',
+        '5',
+        '--cursor',
+        'signed:next',
+      ])
+    ).toEqual(result);
+    expect(request.mock.calls[0][2]?.body).toMatchObject({
+      variables: { input: { first: 5, after: 'signed:next' } },
+    });
+  });
+
+  it('documents the ranked stop condition in help without I/O', async () => {
+    const { client, request } = setupTheses();
+    // The command help carries the semantics; the subcommand help is generated
+    // from the flag table in embedded mode, so assert each where it lives.
+    expect(await dispatch(client, ['for-you', '--help'])).toMatchObject({
+      _help: true,
+      text: expect.stringContaining('exhausted'),
+    });
+    expect(
+      await dispatch(client, ['for-you', 'theses', '--help'])
+    ).toMatchObject({ _help: true, text: expect.stringContaining('--cursor') });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each(
+    [
+      ['--limit', '11'],
+      ['--limit', '0'],
+      ['--limit', '5junk'],
+      ['--cursor', ''],
+      // A time bound is meaningless on a ranked stream; do not silently accept it.
+      ['--newer-than', 'lower'],
+      ['--feed-id', '1'],
+      ['--bogus'],
+      ['unexpected'],
+    ].map((flags) => ({ flags }))
+  )('rejects invalid argv before I/O: %j', async ({ flags }) => {
+    const { client, request } = setupTheses();
+    await expect(
+      dispatch(client, ['for-you', 'theses', ...flags])
+    ).rejects.toBeInstanceOf(CliUsageError);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown for-you subcommand', async () => {
+    const { client, request } = setupTheses();
+    await expect(
+      dispatch(client, ['for-you', 'recommendations'])
+    ).rejects.toBeInstanceOf(CliUsageError);
+    expect(request).not.toHaveBeenCalled();
+  });
 });
