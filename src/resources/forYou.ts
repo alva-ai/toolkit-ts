@@ -240,17 +240,12 @@ export interface ThesisPublicationSummary {
   researchPaused: boolean;
   entityIds: string[];
   categoryIds: string[];
-  entityStances: {
-    entityId: string;
-    stance: 'UNKNOWN' | 'BULLISH' | 'BEARISH';
-  }[];
+  /** `stance` is UNKNOWN, BULLISH or BEARISH today; Gateway may add values. */
+  entityStances: { entityId: string; stance: string }[];
   entities: { id: string; ticker: string; name: string }[];
   publisher: ThesisPublisher;
-  medias: {
-    type: 'PRICE_CHART' | 'IMAGE' | 'AUDIO' | 'VIDEO';
-    coverUrl: string;
-    url: string | null;
-  }[];
+  /** `type` is PRICE_CHART, IMAGE, AUDIO or VIDEO today; Gateway may add values. */
+  medias: { type: string; coverUrl: string; url: string | null }[];
   signalFeed: { id: string } | null;
   snapshotRelease: {
     versionId: string;
@@ -271,10 +266,13 @@ export interface ThesisRecommendation {
  * candidate pool; `scanLimited` means this page stopped at its scan budget and
  * more remains. A page may be empty while `hasNextPage` is still true, because
  * `endCursor` advances past scanned references that current visibility hides.
+ *
+ * `edges` is the only carrier. Gateway also returns an `items` list built from
+ * the same nodes, but selecting it would put every publication body on the
+ * wire twice for no extra information, so this read does not request it.
  */
 export interface ThesisRecommendationPage {
   edges: { cursor: string; node: ThesisRecommendation }[];
-  items: ThesisRecommendation[];
   pageInfo: {
     startCursor: string;
     endCursor: string;
@@ -299,7 +297,6 @@ query ToolkitForYouTheses($input: ThesisRecommendationInput) {
     thesisRecommendations(input: $input) {
       listId pageCursor nextCursor exhausted scanLimited
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      items { itemKey }
       edges {
         cursor
         node {
@@ -408,6 +405,109 @@ function invalidPage(): never {
   );
 }
 
+function positiveInt64List(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isPositiveInt64);
+}
+
+function stanceList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item: unknown) =>
+        record(item) &&
+        isPositiveInt64(item.entityId) &&
+        typeof item.stance === 'string' &&
+        item.stance.trim() !== ''
+    )
+  );
+}
+
+function entityList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item: unknown) =>
+        record(item) &&
+        typeof item.id === 'string' &&
+        item.id.trim() !== '' &&
+        typeof item.ticker === 'string' &&
+        typeof item.name === 'string'
+    )
+  );
+}
+
+function mediaList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item: unknown) =>
+        record(item) &&
+        typeof item.type === 'string' &&
+        item.type.trim() !== '' &&
+        typeof item.coverUrl === 'string' &&
+        (item.url === null || typeof item.url === 'string')
+    )
+  );
+}
+
+function sourceRefList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item: unknown) =>
+        record(item) &&
+        (item.title === null || typeof item.title === 'string') &&
+        typeof item.sourceKind === 'string' &&
+        typeof item.sourceContentId === 'string' &&
+        typeof item.publicUrl === 'string' &&
+        nullableMs(item.sourceTimeMs) &&
+        typeof item.locator === 'string'
+    )
+  );
+}
+
+function nullableMs(value: unknown): boolean {
+  return (
+    value === null || (typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
+/** Every field the public type promises on the immutable version payload. */
+function snapshot(value: unknown): boolean {
+  return (
+    record(value) &&
+    isPositiveInt64(value.versionId) &&
+    isPositiveInt64(value.materialVersionId) &&
+    typeof value.publishedAtMs === 'number' &&
+    Number.isFinite(value.publishedAtMs) &&
+    typeof value.changeKind === 'string' &&
+    value.changeKind.trim() !== '' &&
+    sourceRefList(value.sourceRefs)
+  );
+}
+
+/** PublicProfile is an interface; a curated person's id is not an int64. */
+function publisher(value: unknown): boolean {
+  return (
+    record(value) &&
+    typeof value.id === 'string' &&
+    value.id.trim() !== '' &&
+    typeof value.displayName === 'string' &&
+    typeof value.avatarUrl === 'string' &&
+    typeof value.bio === 'string' &&
+    typeof value.followersCount === 'number' &&
+    Number.isInteger(value.followersCount) &&
+    record(value.viewerState) &&
+    (value.viewerState.following === null ||
+      typeof value.viewerState.following === 'boolean')
+  );
+}
+
+/**
+ * Checks every field the query selects, not a sample: the return is cast to
+ * `ThesisPublicationSummary`, so anything left unchecked is a field the public
+ * type promises and a caller can still read as `undefined`.
+ */
 function publication(value: unknown): boolean {
   if (!record(value)) return false;
   for (const field of [
@@ -424,31 +524,39 @@ function publication(value: unknown): boolean {
     typeof value.title !== 'string' ||
     typeof value.body !== 'string' ||
     typeof value.publishedAtMs !== 'number' ||
-    !Number.isFinite(value.publishedAtMs)
+    !Number.isFinite(value.publishedAtMs) ||
+    typeof value.changeKind !== 'string' ||
+    !value.changeKind.trim() ||
+    typeof value.visibility !== 'string' ||
+    typeof value.note !== 'string' ||
+    typeof value.closingNote !== 'string'
   ) {
     return false;
   }
   for (const field of ['closed', 'archived', 'researchPaused'] as const) {
     if (typeof value[field] !== 'boolean') return false;
   }
-  if (!Array.isArray(value.entityIds) || !Array.isArray(value.entityStances)) {
-    return false;
-  }
-  if (!value.entityIds.every(isPositiveInt64)) return false;
   if (
-    !record(value.publisher) ||
-    typeof value.publisher.displayName !== 'string'
+    !positiveInt64List(value.entityIds) ||
+    !positiveInt64List(value.categoryIds) ||
+    !stanceList(value.entityStances) ||
+    !entityList(value.entities) ||
+    !mediaList(value.medias) ||
+    !publisher(value.publisher) ||
+    !snapshot(value.snapshotRelease)
   ) {
     return false;
   }
-  return record(value.snapshotRelease);
+  return (
+    value.signalFeed === null ||
+    (record(value.signalFeed) && isPositiveInt64(value.signalFeed.id))
+  );
 }
 
 function recommendationPage(value: unknown): ThesisRecommendationPage {
   if (
     !record(value) ||
     !Array.isArray(value.edges) ||
-    !Array.isArray(value.items) ||
     !record(value.pageInfo) ||
     typeof value.listId !== 'string' ||
     typeof value.pageCursor !== 'string' ||
@@ -468,8 +576,7 @@ function recommendationPage(value: unknown): ThesisRecommendationPage {
   ) {
     return invalidPage();
   }
-  if (value.edges.length !== value.items.length) return invalidPage();
-  for (const [index, edge] of value.edges.entries()) {
+  for (const edge of value.edges) {
     if (
       !record(edge) ||
       typeof edge.cursor !== 'string' ||
@@ -479,10 +586,6 @@ function recommendationPage(value: unknown): ThesisRecommendationPage {
       !edge.node.itemKey.trim() ||
       !publication(edge.node.publication)
     ) {
-      return invalidPage();
-    }
-    const item = value.items[index];
-    if (!record(item) || item.itemKey !== edge.node.itemKey) {
       return invalidPage();
     }
   }

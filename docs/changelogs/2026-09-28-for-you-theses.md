@@ -29,6 +29,9 @@ You screen" answers from a different stream than the human is looking at.
   required field fails closed.
 - F4: an empty page with `hasNextPage: true` is accepted, because `endCursor`
   advances past scanned references that current visibility hides.
+- F5: the page validator checks every field the query selects, because the
+  result is cast to the public type; an unchecked field is one a caller can
+  still read as `undefined`.
 
 ## 3. Research, Findings, and Architecture Decision
 
@@ -61,6 +64,18 @@ A test asserts the query string contains none of those names.
 `isRead` is deliberately not selected: Gateway documents it as null for
 non-human callers.
 
+Gateway also returns an `items` list built from the same nodes as `edges`. This
+read does not select it. Selecting it fully would put every publication body on
+the wire twice for no extra information, and selecting it partially — the first
+version of this change selected `items { itemKey }` while typing `items` as
+complete recommendations — makes `items[n].publication` `undefined` on every
+real response. `edges` is the single carrier.
+
+`entityStances[].stance` and `medias[].type` are typed `string`, not the literal
+unions they hold today. The validator only checks that they are non-empty
+strings, and a type must not promise more than the validator guarantees; a
+Gateway enum addition should not make this read fail closed either.
+
 ## 4. Implementation Design
 
 Add public response types, `validateForYouThesesParams`, the
@@ -78,8 +93,8 @@ change.
 - Relevant dependent: the Alva Skill Brief procedure, which still claims the
   For You read covers a whole publication window. It does not cover one on this
   stream; that text change is in a separate repository and follows this PR.
-- Commands: `npm run lint:fix`; focused Vitest for the For You resource and the
-  embedded command profile; full Vitest; `npm run typecheck`; `npm run build`;
+- Commands: `npm run lint`; `npm run format:check` (CI runs Prettier
+  separately from ESLint); `npm run typecheck`; `npm test`; `npm run build`;
   `git diff --check`.
 - Full suite required: yes; the embedded profile asserts an exact leaf count.
 - E2E required: no; this reads a deployed Gateway field with no writes.
@@ -107,8 +122,15 @@ author; and the Skill's coverage claim above.
 ## 7. Outcome and Evidence
 
 Added `client.forYou.theses` and the `for-you theses` terminal/embedded
-command. Verification passed: 1096 tests across 52 files (136 in the For You
-file), typecheck, build, lint-fix and diff check.
+command. Verification passed: 1103 tests across 52 files (143 in the For You
+file), lint, format check, typecheck, build and diff check.
+
+Automated review on the first commit found two real defects, both fixed here:
+the partially-selected `items` list described in section 3, and a validator
+that accepted any object for `snapshotRelease` and skipped `categoryIds`,
+`entities`, `medias` and the publisher fields while the public type declared
+them. CI also failed `npm run format:check`, which `npm run lint:fix` does not
+cover; the verification list below now names it.
 
 ## 8. Remaining Work
 

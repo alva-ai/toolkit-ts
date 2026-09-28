@@ -359,7 +359,6 @@ function thesisPage(overrides: Record<string, unknown> = {}) {
   const node = { itemKey: publication().itemKey, publication: publication() };
   return {
     edges: [{ cursor: 'signed:1', node }],
-    items: [node],
     pageInfo: {
       startCursor: 'signed:1',
       endCursor: 'signed:1',
@@ -415,6 +414,9 @@ describe('ForYouResource.theses', () => {
     ]) {
       expect(query).not.toContain(forbidden);
     }
+    // Gateway's `items` list holds the same nodes as `edges`; selecting it
+    // would put every publication body on the wire twice.
+    expect(query).not.toMatch(/\bitems\b/);
   });
 
   it('continues an existing list session with the signed cursor', async () => {
@@ -431,7 +433,6 @@ describe('ForYouResource.theses', () => {
     // empty while more remains.
     const empty = thesisPage({
       edges: [],
-      items: [],
       pageInfo: {
         startCursor: '',
         endCursor: 'signed:advanced',
@@ -480,35 +481,35 @@ describe('ForYouResource.theses', () => {
 
   it('names the absent field instead of returning an empty page', async () => {
     const { client, request } = setupTheses();
-    request.mockResolvedValue({ data: { viewer: { thesisRecommendations: null } } });
+    request.mockResolvedValue({
+      data: { viewer: { thesisRecommendations: null } },
+    });
     await expect(client.forYou.theses()).rejects.toMatchObject({
       code: 'GRAPHQL_EMPTY_RESPONSE',
       message: 'GraphQL response did not include viewer.thesisRecommendations',
     });
   });
 
-  it.each([null, {}, { data: null }, { data: { viewer: null } }, { errors: 'invalid' }])(
-    'rejects missing or malformed GraphQL envelope: %j',
-    async (response) => {
-      const { client, request } = setupTheses();
-      request.mockResolvedValue(response);
-      await expect(client.forYou.theses()).rejects.toThrow();
-    }
-  );
+  it.each([
+    null,
+    {},
+    { data: null },
+    { data: { viewer: null } },
+    { errors: 'invalid' },
+  ])('rejects missing or malformed GraphQL envelope: %j', async (response) => {
+    const { client, request } = setupTheses();
+    request.mockResolvedValue(response);
+    await expect(client.forYou.theses()).rejects.toThrow();
+  });
 
   it.each([
     thesisPage({ edges: null }),
-    thesisPage({ items: null }),
     thesisPage({ listId: null }),
     thesisPage({ exhausted: 'true' }),
     thesisPage({ scanLimited: null }),
     thesisPage({ nextCursor: 42 }),
     // hasNextPage and nextCursor are one fact; disagreement means a broken read.
     thesisPage({ nextCursor: 'signed:next' }),
-    thesisPage({ items: [] }),
-    thesisPage({
-      items: [{ ...publication(), itemKey: 'thesis:other:1' }],
-    }),
     thesisPage({
       pageInfo: {
         startCursor: 'wrong',
@@ -555,6 +556,134 @@ describe('ForYouResource.theses', () => {
           node: {
             itemKey: publication().itemKey,
             publication: { ...publication(), snapshotRelease: null },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), snapshotRelease: {} },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: {
+              ...publication(),
+              snapshotRelease: {
+                ...publication().snapshotRelease,
+                sourceRefs: [{ sourceKind: 'WEB' }],
+              },
+            },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), categoryIds: ['0'] },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: {
+              ...publication(),
+              entities: [{ id: '', ticker: 'NVDA', name: 'NVIDIA' }],
+            },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: {
+              ...publication(),
+              medias: [{ type: '', coverUrl: '', url: null }],
+            },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: {
+              ...publication(),
+              publisher: { ...publication().publisher, followersCount: null },
+            },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: {
+              ...publication(),
+              publisher: { ...publication().publisher, viewerState: null },
+            },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), signalFeed: { id: '0' } },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), note: null },
+          },
+        },
+      ],
+    }),
+    thesisPage({
+      edges: [
+        {
+          cursor: 'signed:1',
+          node: {
+            itemKey: publication().itemKey,
+            publication: { ...publication(), changeKind: '' },
           },
         },
       ],
