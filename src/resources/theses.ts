@@ -559,10 +559,16 @@ function requireID(value: unknown, field: string): ThesisID {
   return value;
 }
 
+// MAX_ENTITY_IDS matches Backend's thesis.MaxEntities: a Thesis version carries
+// at most 100 canonical entities, the same as the ticker limit.
+const MAX_ENTITY_IDS = 100;
+
 function requireIDs(value: unknown, field: string): ThesisID[] {
   if (!Array.isArray(value)) throw invalidArgument(`${field} must be an array`);
-  if (value.length > 20) {
-    throw invalidArgument(`${field} must contain at most 20 IDs`);
+  if (value.length > MAX_ENTITY_IDS) {
+    throw invalidArgument(
+      `${field} must contain at most ${MAX_ENTITY_IDS} IDs`
+    );
   }
   return value.map((item, index) => requireID(item, `${field}[${index}]`));
 }
@@ -644,8 +650,10 @@ function responseID(value: unknown, field: string): ThesisID {
 
 function responseIDs(value: unknown, field: string): ThesisID[] {
   if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
-  if (value.length > 20) {
-    throw invalidResponse(`${field} must contain at most 20 IDs`);
+  if (value.length > MAX_ENTITY_IDS) {
+    throw invalidResponse(
+      `${field} must contain at most ${MAX_ENTITY_IDS} IDs`
+    );
   }
   return value.map((item, index) => responseID(item, `${field}[${index}]`));
 }

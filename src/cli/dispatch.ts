@@ -1547,7 +1547,7 @@ it must not invent factual evidence, numbers, or citations. Rewrite returns a
 candidate only: it never creates, updates, retries, or chooses a mode from body
 length or errors.
 
-IDs are decimal strings, never JavaScript numbers; provide at most 20 entity
+IDs are decimal strings, never JavaScript numbers; provide at most 100 entity
 IDs. Body text must be nonblank,
 valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
