@@ -4,6 +4,27 @@ import { AlvaError } from '../error.js';
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
 export type ThesisVisibility = 'public' | 'private';
+export type ThesisAssetStance = 'unknown' | 'bullish' | 'bearish';
+export interface ThesisEntityStance {
+  entity_id: ThesisID;
+  stance: ThesisAssetStance;
+}
+export interface ThesisAssetCandidate {
+  entityId: ThesisID;
+  ticker: string;
+  name: string;
+  kind: 'STOCK' | 'ETF' | 'CRYPTO' | 'INDEX';
+}
+export interface ThesisAssetMention {
+  quote: string;
+  ticker: string;
+  resolution: 'RESOLVED' | 'AMBIGUOUS' | 'UNRESOLVED';
+  stance: 'UNKNOWN' | 'BULLISH' | 'BEARISH';
+  candidates: ThesisAssetCandidate[];
+}
+export interface ThesisAssetCandidatesResponse {
+  mentions: ThesisAssetMention[];
+}
 /** Canonical server-supported candidate rewrite operation. */
 export type ThesisRewriteMode = 'reformat' | 'shorten' | 'enrich';
 
@@ -14,6 +35,7 @@ export interface Thesis {
   title: string;
   body: string;
   entity_ids: ThesisID[];
+  entity_stances?: ThesisEntityStance[];
   visibility: ThesisVisibility;
   closed: boolean;
   closing_note: string;
@@ -101,6 +123,8 @@ export interface CreateThesisParams {
   body: string;
   title?: string;
   entity_ids?: ThesisID[];
+  /** Author direction keyed by an entity ID also supplied in entity_ids. */
+  entity_stances?: ThesisEntityStance[];
   /** Exact STOCK ticker symbols resolved by Backend during creation. */
   tickers?: string[];
   /** Omitted means public, as defined by the REST contract. */
@@ -150,6 +174,63 @@ const encoder = new TextEncoder();
  */
 export class ThesesResource {
   constructor(private client: AlvaClient) {}
+
+  async assetCandidates(text: string): Promise<ThesisAssetCandidatesResponse> {
+    this.client._requireAuth();
+    const source = requireBody(text);
+    const response = (await this.client._request('POST', '/query', {
+      body: {
+        query: `query ThesisAssetCandidates($input: ThesisAssetCandidatesInput!) {
+          viewer { thesisAssetCandidates(input: $input) {
+            mentions { quote ticker resolution stance candidates { entityId ticker name kind } }
+          } }
+        }`,
+        variables: { input: { text: source } },
+      },
+    })) as Record<string, unknown>;
+    if (Array.isArray(response?.errors) && response.errors.length > 0) {
+      throw new AlvaError('GRAPHQL_ERROR', 'Asset extraction failed', 400, {
+        errors: response.errors,
+      });
+    }
+    const data = response?.data;
+    const viewer = isRecord(data) ? data.viewer : undefined;
+    const result = isRecord(viewer) ? viewer.thesisAssetCandidates : undefined;
+    if (!isRecord(result) || !Array.isArray(result.mentions)) {
+      throw invalidResponse('asset candidates response must contain mentions');
+    }
+    const mentions = result.mentions.map((item, index) => {
+      if (
+        !isRecord(item) ||
+        typeof item.quote !== 'string' ||
+        typeof item.ticker !== 'string' ||
+        !['RESOLVED', 'AMBIGUOUS', 'UNRESOLVED'].includes(
+          item.resolution as string
+        ) ||
+        !['UNKNOWN', 'BULLISH', 'BEARISH'].includes(item.stance as string) ||
+        !Array.isArray(item.candidates)
+      ) {
+        throw invalidResponse(`asset mention ${index} is invalid`);
+      }
+      const candidates = item.candidates.map((candidate: unknown) => {
+        if (
+          !isRecord(candidate) ||
+          typeof candidate.entityId !== 'string' ||
+          !/^[1-9]\d*$/.test(candidate.entityId) ||
+          typeof candidate.ticker !== 'string' ||
+          typeof candidate.name !== 'string' ||
+          !['STOCK', 'ETF', 'CRYPTO', 'INDEX'].includes(
+            candidate.kind as string
+          )
+        ) {
+          throw invalidResponse(`asset mention ${index} has invalid candidate`);
+        }
+        return candidate as unknown as ThesisAssetCandidate;
+      });
+      return { ...item, candidates } as unknown as ThesisAssetMention;
+    });
+    return { mentions };
+  }
 
   async create(params: CreateThesisParams): Promise<ThesisResponse> {
     this.client._requireAuth();
@@ -319,12 +400,8 @@ export class ThesesResource {
   }
 }
 
-function createBody(
-  params: CreateThesisParams
-): Required<Omit<CreateThesisParams, 'tickers'>> & { tickers?: string[] } {
-  const body: Required<Omit<CreateThesisParams, 'tickers'>> & {
-    tickers?: string[];
-  } = {
+function createBody(params: CreateThesisParams): Record<string, unknown> {
+  const body: Record<string, unknown> = {
     request_id: requireRequestID(params.request_id),
     body: requireBody(params.body),
     title: requireTitle(params.title ?? ''),
@@ -333,7 +410,39 @@ function createBody(
   };
   if (params.tickers !== undefined)
     body.tickers = requireTickers(params.tickers);
+  if (params.entity_stances !== undefined) {
+    body.entity_stances = requireEntityStances(
+      params.entity_stances,
+      body.entity_ids as ThesisID[]
+    );
+  }
   return body;
+}
+
+function requireEntityStances(
+  value: unknown,
+  entityIDs: ThesisID[]
+): ThesisEntityStance[] {
+  if (!Array.isArray(value) || value.length > 20)
+    throw invalidArgument('entity_stances must contain at most 20 values');
+  const allowed = new Set(entityIDs);
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    if (!isRecord(item))
+      throw invalidArgument(`entity_stances[${index}] must be an object`);
+    const entityID = requireID(
+      item.entity_id,
+      `entity_stances[${index}].entity_id`
+    );
+    if (!allowed.has(entityID) || seen.has(entityID))
+      throw invalidArgument(
+        'entity stance must reference one unique entity_id'
+      );
+    seen.add(entityID);
+    if (!['unknown', 'bullish', 'bearish'].includes(item.stance as string))
+      throw invalidArgument(`entity_stances[${index}].stance is invalid`);
+    return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
+  });
 }
 
 function updateBody(params: UpdateThesisParams): Required<UpdateThesisParams> {
@@ -375,6 +484,20 @@ function thesisResponse(response: unknown): ThesisResponse {
     author_kind: responseText(thesis.author_kind, 'thesis.author_kind'),
     author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
   };
+  if (thesis.entity_stances !== undefined) {
+    if (!Array.isArray(thesis.entity_stances))
+      throw invalidResponse('thesis.entity_stances must be an array');
+    value.entity_stances = thesis.entity_stances.map((item: unknown) => {
+      if (!isRecord(item))
+        throw invalidResponse('thesis.entity_stances contains invalid entry');
+      const entityID = responseID(item.entity_id, 'entity_stances.entity_id');
+      if (!value.entity_ids.includes(entityID))
+        throw invalidResponse('entity stance must reference a thesis entity');
+      if (!['unknown', 'bullish', 'bearish'].includes(item.stance as string))
+        throw invalidResponse('thesis.entity_stances contains invalid stance');
+      return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
+    });
+  }
   return { thesis: value };
 }
 

@@ -141,6 +141,73 @@ describe('ThesesResource', () => {
     expect(JSON.parse(init.body as string)).not.toHaveProperty('tickers');
   });
 
+  it('extracts asset candidates and sends the confirmed stance on creation', async () => {
+    const response = {
+      data: {
+        viewer: {
+          thesisAssetCandidates: {
+            mentions: [
+              {
+                quote: '英伟达',
+                ticker: 'NVDA',
+                resolution: 'RESOLVED',
+                stance: 'BEARISH',
+                candidates: [
+                  {
+                    entityId: '745337',
+                    ticker: 'NVDA',
+                    name: 'NVIDIA',
+                    kind: 'STOCK',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(response))
+      .mockResolvedValueOnce(jsonResponse(thesis()));
+    globalThis.fetch = fetch;
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api.test',
+    });
+    const candidates = await client.theses.assetCandidates('看跌英伟达');
+    expect(candidates.mentions[0]?.stance).toBe('BEARISH');
+    expect(candidates.mentions[0]?.candidates[0]?.entityId).toBe('745337');
+    const [queryUrl, queryInit] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(queryUrl).toBe('https://api.test/query');
+    expect(JSON.parse(queryInit.body as string).variables).toEqual({
+      input: { text: '看跌英伟达' },
+    });
+
+    await client.theses.create({
+      request_id: REQUEST_ID,
+      body: '看跌英伟达',
+      entity_ids: ['745337'],
+      entity_stances: [{ entity_id: '745337', stance: 'bearish' }],
+    });
+    const [, createInit] = fetch.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(createInit.body as string).entity_stances).toEqual([
+      { entity_id: '745337', stance: 'bearish' },
+    ]);
+  });
+
+  it('rejects a direction that is not tied to a supplied entity', async () => {
+    const client = new AlvaClient({ apiKey: 'key' });
+    await expect(
+      client.theses.create({
+        request_id: REQUEST_ID,
+        body: '看跌英伟达',
+        tickers: ['NVDA'],
+        entity_stances: [{ entity_id: '745337', stance: 'bearish' }],
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
   it('lists enriched Signal history through the Thesis REST resource', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse(thesisSignals()));
     globalThis.fetch = fetch;
