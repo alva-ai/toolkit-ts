@@ -645,6 +645,8 @@ describe('thesis embedded dispatch', () => {
     };
     expect(result.text).toContain('asset-candidates --text');
     expect(result.text).toContain('--entity-stances <json>');
+    expect(result.text).toContain('candidate.entityId to JSON entity_id');
+    expect(result.text).toContain('"stance":"bearish"');
     expect(result.text).toContain('never creates request IDs or retries');
     expect(result.text).toContain('Create defaults --visibility to public');
     expect(result.text).toContain('changes current access without publishing');
