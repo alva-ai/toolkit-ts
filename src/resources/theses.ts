@@ -215,8 +215,6 @@ export class ThesesResource {
       const candidates = item.candidates.map((candidate: unknown) => {
         if (
           !isRecord(candidate) ||
-          typeof candidate.entityId !== 'string' ||
-          !/^[1-9]\d*$/.test(candidate.entityId) ||
           typeof candidate.ticker !== 'string' ||
           typeof candidate.name !== 'string' ||
           !['STOCK', 'ETF', 'CRYPTO', 'INDEX'].includes(
@@ -225,7 +223,15 @@ export class ThesesResource {
         ) {
           throw invalidResponse(`asset mention ${index} has invalid candidate`);
         }
-        return candidate as unknown as ThesisAssetCandidate;
+        return {
+          entityId: responseID(
+            candidate.entityId,
+            `asset mention ${index} candidate.entityId`
+          ),
+          ticker: candidate.ticker,
+          name: candidate.name,
+          kind: candidate.kind as ThesisAssetCandidate['kind'],
+        };
       });
       return { ...item, candidates } as unknown as ThesisAssetMention;
     });

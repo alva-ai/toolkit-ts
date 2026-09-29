@@ -208,6 +208,39 @@ describe('ThesesResource', () => {
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 
+  it('rejects extracted entity IDs outside signed int64', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue({
+      data: {
+        viewer: {
+          thesisAssetCandidates: {
+            mentions: [
+              {
+                quote: 'NVDA',
+                ticker: 'NVDA',
+                resolution: 'RESOLVED',
+                stance: 'BEARISH',
+                candidates: [
+                  {
+                    entityId: '9223372036854775808',
+                    ticker: 'NVDA',
+                    name: 'NVIDIA',
+                    kind: 'STOCK',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    await expect(client.theses.assetCandidates('NVDA')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
   it('lists enriched Signal history through the Thesis REST resource', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse(thesisSignals()));
     globalThis.fetch = fetch;
