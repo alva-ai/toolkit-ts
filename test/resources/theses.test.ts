@@ -174,6 +174,41 @@ describe('ThesesResource', () => {
     );
   });
 
+  it('accepts 100 entity IDs in a request and a response', async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => String(index + 1));
+    const response = thesis();
+    response.thesis.entity_ids = ids;
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(response);
+
+    await expect(
+      client.theses.create({
+        request_id: REQUEST_ID,
+        body: 'draft',
+        entity_ids: ids,
+      })
+    ).resolves.toEqual(response);
+  });
+
+  it('rejects a response with more than 100 entity IDs', async () => {
+    const response = thesis();
+    response.thesis.entity_ids = Array.from({ length: 101 }, (_, index) =>
+      String(index + 1)
+    );
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(response);
+
+    await expect(
+      client.theses.getVersion(MAX_ID, '9223372036854775806')
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
   it('rejects an exact-version response that does not match the requested version', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;
@@ -408,11 +443,13 @@ describe('ThesesResource', () => {
       },
     ],
     [
-      'more than 20 entity IDs',
+      'more than 100 entity IDs',
       {
         request_id: REQUEST_ID,
         body: 'draft',
-        entity_ids: Array.from({ length: 21 }, (_, index) => String(index + 1)),
+        entity_ids: Array.from({ length: 101 }, (_, index) =>
+          String(index + 1)
+        ),
       },
     ],
     ['blank body', { request_id: REQUEST_ID, body: ' \r\n\t' }],
