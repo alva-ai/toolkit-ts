@@ -108,7 +108,11 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: create, get, version get, signals, set-visibility, update, close, delete, rewrite.
+Subcommands: asset-candidates, create, get, version get, signals, set-visibility, update, close, delete, rewrite.
+
+asset-candidates --text <unsaved thesis text> reads catalog IDs and suggested
+directions without publishing. Use resolved entity IDs with create --entity-ids
+<id,id> and --entity-stances <json> to preserve the author's direction.
 
 Embedded thesis commands accept literal --body text only; file and stdin body
 transports are intentionally unavailable because this runtime has no verified
