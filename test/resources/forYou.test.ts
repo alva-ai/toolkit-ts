@@ -731,10 +731,15 @@ describe.each([
     };
     expect(help._help).toBe(true);
     // `scanLimited` means the server stopped at its scan budget and more
-    // remains, so it must never be offered as a second stop condition beside
-    // `exhausted`: a reader that stops there silently drops recommendations.
-    expect(help.text).toContain('only stop condition');
+    // remains, so it must never be offered as a second end-of-stream signal
+    // beside `exhausted`: a reader that stops there silently drops
+    // recommendations. A caller's own page budget is a different thing -- it
+    // ends the read without claiming the stream ended -- and the help has to
+    // permit it, or a bounded job has no compliant way to finish.
+    expect(help.text).toContain('only signal that the stream has ended');
     expect(help.text).toContain('more remains, so keep paging');
+    expect(help.text).toContain('budget of your own is allowed');
+    expect(help.text).toContain('hold a partial stream and must say so');
     expect(
       await dispatch(client, ['for-you', 'theses', '--help'])
     ).toMatchObject({ _help: true, text: expect.stringContaining('--cursor') });
