@@ -286,6 +286,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('for-you list', {
     values: ['limit', 'cursor', 'newer-than', 'feed-id'],
   }),
+  command('for-you theses', { values: ['limit', 'cursor'] }),
   command('credits items', {
     values: ['last', 'start', 'end', 'session-id', 'first', 'after'],
     booleans: ['today'],

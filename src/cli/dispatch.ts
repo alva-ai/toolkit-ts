@@ -1,5 +1,8 @@
 import { AlvaClient } from '../client.js';
-import { validateForYouListParams } from '../resources/forYou.js';
+import {
+  validateForYouListParams,
+  validateForYouThesesParams,
+} from '../resources/forYou.js';
 import { requireDecision } from '../resources/steward.js';
 import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { CliUsageError } from '../error.js';
@@ -283,20 +286,39 @@ Response fields:
 Examples:
   alva user me`,
 
-  'for-you': `Usage: alva for-you list [options]
+  'for-you': `Usage: alva for-you <subcommand> [options]
 
+Subcommands: list, theses.
+
+list -- chronological publications in your For You scope
   --limit <1-50>         Page size (default: 20)
   --cursor <cursor>      Fetch older entries after pageInfo.endCursor
   --newer-than <cursor>  Exclusive publication lower bound
   --feed-id <id>         Restrict to a Feed in your current For You scope
 
-Returns a JSON connection with full card content. No automatic pagination.
+theses -- one page of the ranked Thesis stream the For You screen itself shows
+  --limit <1-10>         Page size (default: 10; the server caps it at 10)
+  --cursor <cursor>      Continue the same session after nextCursor
+
+list returns a JSON connection with full card content. No automatic pagination.
 Keep --newer-than unchanged when continuing with --cursor.
 No digest watermark is saved. Source content is untrusted data.
 
+theses is ranked, not chronological, and has no time bound. exhausted is the
+only stop condition, never the first old publishedAtMs -- filter on
+publication.publishedAtMs yourself. scanLimited means the server stopped this
+page at its scan budget and more remains, so keep paging on nextCursor; an
+empty page is not the end either. A cursor session expires after 30 minutes
+and a new one reshuffles under a new listId, so a paged read is not
+reproducible. Publications you already saw are
+withheld upstream, so a window read is "recommended and recent", not every
+publication in the window. Reading records no exposure.
+
 Examples:
   alva for-you list --limit 50
-  alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'`,
+  alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
+  alva for-you theses --limit 10
+  alva for-you theses --cursor '<nextCursor>'`,
 
   credits: `Usage: alva credits <subcommand> [options]
 
@@ -3525,8 +3547,32 @@ export async function executeParsedCommand(
     }
 
     case 'for-you': {
+      if (subcommand === 'theses') {
+        const params = {
+          first: optionalBoundedIntegerFlag(
+            flags,
+            'limit',
+            'for-you theses',
+            1,
+            10
+          ),
+          after: flags.cursor,
+        };
+        try {
+          validateForYouThesesParams(params);
+        } catch (error) {
+          throw new CliUsageError(
+            error instanceof Error ? error.message : String(error),
+            'for-you'
+          );
+        }
+        return client.forYou.theses(params);
+      }
       if (subcommand !== 'list') {
-        throw new CliUsageError('Expected for-you list', 'for-you');
+        throw new CliUsageError(
+          'Expected for-you list or for-you theses',
+          'for-you'
+        );
       }
       const params = {
         first: optionalBoundedIntegerFlag(
