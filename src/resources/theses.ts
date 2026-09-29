@@ -429,8 +429,8 @@ function requireEntityStances(
   value: unknown,
   entityIDs: ThesisID[]
 ): ThesisEntityStance[] {
-  if (!Array.isArray(value) || value.length > 20)
-    throw invalidArgument('entity_stances must contain at most 20 values');
+  if (!Array.isArray(value) || value.length > MAX_ENTITY_IDS)
+    throw invalidArgument('entity_stances must contain at most 100 values');
   const allowed = new Set(entityIDs);
   const seen = new Set<string>();
   return value.map((item, index) => {

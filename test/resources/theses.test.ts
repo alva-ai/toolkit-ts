@@ -288,8 +288,23 @@ describe('ThesesResource', () => {
         request_id: REQUEST_ID,
         body: 'draft',
         entity_ids: ids,
+        entity_stances: ids.map((entity_id) => ({
+          entity_id,
+          stance: 'bearish' as const,
+        })),
       })
     ).resolves.toEqual(response);
+    expect(client._request).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/theses',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          entity_stances: expect.arrayContaining([
+            { entity_id: '100', stance: 'bearish' },
+          ]),
+        }),
+      })
+    );
   });
 
   it('rejects a response with more than 100 entity IDs', async () => {
