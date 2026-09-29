@@ -1530,7 +1530,8 @@ the backend; do not send a fresh ID. Create defaults --visibility to public.
 Update requires --visibility explicitly so it cannot inadvertently publish.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--visibility <value>]
+  create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>]
+  asset-candidates --text <unsaved thesis text>
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
@@ -2547,6 +2548,27 @@ function thesisTickers(flags: Record<string, string>): string[] | undefined {
   return tickers;
 }
 
+function thesisEntityStances(
+  flags: Record<string, string>
+):
+  | Array<{ entity_id: string; stance: 'unknown' | 'bullish' | 'bearish' }>
+  | undefined {
+  const raw = flags['entity-stances'];
+  if (raw === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new CliUsageError('--entity-stances must be a JSON array', 'thesis');
+  }
+  if (!Array.isArray(parsed))
+    throw new CliUsageError('--entity-stances must be a JSON array', 'thesis');
+  return parsed as Array<{
+    entity_id: string;
+    stance: 'unknown' | 'bullish' | 'bearish';
+  }>;
+}
+
 function strictThesisUTF8(
   value: unknown,
   command: string,
@@ -3312,12 +3334,17 @@ export async function executeParsedCommand(
             body: await thesisBodyFromFlags(flags, 'thesis create', deps),
             title: flags.title ?? '',
             entity_ids: thesisEntityIDs(flags),
+            entity_stances: thesisEntityStances(flags),
             tickers: thesisTickers(flags),
             visibility:
               flags.visibility === undefined
                 ? 'public'
                 : thesisVisibility(flags.visibility),
           });
+        case 'asset-candidates':
+          return client.theses.assetCandidates(
+            requireFlag(flags, 'text', 'thesis asset-candidates')
+          );
         case 'get':
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
         case 'version':

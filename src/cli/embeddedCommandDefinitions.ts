@@ -139,9 +139,13 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'body',
         'title',
         'entity-ids',
+        'entity-stances',
         'tickers',
         'visibility',
       ],
+    }),
+    route('thesis asset-candidates', 'thesis asset-candidates', {
+      values: ['text'],
     }),
     route('thesis get', 'thesis get', { values: ['id'] }),
     route('thesis version get', 'thesis version get', {

@@ -41,6 +41,11 @@ function client() {
 function mockLifecycle(value: AlvaClient) {
   return {
     create: vi.spyOn(value.theses, 'create').mockResolvedValue(THESIS),
+    assetCandidates: vi
+      .spyOn(value.theses, 'assetCandidates')
+      .mockResolvedValue({
+        mentions: [],
+      }),
     get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
     getVersion: vi.spyOn(value.theses, 'getVersion').mockResolvedValue(THESIS),
     signals: vi.spyOn(value.theses, 'signals').mockResolvedValue(SIGNALS),
@@ -156,6 +161,7 @@ describe('thesis terminal dispatch', () => {
       body: 'first\r\nsecond',
       title: '',
       entity_ids: ['9223372036854775807', '42'],
+      entity_stances: undefined,
       tickers: ['AAPL', 'NVDA'],
       visibility: 'public',
     });
@@ -485,6 +491,52 @@ describe('thesis terminal dispatch', () => {
 });
 
 describe('thesis embedded dispatch', () => {
+  it('passes extracted entity direction through the AI command path', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+    const text = '看跌英伟达';
+    const candidates = {
+      mentions: [
+        {
+          quote: '英伟达',
+          ticker: 'NVDA',
+          resolution: 'RESOLVED' as const,
+          stance: 'BEARISH' as const,
+          candidates: [
+            {
+              entityId: '745337',
+              ticker: 'NVDA',
+              name: 'NVIDIA',
+              kind: 'STOCK' as const,
+            },
+          ],
+        },
+      ],
+    };
+    calls.assetCandidates.mockResolvedValue(candidates);
+
+    await expect(
+      dispatchEmbedded(value, ['thesis', 'asset-candidates', '--text', text])
+    ).resolves.toEqual(candidates);
+    await dispatchEmbedded(value, [
+      'thesis',
+      'create',
+      '--request-id',
+      REQUEST_ID,
+      '--body',
+      text,
+      '--entity-ids',
+      '745337',
+      '--entity-stances',
+      '[{"entity_id":"745337","stance":"bearish"}]',
+    ]);
+    expect(calls.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_ids: ['745337'],
+        entity_stances: [{ entity_id: '745337', stance: 'bearish' }],
+      })
+    );
+  });
   it('dispatches all lifecycle operations with literal bodies only', async () => {
     const value = client();
     const calls = mockLifecycle(value);
@@ -552,6 +604,7 @@ describe('thesis embedded dispatch', () => {
       body: 'embedded\r\nbody',
       title: '',
       entity_ids: [],
+      entity_stances: undefined,
       tickers: ['AAPL', 'NVDA'],
       visibility: 'public',
     });
