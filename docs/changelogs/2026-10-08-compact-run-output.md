@@ -1,4 +1,4 @@
-# feat(cli): print `alva run` results decoded and compact, add `--output`
+# feat(cli): print `alva run` results decoded, and JSON compact off a TTY
 
 ## 1. Background and Current State
 
@@ -37,78 +37,67 @@ far more than the agent needed:
   results are never reinterpreted.
 - B3: When stdout is not a TTY, every JSON command result is printed compact
   (no indentation). At a terminal, output is unchanged.
-- B4: `alva run --output <path>` writes the decoded result to a local file:
-  compact JSON for objects and arrays, raw text for strings. It prints
-  `{status, logs, stats, output: {path, bytes, shape}}` instead of `result`.
-  `shape` gives the type plus top-level keys (at most 50, with `key_count`
-  when truncated) or the array length, which is enough to write the first
-  `jq` query.
-- F1: A failed run with `--output` writes nothing and prints the normal
-  envelope with `error`, so the failure stays visible.
-- F2: `--output` with an empty path is a usage error before the run starts.
-- F3: The embedded agent runtime (jagent/ALPI) has no local files, so
-  `--output` stays unavailable there. It still gets B1/B2: its tool serializes
-  whatever `dispatch` returns, and that is now the decoded value.
+- B5: `run --help` shows the read-once pattern: redirect stdout to a file, then
+  query it with `jq`. It no longer teaches returning `JSON.stringify(...)`.
+- F3: The embedded agent runtime (jagent/ALPI) gets B1/B2 too: its tool
+  serializes whatever `dispatch` returns, and that is now the decoded value.
 - Non-goal: changing Codex's rollout format, or what the server returns in
   `/api/v1/run`.
 
 ## 3. Research, Findings, and Architecture Decision
 
 - D1: Decode in the CLI, not the server. `RunResponse.result: string` is a
-  published SDK contract; SDK users already parse it. The CLI's job is to
-  render, so the CLI is where the extra layer is removed.
-- D2: Nested decoding is accepted only if it ends in an object or array, up to
-  3 extra layers. Decoding any string that parses would turn the text `"42"`
-  into the number 42 and silently change results. Objects and arrays are the
-  case that produces escaping, and they cannot be confused with prose.
+  published SDK contract that SDK users already parse. Rendering is the CLI's
+  job, so the CLI is where the extra layer is removed.
+- D2: Decoding the wire layer follows the contract and is lossless. Unwrapping
+  further layers is a deliberate heuristic, accepted only when it ends in an
+  object or array: decoding any parseable string would turn the text `"42"`
+  into the number 42. Nested stringify is exactly the habit that produced the
+  incident, and an object cannot be mistaken for prose. There is no depth cap:
+  each parse of a string strictly shortens it, so the loop terminates.
 - D3: Compact output is gated on `isTTY`, following tools such as `gh`: people
   keep readable output, and pipes and agents get the same document in fewer
   bytes. This applies to all JSON command results, not only `run`, because
   agents read every command through a pipe.
-- D4: `--output` returns a summary rather than the value, so a large result is
-  read once and then queried with `jq` against the file. That turns 17 runs
-  into 1 run plus cheap queries.
+- D5 (withdraws D4): No `--output` flag. An earlier revision added
+  `run --output <file>`, which wrote the result to a file and printed a shape
+  summary. Once B1 holds, the shell already does this:
+  `alva run … > out.json`, then `jq -c '.result…' out.json`, keeps the result
+  out of the conversation the same way. The flag added a parser entry, a
+  summary format, an envelope it rebuilt by hand, and a hard release dependency
+  for the Skill that taught it (`unknown flag` on older CLIs). The operator
+  asked for the most elegant version, so it was removed.
 - R1: Tools that parse `alva run` stdout and read `.result` as a string to
   `JSON.parse` would break. Before this change, a grep of the skills repo
   found no consumer that parses the envelope; the jagent embedded tool
   serializes the returned value without inspecting `result`.
-- R2: The sandbox image pins the toolkit version. Skills guidance that names
-  `--output` must not ship to an image whose toolkit predates this release
-  (`unknown flag`). Release order: toolkit → sandbox pin → skills.
 
 ## 4. Implementation Design
 
-- `src/cli/dispatch.ts`: `decodeRunResult` (D2), `describeRunResult` (shape
-  summary), `runCliOutput` (B1/B4/F1). The `run` case awaits the response and
-  passes it through `runCliOutput`. `--output` writes through the existing
-  `writeLocalFileBytes`, which already rejects the jagent runtime (F3). The
-  help text documents `--output` and decoded `result`, and the example no
-  longer returns `JSON.stringify`.
-- `src/cli/commandDefinitions.ts`: `run` accepts `--output`. The embedded
-  definitions are unchanged (F3).
+- `src/cli/dispatch.ts`: a private `decodeRunResult` (D2). The `run` case
+  awaits the response and returns it with `result` decoded. Help text: the
+  `result` field description and two examples.
 - `src/cli/index.ts`: indent only when `process.stdout.isTTY` (B3).
-- `src/cli/agentHelp.ts`: the embedded `run` help says to return objects
+- `src/cli/agentHelp.ts`: the embedded `run` help says to return values
   directly.
-- `README.md`: the `run` synopsis lists `--output`.
 
 ### Serial Implementation Checklist
 
-- [x] Decode and `--output` in dispatch.
+- [x] Decode `result` in dispatch.
 - [x] Compact non-TTY output.
-- [x] Help, agent help, README.
+- [x] Help and agent help.
 - [x] Unit tests.
 - [x] Local-dev E2E with a sandbox image carrying this CLI.
+- [x] Remove `--output` (D5) and re-verify.
 
 ## 5. Verification and E2E Design
 
-- Unit tests in `test/cli.test.ts`: decoded objects, one and two stringify
-  layers, scalar-looking strings kept as written, non-JSON passthrough, failed
-  runs, the embedded runtime decoding, `--output` file bytes and summary, raw
-  text output, array and wide-object shapes, no write on failure, empty path
-  rejected, `--output` rejected in the embedded runtime.
+- Unit tests in `test/cli.test.ts` cover: a decoded object; one and two
+  stringify layers; scalar-looking strings kept as written; non-JSON
+  passthrough; failed runs; and decoding in the embedded runtime.
 - Local-dev E2E (required): a full local stack with a sandbox image whose
   `alva` CLI is this build. Run the same large-result script through the
-  baseline CLI (npm 0.31.0) and the new CLI, and compare stdout bytes. Then run
+  baseline CLI (npm 0.31.0) and the new CLI and compare stdout bytes, then run
   a real agent turn that uses `alva run` and check the transcript.
 
 ## 6. Human Decisions and Interaction
@@ -117,56 +106,60 @@ far more than the agent needed:
   slim Alva's side instead.
 - The operator asked to implement first, then test on local dev using
   worktrees, leaving checkouts that are not part of the PR on main.
+- After the first PR revision, the operator asked for the most elegant version.
+  That removed `--output` (D5) and the decoder's depth cap.
 
 ## 7. Outcome and Evidence
 
-- `npm test`: 52 files, 1125/1125. `npm run typecheck`, `npm run lint`,
-  `prettier --check src test README.md`, `npm run build`: clean.
-- Falsifiability: with `decodeRunResult` bypassed, 13 of the 16 new tests
-  fail. The 3 that still pass do not depend on decoding: non-JSON passthrough,
-  empty `--output` path, and embedded `--output` rejection. The nested-decoding
-  test caught a real bug in the first draft, which stopped at an intermediate
-  string layer.
-- Local-dev E2E. Full core stack from origin/main (backend cfc72ba3d, gateway
-  5ebce8de, jagent 40df5667), plus two sandbox images built from
-  sandbox-agent-ts fcbe86a: baseline with npm toolkit 0.31.0, and a derived
-  image with this branch's CLI and the skills branch bundled the same way the
-  Dockerfile does.
-  - CLI against local `/api/v1/run`, same research-shaped script ending in
-    `JSON.stringify(data)`, piped. Baseline stdout is 17,107 bytes with
-    `result` triple-escaped (`"\"{\\\"symbol\\\"…`). New stdout is 11,754
-    bytes with `result` as a plain object (−31%).
-  - `--output`: a 215-byte summary
-    (`{path, bytes: 11653, shape: {type: object, keys: [...]}}`). The file is
-    byte-identical to the decoded `result` (`cmp`), and `jq -c` queries work.
-    A failed run writes no file and prints `error`.
-  - On a real pty the output is still indented, with `result` decoded.
-  - Codex agent turn (gpt-6-luna). The same prompt runs the script once
-    through the CLI. The model answered correctly on both images. Transcript
-    bytes for the run's output:
+All checks below were run on the final content.
+
+- `npm test`: 52 files, 1119/1119. `npm run typecheck`, `npm run lint`,
+  `prettier --check .`, `npm run build`: clean.
+- Falsifiability:
+  - With decoding bypassed, 9 of the 10 decoding tests fail; only non-JSON
+    passthrough still passes.
+  - With only the wire layer decoded, exactly the 3 nested-stringify tests
+    fail.
+- Local-dev E2E setup:
+  - Full core stack from origin/main: backend cfc72ba3d, gateway 5ebce8de,
+    jagent 40df5667.
+  - Two sandbox images from sandbox-agent-ts fcbe86a: a baseline with npm
+    toolkit 0.31.0, and a derived image with this CLI and the
+    alva-ai/skills#644 files, bundled the way the Dockerfile bundles them.
+- Local-dev E2E results:
+  - CLI against local `/api/v1/run`, with a research-shaped script ending in
+    `JSON.stringify(data)`, stdout piped. Baseline: 17,107 bytes, `result`
+    triple-escaped (`"\"{\\\"symbol\\\"…`). This branch: 11,754 bytes, `result`
+    a plain object (−31%).
+  - On a real pty the output is still indented.
+  - `> file` then `jq -c '{status, error}'` and `jq -c '.result.income[:1]'`
+    work. `--output` is rejected as an unsupported flag.
+  - Codex agent turn (gpt-6-luna), with an identical prompt that runs the
+    script once. The model answered correctly on both images. Transcript bytes
+    for the run's output:
 
     |                                   | baseline 0.31.0 | this branch   |
     | --------------------------------- | --------------- | ------------- |
-    | CommandExecution `item_completed` | 75,077          | 43,043        |
-    | model-facing tool output          | 23,326          | 9,913         |
-    | total                             | 98,403          | 52,956 (−46%) |
+    | CommandExecution `item_completed` | 75,077          | 43,043 (−43%) |
+    | model-facing tool output          | 23,326          | 9,913–14,092  |
     | Codex original-token count        | 4,277           | 2,939 (−31%)  |
 
-    Codex truncated the model-facing output in both runs, so a large result
-    loses its middle no matter how compact it is. That is why `--output`
-    exists.
-
-  - Second turn in the sandbox: `alva run --output ./research.json` then
-    `jq -c '.cashflow[:2]'`. The whole turn transcript is 21,064 bytes. Before
-    this change, reading another field meant re-running the script at about
-    98 KB per run.
+    The CommandExecution line is deterministic. The model-facing line depends
+    on the output budget Codex picks for the call: the two runs on this branch
+    truncated at 9,913 and did not truncate at 14,092. Baseline truncated.
+  - Second turn: `alva run … > research.json` then
+    `jq -c '.result.cashflow[:2]'`. The two commands cost 1,925 transcript
+    bytes, and the whole turn 19,313 bytes. Before, reading another field meant
+    re-running the script at about 98 KB per run.
 
 ## 8. Remaining Work
 
-- Release the toolkit, then bump the sandbox-agent-ts toolkit pin
-  (`alva-deps.lock.json`), then merge alva-ai/skills
-  `jaxxjj/research-output-discipline`. Publish Dispatch/ALPI separately (see
-  AGENTS.md) so the embedded runtime gets decoded results.
+- Release the toolkit and bump the sandbox-agent-ts toolkit pin
+  (`alva-deps.lock.json`). Publish Dispatch/ALPI separately (see AGENTS.md) so
+  the embedded runtime gets decoded results.
+- alva-ai/skills#644 teaches `.result.<field>` paths. They assume B1, so bump
+  its Skill pin after the toolkit pin. On an older CLI the query fails visibly
+  ("Cannot index string") rather than silently.
 - Codex records each command's output three times. That is upstream behavior
   and out of scope by decision. A source-side transcript budget remains the
   backstop (alva-backend#2861 §8).

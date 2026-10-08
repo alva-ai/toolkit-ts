@@ -108,7 +108,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'args',
       'max-heap-size-mb',
       'timeout-ms',
-      'output',
     ],
     booleans: ['args-stdin'],
   }),

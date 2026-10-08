@@ -33,7 +33,6 @@ import type {
   ThesisRewriteMode,
   ThesisVisibility,
 } from '../resources/theses.js';
-import type { RunResponse } from '../types.js';
 
 import {
   formatTrendingPlaybooks,
@@ -443,17 +442,13 @@ Options:
   --args-stdin           Read the JSON object from stdin (mutually exclusive with --args)
   --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
   --timeout-ms <ms>      Client HTTP timeout for /api/v1/run (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
-  --output <path>        Write the decoded result to a local file and print only
-                         its path, size, and shape. Run once, then query the
-                         file (e.g. with jq) instead of re-running the script.
 
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
 
 Response fields:
-  result    The script's return value, decoded. Return objects directly:
-            a script returning JSON.stringify(x) is decoded to x as well.
-  output    With --output: { path, bytes, shape } instead of result
+  result    The script's return value. Return objects directly; a script
+            returning JSON.stringify(x) is shown as x.
   logs      Captured stderr output
   status    "completed" or "failed"
   error     Error message (when status is "failed")
@@ -482,7 +477,7 @@ Examples:
   printf '%s' '{"symbol":"BTC"}' | alva run --local-file ./my-script.js --args-stdin
   alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024
   alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000
-  alva run --local-file ./research.js --output ./research.json && jq '.income[:4]' ./research.json`,
+  alva run --local-file ./research.js > research.json && jq -c '.result.income[:4]' research.json`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
@@ -2481,26 +2476,21 @@ function assertLocalFileAvailable(
 
 /**
  * decodeRunResult turns the wire `result` (the JSON encoding of the script's
- * return value) back into that value, so the printed output carries no
- * escaped JSON-in-a-string. A script that itself returned JSON.stringify(x)
- * (possibly more than once) nests JSON documents inside strings; those layers
- * are decoded too, but only when they end in an object or array, so text such
- * as "42" or "hello" stays exactly as the script returned it. Undecodable
- * input is returned unchanged.
+ * return value) back into that value, so printed output carries no escaped
+ * JSON-in-a-string. A script that returned JSON.stringify(x) nests x in
+ * string layers; those are unwrapped only when they end in an object or
+ * array, so text such as "42" or "hello" stays exactly as returned.
  */
-export function decodeRunResult(result: string): unknown {
+function decodeRunResult(result: string): unknown {
   let value: unknown;
   try {
     value = JSON.parse(result);
   } catch {
     return result;
   }
+  // Each parse of a string strictly shortens it, so the loop terminates.
   let inner = value;
-  for (
-    let depth = 0;
-    depth < RUN_RESULT_MAX_NESTED_JSON && typeof inner === 'string';
-    depth++
-  ) {
+  while (typeof inner === 'string') {
     try {
       inner = JSON.parse(inner);
     } catch {
@@ -2509,51 +2499,6 @@ export function decodeRunResult(result: string): unknown {
     if (inner !== null && typeof inner === 'object') return inner;
   }
   return value;
-}
-
-const RUN_RESULT_MAX_NESTED_JSON = 3;
-
-/** Shape summary printed by `run --output` so the caller can query the file. */
-function describeRunResult(value: unknown): Record<string, unknown> {
-  if (Array.isArray(value)) return { type: 'array', length: value.length };
-  if (value !== null && typeof value === 'object') {
-    const keys = Object.keys(value);
-    return {
-      type: 'object',
-      keys: keys.slice(0, RUN_OUTPUT_MAX_SHAPE_KEYS),
-      ...(keys.length > RUN_OUTPUT_MAX_SHAPE_KEYS
-        ? { key_count: keys.length }
-        : {}),
-    };
-  }
-  return { type: value === null ? 'null' : typeof value };
-}
-
-const RUN_OUTPUT_MAX_SHAPE_KEYS = 50;
-
-function runCliOutput(
-  response: RunResponse,
-  outputPath: string | undefined,
-  deps?: DispatchRuntimeDeps
-): unknown {
-  const result = decodeRunResult(response.result);
-  if (outputPath === undefined || response.status !== 'completed') {
-    return { ...response, result };
-  }
-  const text = typeof result === 'string' ? result : JSON.stringify(result);
-  const bytes = new TextEncoder().encode(text);
-  writeLocalFileBytes(outputPath, bytes, 'run', 'output', deps);
-  return {
-    status: response.status,
-    logs: response.logs,
-    stats: response.stats,
-    ...(response.error !== undefined ? { error: response.error } : {}),
-    output: {
-      path: outputPath,
-      bytes: bytes.byteLength,
-      shape: describeRunResult(result),
-    },
-  };
 }
 
 function readLocalTextFile(
@@ -3136,15 +3081,11 @@ export async function executeParsedCommand(
           );
         }
       }
-      const outputPath = flags['output'];
-      if (outputPath !== undefined && outputPath.trim() === '') {
-        throw new CliUsageError('--output requires a file path', 'run');
-      }
       const response =
         serializedArgs === undefined
           ? await client.run.execute(params)
           : await client.run._executeSerializedArgs(params, serializedArgs);
-      return runCliOutput(response, outputPath, deps);
+      return { ...response, result: decodeRunResult(response.result) };
     }
 
     case 'deploy': {
