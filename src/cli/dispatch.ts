@@ -447,7 +447,8 @@ At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
 
 Response fields:
-  result    JSON-encoded return value of the script
+  result    The script's return value. Return objects directly; a script
+            returning JSON.stringify(x) is shown as x.
   logs      Captured stderr output
   status    "completed" or "failed"
   error     Error message (when status is "failed")
@@ -469,13 +470,14 @@ Constraints:
 
 Examples:
   alva run --code "1 + 2 + 3;"
-  alva run --code "JSON.stringify(require('env').args);" --args '{"symbol":"BTC"}'
+  alva run --code "require('env').args;" --args '{"symbol":"BTC"}'
   alva run --entry-path "~/feeds/my-feed/v1/src/index.js"
   alva run --entry-path "~/tasks/analyze/src/index.js" --args '{"symbol":"NVDA","limit":50}'
   alva run --local-file ./my-script.js --args '{"symbol":"BTC"}'
   printf '%s' '{"symbol":"BTC"}' | alva run --local-file ./my-script.js --args-stdin
   alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024
-  alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000`,
+  alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000
+  alva run --local-file ./research.js > research.json && jq -c '.result.income[:4]' research.json`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
@@ -2472,6 +2474,33 @@ function assertLocalFileAvailable(
   }
 }
 
+/**
+ * decodeRunResult turns the wire `result` (the JSON encoding of the script's
+ * return value) back into that value, so printed output carries no escaped
+ * JSON-in-a-string. A script that returned JSON.stringify(x) nests x in
+ * string layers; those are unwrapped only when they end in an object or
+ * array, so text such as "42" or "hello" stays exactly as returned.
+ */
+function decodeRunResult(result: string): unknown {
+  let value: unknown;
+  try {
+    value = JSON.parse(result);
+  } catch {
+    return result;
+  }
+  // Each parse of a string strictly shortens it, so the loop terminates.
+  let inner = value;
+  while (typeof inner === 'string') {
+    try {
+      inner = JSON.parse(inner);
+    } catch {
+      break;
+    }
+    if (inner !== null && typeof inner === 'object') return inner;
+  }
+  return value;
+}
+
 function readLocalTextFile(
   path: string,
   command: string,
@@ -3052,9 +3081,11 @@ export async function executeParsedCommand(
           );
         }
       }
-      return serializedArgs === undefined
-        ? client.run.execute(params)
-        : client.run._executeSerializedArgs(params, serializedArgs);
+      const response =
+        serializedArgs === undefined
+          ? await client.run.execute(params)
+          : await client.run._executeSerializedArgs(params, serializedArgs);
+      return { ...response, result: decodeRunResult(response.result) };
     }
 
     case 'deploy': {

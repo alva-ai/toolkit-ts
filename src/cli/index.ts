@@ -259,7 +259,10 @@ async function main(): Promise<void> {
     } else if (typeof result === 'string') {
       process.stdout.write(result);
     } else if (result !== undefined) {
-      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      // Indent for people at a terminal; agents and pipes get compact JSON,
+      // which is the same document at a fraction of the bytes.
+      const indent = process.stdout.isTTY ? 2 : undefined;
+      process.stdout.write(JSON.stringify(result, null, indent) + '\n');
     }
   } catch (error) {
     if (error instanceof CliUsageError) {

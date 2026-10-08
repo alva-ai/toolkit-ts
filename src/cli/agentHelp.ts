@@ -152,7 +152,8 @@ Subcommands:
   run: `Usage: alva run (--code <js> | --entry-path <alfs-path>) [options]
 
 Execute JavaScript in the Jagent runtime. Local-file flags are unavailable in
-the embedded Agent; use ALFS paths or inline code.`,
+the embedded Agent; use ALFS paths or inline code. Return values directly, not
+JSON.stringify(...).`,
 
   'data-skills': `Usage: alva data-skills <subcommand>
 

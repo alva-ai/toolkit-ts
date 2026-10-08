@@ -1129,6 +1129,88 @@ describe('CLI dispatch', () => {
     );
   });
 
+  describe('run result decoding', () => {
+    function runResponse(result: string, status = 'completed') {
+      return {
+        result,
+        logs: 'log line',
+        stats: { duration_ms: 7 },
+        status,
+        ...(status === 'failed' ? { error: 'boom' } : {}),
+      };
+    }
+
+    async function runWith(result: string, status?: string) {
+      const client = makeClient();
+      client.run.execute = vi
+        .fn()
+        .mockResolvedValue(runResponse(result, status));
+      return (await dispatch(client, ['run', '--code', 'x'])) as Record<
+        string,
+        unknown
+      >;
+    }
+
+    it('prints a returned object as an object, not a JSON string', async () => {
+      const out = await runWith('{"rows":[1,2],"name":"BTC"}');
+      expect(out.result).toEqual({ rows: [1, 2], name: 'BTC' });
+      expect(out).toMatchObject({
+        logs: 'log line',
+        stats: { duration_ms: 7 },
+        status: 'completed',
+      });
+    });
+
+    it('decodes a script that returned JSON.stringify(obj)', async () => {
+      const once = JSON.stringify({ income: [{ q: 'Q1', v: 1.5 }] });
+      const out = await runWith(JSON.stringify(once));
+      expect(out.result).toEqual({ income: [{ q: 'Q1', v: 1.5 }] });
+    });
+
+    it('decodes a script that stringified twice', async () => {
+      const twice = JSON.stringify(JSON.stringify([{ a: 'x"y' }]));
+      const out = await runWith(JSON.stringify(twice));
+      expect(out.result).toEqual([{ a: 'x"y' }]);
+    });
+
+    it.each([
+      ['plain text', 'hello world'],
+      ['numeric text', '42'],
+      ['boolean text', 'true'],
+      ['quoted text', '"quoted"'],
+    ])('keeps a returned %s string as written', async (_name, value) => {
+      const out = await runWith(JSON.stringify(value));
+      expect(out.result).toBe(value);
+    });
+
+    it('passes through a result that is not JSON', async () => {
+      const out = await runWith('not json {');
+      expect(out.result).toBe('not json {');
+    });
+
+    it('decodes failed runs too and keeps the error', async () => {
+      const out = await runWith('null', 'failed');
+      expect(out).toMatchObject({
+        result: null,
+        status: 'failed',
+        error: 'boom',
+      });
+    });
+
+    it('decodes the result for the embedded agent runtime', async () => {
+      const client = makeClient();
+      client.run.execute = vi
+        .fn()
+        .mockResolvedValue(runResponse(JSON.stringify('{"a":1}')));
+      const out = (await dispatchEmbedded(client, [
+        'run',
+        '--code',
+        'x',
+      ])) as Record<string, unknown>;
+      expect(out.result).toEqual({ a: 1 });
+    });
+  });
+
   it('dispatches credits wallet', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['credits', 'wallet']);
