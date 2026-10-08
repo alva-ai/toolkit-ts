@@ -1129,6 +1129,253 @@ describe('CLI dispatch', () => {
     );
   });
 
+  describe('run result decoding', () => {
+    function runResponse(result: string, status = 'completed') {
+      return {
+        result,
+        logs: 'log line',
+        stats: { duration_ms: 7 },
+        status,
+        ...(status === 'failed' ? { error: 'boom' } : {}),
+      };
+    }
+
+    async function runWith(result: string, status?: string) {
+      const client = makeClient();
+      client.run.execute = vi
+        .fn()
+        .mockResolvedValue(runResponse(result, status));
+      return (await dispatch(client, ['run', '--code', 'x'])) as Record<
+        string,
+        unknown
+      >;
+    }
+
+    it('prints a returned object as an object, not a JSON string', async () => {
+      const out = await runWith('{"rows":[1,2],"name":"BTC"}');
+      expect(out.result).toEqual({ rows: [1, 2], name: 'BTC' });
+      expect(out).toMatchObject({
+        logs: 'log line',
+        stats: { duration_ms: 7 },
+        status: 'completed',
+      });
+    });
+
+    it('decodes a script that returned JSON.stringify(obj)', async () => {
+      const once = JSON.stringify({ income: [{ q: 'Q1', v: 1.5 }] });
+      const out = await runWith(JSON.stringify(once));
+      expect(out.result).toEqual({ income: [{ q: 'Q1', v: 1.5 }] });
+    });
+
+    it('decodes a script that stringified twice', async () => {
+      const twice = JSON.stringify(JSON.stringify([{ a: 'x"y' }]));
+      const out = await runWith(JSON.stringify(twice));
+      expect(out.result).toEqual([{ a: 'x"y' }]);
+    });
+
+    it.each([
+      ['plain text', 'hello world'],
+      ['numeric text', '42'],
+      ['boolean text', 'true'],
+      ['quoted text', '"quoted"'],
+    ])('keeps a returned %s string as written', async (_name, value) => {
+      const out = await runWith(JSON.stringify(value));
+      expect(out.result).toBe(value);
+    });
+
+    it('passes through a result that is not JSON', async () => {
+      const out = await runWith('not json {');
+      expect(out.result).toBe('not json {');
+    });
+
+    it('decodes failed runs too and keeps the error', async () => {
+      const out = await runWith('null', 'failed');
+      expect(out).toMatchObject({
+        result: null,
+        status: 'failed',
+        error: 'boom',
+      });
+    });
+
+    it('decodes the result for the embedded agent runtime', async () => {
+      const client = makeClient();
+      client.run.execute = vi
+        .fn()
+        .mockResolvedValue(runResponse(JSON.stringify('{"a":1}')));
+      const out = (await dispatchEmbedded(client, [
+        'run',
+        '--code',
+        'x',
+      ])) as Record<string, unknown>;
+      expect(out.result).toEqual({ a: 1 });
+    });
+  });
+
+  describe('run --output', () => {
+    function deps() {
+      const writeBytes = vi.fn();
+      return {
+        writeBytes,
+        deps: {
+          localFiles: {
+            readText: vi.fn(),
+            readBytes: vi.fn(),
+            writeBytes,
+          },
+        },
+      };
+    }
+
+    it('writes the decoded result as compact JSON and prints a summary', async () => {
+      const client = makeClient();
+      const value = { income: [1, 2, 3], meta: { symbol: 'AAPL' } };
+      client.run.execute = vi.fn().mockResolvedValue({
+        result: JSON.stringify(JSON.stringify(value, null, 2)),
+        logs: 'log line',
+        stats: { duration_ms: 7 },
+        status: 'completed',
+      });
+      const { writeBytes, deps: d } = deps();
+
+      const out = (await dispatch(
+        client,
+        ['run', '--code', 'x', '--output', '/tmp/out.json'],
+        undefined,
+        d
+      )) as Record<string, unknown>;
+
+      const expected = JSON.stringify(value);
+      expect(writeBytes).toHaveBeenCalledTimes(1);
+      const [path, bytes] = writeBytes.mock.calls[0];
+      expect(path).toBe('/tmp/out.json');
+      expect(new TextDecoder().decode(bytes as Uint8Array)).toBe(expected);
+      expect(out).toEqual({
+        logs: 'log line',
+        stats: { duration_ms: 7 },
+        status: 'completed',
+        output: {
+          path: '/tmp/out.json',
+          bytes: Buffer.byteLength(expected),
+          shape: { type: 'object', keys: ['income', 'meta'] },
+        },
+      });
+    });
+
+    it('writes a returned string as raw text', async () => {
+      const client = makeClient();
+      client.run.execute = vi.fn().mockResolvedValue({
+        result: JSON.stringify('line 1\nline 2 雪'),
+        logs: '',
+        stats: { duration_ms: 1 },
+        status: 'completed',
+      });
+      const { writeBytes, deps: d } = deps();
+
+      const out = (await dispatch(
+        client,
+        ['run', '--code', 'x', '--output', '/tmp/out.txt'],
+        undefined,
+        d
+      )) as { output: { bytes: number; shape: unknown } };
+
+      const [, bytes] = writeBytes.mock.calls[0];
+      expect(new TextDecoder().decode(bytes as Uint8Array)).toBe(
+        'line 1\nline 2 雪'
+      );
+      expect(out.output.bytes).toBe(Buffer.byteLength('line 1\nline 2 雪'));
+      expect(out.output.shape).toEqual({ type: 'string' });
+    });
+
+    it('summarizes arrays by length and caps listed keys', async () => {
+      const client = makeClient();
+      const wide = Object.fromEntries(
+        Array.from({ length: 60 }, (_, i) => [`k${i}`, i])
+      );
+      client.run.execute = vi
+        .fn()
+        .mockResolvedValueOnce({
+          result: '[1,2,3]',
+          logs: '',
+          stats: { duration_ms: 1 },
+          status: 'completed',
+        })
+        .mockResolvedValueOnce({
+          result: JSON.stringify(wide),
+          logs: '',
+          stats: { duration_ms: 1 },
+          status: 'completed',
+        });
+      const { deps: d } = deps();
+
+      const arr = (await dispatch(
+        client,
+        ['run', '--code', 'x', '--output', '/tmp/a.json'],
+        undefined,
+        d
+      )) as { output: { shape: unknown } };
+      const obj = (await dispatch(
+        client,
+        ['run', '--code', 'x', '--output', '/tmp/b.json'],
+        undefined,
+        d
+      )) as { output: { shape: { keys: string[]; key_count: number } } };
+
+      expect(arr.output.shape).toEqual({ type: 'array', length: 3 });
+      expect(obj.output.shape.keys).toHaveLength(50);
+      expect(obj.output.shape.key_count).toBe(60);
+    });
+
+    it('does not write a file when the run failed', async () => {
+      const client = makeClient();
+      client.run.execute = vi.fn().mockResolvedValue({
+        result: 'null',
+        logs: 'trace',
+        stats: { duration_ms: 1 },
+        status: 'failed',
+        error: 'boom',
+      });
+      const { writeBytes, deps: d } = deps();
+
+      const out = (await dispatch(
+        client,
+        ['run', '--code', 'x', '--output', '/tmp/out.json'],
+        undefined,
+        d
+      )) as Record<string, unknown>;
+
+      expect(writeBytes).not.toHaveBeenCalled();
+      expect(out).toMatchObject({
+        result: null,
+        status: 'failed',
+        error: 'boom',
+      });
+    });
+
+    it('rejects an empty --output path before running', async () => {
+      const client = makeClient();
+      await expect(
+        dispatch(client, ['run', '--code', 'x', '--output', ' '])
+      ).rejects.toSatisfy(
+        (err: unknown) => err instanceof CliUsageError && err.command === 'run'
+      );
+      expect(client.run.execute).not.toHaveBeenCalled();
+    });
+
+    it('is not available in the embedded agent runtime', async () => {
+      const client = makeClient();
+      await expect(
+        dispatchEmbedded(client, [
+          'run',
+          '--code',
+          'x',
+          '--output',
+          '/tmp/out.json',
+        ])
+      ).rejects.toThrow(/output/);
+      expect(client.run.execute).not.toHaveBeenCalled();
+    });
+  });
+
   it('dispatches credits wallet', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['credits', 'wallet']);
