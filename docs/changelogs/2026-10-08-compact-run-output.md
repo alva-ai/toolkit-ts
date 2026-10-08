@@ -117,3 +117,56 @@ far more than the agent needed:
   slim Alva's side instead.
 - The operator asked to implement first, then test on local dev using
   worktrees, leaving checkouts that are not part of the PR on main.
+
+## 7. Outcome and Evidence
+
+- `npm test`: 52 files, 1125/1125. `npm run typecheck`, `npm run lint`,
+  `prettier --check src test README.md`, `npm run build`: clean.
+- Falsifiability: with `decodeRunResult` bypassed, 13 of the 16 new tests
+  fail. The 3 that still pass do not depend on decoding: non-JSON passthrough,
+  empty `--output` path, and embedded `--output` rejection. The nested-decoding
+  test caught a real bug in the first draft, which stopped at an intermediate
+  string layer.
+- Local-dev E2E. Full core stack from origin/main (backend cfc72ba3d, gateway
+  5ebce8de, jagent 40df5667), plus two sandbox images built from
+  sandbox-agent-ts fcbe86a: baseline with npm toolkit 0.31.0, and a derived
+  image with this branch's CLI and the skills branch bundled the same way the
+  Dockerfile does.
+  - CLI against local `/api/v1/run`, same research-shaped script ending in
+    `JSON.stringify(data)`, piped. Baseline stdout is 17,107 bytes with
+    `result` triple-escaped (`"\"{\\\"symbol\\\"…`). New stdout is 11,754
+    bytes with `result` as a plain object (−31%).
+  - `--output`: a 215-byte summary
+    (`{path, bytes: 11653, shape: {type: object, keys: [...]}}`). The file is
+    byte-identical to the decoded `result` (`cmp`), and `jq -c` queries work.
+    A failed run writes no file and prints `error`.
+  - On a real pty the output is still indented, with `result` decoded.
+  - Codex agent turn (gpt-6-luna). The same prompt runs the script once
+    through the CLI. The model answered correctly on both images. Transcript
+    bytes for the run's output:
+
+    |                                   | baseline 0.31.0 | this branch   |
+    | --------------------------------- | --------------- | ------------- |
+    | CommandExecution `item_completed` | 75,077          | 43,043        |
+    | model-facing tool output          | 23,326          | 9,913         |
+    | total                             | 98,403          | 52,956 (−46%) |
+    | Codex original-token count        | 4,277           | 2,939 (−31%)  |
+
+    Codex truncated the model-facing output in both runs, so a large result
+    loses its middle no matter how compact it is. That is why `--output`
+    exists.
+
+  - Second turn in the sandbox: `alva run --output ./research.json` then
+    `jq -c '.cashflow[:2]'`. The whole turn transcript is 21,064 bytes. Before
+    this change, reading another field meant re-running the script at about
+    98 KB per run.
+
+## 8. Remaining Work
+
+- Release the toolkit, then bump the sandbox-agent-ts toolkit pin
+  (`alva-deps.lock.json`), then merge alva-ai/skills
+  `jaxxjj/research-output-discipline`. Publish Dispatch/ALPI separately (see
+  AGENTS.md) so the embedded runtime gets decoded results.
+- Codex records each command's output three times. That is upstream behavior
+  and out of scope by decision. A source-side transcript budget remains the
+  backstop (alva-backend#2861 §8).
