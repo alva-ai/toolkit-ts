@@ -147,6 +147,7 @@ All checks below were run on the final content.
     The CommandExecution line is deterministic. The model-facing line depends
     on the output budget Codex picks for the call: the two runs on this branch
     truncated at 9,913 and did not truncate at 14,092. Baseline truncated.
+
   - Second turn: `alva run … > research.json` then
     `jq -c '.result.cashflow[:2]'`. The two commands cost 1,925 transcript
     bytes, and the whole turn 19,313 bytes. Before, reading another field meant
