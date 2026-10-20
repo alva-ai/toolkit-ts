@@ -24,7 +24,10 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
-    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(117);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(118);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(
+      'company-news create'
+    );
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain('for-you list');
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(
       'for-you theses'

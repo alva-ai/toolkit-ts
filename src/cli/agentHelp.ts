@@ -19,6 +19,7 @@ Commands:
   schedule      Manage future messages for this Session Inbox
   steward       Push steward reports for this Session Inbox (decide, forward, send, pending, briefed)
   thesis        Create and manage authored theses
+  company-news  Create backend-managed multi-ticker News Feeds
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
   for-you       Read your For You publications (list, theses)
@@ -28,6 +29,16 @@ Commands:
 Run 'alva <command> --help' for a command tree.`;
 
 export const AGENT_COMMAND_HELP: Readonly<Record<string, string>> = {
+  'company-news': `Usage: alva company-news create --name <name> --tickers <NVDA,AMD> [options]
+
+Create one backend-managed News Feed for 1-1000 unique uppercase tickers.
+Optional: --initial-lookback-hours <0-168> (default 24), --page-size <0-100>
+(default 20). Zero selects the backend default. No script upload or path.
+Returns decimal-string feed_id and cronjob_id. New feeds are paused; creation
+does not start model work. Once resumed, the creator pays model credits.
+Pull-only: no push delivery is enabled. Repeating the same name/configuration
+returns the existing resource without changing its activation state.
+Authentication and endpoints belong to the host; no identity overrides.`,
   steward: `Usage: alva steward <subcommand> [options]
 
 Report this push steward's decisions for Feed alerts routed to its Inbox and

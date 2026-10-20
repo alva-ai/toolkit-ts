@@ -133,6 +133,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       { values: ['delivery-ids', 'digest-run-id'] },
       'steward-self'
     ),
+    route('company-news create', 'company-news create', {
+      values: ['name', 'tickers', 'initial-lookback-hours', 'page-size'],
+    }),
     route('thesis create', 'thesis create', {
       values: [
         'request-id',
