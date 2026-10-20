@@ -187,7 +187,7 @@ Model credits are charged to the authenticated creator, not the platform.
 This is pull-only: starting the producer does not enable push notifications.
 Retry an unclear result with the same name and configuration; an existing
 feed's current activation state is preserved. Different configuration conflicts.
-The backend feature must be deployed and enabled; no script fallback is used.
+The backend and database migration must be deployed; no script fallback is used.
 
 Example: alva company-news create --name my-company-news --tickers NVDA,AMD`,
   steward: `Usage: alva steward <subcommand> [options]

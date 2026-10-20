@@ -421,7 +421,7 @@ const { feed_id, cronjob_id } = await client.companyNews.create({
 ```
 
 Requires the companion Gateway adapter and backend Company News deployment,
-migration and feature flag. A disabled/unavailable backend fails explicitly;
+migration. An unavailable backend fails explicitly;
 the CLI does not fall back to script deployment. Terminal and embedded dispatch
 both support creation, but publishing this npm CLI alone does not update ALPI;
 follow the embedded CLI release instructions below.
