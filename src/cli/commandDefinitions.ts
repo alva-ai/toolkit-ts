@@ -184,6 +184,9 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['inbox-path', 'delivery-ids', 'digest-run-id'],
   }),
 
+  command('company-news create', {
+    values: ['name', 'tickers', 'initial-lookback-hours', 'page-size'],
+  }),
   command('thesis create', {
     values: [
       'request-id',

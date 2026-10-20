@@ -369,6 +369,58 @@ try {
 }
 ```
 
+## Managed Company News
+
+Create a private, backend-managed News Feed without uploading a script or
+deploying a cronjob yourself. One Feed covers the whole supplied ticker list:
+
+```bash
+alva company-news create --name my-company-news --tickers NVDA,AMD,AAPL
+alva company-news create --name earnings-news --tickers NVDA,AMD --initial-lookback-hours 48 --page-size 30
+```
+
+Uses the configured Alva API key and `POST /api/v1/company-news`. The backend
+owns the producer code and creates the Feed, its cronjob and processing state.
+The response contains decimal-string `feed_id` and `cronjob_id`; newly created
+producers are **paused**, and creation does not invoke a model or spend model
+credits. Review the configuration, then explicitly start it when ready:
+
+```bash
+alva feed resume --id <feed_id>
+```
+
+Once resumed, model usage is charged to the authenticated creator. Company News
+is pull-only; resume does not enable push notifications. No `--path`, script
+upload, owner override or automatic-start flag is supported.
+
+Names must be owner-local, 1–64 alphanumeric/hyphen characters starting with an
+alphanumeric character, and not `news-lane`. Supply 1–1000 unique uppercase
+tickers (maximum 20 characters each). `--initial-lookback-hours` accepts 0–168
+(default 24); `--page-size` accepts 0–100 (default 20). Zero selects the backend
+default. Large universes are read incrementally rather than all in one wake.
+
+Retry an unclear result with the **same name and configuration**; this returns
+the existing resource without changing whether it is running. Different
+configuration under the same name conflicts. This command does not update an
+existing ticker universe.
+
+SDK equivalent:
+
+```typescript
+const { feed_id, cronjob_id } = await client.companyNews.create({
+  name: 'my-company-news',
+  tickers: ['NVDA', 'AMD'],
+  initial_lookback_hours: 24,
+  page_size: 20,
+});
+```
+
+Requires the companion Gateway adapter and backend Company News deployment,
+migration and feature flag. A disabled/unavailable backend fails explicitly;
+the CLI does not fall back to script deployment. Terminal and embedded dispatch
+both support creation, but publishing this npm CLI alone does not update ALPI;
+follow the embedded CLI release instructions below.
+
 ## CLI Commands
 
 ```text

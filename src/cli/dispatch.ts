@@ -4,6 +4,10 @@ import {
   validateForYouThesesParams,
 } from '../resources/forYou.js';
 import { requireDecision } from '../resources/steward.js';
+import {
+  validateCompanyNewsCreateParams,
+  type CreateCompanyNewsParams,
+} from '../resources/companyNews.js';
 import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { CliUsageError } from '../error.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
@@ -118,6 +122,7 @@ Commands:
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
   steward     Push steward reports for a Session Inbox (decide, forward, send, pending, briefed)
   thesis      Authored thesis lifecycle (create, get, signals, set-visibility, update, close, delete, rewrite)
+  company-news  Create a backend-managed multi-ticker News Feed
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
   lint        Design-system lint (playbook)
@@ -164,6 +169,27 @@ Quick start:
   alva whoami`;
 
 export const COMMAND_HELP: Record<string, string> = {
+  'company-news': `Usage: alva company-news create --name <name> --tickers <NVDA,AMD> [options]
+
+Create one private, backend-managed Feed covering all supplied tickers.
+No script upload, entry path or cron deployment is required.
+
+Options:
+  --name <name>                   Owner-local name (1-64 alphanumeric/hyphen characters; not news-lane)
+  --tickers <A,B,C>                1-1000 unique uppercase symbols
+  --initial-lookback-hours <0-168> Initial history window (default: 24; 0 selects default)
+  --page-size <0-100>              Editorial batch size (default: 20; 0 selects default)
+
+New feeds are paused. Returns decimal-string feed_id and cronjob_id.
+Creation does not run the model or resume the producer. After reviewing the
+configuration, use 'alva feed resume --id <feed_id>' to start paid execution.
+Model credits are charged to the authenticated creator, not the platform.
+This is pull-only: starting the producer does not enable push notifications.
+Retry an unclear result with the same name and configuration; an existing
+feed's current activation state is preserved. Different configuration conflicts.
+The backend feature must be deployed and enabled; no script fallback is used.
+
+Example: alva company-news create --name my-company-news --tickers NVDA,AMD`,
   steward: `Usage: alva steward <subcommand> [options]
 
 Report a push steward's decisions for Feed alerts routed to its Session Inbox,
@@ -3352,6 +3378,43 @@ export async function executeParsedCommand(
             'steward'
           );
       }
+    }
+
+    case 'company-news': {
+      if (subcommand !== 'create') {
+        throw new CliUsageError('Expected company-news create', 'company-news');
+      }
+      const params: CreateCompanyNewsParams = {
+        name: requireFlag(flags, 'name', 'company-news create'),
+        tickers: requireFlag(flags, 'tickers', 'company-news create')
+          .split(',')
+          .map((ticker) => ticker.trim()),
+      };
+      for (const [flag, field] of [
+        ['initial-lookback-hours', 'initial_lookback_hours'],
+        ['page-size', 'page_size'],
+      ] as const) {
+        const value = flags[flag];
+        if (value === undefined) continue;
+        if (!/^\d+$/.test(value)) {
+          throw new CliUsageError(
+            `--${flag} must be a nonnegative integer`,
+            'company-news'
+          );
+        }
+        params[field] = Number(value);
+      }
+      try {
+        validateCompanyNewsCreateParams(params);
+      } catch (error) {
+        throw new CliUsageError(
+          error instanceof Error
+            ? error.message
+            : 'Invalid company news configuration',
+          'company-news'
+        );
+      }
+      return client.companyNews.create(params);
     }
 
     case 'thesis': {
