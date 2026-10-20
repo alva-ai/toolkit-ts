@@ -1886,7 +1886,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await expect(
       dispatch(client, ['feed', 'delete', '--id', 'abc'])
-    ).rejects.toThrow("--id must be a positive integer for 'feed delete', got 'abc'");
+    ).rejects.toThrow(
+      "--id must be a positive integer for 'feed delete', got 'abc'"
+    );
   });
 
   it('dispatches feed set-visibility public', async () => {
