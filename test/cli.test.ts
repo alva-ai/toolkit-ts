@@ -1794,7 +1794,7 @@ describe('CLI dispatch', () => {
   it('dispatches feed delete', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);
-    expect(client.feed.delete).toHaveBeenCalledWith({ id: 42 });
+    expect(client.feed.delete).toHaveBeenCalledWith({ id: '42' });
   });
 
   it('dispatches feed list with filters', async () => {
@@ -1852,13 +1852,13 @@ describe('CLI dispatch', () => {
   it('dispatches feed stop', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'stop', '--id', '42']);
-    expect(client.feed.stop).toHaveBeenCalledWith({ id: 42 });
+    expect(client.feed.stop).toHaveBeenCalledWith({ id: '42' });
   });
 
   it('dispatches feed resume', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'resume', '--id', '42']);
-    expect(client.feed.resume).toHaveBeenCalledWith({ id: 42 });
+    expect(client.feed.resume).toHaveBeenCalledWith({ id: '42' });
   });
 
   it('feed stop requires --id', async () => {
@@ -1886,7 +1886,7 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await expect(
       dispatch(client, ['feed', 'delete', '--id', 'abc'])
-    ).rejects.toThrow("--id must be a number for 'feed delete', got 'abc'");
+    ).rejects.toThrow("--id must be a positive integer for 'feed delete', got 'abc'");
   });
 
   it('dispatches feed set-visibility public', async () => {
@@ -1900,7 +1900,7 @@ describe('CLI dispatch', () => {
       'public',
     ]);
     expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id: 42,
+      id: '42',
       visibility: 'public',
     });
   });
@@ -1916,7 +1916,7 @@ describe('CLI dispatch', () => {
       'private',
     ]);
     expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id: 42,
+      id: '42',
       visibility: 'private',
     });
   });

@@ -13,6 +13,37 @@ export interface CreateCompanyNewsResponse {
   cronjob_id: string;
 }
 
+const CREATE_COMPANY_NEWS = `mutation CreateCompanyNews($input: CompanyNewsFeedInput!) {
+  companyNews {
+    createFeed(input: $input) { id producer { id } }
+  }
+}`;
+
+interface CompanyNewsGraphResponse {
+  data?: {
+    companyNews?: {
+      createFeed?: { id?: unknown; producer?: { id?: unknown } | null } | null;
+    } | null;
+  } | null;
+  errors?: { message?: string; extensions?: { code?: string } }[];
+}
+
+const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
+  INVALID_ARGUMENT: 400,
+  UNAUTHENTICATED: 401,
+  PERMISSION_DENIED: 403,
+  NOT_FOUND: 404,
+  ALREADY_EXISTS: 409,
+  ABORTED: 409,
+  FAILED_PRECONDITION: 412,
+  RESOURCE_EXHAUSTED: 429,
+  INTERNAL: 500,
+  UNKNOWN: 500,
+  DATA_LOSS: 500,
+  UNAVAILABLE: 503,
+  DEADLINE_EXCEEDED: 504,
+};
+
 export function validateCompanyNewsCreateParams(
   params: CreateCompanyNewsParams
 ): void {
@@ -77,16 +108,31 @@ export class CompanyNewsResource {
       tickers: params.tickers,
       ...(params.initial_lookback_hours === undefined
         ? {}
-        : { initial_lookback_hours: params.initial_lookback_hours }),
-      ...(params.page_size === undefined
-        ? {}
-        : { page_size: params.page_size }),
+        : { initialLookbackHours: params.initial_lookback_hours }),
+      ...(params.page_size === undefined ? {} : { pageSize: params.page_size }),
     };
-    const response = await this.client._request(
-      'POST',
-      '/api/v1/company-news',
-      { body }
-    );
+    const graph = (await this.client._request('POST', '/query', {
+      body: { query: CREATE_COMPANY_NEWS, variables: { input: body } },
+    })) as CompanyNewsGraphResponse | null;
+    if (Array.isArray(graph?.errors) && graph.errors.length > 0) {
+      const codes = graph.errors.map((error) => error?.extensions?.code);
+      const code =
+        typeof codes[0] === 'string' &&
+        codes.every((value) => value === codes[0])
+          ? codes[0]
+          : 'GRAPHQL_ERROR';
+      throw new AlvaError(
+        code,
+        graph.errors
+          .map((error) => error?.message)
+          .filter(Boolean)
+          .join('; ') || 'Company News creation failed',
+        GRAPHQL_STATUS_BY_CODE[code] ?? 502,
+        { errors: graph.errors }
+      );
+    }
+    const feed = graph?.data?.companyNews?.createFeed;
+    const response = { feed_id: feed?.id, cronjob_id: feed?.producer?.id };
     if (
       typeof response !== 'object' ||
       response === null ||

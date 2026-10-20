@@ -1730,6 +1730,24 @@ export function requirePositiveIntegerStringFlag(
   return val;
 }
 
+function requireFeedIDFlag(
+  flags: Record<string, string>,
+  command: string
+): string {
+  const value = requirePositiveIntegerStringFlag(flags, 'id', command);
+  if (
+    value.length > 19 ||
+    value.trim() !== value ||
+    BigInt(value) > 9223372036854775807n
+  ) {
+    throw new CliUsageError(
+      `--id must be a positive decimal int64 for '${command}'`,
+      'feed'
+    );
+  }
+  return value;
+}
+
 function optionalBoundedIntegerFlag(
   flags: Record<string, string>,
   name: string,
@@ -3569,19 +3587,19 @@ export async function executeParsedCommand(
           });
         case 'stop':
           return client.feed.stop({
-            id: requireNumericFlag(flags, 'id', 'feed stop'),
+            id: requireFeedIDFlag(flags, 'feed stop'),
           });
         case 'resume':
           return client.feed.resume({
-            id: requireNumericFlag(flags, 'id', 'feed resume'),
+            id: requireFeedIDFlag(flags, 'feed resume'),
           });
         case 'delete':
           return client.feed.delete({
-            id: requireNumericFlag(flags, 'id', 'feed delete'),
+            id: requireFeedIDFlag(flags, 'feed delete'),
           });
         case 'set-visibility':
           return client.feed.setVisibility({
-            id: requireNumericFlag(flags, 'id', 'feed set-visibility'),
+            id: requireFeedIDFlag(flags, 'feed set-visibility'),
             visibility: feedVisibility(
               requireFlag(flags, 'visibility', 'feed set-visibility')
             ),

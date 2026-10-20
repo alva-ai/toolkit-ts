@@ -9,6 +9,50 @@ for (const [surface, dispatch] of [
   ['embedded', dispatchEmbedded],
 ] as const) {
   describe(`company-news ${surface} dispatch`, () => {
+    if (surface === 'terminal') {
+      it.each(['stop', 'resume', 'delete', 'set-visibility'] as const)(
+        'preserves decimal int64 feed IDs for %s',
+        async (operation) => {
+          const fetch = vi.fn().mockResolvedValue(
+            new Response('{}', {
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
+          vi.stubGlobal('fetch', fetch);
+          try {
+            const client = new AlvaClient({ apiKey: 'key' });
+            await dispatch(client, [
+              'feed',
+              operation,
+              '--id',
+              '9223372036854775807',
+              ...(operation === 'set-visibility'
+                ? ['--visibility', 'private']
+                : []),
+            ]);
+            expect(fetch).toHaveBeenCalledTimes(1);
+            expect(fetch.mock.calls[0][0]).toContain(
+              '/feed/9223372036854775807'
+            );
+          } finally {
+            vi.unstubAllGlobals();
+          }
+        }
+      );
+      it.each(['0', '-1', '1.5', '1e3', '01', '9223372036854775808', '42\n'])(
+        'rejects invalid feed IDs without calling resume: %s',
+        async (id) => {
+          const client = new AlvaClient({ apiKey: 'key' });
+          const resume = vi
+            .spyOn(client.feed, 'resume')
+            .mockResolvedValue({} as never);
+          await expect(
+            dispatch(client, ['feed', 'resume', '--id', id])
+          ).rejects.toBeInstanceOf(CliUsageError);
+          expect(resume).not.toHaveBeenCalled();
+        }
+      );
+    }
     it('creates a multi-ticker managed feed with one call and returns lossless IDs', async () => {
       const client = new AlvaClient({ apiKey: 'key' });
       const result = {

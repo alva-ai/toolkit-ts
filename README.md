@@ -379,11 +379,13 @@ alva company-news create --name my-company-news --tickers NVDA,AMD,AAPL
 alva company-news create --name earnings-news --tickers NVDA,AMD --initial-lookback-hours 48 --page-size 30
 ```
 
-Uses the configured Alva API key and `POST /api/v1/company-news`. The backend
+Uses the configured Alva API key and the vNext GraphQL business mutation
+`companyNews { createFeed(input: ...) }` via `POST /query`. The backend
 owns the producer code and creates the Feed, its cronjob and processing state.
 The response contains decimal-string `feed_id` and `cronjob_id`; newly created
 producers are **paused**, and creation does not invoke a model or spend model
-credits. Review the configuration, then explicitly start it when ready:
+credits. Review the configuration, then explicitly start it from the terminal CLI
+when ready (embedded dispatch does not expose Feed lifecycle commands):
 
 ```bash
 alva feed resume --id <feed_id>
@@ -403,6 +405,9 @@ Retry an unclear result with the **same name and configuration**; this returns
 the existing resource without changing whether it is running. Different
 configuration under the same name conflicts. This command does not update an
 existing ticker universe.
+Different names create independent Feeds, even when their tickers overlap.
+For a single ticker, use `--tickers NVDA`; for many, pass the full comma-separated
+list once. Incrementally appending tickers to the same Feed is not supported.
 
 SDK equivalent:
 
