@@ -1,3 +1,8 @@
+import {
+  validateListThesesParams,
+  validateThesisPageParams,
+  type ListThesesParams,
+} from '../resources/thesisReads.js';
 import { AlvaClient } from '../client.js';
 import {
   validateForYouListParams,
@@ -121,7 +126,7 @@ Commands:
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
   steward     Push steward reports for a Session Inbox (decide, forward, send, pending, briefed)
-  thesis      Authored thesis lifecycle (create, get, signals, set-visibility, update, close, delete, rewrite)
+  thesis      Read published viewpoints and manage authored theses
   company-news  Create a backend-managed multi-ticker News Feed
   service-account  Restricted run-as identities (create, list, delete, grant, revoke)
   release     Feed and playbook releases (feed, playbook-draft, playbook)
@@ -1537,6 +1542,8 @@ Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
+  list     Read theses by author or market entity
+  related  Read related current publications
   get      Get one thesis
   version get  Get one exact author version
   signals  Read published Signal history
@@ -1559,6 +1566,20 @@ Update requires --visibility explicitly so it cannot inadvertently publish.
 
 Other flags:
   create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>]
+  list --person <slug> | --person-name <name> | --user <username>
+       | --ticker <ticker> | --entity-id <id>
+       [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextCursor>]
+       Choose one selector; --status is for author lists only (default ACTIVE).
+       Name/ticker ambiguity returns candidates; retry with an exact slug or entity ID.
+       A publisher's __typename picks its selector: Person --person <slug>,
+       PublicUser --user <username>.
+  related --id <playbook-id> [--first 10] [--cursor <nextCursor>]
+       Uses the source's current version; state is GENERATING, READY or FAILED.
+  list/related read one page (default 10, maximum 50) with full bodies. Pass
+       nextCursor to --cursor while it is non-null, even after an empty page.
+       publication.playbookId is the ID for get/version/signals/related;
+       publication=null means no readable snapshot. Author lists include the
+       signed-in owner's private Theses (visibility private).
   asset-candidates --text <unsaved thesis text>
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
@@ -3457,6 +3478,39 @@ export async function executeParsedCommand(
           return client.theses.assetCandidates(
             requireFlag(flags, 'text', 'thesis asset-candidates')
           );
+        case 'list': {
+          const params: ListThesesParams = {
+            person: flags.person,
+            personName: flags['person-name'],
+            user: flags.user,
+            ticker: flags.ticker,
+            entityId: flags['entity-id'],
+            status: flags.status as ListThesesParams['status'],
+            first: flags.first === undefined ? undefined : Number(flags.first),
+            cursor: flags.cursor,
+          };
+          try {
+            validateListThesesParams(params);
+          } catch (error) {
+            throw new CliUsageError((error as Error).message, 'thesis');
+          }
+          return client.theses.list(params);
+        }
+        case 'related': {
+          const params = {
+            first: flags.first === undefined ? undefined : Number(flags.first),
+            cursor: flags.cursor,
+          };
+          try {
+            validateThesisPageParams(params);
+          } catch (error) {
+            throw new CliUsageError((error as Error).message, 'thesis');
+          }
+          return client.theses.related(
+            requireFlag(flags, 'id', 'thesis related'),
+            params
+          );
+        }
         case 'get':
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
         case 'version':

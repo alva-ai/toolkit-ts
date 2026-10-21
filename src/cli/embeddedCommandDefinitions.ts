@@ -150,6 +150,21 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis asset-candidates', 'thesis asset-candidates', {
       values: ['text'],
     }),
+    route('thesis list', 'thesis list', {
+      values: [
+        'person',
+        'person-name',
+        'user',
+        'ticker',
+        'entity-id',
+        'status',
+        'first',
+        'cursor',
+      ],
+    }),
+    route('thesis related', 'thesis related', {
+      values: ['id', 'first', 'cursor'],
+    }),
     route('thesis get', 'thesis get', { values: ['id'] }),
     route('thesis version get', 'thesis version get', {
       values: ['id', 'author-version-id'],

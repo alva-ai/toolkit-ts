@@ -1,3 +1,9 @@
+import {
+  listTheses,
+  relatedTheses,
+  type ListThesesParams,
+  type ThesisPageParams,
+} from './thesisReads.js';
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 
@@ -174,6 +180,16 @@ const encoder = new TextEncoder();
  */
 export class ThesesResource {
   constructor(private client: AlvaClient) {}
+
+  /** One visible page; no automatic pagination or content truncation. */
+  list(params: ListThesesParams) {
+    return listTheses(this.client, params);
+  }
+
+  /** Related publications always use the current source version. */
+  related(id: ThesisID, params: ThesisPageParams = {}) {
+    return relatedTheses(this.client, id, params);
+  }
 
   async assetCandidates(text: string): Promise<ThesisAssetCandidatesResponse> {
     this.client._requireAuth();

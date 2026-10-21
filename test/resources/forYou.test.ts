@@ -326,7 +326,9 @@ function publication() {
     entityStances: [{ entityId, stance: 'BULLISH' }],
     entities: [{ id: entityId, ticker: 'NVDA', name: 'NVIDIA' }],
     publisher: {
+      __typename: 'PublicUser',
       id: '7100000000000000020',
+      username: 'ada',
       displayName: 'Ada',
       avatarUrl: '',
       bio: '',
