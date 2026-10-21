@@ -40,7 +40,8 @@ new dependencies, automatic pagination, content truncation or research side effe
 
 Focused resource/CLI tests, complete npm test, npm run typecheck, npm run build.
 Validate fixed queries against current Gateway schema. No Makefile/lint-fix target;
-repository lint gate unavailable under aldev rule. E2E Required: no (full local
+no separate lint command was chosen. The existing pre-push hook subsequently
+ran and passed lint, format:check, typecheck, test and build. E2E Required: no (full local
 stack not requested). Actual deployed Agent conversations remain rollout verification.
 
 ## 6. Decisions
@@ -87,3 +88,6 @@ package dependency, migration, or Sandbox dialogue rule. No unresolved code find
 
 npm release, Sandbox installation, sdk-monorepo Toolkit/Dispatch publication and
 Skill rollout must precede real Agent acceptance. Local success does not prove rollout.
+
+PRs: [Toolkit #191](https://github.com/alva-ai/toolkit-ts/pull/191) and
+[Skills #651](https://github.com/alva-ai/skills/pull/651), stacked on Skills #650.
