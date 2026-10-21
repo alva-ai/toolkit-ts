@@ -438,8 +438,12 @@ alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json
 alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
-alva thesis <create|get|signals|set-visibility|update|close|delete|rewrite>
+alva thesis <list|related|create|get|signals|set-visibility|update|close|delete|rewrite>
 alva thesis version get --id <thesis-id> --author-version-id <version-id>
+alva thesis list --person <exact-slug>  # --person-name for name search
+alva thesis list --user <username>     # or --person-id / --user-id
+alva thesis list --ticker NVDA         # or --entity-id
+alva thesis related --id <internal-playbook-id>
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>

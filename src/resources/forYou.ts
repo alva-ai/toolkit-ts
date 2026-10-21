@@ -286,22 +286,8 @@ export interface ThesisRecommendationPage {
   scanLimited: boolean;
 }
 
-/**
- * Selects no exposure input. `pendingEvents` and `seenItemKeys` are the only
- * way this read records that the viewer saw a publication, so the SDK never
- * sends them: a Toolkit read must not consume the reader's own feed.
- */
-const THESIS_RECOMMENDATION_QUERY = `
-query ToolkitForYouTheses($input: ThesisRecommendationInput) {
-  viewer {
-    thesisRecommendations(input: $input) {
-      listId pageCursor nextCursor exhausted scanLimited
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges {
-        cursor
-        node {
-          itemKey
-          publication {
+/** Shared immutable publication projection for recommendation and explicit reads. */
+export const THESIS_PUBLICATION_FIELDS = `
             thesisId playbookId authorVersionId materialVersionId itemKey
             title body publishedAtMs changeKind visibility
             closed archived note closingNote researchPaused
@@ -320,6 +306,25 @@ query ToolkitForYouTheses($input: ThesisRecommendationInput) {
                 title sourceKind sourceContentId publicUrl sourceTimeMs locator
               }
             }
+`;
+
+/**
+ * Selects no exposure input. `pendingEvents` and `seenItemKeys` are the only
+ * way this read records that the viewer saw a publication, so the SDK never
+ * sends them: a Toolkit read must not consume the reader's own feed.
+ */
+const THESIS_RECOMMENDATION_QUERY = `
+query ToolkitForYouTheses($input: ThesisRecommendationInput) {
+  viewer {
+    thesisRecommendations(input: $input) {
+      listId pageCursor nextCursor exhausted scanLimited
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges {
+        cursor
+        node {
+          itemKey
+          publication {
+            ${THESIS_PUBLICATION_FIELDS}
           }
         }
       }
@@ -508,7 +513,9 @@ function publisher(value: unknown): boolean {
  * `ThesisPublicationSummary`, so anything left unchecked is a field the public
  * type promises and a caller can still read as `undefined`.
  */
-function publication(value: unknown): boolean {
+export function isThesisPublication(
+  value: unknown
+): value is ThesisPublicationSummary {
   if (!record(value)) return false;
   for (const field of [
     'thesisId',
@@ -584,7 +591,7 @@ function recommendationPage(value: unknown): ThesisRecommendationPage {
       !record(edge.node) ||
       typeof edge.node.itemKey !== 'string' ||
       !edge.node.itemKey.trim() ||
-      !publication(edge.node.publication)
+      !isThesisPublication(edge.node.publication)
     ) {
       return invalidPage();
     }

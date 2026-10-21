@@ -215,3 +215,12 @@ export type {
   CompanyPostEarningsSummary,
   CompanyPreEarningsAnalysis,
 } from './resources/markets.js';
+
+export type {
+  ListThesesParams,
+  ThesisPageParams,
+  ThesisReadScope,
+  ThesisPageInfo,
+  ThesisListPage,
+  RelatedThesesPage,
+} from './resources/thesisReads.js';

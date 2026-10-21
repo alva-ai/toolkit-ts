@@ -201,6 +201,21 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     booleans: ['body-stdin'],
   }),
   command('thesis asset-candidates', { values: ['text'] }),
+  command('thesis list', {
+    values: [
+      'person',
+      'person-name',
+      'person-id',
+      'user',
+      'user-id',
+      'ticker',
+      'entity-id',
+      'status',
+      'first',
+      'cursor',
+    ],
+  }),
+  command('thesis related', { values: ['id', 'first', 'cursor'] }),
   command('thesis get', { values: ['id'] }),
   command('thesis version get', {
     values: ['id', 'author-version-id'],

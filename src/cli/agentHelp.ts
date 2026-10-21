@@ -18,7 +18,7 @@ Commands:
   automation    Create and operate scheduled automations
   schedule      Manage future messages for this Session Inbox
   steward       Push steward reports for this Session Inbox (decide, forward, send, pending, briefed)
-  thesis        Create and manage authored theses
+  thesis        Read published viewpoints and manage authored theses
   company-news  Create backend-managed multi-ticker News Feeds
   playbooks     Discover, build, release, and manage Playbooks
   alert         Manage personal automation alert bindings
@@ -119,7 +119,19 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: asset-candidates, create, get, version get, signals, set-visibility, update, close, delete, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, set-visibility, update, close, delete, rewrite.
+
+list --person <exact-slug> | --person-name <name> | --person-id <id>
+     | --user <username> | --user-id <id> | --ticker <ticker> | --entity-id <id>
+     [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <endCursor>]
+     Choose one selector. Status is for author lists only (default ACTIVE).
+related --id <internal-playbook-id> [--first 10] [--cursor <nextCursor>]
+Both fetch one page (default 10, maximum 50) with full bodies. Name/ticker
+ambiguity returns candidates; select an exact identity before continuing.
+Use publication.playbookId for get/version/signals, never external thesisId.
+Null author publication means no readable snapshot. Follow pagination state,
+including on empty pages. Related uses the current source version and returns
+GENERATING, READY or FAILED; it does not replace a quoted historical version.
 
 asset-candidates --text <unsaved thesis text> reads catalog IDs and suggested
 directions without publishing. Use resolved entity IDs with create --entity-ids
