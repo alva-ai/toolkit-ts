@@ -491,7 +491,7 @@ function snapshot(value: unknown): boolean {
   );
 }
 
-/** PublicProfile is an interface; a curated person's id is not an int64. */
+/** Preserve publisher IDs as strings; lookup inputs have their own validation. */
 function publisher(value: unknown): boolean {
   return (
     record(value) &&

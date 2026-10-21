@@ -91,3 +91,10 @@ Skill rollout must precede real Agent acceptance. Local success does not prove r
 
 PRs: [Toolkit #191](https://github.com/alva-ai/toolkit-ts/pull/191) and
 [Skills #651](https://github.com/alva-ai/skills/pull/651), stacked on Skills #650.
+
+Review follow-up: the suggestion to accept opaque Person lookup IDs was checked
+against Gateway public_profile_convert.go at both 80ade96 and the handoff baseline.
+publicProfileRefInputToProto calls parsePositiveID for PERSON and USER, and
+publicProfileProtoToModel formats ref.GetId() as decimal. Retained the numeric
+lookup contract; corrected an older For You publisher comment that implied otherwise.
+No behavior change; publisher output remains a string.
