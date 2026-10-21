@@ -154,9 +154,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: [
         'person',
         'person-name',
-        'person-id',
         'user',
-        'user-id',
         'ticker',
         'entity-id',
         'status',

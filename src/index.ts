@@ -220,7 +220,6 @@ export type {
   ListThesesParams,
   ThesisPageParams,
   ThesisReadScope,
-  ThesisPageInfo,
   ThesisListPage,
   RelatedThesesPage,
 } from './resources/thesisReads.js';

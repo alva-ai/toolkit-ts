@@ -205,9 +205,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: [
       'person',
       'person-name',
-      'person-id',
       'user',
-      'user-id',
       'ticker',
       'entity-id',
       'status',

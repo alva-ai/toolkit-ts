@@ -110,3 +110,23 @@ Gateway graphqlerror.Present also emits canonical NOT_FOUND, PERMISSION_DENIED
 and UNAUTHENTICATED codes; preserve those distinctions in AlvaError instead of
 flattening them into GRAPHQL_ERROR. Unknown/mixed errors still fail generically,
 and partial data is never returned. Three regression cases cover that boundary.
+
+## 9. Review follow-up (simplification)
+
+- Publication contract moved from `forYou.ts` into a neutral
+  `thesisPublication.ts` shared by For You and the new reads; `record` and
+  `isPositiveInt64` are reused instead of re-implemented.
+- Every publication publisher now carries `__typename` plus the exact handle
+  (`slug` for Person, `username` for PublicUser), so "more from this author"
+  maps to `--person <slug>` / `--user <username>` without guessing a kind.
+  `--person-id`, `--user-id` and the `publicProfile` query are removed.
+- Both reads return one continuation, `nextCursor` (null at the end, possibly
+  set after an empty page), matching `for-you theses`. Removed `pageInfo`,
+  `source`, `ready`, `scanLimited`, `listId` and `pageCursor` from the output.
+- Removed client re-checks of invariants Gateway already derives or enforces
+  (entity membership, duplicate/overfull pages, ready/state and
+  hasNextPage/nextCursor agreement, author/material version vs snapshot,
+  echoed IDs). Shape validation of every selected field is unchanged.
+- The ACTIVE status default is left to Gateway instead of being sent.
+- Ticker resolution is unchanged: `byPrefix: false` is llm-data's exact alias
+  match (`FindAllByAlias`), not a fuzzy search.

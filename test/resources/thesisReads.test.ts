@@ -30,10 +30,10 @@ const entity = {
 function publication(body = 'Original\r\n**view**') {
   return {
     playbookId: id,
-    thesisId: '31',
+    thesisId: id,
     authorVersionId: '32',
     materialVersionId: '33',
-    itemKey: 'thesis:31:33',
+    itemKey: `thesis:${id}:33`,
     title: 'View',
     body,
     publishedAtMs: 1790000000000,
@@ -49,7 +49,9 @@ function publication(body = 'Original\r\n**view**') {
     entityStances: [{ entityId: '23', stance: 'BULLISH' }],
     entities: [{ id: '23', ticker: 'NVDA', name: 'NVIDIA' }],
     publisher: {
+      __typename: 'Person',
       id: '21',
+      slug: 'ada',
       displayName: 'Ada',
       avatarUrl: '',
       bio: 'Investor',
@@ -76,16 +78,11 @@ function publication(body = 'Original\r\n**view**') {
     },
   };
 }
-function page(nodes: unknown[] = []) {
+function page(nodes: unknown[] = [], hasNextPage = false) {
   const edges = nodes.map((node, i) => ({ cursor: `cursor:${i}`, node }));
   return {
     edges,
-    pageInfo: {
-      startCursor: edges[0]?.cursor ?? '',
-      endCursor: edges.at(-1)?.cursor ?? '',
-      hasNextPage: false,
-      hasPreviousPage: false,
-    },
+    pageInfo: { endCursor: edges.at(-1)?.cursor ?? '', hasNextPage },
   };
 }
 function authorData(scope: object = person, pub: unknown = publication()) {
@@ -96,29 +93,20 @@ function authorData(scope: object = person, pub: unknown = publication()) {
     },
   };
 }
-function relatedData(state = 'READY') {
+function relatedData(state = 'READY', nextCursor: string | null = null) {
+  const nodes =
+    state === 'READY'
+      ? [
+          {
+            itemKey: `thesis:${id}:33`,
+            score: 0.72,
+            publication: publication(),
+          },
+        ]
+      : [];
   return {
     node: {
-      id,
-      relatedTheses: {
-        ...page(
-          state === 'READY'
-            ? [
-                {
-                  itemKey: 'thesis:31:33',
-                  score: 0.72,
-                  publication: publication(),
-                },
-              ]
-            : []
-        ),
-        state,
-        ready: state === 'READY',
-        scanLimited: false,
-        listId: 'list:1',
-        pageCursor: '',
-        nextCursor: null as string | null,
-      },
+      relatedTheses: { state, nextCursor, edges: page(nodes).edges },
     },
   };
 }
@@ -154,12 +142,12 @@ for (const [label, dispatch] of [
             node: { playbookId: id, publication: publication(text) },
           },
         ],
-        pageInfo: page([{}]).pageInfo,
+        nextCursor: null,
       });
       expect(request).toHaveBeenCalledTimes(1);
       expect(body(request).variables).toEqual({
         slug: 'ada',
-        input: { first: 10, status: 'ACTIVE' },
+        input: { first: 10 },
       });
       expect(request.mock.calls[0].slice(0, 2)).toEqual(['POST', '/query']);
       expect(body(request).query).not.toMatch(
@@ -167,7 +155,7 @@ for (const [label, dispatch] of [
       );
     });
     it('uses internal ID and forwards one Related continuation cursor', async () => {
-      const { client, request } = setup(relatedData());
+      const { client, request } = setup(relatedData('READY', 'opaque:after'));
       const result = dispatch
         ? await dispatch(client, [
             'thesis',
@@ -180,21 +168,10 @@ for (const [label, dispatch] of [
             'opaque:next',
           ])
         : await client.theses.related(id, { first: 50, cursor: 'opaque:next' });
-      expect(result).toMatchObject({
-        source: { playbookId: id, versionScope: 'CURRENT' },
+      expect(result).toEqual({
         state: 'READY',
-        edges: [
-          {
-            node: {
-              score: 0.72,
-              publication: {
-                playbookId: id,
-                thesisId: '31',
-                authorVersionId: '32',
-              },
-            },
-          },
-        ],
+        edges: relatedData().node.relatedTheses.edges,
+        nextCursor: 'opaque:after',
       });
       expect(body(request).variables).toEqual({
         id: `Playbook:${id}`,
@@ -243,21 +220,16 @@ describe('Thesis read contracts', () => {
     });
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it.each([
-    ['personId', 'PERSON', person],
-    ['userId', 'USER', user],
-  ] as const)('uses %s without searching', async (key, kind, scope) => {
-    const { client, request } = setup(authorData(scope));
-    expect((await client.theses.list({ [key]: scope.id })).scope).toEqual(
-      scope
-    );
-    expect(body(request).variables).toMatchObject({
-      profile: { kind, id: scope.id },
+  it('names the exact author selector on every publisher', async () => {
+    const { client } = setup(authorData());
+    const [edge] = (await client.theses.list({ person: 'ada' })).edges;
+    expect(edge.node.publication?.publisher).toMatchObject({
+      __typename: 'Person',
+      slug: 'ada',
     });
-    expect(request).toHaveBeenCalledTimes(1);
   });
   it('resolves a unique name then retrieves its exact slug', async () => {
-    const { client, request } = setup({ people: page([person]) }, authorData());
+    const { client, request } = setup({ search: page([person]) }, authorData());
     expect((await client.theses.list({ personName: 'Ada' })).scope).toEqual(
       person
     );
@@ -267,7 +239,7 @@ describe('Thesis read contracts', () => {
   });
   it('returns readable duplicate-name candidates without selecting one', async () => {
     const other = { ...person, id: '24', slug: 'ada-other', bio: 'Economist' };
-    const { client, request } = setup({ people: page([person, other]) });
+    const { client, request } = setup({ search: page([person, other]) });
     await expect(
       client.theses.list({ personName: 'Ada' })
     ).rejects.toMatchObject({
@@ -277,23 +249,24 @@ describe('Thesis read contracts', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
   it('does not accept a unique candidate on an incomplete search page', async () => {
-    const results = page([person]);
-    results.pageInfo.hasNextPage = true;
-    const { client } = setup({ people: results });
+    const { client } = setup({ search: page([person], true) });
     await expect(
       client.theses.list({ personName: 'Ada' })
     ).rejects.toMatchObject({ code: 'AMBIGUOUS_IDENTITY' });
   });
   it('resolves a unique ticker and fetches its exact entity', async () => {
     const { client, request } = setup(
-      { market: { entities: page([entity]) } },
+      { market: { search: page([entity]) } },
       { market: { scope: { ...entity, theses: page([publication()]) } } }
     );
     const result = await client.theses.list({ ticker: 'NVDA' });
     expect(result.scope).toEqual(entity);
-    expect(result.edges[0].node.publication?.body).toBe('Original\r\n**view**');
+    expect(result.edges[0].node).toEqual({
+      playbookId: id,
+      publication: publication(),
+    });
     expect(body(request, 1).variables).toEqual({
-      entity: { id: '23' },
+      id: '23',
       input: { first: 10 },
     });
     expect(request).toHaveBeenCalledTimes(2);
@@ -307,7 +280,7 @@ describe('Thesis read contracts', () => {
       venue: { id: 'binance', name: 'Binance' },
     };
     const { client, request } = setup({
-      market: { entities: page([entity, crypto]) },
+      market: { search: page([entity, crypto]) },
     });
     await expect(client.theses.list({ ticker: 'NVDA' })).rejects.toMatchObject({
       code: 'AMBIGUOUS_IDENTITY',
@@ -315,16 +288,19 @@ describe('Thesis read contracts', () => {
     });
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it('reads entity ID directly and preserves empty-page continuation', async () => {
-    const empty = page();
-    empty.pageInfo.hasNextPage = true;
+  it('continues through an empty page while nextCursor is set', async () => {
+    const empty = page([], true);
     empty.pageInfo.endCursor = 'scan:next';
     const { client, request } = setup({
       market: { scope: { ...entity, theses: empty } },
     });
     expect(
       await client.theses.list({ entityId: '23', cursor: 'scan:prev' })
-    ).toEqual({ scope: entity, ...empty });
+    ).toEqual({ scope: entity, edges: [], nextCursor: 'scan:next' });
+    expect(body(request).variables).toEqual({
+      id: '23',
+      input: { first: 10, after: 'scan:prev' },
+    });
     expect(request).toHaveBeenCalledTimes(1);
   });
   it.each([{ person: 'missing' }, { user: 'missing' }])(
@@ -339,13 +315,17 @@ describe('Thesis read contracts', () => {
   );
   it('distinguishes no name match from an empty thesis list', async () => {
     const { client } = setup(
-      { people: page() },
+      { search: page() },
       { scope: { ...person, theses: page() } }
     );
     await expect(
       client.theses.list({ personName: 'missing' })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    expect((await client.theses.list({ person: 'ada' })).edges).toEqual([]);
+    expect(await client.theses.list({ person: 'ada' })).toEqual({
+      scope: person,
+      edges: [],
+      nextCursor: null,
+    });
   });
   it('preserves null publication without per-item fetches', async () => {
     const { client, request } = setup(authorData(person, null));
@@ -358,12 +338,12 @@ describe('Thesis read contracts', () => {
     'preserves empty %s without polling',
     async (state) => {
       const data = relatedData(state);
-      Object.assign(data.node.relatedTheses, page());
+      data.node.relatedTheses.edges = [];
       const { client, request } = setup(data);
-      expect(await client.theses.related(id)).toMatchObject({
+      expect(await client.theses.related(id)).toEqual({
         state,
-        ready: state === 'READY',
         edges: [],
+        nextCursor: null,
       });
       expect(body(request).variables).toEqual({
         id: `Playbook:${id}`,
@@ -372,26 +352,13 @@ describe('Thesis read contracts', () => {
       expect(request).toHaveBeenCalledTimes(1);
     }
   );
-  it('preserves Related scan-limited empty pages', async () => {
-    const data = relatedData();
-    Object.assign(data.node.relatedTheses, {
-      ...page(),
-      scanLimited: true,
-      nextCursor: 'next',
-    });
-    Object.assign(data.node.relatedTheses.pageInfo, {
-      endCursor: 'scan:end',
-      hasNextPage: true,
-    });
-    const { client } = setup(data);
-    expect(await client.theses.related(id)).toMatchObject({
-      edges: [],
-      scanLimited: true,
-      nextCursor: 'next',
-      pageInfo: { hasNextPage: true },
+  it('keeps source absence distinct from a ready empty Related page', async () => {
+    const { client } = setup({ node: null });
+    await expect(client.theses.related(id)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
     });
   });
-  it('fails closed on errors with partial data, retaining permission errors', async () => {
+  it('fails closed on errors with partial data', async () => {
     const { client, request } = setup();
     request.mockResolvedValue({
       data: authorData(),
@@ -407,16 +374,19 @@ describe('Thesis read contracts', () => {
       code: 'GRAPHQL_ERROR',
     });
   });
-  it.each([null, {}, { errors: {} }, { data: { scope: {} } }])(
-    'rejects malformed response %o',
-    async (response) => {
-      const { client, request } = setup();
-      request.mockResolvedValue(response);
-      await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject(
-        { code: 'GRAPHQL_INVALID_RESPONSE' }
-      );
-    }
-  );
+  it.each([
+    null,
+    {},
+    { errors: {} },
+    { data: { scope: {} } },
+    { data: { scope: { ...person, theses: { edges: [] } } } },
+  ])('rejects malformed response %o', async (response) => {
+    const { client, request } = setup();
+    request.mockResolvedValue(response);
+    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
+      code: 'GRAPHQL_INVALID_RESPONSE',
+    });
+  });
   it.each([
     'playbookId',
     'authorVersionId',
@@ -431,22 +401,21 @@ describe('Thesis read contracts', () => {
       code: 'GRAPHQL_INVALID_RESPONSE',
     });
   });
-  it('rejects numeric IDs and cross-playbook publications', async () => {
-    for (const pub of [
-      { ...publication(), playbookId: Number(id) },
-      { ...publication(), playbookId: '42' },
-    ]) {
-      const { client } = setup(authorData(person, pub));
-      await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject(
-        { code: 'GRAPHQL_INVALID_RESPONSE' }
-      );
-    }
+  it('rejects a publisher without an author kind', async () => {
+    const pub = publication();
+    const publisher: Record<string, unknown> = { ...pub.publisher };
+    delete publisher.__typename;
+    const { client } = setup(authorData(person, { ...pub, publisher }));
+    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
+      code: 'GRAPHQL_INVALID_RESPONSE',
+    });
   });
   it.each([
     {},
     { person: '' },
+    { personId: '21' },
     { entityId: '0' },
-    { userId: '9223372036854775808' },
+    { entityId: '9223372036854775808' },
     { ticker: 'NVDA', status: 'ARCHIVED' },
     { user: 'ada', first: 0 },
     { user: 'ada', first: 1.5 },
@@ -461,73 +430,9 @@ describe('Thesis read contracts', () => {
   });
 });
 
-describe('Thesis response identity boundaries', () => {
-  it('rejects a different profile from an exact ID lookup', async () => {
-    const { client } = setup(authorData(person));
-    await expect(client.theses.list({ personId: '999' })).rejects.toMatchObject(
-      { code: 'GRAPHQL_INVALID_RESPONSE' }
-    );
-  });
-  it('rejects an unrelated asset publication', async () => {
-    const { client } = setup({
-      market: {
-        scope: {
-          ...entity,
-          theses: page([{ ...publication(), entityIds: ['999'] }]),
-        },
-      },
-    });
-    await expect(client.theses.list({ entityId: '23' })).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
-    });
-  });
-  it('rejects a mismatched author-version snapshot', async () => {
-    const pub = publication();
-    pub.snapshotRelease.versionId = '999';
-    const { client } = setup(authorData(person, pub));
-    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
-    });
-  });
-  it('keeps source absence distinct from a ready empty Related page', async () => {
-    const { client } = setup({ node: null });
-    await expect(client.theses.related(id)).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-    });
-  });
-  it('rejects inconsistent Related state and pagination', async () => {
-    for (const override of [
-      { state: 'GENERATING', ready: true },
-      { nextCursor: 'next' },
-    ]) {
-      const data = relatedData();
-      Object.assign(data.node.relatedTheses, override);
-      const { client } = setup(data);
-      await expect(client.theses.related(id)).rejects.toMatchObject({
-        code: 'GRAPHQL_INVALID_RESPONSE',
-      });
-    }
-  });
-  it('rejects overfull and duplicate-cursor pages', async () => {
-    for (const nodes of [
-      Array(11).fill(publication()),
-      [publication(), publication()],
-    ]) {
-      const data = page(nodes);
-      if (nodes.length === 2) data.edges[1].cursor = data.edges[0].cursor;
-      const { client } = setup({
-        market: { scope: { ...entity, theses: data } },
-      });
-      await expect(
-        client.theses.list({ entityId: '23' })
-      ).rejects.toMatchObject({ code: 'GRAPHQL_INVALID_RESPONSE' });
-    }
-  });
-});
-
 it('keeps ambiguity candidates visible through message-only embedded adapters', async () => {
   const other = { ...person, id: '24', slug: 'ada-other', bio: 'Economist' };
-  const { client, request } = setup({ people: page([person, other]) });
+  const { client, request } = setup({ search: page([person, other]) });
   let message = '';
   try {
     await embedded(client, ['thesis', 'list', '--person-name', 'Ada']);

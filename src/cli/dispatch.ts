@@ -1566,17 +1566,20 @@ Update requires --visibility explicitly so it cannot inadvertently publish.
 
 Other flags:
   create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>]
-  list --person <exact-slug> | --person-name <name> | --person-id <id>
-       | --user <exact-username> | --user-id <id> | --ticker <ticker> | --entity-id <id>
-       [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <endCursor>]
-       Choose one selector. Status is for author lists only (default ACTIVE).
-       Name/ticker ambiguity returns candidates; select an exact identity to continue.
-  related --id <internal-playbook-id> [--first 10] [--cursor <nextCursor>]
-       Related uses the current source version. State is GENERATING, READY or FAILED.
-  list/related fetch one page, default 10, maximum 50, with full publication bodies.
-       Use publication.playbookId for get/version/signals, never external thesisId.
-       An author entry with publication=null has no readable snapshot; do not infer its text.
-       Follow pageInfo, not edge count, to determine whether more remains.
+  list --person <slug> | --person-name <name> | --user <username>
+       | --ticker <ticker> | --entity-id <id>
+       [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextCursor>]
+       Choose one selector; --status is for author lists only (default ACTIVE).
+       Name/ticker ambiguity returns candidates; retry with an exact slug or entity ID.
+       A publisher's __typename picks its selector: Person --person <slug>,
+       PublicUser --user <username>.
+  related --id <playbook-id> [--first 10] [--cursor <nextCursor>]
+       Uses the source's current version; state is GENERATING, READY or FAILED.
+  list/related read one page (default 10, maximum 50) with full bodies. Pass
+       nextCursor to --cursor while it is non-null, even after an empty page.
+       publication.playbookId is the ID for get/version/signals/related;
+       publication=null means no readable snapshot. Author lists include the
+       signed-in owner's private Theses (visibility private).
   asset-candidates --text <unsaved thesis text>
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
@@ -3479,9 +3482,7 @@ export async function executeParsedCommand(
           const params: ListThesesParams = {
             person: flags.person,
             personName: flags['person-name'],
-            personId: flags['person-id'],
             user: flags.user,
-            userId: flags['user-id'],
             ticker: flags.ticker,
             entityId: flags['entity-id'],
             status: flags.status as ListThesesParams['status'],

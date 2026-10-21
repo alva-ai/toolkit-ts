@@ -121,17 +121,19 @@ Examples:
 
 Subcommands: list, related, asset-candidates, create, get, version get, signals, set-visibility, update, close, delete, rewrite.
 
-list --person <exact-slug> | --person-name <name> | --person-id <id>
-     | --user <username> | --user-id <id> | --ticker <ticker> | --entity-id <id>
-     [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <endCursor>]
-     Choose one selector. Status is for author lists only (default ACTIVE).
-related --id <internal-playbook-id> [--first 10] [--cursor <nextCursor>]
-Both fetch one page (default 10, maximum 50) with full bodies. Name/ticker
-ambiguity returns candidates; select an exact identity before continuing.
-Use publication.playbookId for get/version/signals, never external thesisId.
-Null author publication means no readable snapshot. Follow pagination state,
-including on empty pages. Related uses the current source version and returns
-GENERATING, READY or FAILED; it does not replace a quoted historical version.
+list --person <slug> | --person-name <name> | --user <username>
+     | --ticker <ticker> | --entity-id <id>
+     [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextCursor>]
+     Choose one selector; --status is for author lists only (default ACTIVE).
+related --id <playbook-id> [--first 10] [--cursor <nextCursor>]
+Both read one page (default 10, maximum 50) with full bodies. Pass nextCursor
+to --cursor while it is non-null, even after an empty page. Name/ticker
+ambiguity returns candidates; retry with an exact slug or entity ID. A
+publisher's __typename picks its selector: Person --person <slug>, PublicUser
+--user <username>. publication.playbookId is the ID for get/version/signals/
+related; null publication means no readable snapshot. Author lists include the
+signed-in owner's private Theses. Related uses the source's current version
+(GENERATING, READY or FAILED), never a quoted historical version.
 
 asset-candidates --text <unsaved thesis text> reads catalog IDs and suggested
 directions without publishing. Use resolved entity IDs with create --entity-ids
