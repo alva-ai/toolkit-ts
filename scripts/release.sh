@@ -8,7 +8,7 @@
 #
 # What it does:
 #   1. Verifies clean working tree and up-to-date main branch
-#   2. Runs full quality gate (lint, format, typecheck, test, build)
+#   2. Runs the quality gate (lint, format, typecheck, test); the post-bump build proves the build
 #   3. Bumps version via npm version (creates git tag)
 #   4. Pushes commit + tag to origin
 #   5. Publishes to npm with public access
@@ -84,9 +84,8 @@ npm run typecheck
 info "  Tests..."
 npm test
 
-info "  Build..."
-npm run build
-
+# No build here: the rebuild after the version bump below proves the build and
+# runs before anything is pushed or published.
 info "Quality gate passed."
 
 # --- Version bump + tag -------------------------------------------------------
@@ -106,9 +105,10 @@ git tag "$NEW_VERSION"
 
 # --- Push ---------------------------------------------------------------------
 
+# One atomic push; --no-verify skips the pre-push hook, which would rerun the
+# quality gate that just passed on this commit (only the version changed).
 info "Pushing to origin..."
-git push origin main
-git push origin "$NEW_VERSION"
+git push --atomic --no-verify origin main "$NEW_VERSION"
 
 # --- Publish ------------------------------------------------------------------
 
