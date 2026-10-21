@@ -55,7 +55,7 @@ search from exact lookup. No runtime publication or shared LocalDev changes.
 | Item            | Implementation/evidence                                                                                                         | Status        |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | B1              | Thesis resource; both CLI command registries, dispatch and help                                                                 | DONE          |
-| B2              | 52 read tests; shared For You projection; lossless decimal IDs and version checks                                               | DONE          |
+| B2              | 58 read tests; shared For You projection; lossless decimal IDs and version checks                                               | DONE          |
 | B3/F1           | Unique search only, exact profile lookup, candidates with identity/market metadata, fail-closed GraphQL and Related state tests | DONE          |
 | F2              | Null author snapshots retained; no per-entry GET or automatic next-page read                                                    | DONE          |
 | Skill routing   | Incremental Skills change on #650; reading anchor and narrow FinTwit/Signals boundaries                                         | DONE (static) |
@@ -65,7 +65,7 @@ Validation in Toolkit:
 
 - `npm ci --no-audit --no-fund`: installed lockfile dependencies, no lockfile change.
 - `npm run typecheck`: passed.
-- `npm test`: 55 files / 1,222 tests passed. Initial full run found the existing
+- `npm test`: 55 files / 1,228 tests passed. Initial full run found the existing
   embedded inventory expected 118 leaves; updated to 120 with both new commands.
 - `npm run build`: ESM/CJS/browser/terminal/embedded/types passed. Design-contract
   CDN fetch fell back to the existing artifact; CSS verified; no generated diff.
@@ -98,3 +98,15 @@ publicProfileRefInputToProto calls parsePositiveID for PERSON and USER, and
 publicProfileProtoToModel formats ref.GetId() as decimal. Retained the numeric
 lookup contract; corrected an older For You publisher comment that implied otherwise.
 No behavior change; publisher output remains a string.
+
+Consumer review found sdk-monorepo's Toolkit Dispatch error envelope retains
+only Error.message, dropping AlvaError.details. Ambiguity now includes candidate
+identities in the message as well as structured details, preserving choices in
+both terminal and the existing ALPI wrapper without changing another repository.
+Added a message-only embedded-adapter regression. This is a compatibility fix
+within B3/F1, not a new identity or error transport contract.
+
+Gateway graphqlerror.Present also emits canonical NOT_FOUND, PERMISSION_DENIED
+and UNAUTHENTICATED codes; preserve those distinctions in AlvaError instead of
+flattening them into GRAPHQL_ERROR. Unknown/mixed errors still fail generically,
+and partial data is never returned. Three regression cases cover that boundary.

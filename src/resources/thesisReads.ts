@@ -360,7 +360,13 @@ function resolveCandidate(
   if (candidates.length !== 1 || connection.pageInfo.hasNextPage) {
     throw new AlvaError(
       'AMBIGUOUS_IDENTITY',
-      'Choose an exact identity before reading theses',
+      // ALPI Dispatch currently forwards only Error.message, not details.
+      // Keep candidate identities available through that existing boundary too.
+      `Choose an exact identity before reading theses. Candidates: ${JSON.stringify(candidates)}${
+        connection.pageInfo.hasNextPage
+          ? ' More matches exist; refine the name or ticker.'
+          : ''
+      }`,
       400,
       {
         candidates,
@@ -474,10 +480,28 @@ async function query(
           ? [error.message]
           : []
       );
+      // Gateway projects canonical gRPC identities into extensions.code.
+      // Preserve access/not-found distinctions; mixed or unknown errors stay generic.
+      const codes = response.errors.map((error) =>
+        record(error) && record(error.extensions)
+          ? error.extensions.code
+          : undefined
+      );
+      const code = codes.every((item) => item === codes[0])
+        ? codes[0]
+        : undefined;
+      const status =
+        code === 'NOT_FOUND'
+          ? 404
+          : code === 'PERMISSION_DENIED'
+            ? 403
+            : code === 'UNAUTHENTICATED'
+              ? 401
+              : 400;
       throw new AlvaError(
-        'GRAPHQL_ERROR',
+        status === 400 ? 'GRAPHQL_ERROR' : String(code),
         messages.join('; ') || 'GraphQL request failed',
-        400,
+        status,
         { errors: response.errors }
       );
     }

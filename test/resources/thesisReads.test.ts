@@ -524,3 +524,56 @@ describe('Thesis response identity boundaries', () => {
     }
   });
 });
+
+it('keeps ambiguity candidates visible through message-only embedded adapters', async () => {
+  const other = { ...person, id: '24', slug: 'ada-other', bio: 'Economist' };
+  const { client, request } = setup({ people: page([person, other]) });
+  let message = '';
+  try {
+    await embedded(client, ['thesis', 'list', '--person-name', 'Ada']);
+  } catch (error) {
+    // sdk-monorepo's DispatchReply currently serializes only Error.message.
+    message = error instanceof Error ? error.message : String(error);
+  }
+  expect(message).toContain('Choose an exact identity');
+  const candidates = JSON.parse(message.split('Candidates: ')[1]);
+  expect(candidates).toEqual([person, other]);
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ['NOT_FOUND', 404],
+  ['PERMISSION_DENIED', 403],
+  ['UNAUTHENTICATED', 401],
+] as const)(
+  'preserves canonical Gateway %s without fallback or retries',
+  async (code, status) => {
+    const { client, request } = setup();
+    request.mockResolvedValue({
+      data: { scope: null },
+      errors: [{ message: 'Server diagnostic', extensions: { code } }],
+    });
+    await expect(
+      client.theses.list({ person: 'missing' })
+    ).rejects.toMatchObject({ code, status, message: 'Server diagnostic' });
+    expect(request).toHaveBeenCalledTimes(1);
+  }
+);
+
+it.each([['NOT_FOUND', 'INTERNAL'], ['toString']])(
+  'keeps mixed/unknown error identities generic: %o',
+  async (...codes) => {
+    const { client, request } = setup();
+    request.mockResolvedValue({
+      data: authorData(),
+      errors: codes.map((code) => ({
+        message: 'Failure',
+        extensions: { code },
+      })),
+    });
+    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      status: 400,
+    });
+  }
+);
