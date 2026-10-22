@@ -45,11 +45,11 @@ time, not an import timestamp or a claim of a consistent multi-page snapshot.
 
 Serial checklist:
 
-- [ ] Backend contracts, auth/read handlers, generated API and behavior tests.
-- [ ] Gateway graph/resolvers and paging/auth/error tests; regenerate gqlgen.
-- [ ] Toolkit resource, terminal and embedded commands, help and contract tests.
-- [ ] SDK Toolkit pin/version, artifact tests and agent guidance.
-- [ ] Review full cross-repo diff, generation, format/lint, tests/build.
+- [x] Backend contracts, auth/read handlers, generated API and behavior tests.
+- [x] Gateway graph/resolvers and paging/auth/error tests; regenerate gqlgen.
+- [x] Toolkit resource, terminal and embedded commands, help and contract tests.
+- [x] SDK Toolkit pin/version, artifact tests and agent guidance.
+- [x] Review full cross-repo diff, generation, format/lint, tests/build.
 
 ## 5. Verification
 
@@ -68,8 +68,8 @@ live-agent/version acceptance remains separate from local contract evidence.
 ## 6. Human decisions
 
 User explicitly requested live X refetch like a normal MCP tool, approved the
-Toolkit -> Backend ownership model and instructed implementation. Do not merge
-or promote to production without separate authority.
+Toolkit -> Backend ownership model and instructed implementation. The user subsequently authorized PR publication, merge to main/STG and STG
+acceptance. Production promotion remains outside scope.
 
 ## 7. Current verification
 
@@ -78,6 +78,23 @@ npm run typecheck, npm run lint, npm run format:check and npm run build passed.
 Both real terminal and embedded dispatch resource paths have 36 focused X
 contract cases. No live user credentials or X calls were used.
 
+Forge/Linux acceptance passed on dedicated VM `env-n5wqmt4n` at
+2026-10-22 13:58:44 UTC with Go 1.25.7 and Node 24.20.0. After explicit
+user upload authorization, the archive hash was verified and CLI production
+dependencies were installed from this revision's lockfile using
+`npm ci --omit=dev --ignore-scripts --no-audit --no-fund`.
+Gateway `bash scripts/test-connected-x-e2e.sh ../backend ../toolkit ../dispatch/index.cjs`
+passed `TestConnectedXEndToEnd` (1.70s) and `TestXReadE2EBackendFixture` (1.80s),
+exit 0. Terminal and embedded Dispatch 1.1.0 both passed status, live following,
+refresh-once, continuation, authored Posts and identity checks. The X transport
+and credential store/refresher remain fixtures; this is not online X acceptance.
+SDK's English release artifact inspection and 55 bilingual Skill tests passed.
+Full revision/hash and environment correction evidence is in the Backend and
+SDK changelogs. Zero test processes, running containers or Docker volumes remain;
+upload chunks/archive were removed and the reusable VM/workspace retained.
+
 ## 8. Remaining integration
 
-SDK Dispatch pin/artifact, cross-service E2E and deployment remain separate.
+Dispatch 1.1.0 pins Toolkit `25f335be3d8a2bd438a90bc45b98f40065af4c11`.
+Cross-service acceptance has passed; PR publication, final upstream dependency
+pins, deployment and online acceptance remain separate. User authorized main/STG merges and acceptance; production promotion remains outside scope.
