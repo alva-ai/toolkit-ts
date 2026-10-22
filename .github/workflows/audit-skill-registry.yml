@@ -9,9 +9,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write # needed to dispatch ci.yml on the fix branch
+  contents: read
+  # Built-in token stays read-only; the App performs the branch push, PR and
+  # dispatch writes.
+  actions: read
 
 concurrency:
   group: audit-skill-registry
@@ -25,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -39,10 +41,29 @@ jobs:
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           cat audit-report.md
 
+      # The fix branch, the PR and the CI-dispatch fallback are published with
+      # an App installation token. A GITHUB_TOKEN push or PR would not trigger
+      # the ci.yml checks, which is why the old flow dispatched CI by hand; the
+      # App token makes those events fire and can dispatch directly.
+      - name: Mint repository write token
+        id: app-token
+        if: steps.audit.outputs.exit_code != '0'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          # Needed for the CI-dispatch fallback below; the App registration and
+          # installation must grant Actions write.
+          permission-actions: write
+
       - name: Open or update fix PR
         if: steps.audit.outputs.exit_code != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           BRANCH="audit/skill-registry-drift"
@@ -63,7 +84,21 @@ jobs:
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } > "$MSG"
           git commit --file "$MSG"
-          git push --force-with-lease origin "$BRANCH"
+
+          PUSH_LOG="$RUNNER_TEMP/push.log"
+          set +e
+          git -c credential.helper='!gh auth git-credential' \
+            push --force-with-lease origin "$BRANCH" > "$PUSH_LOG" 2>&1
+          PUSH_EXIT=$?
+          cat "$PUSH_LOG"
+          set -e
+          if [ "$PUSH_EXIT" -ne 0 ]; then
+            exit "$PUSH_EXIT"
+          fi
+          PUSH_UPDATED=true
+          if grep -q "Everything up-to-date" "$PUSH_LOG"; then
+            PUSH_UPDATED=false
+          fi
 
           {
             echo
@@ -73,22 +108,29 @@ jobs:
 
           NUMBER=$(gh pr list --state open --head "$BRANCH" --json number \
             --jq '.[0].number // empty')
+          NEED_CI_DISPATCH=false
           if [ -n "$NUMBER" ]; then
             gh pr edit "$NUMBER" --body-file audit-report.md
             gh pr comment "$NUMBER" --body "Drift still present as of $(date -u +%FT%TZ). Branch force-updated; body refreshed."
+            # An updated branch fires pull_request synchronize, which runs CI.
+            # A no-op update fires nothing, so keep the dispatch fallback.
+            if [ "$PUSH_UPDATED" = false ]; then
+              NEED_CI_DISPATCH=true
+            fi
           elif gh pr create --title "$TITLE" --body-file audit-report.md \
               --head "$BRANCH" --base main; then
             echo "Opened fix PR on $BRANCH"
           else
             echo "::warning::Could not open PR (org may block Actions from creating PRs). Branch $BRANCH was pushed — open a PR manually."
+            NEED_CI_DISPATCH=true
           fi
 
-          # GITHUB_TOKEN-driven pushes do NOT trigger pull_request / push
-          # workflows on the fix branch, so required checks would never run.
-          # workflow_dispatch IS the documented exception that fires even
-          # when caused by GITHUB_TOKEN, so explicitly dispatch CI here.
-          if ! gh workflow run ci.yml --ref "$BRANCH"; then
-            echo "::warning::Could not dispatch CI on $BRANCH — run it manually if needed."
+          # The App token makes the push and PR events trigger CI on their own;
+          # workflow_dispatch only covers the cases where no event fires.
+          if [ "$NEED_CI_DISPATCH" = true ]; then
+            if ! gh workflow run ci.yml --ref "$BRANCH"; then
+              echo "::warning::Could not dispatch CI on $BRANCH — run it manually if needed."
+            fi
           fi
 
       - name: Fail if drift
