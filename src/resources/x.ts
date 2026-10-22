@@ -38,6 +38,22 @@ export interface XReadPage<T> {
   retrievedAt: string;
 }
 
+const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
+  INVALID_ARGUMENT: 400,
+  UNAUTHENTICATED: 401,
+  PERMISSION_DENIED: 403,
+  NOT_FOUND: 404,
+  ALREADY_EXISTS: 409,
+  ABORTED: 409,
+  FAILED_PRECONDITION: 412,
+  RESOURCE_EXHAUSTED: 429,
+  INTERNAL: 500,
+  UNKNOWN: 500,
+  DATA_LOSS: 500,
+  UNAVAILABLE: 503,
+  DEADLINE_EXCEEDED: 504,
+};
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -84,10 +100,21 @@ function viewerField(response: unknown, field: string): unknown {
           ? [error.message]
           : []
       );
+      const codes = response.errors.map((error: unknown) =>
+        record(error) && record(error.extensions)
+          ? error.extensions.code
+          : undefined
+      );
+      const code =
+        typeof codes[0] === 'string' &&
+        Object.hasOwn(GRAPHQL_STATUS_BY_CODE, codes[0]) &&
+        codes.every((value) => value === codes[0])
+          ? codes[0]
+          : 'GRAPHQL_ERROR';
       throw new AlvaError(
-        'GRAPHQL_ERROR',
+        code,
         messages.join('; ') || 'X read failed',
-        400,
+        GRAPHQL_STATUS_BY_CODE[code] ?? 502,
         { errors: response.errors }
       );
     }

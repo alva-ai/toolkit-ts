@@ -98,3 +98,11 @@ upload chunks/archive were removed and the reusable VM/workspace retained.
 Dispatch 1.1.0 pins Toolkit `25f335be3d8a2bd438a90bc45b98f40065af4c11`.
 Cross-service acceptance has passed; PR publication, final upstream dependency
 pins, deployment and online acceptance remain separate. User authorized main/STG merges and acceptance; production promotion remains outside scope.
+
+Review follow-up for PR #195: preserve homogeneous recognized GraphQL error
+codes and corresponding HTTP statuses (including 429/503/403/401/504), while
+retaining details and rejecting mixed/unknown codes as a 502 GraphQL failure.
+Eight regression cases failed before the fix; all 57 files / 1267 tests passed
+afterward, together with `npm run lint`, `npm run format:check`,
+`npm run typecheck` and `npm run build`. Dispatch and cross-service acceptance
+will be refreshed for this final Toolkit content before the follow-up push.

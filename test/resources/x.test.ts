@@ -124,6 +124,45 @@ describe('connected X reads', () => {
     await expect(client.x.status()).rejects.toThrow();
     expect(request).not.toHaveBeenCalled();
   });
+  it.each([
+    ['RESOURCE_EXHAUSTED', 429],
+    ['UNAVAILABLE', 503],
+    ['PERMISSION_DENIED', 403],
+    ['UNAUTHENTICATED', 401],
+    ['DEADLINE_EXCEEDED', 504],
+  ])('preserves canonical %s errors with status %i', async (code, status) => {
+    const { client, request } = setup();
+    const errors = [
+      { message: 'read failed', extensions: { code, reason: 'X_READ_FAILED' } },
+      { message: 'same failure', extensions: { code } },
+    ];
+    request.mockResolvedValue({
+      errors,
+      data: { viewer: { xFollowing: page() } },
+    });
+    await expect(client.x.following()).rejects.toMatchObject({
+      code,
+      status,
+      details: { errors },
+    });
+  });
+  it.each([
+    ['UNAVAILABLE', 'PERMISSION_DENIED'],
+    ['UNRECOGNIZED', 'UNRECOGNIZED'],
+    ['__proto__', '__proto__'],
+  ])('does not invent a canonical error for %j', async (first, second) => {
+    const { client, request } = setup();
+    request.mockResolvedValue({
+      errors: [
+        { extensions: { code: first } },
+        { extensions: { code: second } },
+      ],
+    });
+    await expect(client.x.following()).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      status: 502,
+    });
+  });
   it('fails closed on GraphQL errors even with partial data and preserves reason details', async () => {
     const { client, request } = setup();
     const errors = [
