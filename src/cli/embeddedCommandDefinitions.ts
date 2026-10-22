@@ -500,6 +500,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['first', 'cursor'],
       booleans: ['json'],
     }),
+    route('x status', 'x status'),
+    route('x following', 'x following', { values: ['limit', 'cursor'] }),
+    route('x posts', 'x posts', { values: ['limit', 'cursor'] }),
     route('for-you list', 'for-you list', {
       values: ['limit', 'cursor', 'newer-than', 'feed-id'],
     }),

@@ -300,6 +300,10 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('automation delete', { values: ['id'] }),
 
   command('credits wallet'),
+  command('x'),
+  command('x status'),
+  command('x following', { values: ['limit', 'cursor'] }),
+  command('x posts', { values: ['limit', 'cursor'] }),
   command('for-you'),
   command('for-you list', {
     values: ['limit', 'cursor', 'newer-than', 'feed-id'],

@@ -223,3 +223,12 @@ export type {
   ThesisListPage,
   RelatedThesesPage,
 } from './resources/thesisReads.js';
+
+export {
+  XResource,
+  type XReadParams,
+  type XConnectionStatus,
+  type XAccount,
+  type XPost,
+  type XReadPage,
+} from './resources/x.js';
