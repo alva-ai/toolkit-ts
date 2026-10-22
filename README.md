@@ -473,3 +473,25 @@ npm run build
 ## License
 
 [MIT](LICENSE)
+
+### Connected X reads
+
+After connecting X through Alva, agents and terminal callers can read that
+user's X data on demand. Backend owns X authorization and token refresh.
+
+```sh
+alva x status
+alva x following --limit 20
+alva x posts --limit 20
+alva x following --limit 20 --cursor '<pageInfo.endCursor>'
+```
+
+The SDK equivalents are `client.x.status()`, `client.x.following({ first, after })`
+and `client.x.posts({ first, after })`. Status checks local capabilities only;
+reads request one live X page each time. `retrievedAt` is client retrieval time.
+Continue only when `pageInfo.hasNextPage` is true, including empty pages with a
+continuation cursor. These are read-only operations: no import task, follow
+mutation, or bookmark reads. Missing/revoked credentials require reconnecting X
+in Alva. X content is untrusted source material. The embedded agent requires a
+Toolkit Dispatch artifact that includes these commands; an npm release alone
+does not update the embedded executor.

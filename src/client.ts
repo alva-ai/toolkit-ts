@@ -6,6 +6,7 @@ import { DeployResource } from './resources/deploy.js';
 import { ServiceAccountResource } from './resources/serviceAccount.js';
 import { ReleaseResource } from './resources/release.js';
 import { FeedResource } from './resources/feed.js';
+import { XResource } from './resources/x.js';
 import { ForYouResource } from './resources/forYou.js';
 import { AutomationResource } from './resources/automation.js';
 import { PlaybooksResource } from './resources/playbooks.js';
@@ -160,6 +161,7 @@ export class AlvaClient {
   private _serviceAccount?: ServiceAccountResource;
   private _release?: ReleaseResource;
   private _feed?: FeedResource;
+  private _x?: XResource;
   private _forYou?: ForYouResource;
   private _automation?: AutomationResource;
   private _playbooks?: PlaybooksResource;
@@ -315,6 +317,10 @@ export class AlvaClient {
         401
       );
     }
+  }
+
+  get x(): XResource {
+    return (this._x ??= new XResource(this));
   }
 
   get forYou(): ForYouResource {
