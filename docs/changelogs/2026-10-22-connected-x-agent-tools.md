@@ -106,3 +106,14 @@ Eight regression cases failed before the fix; all 57 files / 1267 tests passed
 afterward, together with `npm run lint`, `npm run format:check`,
 `npm run typecheck` and `npm run build`. Dispatch and cross-service acceptance
 will be refreshed for this final Toolkit content before the follow-up push.
+
+Final review-fix Forge acceptance passed on `env-n5wqmt4n` (2026-10-22
+14:35 UTC), Go 1.25.7 / Node 24.20.0: all 24 context-failure combinations
+passed, then `TestConnectedXEndToEnd` (1.77s) and
+`TestXReadE2EBackendFixture` (2.00s) passed, exit 0, for both terminal and
+embedded paths. Dispatch SHA256:
+`b65c24572d115cc9f8ca190fe714984a9eb165d23af05111038a6a9ae9c93558`.
+The runner now allows 90 seconds for package-level PostgreSQL/Redis readiness
+and prints fixture logs on timeout; the original 10-second startup budget
+expired on this VM before business assertions. `bash -n` and the final runner
+passed. B1-B3/F1-F3 remain satisfied; online STG acceptance is pending.
