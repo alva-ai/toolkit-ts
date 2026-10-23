@@ -443,9 +443,9 @@ describe('ThesesResource', () => {
     }
   );
 
-  it('rejects a malformed author slug instead of inventing an identifier', async () => {
+  it.each([42, '', '   '])('rejects a malformed author slug: %j', async (slug) => {
     const response = thesisGet();
-    Object.assign(response.author, { slug: 42 });
+    Object.assign(response.author, { slug });
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(response));
     await expect(
       new AlvaClient({ apiKey: 'key' }).theses.get(MAX_ID)

@@ -551,7 +551,7 @@ function thesisGetResponse(response: unknown): ThesisGetResponse {
     username: responseText(authorRecord.username, 'author.username'),
   };
   if (authorRecord.slug !== undefined) {
-    author.slug = responseText(authorRecord.slug, 'author.slug');
+    author.slug = responseNonemptyText(authorRecord.slug, 'author.slug');
   }
   if (!Array.isArray(response.entities)) {
     throw invalidResponse('response must contain entities');

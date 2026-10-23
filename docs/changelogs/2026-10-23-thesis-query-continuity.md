@@ -43,3 +43,7 @@ B1/B3 由配套 Skill 负责；B2 的 Toolkit 边界已验证，Dispatch 产物�
 Gateway、Toolkit、Dispatch 需依次合入/发布后再验收新字段。使用真实非空作者/标的/相关推荐/Signals 数据；没有数据不能证明查询准确性。当前不发布、不改变线上配置。
 
 PR preparation: synchronized current main; release patch is 0.33.2 because main already publishes 0.33.1. Fresh CLI/resource tests passed 439/439, typecheck and focused ESLint passed. AI Digest help cleanup is included in the Dispatch pin as well. No release or production change performed.
+
+PR #197 review: a present author slug must be nonempty, matching the downstream Person selector. Reuse responseNonemptyText; malformed types, empty strings and whitespace are rejected, while omitted slugs stay compatible.
+
+Review fix verification: CLI/resource tests 441/441, typecheck, focused ESLint and diff check passed.
