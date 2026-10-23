@@ -1599,7 +1599,9 @@ Other flags:
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   set-visibility --id <id> --visibility public|private
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--editorial]
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--editorial]
+  Only editing the body? Resubmit the existing entity IDs and directions.
+  Omitted directions become unknown; explicit unknown clears a direction.
   close   --id <id> --expected-author-version-id <id> [--note <text>]
   delete  --id <id>
   rewrite --body ... [--mode reformat|shorten|enrich]
@@ -3563,6 +3565,7 @@ export async function executeParsedCommand(
               body: await thesisBodyFromFlags(flags, 'thesis update', deps),
               title: flags.title ?? '',
               entity_ids: thesisEntityIDs(flags),
+              entity_stances: thesisEntityStances(flags),
               visibility: thesisVisibility(
                 requireFlag(flags, 'visibility', 'thesis update')
               ),

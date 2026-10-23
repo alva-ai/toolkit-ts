@@ -183,6 +183,7 @@ describe('thesis terminal dispatch', () => {
       body: 'file\r\nbody',
       title: '',
       entity_ids: [],
+      entity_stances: undefined,
       visibility: 'private',
       editorial: true,
     });
