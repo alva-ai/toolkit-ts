@@ -144,6 +144,8 @@ export interface UpdateThesisParams {
   body: string;
   title?: string;
   entity_ids?: ThesisID[];
+  /** Full replacement: resubmit existing directions when only editing the body. */
+  entity_stances?: ThesisEntityStance[];
   /** Required so an update cannot inadvertently publish a private thesis. */
   visibility: ThesisVisibility;
   editorial?: boolean;
@@ -467,8 +469,8 @@ function requireEntityStances(
   });
 }
 
-function updateBody(params: UpdateThesisParams): Required<UpdateThesisParams> {
-  return {
+function updateBody(params: UpdateThesisParams): Record<string, unknown> {
+  const body: Record<string, unknown> = {
     request_id: requireRequestID(params.request_id),
     expected_author_version_id: requireID(
       params.expected_author_version_id,
@@ -480,6 +482,13 @@ function updateBody(params: UpdateThesisParams): Required<UpdateThesisParams> {
     visibility: requireVisibility(params.visibility),
     editorial: params.editorial ?? false,
   };
+  if (params.entity_stances !== undefined) {
+    body.entity_stances = requireEntityStances(
+      params.entity_stances,
+      body.entity_ids as ThesisID[]
+    );
+  }
+  return body;
 }
 
 function thesisResponse(response: unknown): ThesisResponse {

@@ -229,6 +229,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'body-file',
       'title',
       'entity-ids',
+      'entity-stances',
       'visibility',
     ],
     booleans: ['body-stdin', 'editorial'],

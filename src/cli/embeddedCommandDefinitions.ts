@@ -183,6 +183,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'body',
         'title',
         'entity-ids',
+        'entity-stances',
         'visibility',
       ],
       booleans: ['editorial'],

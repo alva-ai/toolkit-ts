@@ -149,7 +149,7 @@ signed-in owner's private Theses. Related uses the source's current version
 (GENERATING, READY or FAILED), never a quoted historical version.
 
 asset-candidates --text <unsaved thesis text> reads catalog IDs and suggested
-directions without publishing. Use resolved entity IDs with create --entity-ids
+directions without publishing. Use resolved entity IDs with create/update --entity-ids
 <id,id> and --entity-stances <json> to preserve the author's direction.
 Map each candidate.entityId to JSON entity_id and lowercase its stance:
 --entity-stances '[{"entity_id":"745337","stance":"bearish"}]'. Valid stances:
@@ -163,7 +163,10 @@ Set-visibility changes current access without publishing a new author version.
 It requires --id and --visibility public|private and never uses a request ID.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
-IDs as a full author-version update. Create and update require a caller-supplied non-zero
+IDs and directions as a full author-version update. Update accepts --entity-stances <json>.
+Only editing the body? Resubmit the existing entity IDs and directions.
+Omitted directions become unknown; explicit unknown clears a direction.
+Create and update require a caller-supplied non-zero
 UUID in --request-id; the dispatcher never creates request IDs or retries.
 
 If a write response is ambiguous, retain and reuse the same request ID only
