@@ -430,6 +430,28 @@ describe('ThesesResource', () => {
     ]);
   });
 
+  it.each(['source-author', undefined])(
+    'preserves an optional Person slug from the GET boundary: %s',
+    async (slug) => {
+      const response = thesisGet();
+      response.author = { ...response.author, kind: 'person', username: '' };
+      if (slug !== undefined) Object.assign(response.author, { slug });
+      globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(response));
+
+      const result = await new AlvaClient({ apiKey: 'key' }).theses.get(MAX_ID);
+      expect(result.author).toEqual(response.author);
+    }
+  );
+
+  it('rejects a malformed author slug instead of inventing an identifier', async () => {
+    const response = thesisGet();
+    Object.assign(response.author, { slug: 42 });
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(response));
+    await expect(
+      new AlvaClient({ apiKey: 'key' }).theses.get(MAX_ID)
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
   it('rejects invalid visibility requests and mismatched responses', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;
