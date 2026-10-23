@@ -59,6 +59,8 @@ export interface ThesisAuthor {
   display_name: string;
   avatar_url: string;
   username: string;
+  /** Person query identifier; older services may omit it. */
+  slug?: string;
 }
 
 export interface ThesisEntity {
@@ -548,6 +550,9 @@ function thesisGetResponse(response: unknown): ThesisGetResponse {
     avatar_url: responseText(authorRecord.avatar_url, 'author.avatar_url'),
     username: responseText(authorRecord.username, 'author.username'),
   };
+  if (authorRecord.slug !== undefined) {
+    author.slug = responseNonemptyText(authorRecord.slug, 'author.slug');
+  }
   if (!Array.isArray(response.entities)) {
     throw invalidResponse('response must contain entities');
   }
