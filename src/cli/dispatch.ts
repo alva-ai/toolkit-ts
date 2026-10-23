@@ -1197,9 +1197,8 @@ Examples:
   alva skillhub list --tag research
   alva skillhub list --username alva
   alva skillhub tags
-  alva skillhub get alva/ai-digest
-  alva skillhub file alva/ai-digest README.md
-  alva skillhub file alva/ai-digest references/api/example.md > out.md`,
+  alva skillhub get <username>/<name>
+  alva skillhub file <username>/<name> <path-from-file-list>`,
 
   comments: `Usage: alva comments <subcommand> [options]
 
