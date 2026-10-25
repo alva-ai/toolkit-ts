@@ -5,6 +5,20 @@ import { AlvaError } from '../../src/error.js';
 const inboxPath =
   '/alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl';
 
+const alertSnapshot = JSON.stringify({
+  kind: 'alert',
+  delivery_id: 5,
+  body_md: 'Frozen evidence: "quoted" facts\n原始正文',
+  thesis: {
+    thesis_id: 7,
+    thesis_title: 'Original Thesis',
+    statement: 'Original claim',
+    author_version_id: 11,
+    stance: 'refutes',
+    reasoning: 'The evidence contradicts the original claim.',
+  },
+});
+
 function client() {
   return new AlvaClient({ apiKey: 'alva_test' });
 }
@@ -156,6 +170,51 @@ describe('StewardResource', () => {
       /between 1 and 100/
     );
   });
+
+  it.each([alertSnapshot, null, undefined])(
+    'requests and preserves the pending alert snapshot: %s',
+    async (snapshot) => {
+      const c = client();
+      const item = {
+        deliveryId: '5',
+        feedEntryId: '9',
+        source: { kind: 'THESIS_FEED', id: '7' },
+        decisionReason: 'routing judgment, not the original evidence',
+        consumedAtMs: 1788710000000,
+        ...(snapshot === undefined ? {} : { alertSnapshot: snapshot }),
+      };
+      const request = vi.spyOn(c, '_request').mockResolvedValue({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [{ cursor: 'cur-5', node: item }],
+              pageInfo: { hasNextPage: true, endCursor: 'cur-5' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+      for (const params of [
+        { inboxPath, untilMs: 1788720000000 },
+        { inboxPath, after: 'cur-5' },
+      ]) {
+        const page = await c.steward.pending(params);
+        expect(page.items).toEqual([item]);
+        expect(page.items[0].alertSnapshot).toBe(snapshot);
+        expect(page.nextCursor).toBe('cur-5');
+        expect(page.windowSinceMs).toBe(1788700000000);
+        expect(page.windowUntilMs).toBe(1788720000000);
+        expect(request).toHaveBeenLastCalledWith('POST', '/query', {
+          body: {
+            query: expect.stringMatching(/\balertSnapshot\b/),
+            variables: { inboxPath, input: expect.any(Object) },
+          },
+        });
+      }
+    }
+  );
 
   it('rejects invalid first-page bounds before transport', async () => {
     const c = client();

@@ -30,6 +30,63 @@ function clientWithSteward(attached = false) {
 }
 
 describe('steward CLI', () => {
+  it.each(['embedded', 'system'])(
+    'returns frozen pending evidence through the %s CLI',
+    async (surface) => {
+      const client = new AlvaClient({
+        apiKey: 'alva_test',
+        originInboxPath: inboxPath,
+      });
+      const alertSnapshot = JSON.stringify({
+        kind: 'alert',
+        body_md: 'Original evidence\n原始正文',
+        thesis: { statement: 'Original claim', reasoning: 'Original impact' },
+      });
+      const item = {
+        deliveryId: '123',
+        feedEntryId: '456',
+        source: { kind: 'THESIS_FEED', id: '9' },
+        decisionReason: 'routing judgment',
+        consumedAtMs: 1788710000000,
+        alertSnapshot,
+      };
+      const request = vi.spyOn(client, '_request').mockResolvedValue({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [{ cursor: 'cur-123', node: item }],
+              pageInfo: { hasNextPage: false, endCursor: 'cur-123' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+      const result =
+        surface === 'embedded'
+          ? await dispatchEmbedded(client, ['steward', 'pending'])
+          : await dispatchSystem(client, [
+              'steward',
+              'pending',
+              '--inbox-path',
+              inboxPath,
+            ]);
+
+      expect(result).toEqual({
+        items: [item],
+        nextCursor: null,
+        windowSinceMs: 1788700000000,
+        windowUntilMs: 1788720000000,
+      });
+      expect(request).toHaveBeenCalledWith('POST', '/query', {
+        body: {
+          query: expect.stringMatching(/\balertSnapshot\b/),
+          variables: { inboxPath, input: { first: 50 } },
+        },
+      });
+    }
+  );
+
   it('preserves millisecond digest windows from the runtime', async () => {
     const client = clientWithSteward(true);
     await dispatchEmbedded(client, [
