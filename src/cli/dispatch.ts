@@ -1608,6 +1608,20 @@ Other flags:
   restore --id <id> --request-id <uuid> [--note <text>]
   star|unstar --id <id>
   set-signal-enabled --id <id> --enabled true|false
+
+Maintenance behavior:
+  archive/restore read the current Thesis first, preserve its body, title,
+  entities, directions, and visibility, then publish the state change against
+  the current author version. They require a caller-supplied request UUID.
+  A repeated request in the requested state is an idempotent read; a version
+  conflict or incomplete directions fails without sending a stale update.
+  --note is optional and belongs to the new author version.
+  star/unstar change only the signed-in viewer's bookmark and return the
+  authoritative bookmark state and count. They do not change Thesis content or
+  Signal subscriptions.
+  set-signal-enabled changes managed Signal research without deleting history.
+  The command returns enabled, research_paused, archived, and author version
+  state; GraphQL errors and noncanonical error codes fail closed.
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--editorial]
   Only editing the body? Resubmit the existing entity IDs and directions.
   Omitted directions become unknown; explicit unknown clears a direction.
