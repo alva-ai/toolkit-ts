@@ -1087,6 +1087,7 @@ function completeEntityStances(
   entityIDs: ThesisID[],
   stances: ThesisEntityStance[] | undefined
 ): stances is ThesisEntityStance[] {
+  if (entityIDs.length === 0) return !stances || stances.length === 0;
   if (!stances || stances.length !== entityIDs.length) return false;
   const expected = new Set(entityIDs);
   const seen = new Set<string>();
