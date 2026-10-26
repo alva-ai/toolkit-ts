@@ -803,7 +803,6 @@ export interface PortfolioAsset {
 export interface TradingPortfolio {
   /** Null when one or more holdings could not be valued. */
   equity: number | null;
-  valuationIncomplete?: boolean;
   cash: number;
   unrealizedPnl?: number;
   assets: PortfolioAsset[];
@@ -896,8 +895,6 @@ export interface PortfolioHolding {
 }
 
 export interface PortfolioSummary {
-  /** Incomplete snapshots retain holdings but omit totalValue. */
-  valuationIncomplete?: boolean;
   totalValue?: PortfolioMoney;
   cash?: PortfolioMoney;
   unrealizedPnl?: PortfolioMoney;
