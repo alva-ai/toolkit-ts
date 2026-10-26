@@ -557,6 +557,34 @@ describe('ThesesResource', () => {
     );
   });
 
+  it('normalizes noncanonical GraphQL mutation errors', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        errors: [{ message: 'internal', extensions: { code: 'INTERNAL' } }],
+      })
+      .mockResolvedValueOnce({
+        errors: [
+          { message: 'missing', extensions: { code: 'NOT_FOUND' } },
+          { message: 'internal', extensions: { code: 'INTERNAL' } },
+        ],
+      });
+
+    await expect(client.theses.setStarred(MAX_ID, true)).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      status: 400,
+    });
+    await expect(
+      client.theses.setSignalEnabled(MAX_ID, true)
+    ).rejects.toMatchObject({
+      code: 'GRAPHQL_ERROR',
+      status: 400,
+    });
+  });
+
   it('rejects invalid visibility requests and mismatched responses', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;

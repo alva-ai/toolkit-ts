@@ -1113,16 +1113,23 @@ async function thesisGraphql(
         )
       );
       const [code] = codes;
+      const canonicalCode =
+        codes.size === 1 &&
+        (code === 'NOT_FOUND' ||
+          code === 'PERMISSION_DENIED' ||
+          code === 'UNAUTHENTICATED')
+          ? code
+          : undefined;
       const status =
-        codes.size === 1 && code === 'NOT_FOUND'
+        canonicalCode === 'NOT_FOUND'
           ? 404
-          : codes.size === 1 && code === 'PERMISSION_DENIED'
+          : canonicalCode === 'PERMISSION_DENIED'
             ? 403
-            : codes.size === 1 && code === 'UNAUTHENTICATED'
+            : canonicalCode === 'UNAUTHENTICATED'
               ? 401
               : 400;
       throw new AlvaError(
-        typeof code === 'string' ? code : 'GRAPHQL_ERROR',
+        canonicalCode ?? 'GRAPHQL_ERROR',
         messages.join('; ') || 'GraphQL request failed',
         status,
         { errors: response.errors }
