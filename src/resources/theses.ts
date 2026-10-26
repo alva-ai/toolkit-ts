@@ -9,7 +9,7 @@ import { AlvaError } from '../error.js';
 
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
-export type ThesisVisibility = 'public' | 'private';
+export type ThesisVisibility = 'public' | 'private' | 'paid';
 export type ThesisAssetStance = 'unknown' | 'bullish' | 'bearish';
 export interface ThesisEntityStance {
   entity_id: ThesisID;
@@ -47,6 +47,9 @@ export interface Thesis {
   closing_note: string;
   author_kind: string;
   author_ref: string;
+  archived?: boolean;
+  version_archived?: boolean;
+  note?: string;
 }
 
 export interface ThesisResponse {
@@ -134,7 +137,7 @@ export interface CreateThesisParams {
   /** Exact STOCK ticker symbols resolved by Backend during creation. */
   tickers?: string[];
   /** Omitted means public, as defined by the REST contract. */
-  visibility?: ThesisVisibility;
+  visibility?: 'public' | 'private';
 }
 
 export interface UpdateThesisParams {
@@ -149,10 +152,33 @@ export interface UpdateThesisParams {
   /** Required so an update cannot inadvertently publish a private thesis. */
   visibility: ThesisVisibility;
   editorial?: boolean;
+  archived?: boolean;
+  note?: string;
+}
+
+export interface SetThesisArchivedParams {
+  /** Caller-supplied, stable non-zero UUID for this archive transition. */
+  request_id: string;
+  archived: boolean;
+  note?: string;
+}
+
+export interface ThesisStarredResponse {
+  thesis_id: ThesisID;
+  star_count: number;
+  is_starred: boolean;
+}
+
+export interface ThesisSignalEnabledResponse {
+  thesis_id: ThesisID;
+  author_version_id: ThesisID;
+  archived: boolean;
+  research_paused: boolean;
+  enabled: boolean;
 }
 
 export interface SetThesisVisibilityParams {
-  visibility: ThesisVisibility;
+  visibility: 'public' | 'private';
 }
 
 export interface CloseThesisParams {
@@ -169,6 +195,20 @@ export interface RewriteThesisParams {
 export interface RewriteThesisResponse {
   body: string;
 }
+
+const SET_THESIS_STARRED = `mutation SetThesisStarred($input: SetThesisStarredInput!) {
+  setThesisStarred(input: $input) {
+    thesisId
+    stats { starCount }
+    viewerState { isStarred }
+  }
+}`;
+
+const SET_THESIS_SIGNAL_ENABLED = `mutation SetThesisSignalEnabled($input: SetThesisSignalEnabledInput!) {
+  setThesisSignalEnabled(input: $input) {
+    publication { playbookId authorVersionId archived researchPaused }
+  }
+}`;
 
 const MAX_SIGNED_INT64 = 9_223_372_036_854_775_807n;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -340,6 +380,135 @@ export class ThesesResource {
     );
   }
 
+  /** Archive or restore the current version without asking callers to resend its body. */
+  async setArchived(
+    id: ThesisID,
+    params: SetThesisArchivedParams
+  ): Promise<ThesisResponse> {
+    this.client._requireAuth();
+    if (!isRecord(params)) throw invalidArgument('params is required');
+    const thesisID = requireID(id, 'id');
+    const requestID = requireRequestID(params.request_id);
+    if (typeof params.archived !== 'boolean') {
+      throw invalidArgument('archived must be a boolean');
+    }
+    if (params.note !== undefined) requireText(params.note, 'note');
+
+    const current = await this.get(thesisID);
+    if (
+      current.thesis.archived !== undefined &&
+      current.thesis.archived === params.archived &&
+      params.note === undefined
+    ) {
+      return { thesis: current.thesis };
+    }
+
+    const response = await this.update(thesisID, {
+      request_id: requestID,
+      expected_author_version_id: current.thesis.author_version_id,
+      body: current.thesis.body,
+      title: current.thesis.title,
+      entity_ids: current.thesis.entity_ids,
+      entity_stances: current.thesis.entity_stances,
+      visibility: current.thesis.visibility,
+      archived: params.archived,
+      note: params.note,
+    });
+    if (response.thesis.archived !== params.archived) {
+      throw invalidResponse('archive response must match the requested state');
+    }
+    return response;
+  }
+
+  async setStarred(
+    id: ThesisID,
+    isStarred: boolean
+  ): Promise<ThesisStarredResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    if (typeof isStarred !== 'boolean') {
+      throw invalidArgument('isStarred must be a boolean');
+    }
+    const data = await thesisGraphql(this.client, SET_THESIS_STARRED, {
+      input: { thesisId: thesisID, isStarred },
+    });
+    const result = data.setThesisStarred;
+    if (
+      !isRecord(result) ||
+      !isRecord(result.stats) ||
+      !isRecord(result.viewerState)
+    ) {
+      throw invalidResponse('star response must contain stats and viewerState');
+    }
+    const returnedID = responseID(result.thesisId, 'thesisId');
+    if (returnedID !== thesisID) {
+      throw invalidResponse('star response must match the requested thesis');
+    }
+    const starCount = result.stats.starCount;
+    if (
+      typeof starCount !== 'number' ||
+      !Number.isInteger(starCount) ||
+      starCount < 0
+    ) {
+      throw invalidResponse(
+        'star response must contain a nonnegative star count'
+      );
+    }
+    return {
+      thesis_id: returnedID,
+      star_count: starCount,
+      is_starred: responseBoolean(
+        result.viewerState.isStarred,
+        'viewerState.isStarred'
+      ),
+    };
+  }
+
+  async setSignalEnabled(
+    id: ThesisID,
+    enabled: boolean
+  ): Promise<ThesisSignalEnabledResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    if (typeof enabled !== 'boolean') {
+      throw invalidArgument('enabled must be a boolean');
+    }
+    const data = await thesisGraphql(this.client, SET_THESIS_SIGNAL_ENABLED, {
+      input: { thesisId: thesisID, enabled },
+    });
+    const result = data.setThesisSignalEnabled;
+    if (!isRecord(result) || !isRecord(result.publication)) {
+      throw invalidResponse('Signal response must contain publication');
+    }
+    const publication = result.publication;
+    const returnedID = responseID(
+      publication.playbookId,
+      'publication.playbookId'
+    );
+    if (returnedID !== thesisID) {
+      throw invalidResponse('Signal response must match the requested thesis');
+    }
+    const researchPaused = responseBoolean(
+      publication.researchPaused,
+      'publication.researchPaused'
+    );
+    if (researchPaused === enabled) {
+      throw invalidResponse(
+        'Signal response did not apply the requested state'
+      );
+    }
+    return {
+      thesis_id: returnedID,
+      author_version_id: responseID(
+        publication.authorVersionId,
+        'publication.authorVersionId'
+      ),
+      archived: responseBoolean(publication.archived, 'publication.archived'),
+      research_paused: researchPaused,
+      enabled: !researchPaused,
+    };
+  }
+
   async setVisibility(
     id: ThesisID,
     params: SetThesisVisibilityParams
@@ -349,7 +518,7 @@ export class ThesesResource {
       throw invalidArgument('params is required');
     }
     const thesisID = requireID(id, 'id');
-    const visibility = requireVisibility(params.visibility);
+    const visibility = requirePublicVisibility(params.visibility);
     const response = thesisResponse(
       await this.client._request(
         'POST',
@@ -430,7 +599,7 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     body: requireBody(params.body),
     title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
-    visibility: requireVisibility(params.visibility ?? 'public'),
+    visibility: requirePublicVisibility(params.visibility ?? 'public'),
   };
   if (params.tickers !== undefined)
     body.tickers = requireTickers(params.tickers);
@@ -482,6 +651,12 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
     visibility: requireVisibility(params.visibility),
     editorial: params.editorial ?? false,
   };
+  if (params.archived !== undefined) {
+    if (typeof params.archived !== 'boolean')
+      throw invalidArgument('archived must be a boolean');
+    body.archived = params.archived;
+  }
+  if (params.note !== undefined) body.note = requireText(params.note, 'note');
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
       params.entity_stances,
@@ -515,6 +690,15 @@ function thesisResponse(response: unknown): ThesisResponse {
     author_kind: responseText(thesis.author_kind, 'thesis.author_kind'),
     author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
   };
+  if (thesis.archived !== undefined)
+    value.archived = responseBoolean(thesis.archived, 'thesis.archived');
+  if (thesis.version_archived !== undefined)
+    value.version_archived = responseBoolean(
+      thesis.version_archived,
+      'thesis.version_archived'
+    );
+  if (thesis.note !== undefined)
+    value.note = responseText(thesis.note, 'thesis.note');
   if (thesis.entity_stances !== undefined) {
     if (!Array.isArray(thesis.entity_stances))
       throw invalidResponse('thesis.entity_stances must be an array');
@@ -760,6 +944,18 @@ function requireTitle(value: string): string {
 
 function requireVisibility(value: string): ThesisVisibility {
   const visibility = requireText(value, 'visibility');
+  if (
+    visibility !== 'public' &&
+    visibility !== 'private' &&
+    visibility !== 'paid'
+  ) {
+    throw invalidArgument('visibility must be public, private or paid');
+  }
+  return visibility;
+}
+
+function requirePublicVisibility(value: string): 'public' | 'private' {
+  const visibility = requireText(value, 'visibility');
   if (visibility !== 'public' && visibility !== 'private') {
     throw invalidArgument('visibility must be public or private');
   }
@@ -838,7 +1034,7 @@ function responseVisibility(value: unknown): ThesisVisibility {
   try {
     return requireVisibility(value as string);
   } catch {
-    throw invalidResponse('thesis.visibility must be public or private');
+    throw invalidResponse('thesis.visibility must be public, private or paid');
   }
 }
 
@@ -872,4 +1068,52 @@ function invalidArgument(message: string): AlvaError {
 
 function invalidResponse(message: string): AlvaError {
   return new AlvaError('INVALID_RESPONSE', message, 502);
+}
+
+async function thesisGraphql(
+  client: AlvaClient,
+  query: string,
+  variables: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const response = await client._request('POST', '/query', {
+    body: { query, variables },
+  });
+  if (!isRecord(response))
+    throw invalidResponse('GraphQL response must be an object');
+  if (response.errors !== undefined) {
+    if (!Array.isArray(response.errors))
+      throw invalidResponse('GraphQL errors must be an array');
+    if (response.errors.length > 0) {
+      const messages = response.errors.flatMap((error) =>
+        isRecord(error) && typeof error.message === 'string'
+          ? [error.message]
+          : []
+      );
+      const codes = new Set(
+        response.errors.map((error) =>
+          isRecord(error) && isRecord(error.extensions)
+            ? error.extensions.code
+            : undefined
+        )
+      );
+      const [code] = codes;
+      const status =
+        codes.size === 1 && code === 'NOT_FOUND'
+          ? 404
+          : codes.size === 1 && code === 'PERMISSION_DENIED'
+            ? 403
+            : codes.size === 1 && code === 'UNAUTHENTICATED'
+              ? 401
+              : 400;
+      throw new AlvaError(
+        typeof code === 'string' ? code : 'GRAPHQL_ERROR',
+        messages.join('; ') || 'GraphQL request failed',
+        status,
+        { errors: response.errors }
+      );
+    }
+  }
+  if (!isRecord(response.data))
+    throw invalidResponse('GraphQL response must contain data');
+  return response.data;
 }

@@ -132,7 +132,7 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, set-visibility, update, close, delete, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, set-visibility, archive, restore, star, unstar, set-signal-enabled, update, close, delete, rewrite.
 
 list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
@@ -161,6 +161,12 @@ local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enric
 only omission defaults to canonical reformat, which is sent to the API. Create defaults --visibility to public.
 Set-visibility changes current access without publishing a new author version.
 It requires --id and --visibility public|private and never uses a request ID.
+Archive and restore preserve the current Thesis fields and use the current
+author version for optimistic concurrency. They require --id and a caller-supplied
+non-zero --request-id; an optional --note is stored on the new author version.
+star and unstar set the viewer's bookmark without changing the Thesis or alert
+subscriptions. set-signal-enabled --id <id> --enabled true|false pauses or
+resumes managed Signal research and returns the resulting research state.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
 IDs and directions as a full author-version update. Update accepts --entity-stances <json>.

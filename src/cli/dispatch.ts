@@ -1562,6 +1562,11 @@ Subcommands:
   version get  Get one exact author version
   signals  Read published Signal history
   set-visibility  Change current access without publishing a version
+  archive   Archive the current author version
+  restore   Restore an archived Thesis
+  star      Add the Thesis to your bookmarks
+  unstar    Remove the Thesis from your bookmarks
+  set-signal-enabled  Enable or disable managed Signal research
   update   Replaces document fields: body, title, entities, visibility (all sent in full)
   close    Close the current author version with an optional note
   delete   Delete a thesis
@@ -1599,6 +1604,10 @@ Other flags:
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   set-visibility --id <id> --visibility public|private
+  archive --id <id> --request-id <uuid> [--note <text>]
+  restore --id <id> --request-id <uuid> [--note <text>]
+  star|unstar --id <id>
+  set-signal-enabled --id <id> --enabled true|false
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--editorial]
   Only editing the body? Resubmit the existing entity IDs and directions.
   Omitted directions become unknown; explicit unknown clears a direction.
@@ -2201,11 +2210,43 @@ function feedVisibility(val: string): 'public' | 'private' {
 }
 
 function thesisVisibility(value: string): ThesisVisibility {
-  if (value === 'public' || value === 'private') return value;
+  if (value === 'public' || value === 'private' || value === 'paid')
+    return value;
   throw new CliUsageError(
-    `--visibility must be public or private for 'thesis', got '${value}'`,
+    '--visibility must be public, private or paid for thesis, got ' + value,
     'thesis'
   );
+}
+
+function thesisCreateVisibility(value: string): 'public' | 'private' {
+  if (value === 'public' || value === 'private') return value;
+  throw new CliUsageError(
+    '--visibility must be public or private for thesis create, got ' + value,
+    'thesis'
+  );
+}
+
+function thesisAccessVisibility(value: string): 'public' | 'private' {
+  if (value === 'public' || value === 'private') return value;
+  throw new CliUsageError(
+    '--visibility must be public or private for thesis set-visibility, got ' +
+      value,
+    'thesis'
+  );
+}
+
+function thesisBooleanFlag(
+  value: string | undefined,
+  command: string
+): boolean {
+  const parsed = boolFlag(value);
+  if (parsed === undefined) {
+    throw new CliUsageError(
+      '--enabled must be true or false for ' + command,
+      'thesis'
+    );
+  }
+  return parsed;
 }
 
 function thesisRewriteMode(value: string): ThesisRewriteMode {
@@ -3488,7 +3529,7 @@ export async function executeParsedCommand(
             visibility:
               flags.visibility === undefined
                 ? 'public'
-                : thesisVisibility(flags.visibility),
+                : thesisCreateVisibility(flags.visibility),
           });
         case 'asset-candidates':
           return client.theses.assetCandidates(
@@ -3547,10 +3588,43 @@ export async function executeParsedCommand(
           return client.theses.setVisibility(
             requireFlag(flags, 'id', 'thesis set-visibility'),
             {
-              visibility: thesisVisibility(
+              visibility: thesisAccessVisibility(
                 requireFlag(flags, 'visibility', 'thesis set-visibility')
               ),
             }
+          );
+        case 'archive':
+          return client.theses.setArchived(
+            requireFlag(flags, 'id', 'thesis archive'),
+            {
+              request_id: requireFlag(flags, 'request-id', 'thesis archive'),
+              archived: true,
+              note: flags.note,
+            }
+          );
+        case 'restore':
+          return client.theses.setArchived(
+            requireFlag(flags, 'id', 'thesis restore'),
+            {
+              request_id: requireFlag(flags, 'request-id', 'thesis restore'),
+              archived: false,
+              note: flags.note,
+            }
+          );
+        case 'star':
+          return client.theses.setStarred(
+            requireFlag(flags, 'id', 'thesis star'),
+            true
+          );
+        case 'unstar':
+          return client.theses.setStarred(
+            requireFlag(flags, 'id', 'thesis unstar'),
+            false
+          );
+        case 'set-signal-enabled':
+          return client.theses.setSignalEnabled(
+            requireFlag(flags, 'id', 'thesis set-signal-enabled'),
+            thesisBooleanFlag(flags.enabled, 'thesis set-signal-enabled')
           );
         case 'update':
           return client.theses.update(

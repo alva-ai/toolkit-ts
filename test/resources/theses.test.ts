@@ -430,6 +430,115 @@ describe('ThesesResource', () => {
     ]);
   });
 
+  it('archives the current version with its fields and expected version', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    const current = thesisGet();
+    current.thesis.archived = false;
+    current.thesis.entity_stances = [
+      { entity_id: '9223372036854775804', stance: 'bullish' },
+    ];
+    const archived = thesis();
+    archived.thesis.archived = true;
+    archived.thesis.entity_stances = current.thesis.entity_stances;
+    client._request = vi
+      .fn()
+      .mockResolvedValueOnce(current)
+      .mockResolvedValueOnce(archived);
+
+    await expect(
+      client.theses.setArchived(MAX_ID, {
+        request_id: REQUEST_ID,
+        archived: true,
+        note: 'review later',
+      })
+    ).resolves.toEqual(archived);
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'PUT',
+      `/api/v1/theses/${MAX_ID}`,
+      {
+        body: {
+          request_id: REQUEST_ID,
+          expected_author_version_id: current.thesis.author_version_id,
+          body: current.thesis.body,
+          title: current.thesis.title,
+          entity_ids: current.thesis.entity_ids,
+          entity_stances: current.thesis.entity_stances,
+          visibility: current.thesis.visibility,
+          editorial: false,
+          archived: true,
+          note: 'review later',
+        },
+      }
+    );
+  });
+
+  it('maps bookmark and Signal research mutations with authoritative state', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          setThesisStarred: {
+            thesisId: MAX_ID,
+            stats: { starCount: 17 },
+            viewerState: { isStarred: true },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          setThesisSignalEnabled: {
+            publication: {
+              playbookId: MAX_ID,
+              authorVersionId: '9223372036854775804',
+              archived: false,
+              researchPaused: false,
+            },
+          },
+        },
+      });
+
+    await expect(client.theses.setStarred(MAX_ID, true)).resolves.toEqual({
+      thesis_id: MAX_ID,
+      star_count: 17,
+      is_starred: true,
+    });
+    await expect(client.theses.setSignalEnabled(MAX_ID, true)).resolves.toEqual(
+      {
+        thesis_id: MAX_ID,
+        author_version_id: '9223372036854775804',
+        archived: false,
+        research_paused: false,
+        enabled: true,
+      }
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      1,
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: { input: { thesisId: MAX_ID, isStarred: true } },
+        }),
+      })
+    );
+    expect(client._request).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      '/query',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          variables: { input: { thesisId: MAX_ID, enabled: true } },
+        }),
+      })
+    );
+  });
+
   it('rejects invalid visibility requests and mismatched responses', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;
