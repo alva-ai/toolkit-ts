@@ -61,12 +61,13 @@ validation, and public skill documentation. Verified with:
 
 - npm run typecheck
 - npm test -- --run test/resources/theses.test.ts test/cli/theses.test.ts
-  (76 tests passed)
+  (78 tests passed)
 - npm run build
 - npm run lint
 - npm run format:check
 - node dist/cli.js thesis --help
 - git diff --check
+- Full pre-push suite: 58 test files, 1301 tests passed
 
 ## 8. Remaining Work
 
