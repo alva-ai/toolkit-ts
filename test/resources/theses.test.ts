@@ -476,6 +476,23 @@ describe('ThesesResource', () => {
     );
   });
 
+  it('keeps an idempotent archive no-op without requiring directions', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    const current = thesisGet();
+    current.thesis.archived = false;
+    client._request = vi.fn().mockResolvedValue(current);
+
+    await expect(
+      client.theses.setArchived(MAX_ID, {
+        request_id: REQUEST_ID,
+        archived: false,
+      })
+    ).resolves.toEqual({ thesis: current.thesis });
+    expect(client._request).toHaveBeenCalledTimes(1);
+  });
+
   it('maps bookmark and Signal research mutations with authoritative state', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;

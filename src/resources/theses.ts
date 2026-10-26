@@ -401,16 +401,16 @@ export class ThesesResource {
     if (params.note !== undefined) requireText(params.note, 'note');
 
     const current = await this.get(thesisID);
-    if (!Array.isArray(current.thesis.entity_stances)) {
-      throw invalidResponse(
-        'archive requires entity_stances in the current Thesis response'
-      );
-    }
     if (
       current.thesis.archived === params.archived &&
       params.note === undefined
     ) {
       return { thesis: current.thesis };
+    }
+    if (!Array.isArray(current.thesis.entity_stances)) {
+      throw invalidResponse(
+        'archive requires entity_stances in the current Thesis response'
+      );
     }
 
     const response = await this.update(thesisID, {
