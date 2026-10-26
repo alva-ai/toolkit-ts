@@ -47,7 +47,7 @@ export interface Thesis {
   closing_note: string;
   author_kind: string;
   author_ref: string;
-  archived?: boolean;
+  archived: boolean;
   version_archived?: boolean;
   note?: string;
 }
@@ -396,7 +396,6 @@ export class ThesesResource {
 
     const current = await this.get(thesisID);
     if (
-      current.thesis.archived !== undefined &&
       current.thesis.archived === params.archived &&
       params.note === undefined
     ) {
@@ -686,12 +685,11 @@ function thesisResponse(response: unknown): ThesisResponse {
     entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
     visibility: responseVisibility(thesis.visibility),
     closed: responseBoolean(thesis.closed, 'thesis.closed'),
+    archived: responseBoolean(thesis.archived, 'thesis.archived'),
     closing_note: responseClosingNote(thesis.closing_note),
     author_kind: responseText(thesis.author_kind, 'thesis.author_kind'),
     author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
   };
-  if (thesis.archived !== undefined)
-    value.archived = responseBoolean(thesis.archived, 'thesis.archived');
   if (thesis.version_archived !== undefined)
     value.version_archived = responseBoolean(
       thesis.version_archived,

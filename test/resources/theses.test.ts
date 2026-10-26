@@ -16,6 +16,7 @@ function thesis(visibility: 'public' | 'private' = 'public') {
       entity_ids: ['9223372036854775804'],
       visibility,
       closed: false,
+      archived: false,
       closing_note: '',
       author_kind: 'user',
       author_ref: 'alice',

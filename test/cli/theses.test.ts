@@ -15,6 +15,7 @@ const THESIS = {
     entity_ids: [],
     visibility: 'public' as const,
     closed: false,
+    archived: false,
     closing_note: '',
     author_kind: 'user',
     author_ref: 'alice',
