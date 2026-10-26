@@ -801,7 +801,8 @@ export interface PortfolioAsset {
 }
 
 export interface TradingPortfolio {
-  equity: number;
+  /** Null when one or more holdings could not be valued. */
+  equity: number | null;
   cash: number;
   unrealizedPnl?: number;
   assets: PortfolioAsset[];
