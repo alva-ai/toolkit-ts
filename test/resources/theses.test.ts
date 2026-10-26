@@ -493,6 +493,25 @@ describe('ThesesResource', () => {
     expect(client._request).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects an archive update when directions do not cover every entity', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    const current = thesisGet();
+    current.thesis.archived = false;
+    current.thesis.entity_ids = ['1', '2'];
+    current.thesis.entity_stances = [{ entity_id: '1', stance: 'bullish' }];
+    client._request = vi.fn().mockResolvedValue(current);
+
+    await expect(
+      client.theses.setArchived(MAX_ID, {
+        request_id: REQUEST_ID,
+        archived: true,
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(client._request).toHaveBeenCalledTimes(1);
+  });
+
   it('maps bookmark and Signal research mutations with authoritative state', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;

@@ -407,9 +407,14 @@ export class ThesesResource {
     ) {
       return { thesis: current.thesis };
     }
-    if (!Array.isArray(current.thesis.entity_stances)) {
+    if (
+      !completeEntityStances(
+        current.thesis.entity_ids,
+        current.thesis.entity_stances
+      )
+    ) {
       throw invalidResponse(
-        'archive requires entity_stances in the current Thesis response'
+        'archive requires one entity_stance for every Thesis entity'
       );
     }
 
@@ -1076,6 +1081,21 @@ function responseTitle(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function completeEntityStances(
+  entityIDs: ThesisID[],
+  stances: ThesisEntityStance[] | undefined
+): stances is ThesisEntityStance[] {
+  if (!stances || stances.length !== entityIDs.length) return false;
+  const expected = new Set(entityIDs);
+  const seen = new Set<string>();
+  return stances.every(
+    (stance) =>
+      expected.has(stance.entity_id) &&
+      !seen.has(stance.entity_id) &&
+      seen.add(stance.entity_id)
+  );
 }
 
 function invalidArgument(message: string): AlvaError {
