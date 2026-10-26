@@ -306,9 +306,14 @@ export class ThesesResource {
 
   async get(id: ThesisID): Promise<ThesisGetResponse> {
     this.client._requireAuth();
-    return thesisGetResponse(
-      await this.client._request('GET', `/api/v1/theses/${requireID(id, 'id')}`)
+    const thesisID = requireID(id, 'id');
+    const response = thesisGetResponse(
+      await this.client._request('GET', `/api/v1/theses/${thesisID}`)
     );
+    if (response.thesis.id !== thesisID) {
+      throw invalidResponse('get response must match the requested thesis');
+    }
+    return response;
   }
 
   async getVersion(
@@ -369,15 +374,16 @@ export class ThesesResource {
   ): Promise<ThesisResponse> {
     this.client._requireAuth();
     const body = updateBody(params);
-    return thesisResponse(
-      await this.client._request(
-        'PUT',
-        `/api/v1/theses/${requireID(id, 'id')}`,
-        {
-          body,
-        }
-      )
+    const thesisID = requireID(id, 'id');
+    const response = thesisResponse(
+      await this.client._request('PUT', `/api/v1/theses/${thesisID}`, {
+        body,
+      })
     );
+    if (response.thesis.id !== thesisID) {
+      throw invalidResponse('update response must match the requested thesis');
+    }
+    return response;
   }
 
   /** Archive or restore the current version without asking callers to resend its body. */
@@ -395,6 +401,11 @@ export class ThesesResource {
     if (params.note !== undefined) requireText(params.note, 'note');
 
     const current = await this.get(thesisID);
+    if (!Array.isArray(current.thesis.entity_stances)) {
+      throw invalidResponse(
+        'archive requires entity_stances in the current Thesis response'
+      );
+    }
     if (
       current.thesis.archived === params.archived &&
       params.note === undefined
@@ -413,7 +424,10 @@ export class ThesesResource {
       archived: params.archived,
       note: params.note,
     });
-    if (response.thesis.archived !== params.archived) {
+    if (
+      response.thesis.id !== thesisID ||
+      response.thesis.archived !== params.archived
+    ) {
       throw invalidResponse('archive response must match the requested state');
     }
     return response;
@@ -453,13 +467,17 @@ export class ThesesResource {
         'star response must contain a nonnegative star count'
       );
     }
+    const returnedStarred = responseBoolean(
+      result.viewerState.isStarred,
+      'viewerState.isStarred'
+    );
+    if (returnedStarred !== isStarred) {
+      throw invalidResponse('star response did not apply the requested state');
+    }
     return {
       thesis_id: returnedID,
       star_count: starCount,
-      is_starred: responseBoolean(
-        result.viewerState.isStarred,
-        'viewerState.isStarred'
-      ),
+      is_starred: returnedStarred,
     };
   }
 
