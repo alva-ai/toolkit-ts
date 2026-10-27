@@ -71,6 +71,7 @@ export interface StewardPendingItem {
   source: { kind: StewardSourceKind; id: string };
   decisionReason: string;
   consumedAtMs: number;
+  alertSnapshot?: string | null;
 }
 
 export interface StewardPendingPage {
@@ -129,7 +130,7 @@ query ToolkitStewardPending($inboxPath: String!, $input: StewardDigestPendingInp
     stewardDigestPending(inboxPath: $inboxPath, input: $input) {
       edges {
         cursor
-        node { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs }
+        node { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs alertSnapshot }
       }
       pageInfo { hasNextPage endCursor }
       windowSinceMs

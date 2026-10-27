@@ -225,6 +225,11 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('thesis signals', { values: ['id', 'first', 'cursor'] }),
   command('thesis set-visibility', { values: ['id', 'visibility'] }),
+  command('thesis archive', { values: ['id', 'request-id', 'note'] }),
+  command('thesis restore', { values: ['id', 'request-id', 'note'] }),
+  command('thesis star', { values: ['id'] }),
+  command('thesis unstar', { values: ['id'] }),
+  command('thesis set-signal-enabled', { values: ['id', 'enabled'] }),
   command('thesis update', {
     values: [
       'id',

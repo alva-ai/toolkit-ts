@@ -11,7 +11,7 @@ const thesis = {
   body: 'Previous view',
   entity_ids: [],
   visibility: 'private',
-  closed: false,
+  closed: false, archived: false,
   closing_note: '',
   author_kind: 'user',
   author_ref: 'alice',

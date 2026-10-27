@@ -10,7 +10,7 @@ function fixture() {
     return new Response(JSON.stringify({ thesis: {
       id: '42', author_version_id: '43', material_version_id: '43',
       title: '', body: 'Original body', entity_ids: [], visibility: 'public',
-      closed: false, closing_note: '', author_kind: 'user', author_ref: 'alice',
+      closed: false, archived: false, closing_note: '', author_kind: 'user', author_ref: 'alice',
       ...body,
     }}), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
@@ -79,7 +79,7 @@ describe('Thesis media readback', () => {
       thesis: {
         id: '42', author_version_id: '43', material_version_id: '43',
         title: '', body: 'Original body', entity_ids: [], visibility: 'public',
-        closed: false, closing_note: '', author_kind: 'user', author_ref: 'alice', medias,
+        closed: false, archived: false, closing_note: '', author_kind: 'user', author_ref: 'alice', medias,
       },
       author: { id: '1', kind: 'user', display_name: 'Alice', avatar_url: '', username: 'alice' },
       entities: [],

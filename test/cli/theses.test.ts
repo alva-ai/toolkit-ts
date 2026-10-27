@@ -15,6 +15,7 @@ const THESIS = {
     entity_ids: [],
     visibility: 'public' as const,
     closed: false,
+    archived: false,
     closing_note: '',
     author_kind: 'user',
     author_ref: 'alice',
@@ -52,6 +53,23 @@ function mockLifecycle(value: AlvaClient) {
     setVisibility: vi
       .spyOn(value.theses, 'setVisibility')
       .mockResolvedValue(THESIS),
+    setArchived: vi
+      .spyOn(value.theses, 'setArchived')
+      .mockResolvedValue(THESIS),
+    setStarred: vi.spyOn(value.theses, 'setStarred').mockResolvedValue({
+      thesis_id: THESIS.thesis.id,
+      star_count: 1,
+      is_starred: true,
+    }),
+    setSignalEnabled: vi
+      .spyOn(value.theses, 'setSignalEnabled')
+      .mockResolvedValue({
+        thesis_id: THESIS.thesis.id,
+        author_version_id: THESIS.thesis.author_version_id,
+        archived: false,
+        research_paused: false,
+        enabled: true,
+      }),
     update: vi.spyOn(value.theses, 'update').mockResolvedValue(THESIS),
     close: vi.spyOn(value.theses, 'close').mockResolvedValue(THESIS),
     remove: vi.spyOn(value.theses, 'delete').mockResolvedValue({}),
@@ -110,6 +128,39 @@ describe('thesis terminal dispatch', () => {
       THESIS.thesis.id,
       '--visibility',
       'private',
+    ]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'archive',
+      '--id',
+      THESIS.thesis.id,
+      '--request-id',
+      REQUEST_ID,
+      '--note',
+      'review later',
+    ]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'restore',
+      '--id',
+      THESIS.thesis.id,
+      '--request-id',
+      REQUEST_ID,
+    ]);
+    await dispatchTerminal(value, ['thesis', 'star', '--id', THESIS.thesis.id]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'unstar',
+      '--id',
+      THESIS.thesis.id,
+    ]);
+    await dispatchTerminal(value, [
+      'thesis',
+      'set-signal-enabled',
+      '--id',
+      THESIS.thesis.id,
+      '--enabled',
+      'false',
     ]);
     await dispatchTerminal(
       value,
@@ -177,6 +228,26 @@ describe('thesis terminal dispatch', () => {
     expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
       visibility: 'private',
     });
+    expect(calls.setArchived).toHaveBeenNthCalledWith(1, THESIS.thesis.id, {
+      request_id: REQUEST_ID,
+      archived: true,
+      note: 'review later',
+    });
+    expect(calls.setArchived).toHaveBeenNthCalledWith(2, THESIS.thesis.id, {
+      request_id: REQUEST_ID,
+      archived: false,
+      note: undefined,
+    });
+    expect(calls.setStarred).toHaveBeenNthCalledWith(1, THESIS.thesis.id, true);
+    expect(calls.setStarred).toHaveBeenNthCalledWith(
+      2,
+      THESIS.thesis.id,
+      false
+    );
+    expect(calls.setSignalEnabled).toHaveBeenCalledWith(
+      THESIS.thesis.id,
+      false
+    );
     expect(calls.update).toHaveBeenCalledWith(THESIS.thesis.id, {
       request_id: REQUEST_ID,
       expected_author_version_id: THESIS.thesis.author_version_id,

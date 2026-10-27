@@ -14,6 +14,7 @@ const original = {
   entity_stances: [{ entity_id: '508176', stance: 'bearish' as const }],
   visibility: 'private' as const,
   closed: false,
+  archived: false,
   closing_note: '',
   author_kind: 'user',
   author_ref: 'author',

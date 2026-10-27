@@ -182,6 +182,17 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis set-visibility', 'thesis set-visibility', {
       values: ['id', 'visibility'],
     }),
+    route('thesis archive', 'thesis archive', {
+      values: ['id', 'request-id', 'note'],
+    }),
+    route('thesis restore', 'thesis restore', {
+      values: ['id', 'request-id', 'note'],
+    }),
+    route('thesis star', 'thesis star', { values: ['id'] }),
+    route('thesis unstar', 'thesis unstar', { values: ['id'] }),
+    route('thesis set-signal-enabled', 'thesis set-signal-enabled', {
+      values: ['id', 'enabled'],
+    }),
     route('thesis update', 'thesis update', {
       values: [
         'id',
