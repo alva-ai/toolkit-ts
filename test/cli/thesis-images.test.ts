@@ -136,6 +136,33 @@ for (const [name, dispatch] of [
       ).toEqual(medias);
       expect(result).toMatchObject({ thesis: { medias } });
     });
+    it.each([
+      [null],
+      [{ type: 'unknown', cover_url: 'https://cdn.example/a.png' }],
+      [{ type: 'image', cover_url: '/private/a.png' }],
+      [{ type: 'video', cover_url: 'https://cdn.example/a.png', url: 42 }],
+    ])('rejects malformed update media before sending: %j', async (item) => {
+      const { client, fetcher } = fixture();
+      await expect(
+        dispatch(client, [
+          'thesis',
+          'update',
+          '--id',
+          '42',
+          '--request-id',
+          requestId,
+          '--expected-author-version-id',
+          '43',
+          '--body',
+          'Edited body',
+          '--visibility',
+          'public',
+          '--medias',
+          JSON.stringify([item]),
+        ])
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(fetcher).not.toHaveBeenCalled();
+    });
     it('keeps text-only private creation unchanged', async () => {
       const { client, fetcher } = fixture();
       await dispatch(client, argv(undefined, 'private'));

@@ -765,6 +765,8 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
   if (params.medias !== undefined) {
     if (!Array.isArray(params.medias) || params.medias.length > 20)
       throw invalidArgument('medias must be an array of at most 20 items');
+    if (!params.medias.every(validMedia))
+      throw invalidArgument('medias contains invalid media');
     body.medias = params.medias;
   }
   if (params.archived !== undefined) {
@@ -812,14 +814,7 @@ function thesisResponse(response: unknown): ThesisResponse {
     if (!Array.isArray(thesis.medias) || thesis.medias.length > 20)
       throw invalidResponse('thesis.medias must contain at most 20 items');
     value.medias = thesis.medias.map((item: unknown) => {
-      if (
-        !isRecord(item) ||
-        !['image', 'price_chart', 'audio', 'video'].includes(
-          item.type as string
-        ) ||
-        !validMediaURL(item.cover_url) ||
-        (item.url != null && !validMediaURL(item.url))
-      )
+      if (!validMedia(item))
         throw invalidResponse('thesis.medias contains invalid media');
       return {
         type: item.type as ThesisMedia['type'],
@@ -1221,6 +1216,15 @@ function invalidArgument(message: string): AlvaError {
 
 function invalidResponse(message: string): AlvaError {
   return new AlvaError('INVALID_RESPONSE', message, 502);
+}
+
+function validMedia(item: unknown): item is ThesisMedia {
+  return (
+    isRecord(item) &&
+    ['image', 'price_chart', 'audio', 'video'].includes(item.type as string) &&
+    validMediaURL(item.cover_url) &&
+    (item.url == null || validMediaURL(item.url))
+  );
 }
 
 function validMediaURL(value: unknown): value is string {
