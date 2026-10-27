@@ -190,6 +190,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('thesis create', {
     values: [
       'request-id',
+      'images',
       'body',
       'body-file',
       'title',
@@ -215,6 +216,10 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('thesis related', { values: ['id', 'first', 'cursor'] }),
   command('thesis get', { values: ['id'] }),
+  command('thesis version list', { values: ['id', 'first', 'cursor'] }),
+  command('thesis version delete', {
+    values: ['id', 'author-version-id', 'expected-author-version-id'],
+  }),
   command('thesis version get', {
     values: ['id', 'author-version-id'],
   }),
@@ -230,6 +235,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'title',
       'entity-ids',
       'entity-stances',
+      'medias',
       'visibility',
     ],
     booleans: ['body-stdin', 'editorial'],

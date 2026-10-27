@@ -25,6 +25,7 @@ export {
   type ThesisVisibility,
   type ThesisAssetStance,
   type ThesisEntityStance,
+  type ThesisMedia,
   type ThesisAssetCandidate,
   type ThesisAssetMention,
   type ThesisAssetCandidatesResponse,

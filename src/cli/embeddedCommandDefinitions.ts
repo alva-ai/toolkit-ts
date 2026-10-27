@@ -139,6 +139,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis create', 'thesis create', {
       values: [
         'request-id',
+        'images',
         'body',
         'title',
         'entity-ids',
@@ -166,6 +167,12 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['id', 'first', 'cursor'],
     }),
     route('thesis get', 'thesis get', { values: ['id'] }),
+    route('thesis version list', 'thesis version list', {
+      values: ['id', 'first', 'cursor'],
+    }),
+    route('thesis version delete', 'thesis version delete', {
+      values: ['id', 'author-version-id', 'expected-author-version-id'],
+    }),
     route('thesis version get', 'thesis version get', {
       values: ['id', 'author-version-id'],
     }),
@@ -184,6 +191,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'title',
         'entity-ids',
         'entity-stances',
+        'medias',
         'visibility',
       ],
       booleans: ['editorial'],

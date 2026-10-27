@@ -40,6 +40,7 @@ import {
   type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
 import type {
+  ThesisMedia,
   ThesisRewriteMode,
   ThesisVisibility,
 } from '../resources/theses.js';
@@ -1560,6 +1561,8 @@ Subcommands:
   related  Read related current publications
   get      Get one thesis
   version get  Get one exact author version
+  version list  List visible Updates with editorial revisions folded together
+  version delete  Delete one Update; restore prior content if it is current
   signals  Read published Signal history
   set-visibility  Change current access without publishing a version
   update   Replaces document fields: body, title, entities, visibility (all sent in full)
@@ -1579,7 +1582,10 @@ the backend; do not send a fresh ID. Create defaults --visibility to public.
 Update requires --visibility explicitly so it cannot inadvertently publish.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>]
+  Images: public creation only, at most 20 in display order. Upload selected files
+       with the existing host upload tool after publication confirmation. Private
+       images and local/ALFS paths are not supported; this flag does not upload.
   list --person <slug> | --person-name <name> | --user <username>
        | --ticker <ticker> | --entity-id <id>
        [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextCursor>]
@@ -1597,9 +1603,13 @@ Other flags:
   asset-candidates --text <unsaved thesis text>
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
+  version list --id <id> [--first <1-100>] [--cursor <next_cursor>]
+  version delete --id <id> --author-version-id <selected> --expected-author-version-id <current>
+       Cannot remove the last Update. Never falls back to whole-Thesis deletion.
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   set-visibility --id <id> --visibility public|private
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--editorial]
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--editorial]
+       For text edits, pass current medias unchanged; omission clears media.
   Only editing the body? Resubmit the existing entity IDs and directions.
   Omitted directions become unknown; explicit unknown clears a direction.
   close   --id <id> --expected-author-version-id <id> [--note <text>]
@@ -2658,6 +2668,34 @@ function thesisTickers(flags: Record<string, string>): string[] | undefined {
   return tickers;
 }
 
+function thesisMedias(
+  flags: Record<string, string>
+): ThesisMedia[] | undefined {
+  if (flags.medias === undefined) return undefined;
+  try {
+    const value = JSON.parse(flags.medias);
+    if (Array.isArray(value)) return value;
+  } catch {
+    // Report malformed media before sending the update.
+  }
+  throw new CliUsageError('--medias must be a JSON array', 'thesis update');
+}
+
+function thesisImages(flags: Record<string, string>): string[] | undefined {
+  if (flags.images === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(flags.images);
+    if (Array.isArray(value) && value.every((item) => typeof item === 'string'))
+      return value;
+  } catch {
+    // Malformed JSON and invalid shapes share the same usage error.
+  }
+  throw new CliUsageError(
+    '--images must be a JSON array of uploaded HTTPS image URLs',
+    'thesis'
+  );
+}
+
 function thesisEntityStances(
   flags: Record<string, string>
 ):
@@ -3480,6 +3518,7 @@ export async function executeParsedCommand(
         case 'create':
           return client.theses.create({
             request_id: requireFlag(flags, 'request-id', 'thesis create'),
+            images: thesisImages(flags),
             body: await thesisBodyFromFlags(flags, 'thesis create', deps),
             title: flags.title ?? '',
             entity_ids: thesisEntityIDs(flags),
@@ -3530,6 +3569,22 @@ export async function executeParsedCommand(
         case 'get':
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
         case 'version':
+          if (parsedCommand.path[2] === 'list') {
+            return client.theses.listUpdates(
+              requireFlag(flags, 'id', 'thesis version list'),
+              {
+                first: flags.first === undefined ? undefined : Number(flags.first),
+                cursor: flags.cursor,
+              }
+            );
+          }
+          if (parsedCommand.path[2] === 'delete') {
+            return client.theses.deleteUpdate(
+              requireFlag(flags, 'id', 'thesis version delete'),
+              requireFlag(flags, 'author-version-id', 'thesis version delete'),
+              requireFlag(flags, 'expected-author-version-id', 'thesis version delete')
+            );
+          }
           return client.theses.getVersion(
             requireFlag(flags, 'id', 'thesis version get'),
             requireFlag(flags, 'author-version-id', 'thesis version get')
@@ -3566,6 +3621,7 @@ export async function executeParsedCommand(
               title: flags.title ?? '',
               entity_ids: thesisEntityIDs(flags),
               entity_stances: thesisEntityStances(flags),
+              medias: thesisMedias(flags),
               visibility: thesisVisibility(
                 requireFlag(flags, 'visibility', 'thesis update')
               ),
