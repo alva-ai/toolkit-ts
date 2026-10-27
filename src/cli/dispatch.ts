@@ -3629,7 +3629,8 @@ export async function executeParsedCommand(
             return client.theses.listUpdates(
               requireFlag(flags, 'id', 'thesis version list'),
               {
-                first: flags.first === undefined ? undefined : Number(flags.first),
+                first:
+                  flags.first === undefined ? undefined : Number(flags.first),
                 cursor: flags.cursor,
               }
             );
@@ -3638,7 +3639,11 @@ export async function executeParsedCommand(
             return client.theses.deleteUpdate(
               requireFlag(flags, 'id', 'thesis version delete'),
               requireFlag(flags, 'author-version-id', 'thesis version delete'),
-              requireFlag(flags, 'expected-author-version-id', 'thesis version delete')
+              requireFlag(
+                flags,
+                'expected-author-version-id',
+                'thesis version delete'
+              )
             );
           }
           return client.theses.getVersion(

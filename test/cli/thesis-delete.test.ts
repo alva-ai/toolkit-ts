@@ -11,7 +11,8 @@ const thesis = {
   body: 'Previous view',
   entity_ids: [],
   visibility: 'private',
-  closed: false, archived: false,
+  closed: false,
+  archived: false,
   closing_note: '',
   author_kind: 'user',
   author_ref: 'alice',
@@ -121,6 +122,5 @@ for (const [name, dispatch] of [
       ).toEqual({ versions: [thesis], next_cursor: 'next' });
       expect(String(fetcher.mock.calls[0]?.[0])).toContain('updates_only=true');
     });
-
   });
 }

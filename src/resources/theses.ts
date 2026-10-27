@@ -1296,5 +1296,4 @@ async function thesisGraphql(
   if (!isRecord(response.data))
     throw invalidResponse('GraphQL response must contain data');
   return response.data;
-
 }
