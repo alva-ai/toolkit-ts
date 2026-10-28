@@ -134,21 +134,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       'steward-self'
     ),
     action('steward status', { values: ['digest-run-id'] }, 'steward-self'),
-    action(
-      'steward stage',
-      { values: ['digest-run-id', 'delivery-ids'] },
-      'steward-self'
-    ),
-    action(
-      'steward reconcile',
-      { values: ['digest-run-id', 'body'] },
-      'steward-self'
-    ),
-    action(
-      'steward finalize',
-      { values: ['digest-run-id', 'intent'] },
-      'steward-self'
-    ),
     route('company-news create', 'company-news create', {
       values: ['name', 'tickers', 'initial-lookback-hours', 'page-size'],
     }),

@@ -50,6 +50,10 @@ export interface StewardPendingPageParams extends StewardPendingParams {
   after?: string;
 }
 
+export type StewardPendingFullParams = Omit<StewardPendingParams, 'after'> & {
+  after?: undefined;
+};
+
 export interface StewardBriefedParams extends StewardTarget {
   deliveryIds: string[];
   digestRunId: string;
@@ -59,16 +63,11 @@ export interface StewardDigestRunParams extends StewardTarget {
   digestRunId: string;
 }
 
-export interface StewardStageDigestRunParams extends StewardDigestRunParams {
-  deliveryIds: string[];
-}
-
 export interface StewardSendDigestRunParams extends StewardDigestRunParams {
-  body: string;
-}
-
-export interface StewardFinalizeDigestRunParams extends StewardDigestRunParams {
-  intent: 'sent' | 'intentionally_empty';
+  /** Exact reviewed coverage; omit or pass [] for a For-You-only Brief. */
+  deliveryIds?: string[];
+  /** Omit only when the fixed run window is intentionally empty. */
+  body?: string;
 }
 
 export interface StewardDecideResult {
@@ -213,32 +212,20 @@ query ToolkitStewardDigestRun($inboxPath: String!, $digestRunId: String!) {
 }`.trim();
 
 const DIGEST_RUN_PENDING = `
-query ToolkitStewardDigestRunPending($inboxPath: String!, $digestRunId: String!) {
+query ToolkitStewardDigestRunPending($inboxPath: String!, $digestRunId: String!, $input: StewardDigestRunPendingInput) {
   viewer {
-    stewardDigestRunPending(inboxPath: $inboxPath, digestRunId: $digestRunId) {
-      deliveryId feedEntryId source { kind id } decisionReason consumedAtMs alertSnapshot
+    stewardDigestRunPending(inboxPath: $inboxPath, digestRunId: $digestRunId, input: $input) {
+      edges {
+        node { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs alertSnapshot }
+      }
+      pageInfo { hasNextPage endCursor }
     }
   }
 }`.trim();
 
-const STAGE_DIGEST_RUN = `
-mutation ToolkitStewardStageDigestRun($input: StageStewardDigestRunDeliveriesInput!) {
-  stageStewardDigestRunDeliveries(input: $input) { run { ${DIGEST_RUN_FIELDS} } }
-}`.trim();
-
-const SEND_DIGEST_RUN = `
-mutation ToolkitStewardSendDigestRun($input: SendStewardDigestRunInput!) {
-  sendStewardDigestRun(input: $input) { run { ${DIGEST_RUN_FIELDS} } }
-}`.trim();
-
-const RECONCILE_DIGEST_RUN = `
-mutation ToolkitStewardReconcileDigestRun($input: SendStewardDigestRunInput!) {
-  reconcileStewardDigestRunSend(input: $input) { run { ${DIGEST_RUN_FIELDS} } }
-}`.trim();
-
-const FINALIZE_DIGEST_RUN = `
-mutation ToolkitStewardFinalizeDigestRun($input: FinalizeStewardDigestRunInput!) {
-  finalizeStewardDigestRun(input: $input) { run { ${DIGEST_RUN_FIELDS} } }
+const PUBLISH_DAILY_BRIEF = `
+mutation ToolkitStewardPublishDailyBrief($input: PublishStewardDailyBriefInput!) {
+  publishStewardDailyBrief(input: $input) { run { ${DIGEST_RUN_FIELDS} } }
 }`.trim();
 
 const DECISIONS: ReadonlySet<string> = new Set([
@@ -248,7 +235,7 @@ const DECISIONS: ReadonlySet<string> = new Set([
 ]);
 const DELIVERY_ID = /^[1-9][0-9]{0,18}$/;
 const MAX_LEGACY_BRIEFED_IDS = 100;
-const DIGEST_RUN_STAGE_BATCH = 100;
+const MAX_DIGEST_RUN_COVERAGE = 10_000;
 const DIGEST_RUN_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // No shared/testable sleep seam exists in Toolkit today, so retries are
@@ -425,7 +412,12 @@ export class StewardResource {
   async pending(
     params: StewardPendingParams & { after: string }
   ): Promise<StewardPendingPage>;
-  async pending(params: StewardPendingParams): Promise<StewardPendingResult>;
+  async pending(
+    params: StewardPendingFullParams
+  ): Promise<StewardPendingResult>;
+  async pending(
+    params: StewardPendingParams
+  ): Promise<StewardPendingResult | StewardPendingPage>;
   async pending(
     params: StewardPendingParams
   ): Promise<StewardPendingResult | StewardPendingPage> {
@@ -604,113 +596,64 @@ export class StewardResource {
     params: StewardDigestRunParams
   ): Promise<StewardPendingItem[]> {
     this.client._requireAuth();
-    const data = await this.graphql<{
-      viewer?: { stewardDigestRunPending?: StewardPendingItem[] | null } | null;
-    }>(DIGEST_RUN_PENDING, {
-      inboxPath: requireInboxPath(params),
-      digestRunId: requireDigestRunId(params.digestRunId),
-    });
-    const items = data.viewer?.stewardDigestRunPending;
-    if (!Array.isArray(items)) throw emptyResponse();
-    return items;
-  }
-
-  async stageDigestRunDeliveries(
-    params: StewardStageDigestRunParams
-  ): Promise<StewardDigestRun> {
-    this.client._requireAuth();
     const inboxPath = requireInboxPath(params);
     const digestRunId = requireDigestRunId(params.digestRunId);
-    const deliveryIds = requireDeliveryIds(params.deliveryIds);
-    let run: StewardDigestRun | undefined;
-    for (
-      let offset = 0;
-      offset < deliveryIds.length;
-      offset += DIGEST_RUN_STAGE_BATCH
-    ) {
+    const items: StewardPendingItem[] = [];
+    let after: string | undefined;
+    for (;;) {
       const data = await this.graphql<{
-        stageStewardDigestRunDeliveries?: {
-          run?: StewardDigestRun | null;
+        viewer?: {
+          stewardDigestRunPending?: {
+            edges?: Array<{ node?: StewardPendingItem | null } | null> | null;
+            pageInfo?: {
+              hasNextPage?: boolean;
+              endCursor?: string | null;
+            } | null;
+          } | null;
         } | null;
-      }>(STAGE_DIGEST_RUN, {
-        input: {
-          inboxPath,
-          digestRunId,
-          deliveryIds: deliveryIds.slice(
-            offset,
-            offset + DIGEST_RUN_STAGE_BATCH
-          ),
-        },
+      }>(DIGEST_RUN_PENDING, {
+        inboxPath,
+        digestRunId,
+        input: { first: 100, ...(after === undefined ? {} : { after }) },
       });
-      run = data.stageStewardDigestRunDeliveries?.run ?? undefined;
-      if (!run) throw emptyResponse();
+      const connection = data.viewer?.stewardDigestRunPending;
+      if (!connection || !Array.isArray(connection.edges))
+        throw emptyResponse();
+      for (const edge of connection.edges) {
+        if (!edge?.node) throw emptyResponse();
+        items.push(edge.node);
+      }
+      if (connection.pageInfo?.hasNextPage !== true) break;
+      const next = connection.pageInfo.endCursor;
+      if (typeof next !== 'string' || next === '' || next === after)
+        throw emptyResponse();
+      after = next;
     }
-    return run as StewardDigestRun;
+    return items;
   }
 
   async sendDigestRun(
     params: StewardSendDigestRunParams
   ): Promise<StewardDigestRun> {
-    try {
-      return await this.digestRunMutation(
-        SEND_DIGEST_RUN,
-        'sendStewardDigestRun',
-        params
-      );
-    } catch (error) {
-      if (!isTransientStewardError(error)) throw error;
-      return this.reconcileDigestRunSend(params);
-    }
-  }
-
-  async reconcileDigestRunSend(
-    params: StewardSendDigestRunParams
-  ): Promise<StewardDigestRun> {
-    return this.digestRunMutation(
-      RECONCILE_DIGEST_RUN,
-      'reconcileStewardDigestRunSend',
-      params
-    );
-  }
-
-  async finalizeDigestRun(
-    params: StewardFinalizeDigestRunParams
-  ): Promise<StewardDigestRun> {
     this.client._requireAuth();
-    if (params.intent !== 'sent' && params.intent !== 'intentionally_empty')
-      throw invalid('intent must be sent or intentionally_empty');
+    const deliveryIds = normalizeDeliveryIds(params.deliveryIds ?? []);
+    if (deliveryIds.length > MAX_DIGEST_RUN_COVERAGE)
+      throw invalid('durable Daily Brief accepts at most 10000 delivery ids');
+    if (params.body !== undefined && params.body.trim() === '')
+      throw invalid('a message body must be non-blank when provided');
+    if (params.body === undefined && deliveryIds.length !== 0)
+      throw invalid('delivery ids require a message body');
     const data = await this.graphql<{
-      finalizeStewardDigestRun?: { run?: StewardDigestRun | null } | null;
-    }>(FINALIZE_DIGEST_RUN, {
+      publishStewardDailyBrief?: { run?: StewardDigestRun | null } | null;
+    }>(PUBLISH_DAILY_BRIEF, {
       input: {
         inboxPath: requireInboxPath(params),
         digestRunId: requireDigestRunId(params.digestRunId),
-        intent: params.intent.toUpperCase(),
+        deliveryIds,
+        ...(params.body === undefined ? {} : { body: params.body }),
       },
     });
-    const run = data.finalizeStewardDigestRun?.run;
-    if (!run) throw emptyResponse();
-    return run;
-  }
-
-  private async digestRunMutation(
-    query: string,
-    field: 'sendStewardDigestRun' | 'reconcileStewardDigestRunSend',
-    params: StewardSendDigestRunParams
-  ): Promise<StewardDigestRun> {
-    this.client._requireAuth();
-    if (typeof params.body !== 'string' || params.body.trim() === '')
-      throw invalid('a message body is required');
-    const data = await this.graphql<
-      Record<string, { run?: StewardDigestRun | null } | null>
-    >(query, {
-      input: {
-        inboxPath: requireInboxPath(params),
-        digestRunId: requireDigestRunId(params.digestRunId),
-        body: params.body,
-      },
-    });
-    const run = data[field]?.run;
+    const run = data.publishStewardDailyBrief?.run;
     if (!run) throw emptyResponse();
     return run;
   }

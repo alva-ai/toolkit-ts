@@ -66,15 +66,9 @@ status   --digest-run-id <uuid>
          Read the durable state and receipt of this Brief occurrence.
 pending  --digest-run-id <uuid>
          Read the complete fixed-window delivery set owned by this run.
-stage    --digest-run-id <uuid> --delivery-ids <a,b,c>
-         Stage the complete reviewed set; batching is automatic.
-send     --digest-run-id <uuid> --body <markdown>
-         Freeze and publish the exact body. A transient error is reconciled
-         with the identical body before it is returned.
-reconcile --digest-run-id <uuid> --body <markdown>
-         Explicitly reconcile an uncertain send without regenerating content.
-finalize --digest-run-id <uuid> --intent <sent|intentionally_empty>
-         Atomically validate coverage and commit the terminal run state.
+send     --digest-run-id <uuid> [--delivery-ids <a,b,c>] [--body <markdown>]
+         Publish the reviewed coverage and complete the run. Omit both
+         delivery ids and body only for a server-validated empty window.
 pending  [--since <RFC3339>] [--until <RFC3339>]
          Legacy fixed-window read; automatic paging and bounded retries.
 send     [--delivery-ids <a,b,c>] --body <markdown> [--request-id <uuid>]

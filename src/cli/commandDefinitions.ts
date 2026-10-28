@@ -190,15 +190,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['inbox-path', 'delivery-ids', 'digest-run-id'],
   }),
   command('steward status', { values: ['inbox-path', 'digest-run-id'] }),
-  command('steward stage', {
-    values: ['inbox-path', 'digest-run-id', 'delivery-ids'],
-  }),
-  command('steward reconcile', {
-    values: ['inbox-path', 'digest-run-id', 'body'],
-  }),
-  command('steward finalize', {
-    values: ['inbox-path', 'digest-run-id', 'intent'],
-  }),
 
   command('company-news create', {
     values: ['name', 'tickers', 'initial-lookback-hours', 'page-size'],

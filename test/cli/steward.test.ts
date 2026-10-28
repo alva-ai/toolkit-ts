@@ -31,16 +31,7 @@ function clientWithSteward(attached = false) {
     .fn()
     .mockResolvedValue({ digestRunId, state: 'RUNNING' });
   client.steward.digestRunPending = vi.fn().mockResolvedValue([]);
-  client.steward.stageDigestRunDeliveries = vi
-    .fn()
-    .mockResolvedValue({ digestRunId, state: 'RUNNING' });
   client.steward.sendDigestRun = vi
-    .fn()
-    .mockResolvedValue({ digestRunId, state: 'SENT' });
-  client.steward.reconcileDigestRunSend = vi
-    .fn()
-    .mockResolvedValue({ digestRunId, state: 'SENT' });
-  client.steward.finalizeDigestRun = vi
     .fn()
     .mockResolvedValue({ digestRunId, state: 'SENT' });
   return client;
@@ -242,16 +233,19 @@ describe('steward CLI', () => {
 
     await dispatchEmbedded(client, [
       'steward',
-      'stage',
+      'send',
       '--digest-run-id',
       digestRunId,
       '--delivery-ids',
       '1,2',
+      '--body',
+      'Brief',
     ]);
-    expect(client.steward.stageDigestRunDeliveries).toHaveBeenCalledWith({
+    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
       inboxPath,
       digestRunId,
       deliveryIds: ['1', '2'],
+      body: 'Brief',
     });
 
     await dispatchEmbedded(client, [
@@ -259,41 +253,12 @@ describe('steward CLI', () => {
       'send',
       '--digest-run-id',
       digestRunId,
-      '--body',
-      'Brief',
     ]);
-    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
+    expect(client.steward.sendDigestRun).toHaveBeenLastCalledWith({
       inboxPath,
       digestRunId,
-      body: 'Brief',
-    });
-
-    await dispatchEmbedded(client, [
-      'steward',
-      'reconcile',
-      '--digest-run-id',
-      digestRunId,
-      '--body',
-      'Brief',
-    ]);
-    expect(client.steward.reconcileDigestRunSend).toHaveBeenCalledWith({
-      inboxPath,
-      digestRunId,
-      body: 'Brief',
-    });
-
-    await dispatchEmbedded(client, [
-      'steward',
-      'finalize',
-      '--digest-run-id',
-      digestRunId,
-      '--intent',
-      'sent',
-    ]);
-    expect(client.steward.finalizeDigestRun).toHaveBeenCalledWith({
-      inboxPath,
-      digestRunId,
-      intent: 'sent',
+      deliveryIds: [],
+      body: undefined,
     });
   });
 
@@ -442,5 +407,25 @@ describe('steward CLI details', () => {
       dispatchEmbedded(client, ['steward', 'pending', '--after', 'cursor-1'])
     ).rejects.toThrow(/--after is not supported/);
     expect(client.steward.pending).not.toHaveBeenCalled();
+  });
+
+  it('passes reviewed coverage through durable send mode', async () => {
+    const client = clientWithSteward(true);
+    await dispatchEmbedded(client, [
+      'steward',
+      'send',
+      '--digest-run-id',
+      digestRunId,
+      '--delivery-ids',
+      '5',
+      '--body',
+      'brief',
+    ]);
+    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
+      inboxPath,
+      digestRunId,
+      deliveryIds: ['5'],
+      body: 'brief',
+    });
   });
 });
