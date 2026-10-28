@@ -4,6 +4,7 @@ import { AlvaError } from '../../src/error.js';
 
 const inboxPath =
   '/alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl';
+const digestRunId = '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77';
 
 const alertSnapshot = JSON.stringify({
   kind: 'alert',
@@ -572,6 +573,146 @@ describe('StewardResource', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AlvaError);
     expect((error as AlvaError).status).toBe(403);
+  });
+
+  it('reads durable run status and its complete fixed-window pending set', async () => {
+    const c = client();
+    const run = {
+      digestRunId,
+      state: 'RUNNING',
+      scheduleId: '91',
+      scheduleVersion: 4,
+      occurrenceIndex: 12,
+      windowSinceMs: 1788700000000,
+      windowUntilMs: 1788720000000,
+      scanCompletedAtMs: null,
+      bodySha256: null,
+      coverageSha256: null,
+      channelMessageId: null,
+      attempts: 1,
+      lastError: '',
+      startedAtMs: 1788720001000,
+      completedAtMs: null,
+      sendUncertainAtMs: null,
+    };
+    const item = {
+      deliveryId: '5',
+      feedEntryId: '9',
+      source: { kind: 'THESIS_FEED', id: '7' },
+      decisionReason: 'daily',
+      consumedAtMs: 1788710000000,
+      alertSnapshot,
+    };
+    const request = vi
+      .spyOn(c, '_request')
+      .mockResolvedValueOnce({ data: { viewer: { stewardDigestRun: run } } })
+      .mockResolvedValueOnce({
+        data: { viewer: { stewardDigestRunPending: [item] } },
+      });
+
+    await expect(
+      c.steward.digestRun({ inboxPath, digestRunId })
+    ).resolves.toEqual(run);
+    await expect(
+      c.steward.digestRunPending({ inboxPath, digestRunId })
+    ).resolves.toEqual([item]);
+    expect(request.mock.calls[0][2]).toEqual({
+      body: {
+        query: expect.stringMatching(/stewardDigestRun\(/),
+        variables: { inboxPath, digestRunId },
+      },
+    });
+    expect(request.mock.calls[1][2]).toEqual({
+      body: {
+        query: expect.stringMatching(/stewardDigestRunPending\(/),
+        variables: { inboxPath, digestRunId },
+      },
+    });
+  });
+
+  it('stages arbitrary coverage in bounded batches', async () => {
+    const c = client();
+    const deliveryIds = Array.from({ length: 205 }, (_, index) =>
+      String(index + 1)
+    );
+    const run = { digestRunId, state: 'RUNNING' };
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { stageStewardDigestRunDeliveries: { run } },
+    });
+
+    await expect(
+      c.steward.stageDigestRunDeliveries({
+        inboxPath,
+        digestRunId,
+        deliveryIds,
+      })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(
+      request.mock.calls.map(
+        (call) =>
+          (
+            call[2] as {
+              body: { variables: { input: { deliveryIds: string[] } } };
+            }
+          ).body.variables.input.deliveryIds.length
+      )
+    ).toEqual([100, 100, 5]);
+  });
+
+  it('reconciles the identical body after an uncertain send error', async () => {
+    const c = client();
+    const body = '# Daily Brief\n\nBody';
+    const run = { digestRunId, state: 'SENT', channelMessageId: '77' };
+    const request = vi
+      .spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: null,
+        errors: [
+          {
+            message: 'deadline exceeded',
+            extensions: { code: 'DEADLINE_EXCEEDED' },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        data: { reconcileStewardDigestRunSend: { run } },
+      });
+
+    await expect(
+      c.steward.sendDigestRun({ inboxPath, digestRunId, body })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1][2]).toEqual({
+      body: {
+        query: expect.stringMatching(/reconcileStewardDigestRunSend/),
+        variables: { input: { inboxPath, digestRunId, body } },
+      },
+    });
+  });
+
+  it('finalizes a run with a typed intent', async () => {
+    const c = client();
+    const run = { digestRunId, state: 'INTENTIONALLY_EMPTY' };
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { finalizeStewardDigestRun: { run } },
+    });
+
+    await expect(
+      c.steward.finalizeDigestRun({
+        inboxPath,
+        digestRunId,
+        intent: 'intentionally_empty',
+      })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringMatching(/finalizeStewardDigestRun/),
+        variables: {
+          input: { inboxPath, digestRunId, intent: 'INTENTIONALLY_EMPTY' },
+        },
+      },
+    });
   });
 });
 

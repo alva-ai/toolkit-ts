@@ -208,8 +208,12 @@ Embedded commands target the host-attached Inbox; the terminal CLI requires
 Subcommands:
   decide     Record the decision for one delivery (required before forward/send)
   forward    Re-post the original alert card by reference (immediate only)
-  send       Post steward-authored Markdown covering the listed deliveries
-  pending    Read every delivery in one fixed Daily Brief window with bounded immediate retries
+  status     Read one durable Daily Brief run
+  pending    Read a durable run's complete fixed-window set, or use legacy bounds
+  stage      Stage the complete reviewed delivery coverage
+  send       Publish a durable run body, or use the legacy send contract
+  reconcile  Reconcile an uncertain durable send with the identical body
+  finalize   Atomically commit sent or intentionally_empty
   briefed    Record that a Daily Brief covered at most 100 listed deliveries
 
 Flags:
@@ -218,19 +222,22 @@ Flags:
   --delivery-ids <a,b,c>    Comma-separated deliveries (legacy briefed: max 100; optional for send — omit for a For-You-only Brief)
   --decision <immediate|digest|suppress>
   --reason <text>           Short audit note stored with the decision
-  --body <markdown>         Message body (send)
+  --body <markdown>         Message body (send, reconcile)
   --request-id <uuid>       Idempotency key; generated when omitted
   --since <RFC3339>         Lower bound on decision time (pending)
   --until <RFC3339>         Fixed upper bound of the Brief window (pending)
   --first <n>               Internal page size, 1-100 (terminal pending only)
-  --digest-run-id <id>      The request id echoed by the send that carried these deliveries (briefed)
+  --digest-run-id <uuid>    Durable run identity (status/pending/stage/send/reconcile/finalize)
+  --intent <value>          sent or intentionally_empty (finalize)
 
 Examples (terminal; the embedded Agent tool omits --inbox-path):
   alva steward decide --inbox-path /alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl --delivery-id 123 --decision immediate --reason "guidance cut 15%"
   alva steward forward --inbox-path <inbox> --delivery-id 123
-  alva steward send --inbox-path <inbox> --delivery-ids 124,125 --body "Two related moves..."
-  alva steward send --inbox-path <inbox> --body "For You: ..."   # For-You-only Brief, no ledger delivery
-  alva steward pending --inbox-path <inbox> --until 2026-09-15T13:00:00Z
+  alva steward status --inbox-path <inbox> --digest-run-id <uuid>
+  alva steward pending --inbox-path <inbox> --digest-run-id <uuid>
+  alva steward stage --inbox-path <inbox> --digest-run-id <uuid> --delivery-ids 124,125
+  alva steward send --inbox-path <inbox> --digest-run-id <uuid> --body "Daily Brief..."
+  alva steward finalize --inbox-path <inbox> --digest-run-id <uuid> --intent sent
   alva steward briefed --inbox-path <inbox> --digest-run-id <request id echoed by send> --delivery-ids 124,125`,
   configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
@@ -3484,6 +3491,13 @@ export async function executeParsedCommand(
             requestId: flags['request-id'],
           });
         case 'send':
+          if (flags['digest-run-id'] !== undefined) {
+            return client.steward.sendDigestRun({
+              inboxPath,
+              digestRunId: requireFlag(flags, 'digest-run-id', 'steward send'),
+              body: requireFlag(flags, 'body', 'steward send'),
+            });
+          }
           return client.steward.send({
             inboxPath,
             body: requireFlag(flags, 'body', 'steward send'),
@@ -3491,6 +3505,16 @@ export async function executeParsedCommand(
             requestId: flags['request-id'],
           });
         case 'pending': {
+          if (flags['digest-run-id'] !== undefined) {
+            return client.steward.digestRunPending({
+              inboxPath,
+              digestRunId: requireFlag(
+                flags,
+                'digest-run-id',
+                'steward pending'
+              ),
+            });
+          }
           const parseTime = (name: 'since' | 'until'): number | undefined => {
             const value = flags[name];
             if (value === undefined) return undefined;
@@ -3518,6 +3542,45 @@ export async function executeParsedCommand(
             deliveryIds: ids('delivery-ids'),
             digestRunId: requireFlag(flags, 'digest-run-id', 'steward briefed'),
           });
+        case 'status':
+          return client.steward.digestRun({
+            inboxPath,
+            digestRunId: requireFlag(flags, 'digest-run-id', 'steward status'),
+          });
+        case 'stage':
+          return client.steward.stageDigestRunDeliveries({
+            inboxPath,
+            digestRunId: requireFlag(flags, 'digest-run-id', 'steward stage'),
+            deliveryIds: ids('delivery-ids'),
+          });
+        case 'reconcile':
+          return client.steward.reconcileDigestRunSend({
+            inboxPath,
+            digestRunId: requireFlag(
+              flags,
+              'digest-run-id',
+              'steward reconcile'
+            ),
+            body: requireFlag(flags, 'body', 'steward reconcile'),
+          });
+        case 'finalize': {
+          const intent = requireFlag(flags, 'intent', 'steward finalize');
+          if (intent !== 'sent' && intent !== 'intentionally_empty') {
+            throw new CliUsageError(
+              '--intent must be sent or intentionally_empty',
+              'steward'
+            );
+          }
+          return client.steward.finalizeDigestRun({
+            inboxPath,
+            digestRunId: requireFlag(
+              flags,
+              'digest-run-id',
+              'steward finalize'
+            ),
+            intent,
+          });
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: steward ${subcommand}`,
