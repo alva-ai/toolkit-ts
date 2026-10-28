@@ -345,24 +345,4 @@ describe('steward CLI details', () => {
     ).rejects.toThrow(/--after is not supported/);
     expect(client.steward.pending).not.toHaveBeenCalled();
   });
-
-  it('passes several hundred delivery ids without a CLI-side limit', async () => {
-    const client = clientWithSteward(true);
-    const deliveryIds = Array.from({ length: 357 }, (_, index) =>
-      String(index + 1)
-    );
-    await dispatchEmbedded(client, [
-      'steward',
-      'briefed',
-      '--digest-run-id',
-      'digest-357',
-      '--delivery-ids',
-      deliveryIds.join(','),
-    ]);
-    expect(client.steward.briefed).toHaveBeenCalledWith({
-      inboxPath,
-      deliveryIds,
-      digestRunId: 'digest-357',
-    });
-  });
 });

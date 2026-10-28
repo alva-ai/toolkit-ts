@@ -209,13 +209,13 @@ Subcommands:
   decide     Record the decision for one delivery (required before forward/send)
   forward    Re-post the original alert card by reference (immediate only)
   send       Post steward-authored Markdown covering the listed deliveries
-  pending    Read every delivery in one fixed Daily Brief window
-  briefed    Record that a Daily Brief covered the listed deliveries
+  pending    Read every delivery in one fixed Daily Brief window with bounded immediate retries
+  briefed    Record that a Daily Brief covered at most 100 listed deliveries
 
 Flags:
   --inbox-path <path>       Steward Session Inbox (terminal CLI only)
   --delivery-id <id>        One delivery (decide, forward)
-  --delivery-ids <a,b,c>    Comma-separated deliveries (briefed; optional for send — omit for a For-You-only Brief)
+  --delivery-ids <a,b,c>    Comma-separated deliveries (legacy briefed: max 100; optional for send — omit for a For-You-only Brief)
   --decision <immediate|digest|suppress>
   --reason <text>           Short audit note stored with the decision
   --body <markdown>         Message body (send)

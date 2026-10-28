@@ -160,7 +160,9 @@ const DECISIONS: ReadonlySet<string> = new Set([
   'suppress',
 ]);
 const DELIVERY_ID = /^[1-9][0-9]{0,18}$/;
-const MAX_DELIVERY_IDS_PER_REQUEST = 100;
+const MAX_LEGACY_BRIEFED_IDS = 100;
+// No shared/testable sleep seam exists in Toolkit today, so retries are
+// immediate but strictly bounded to avoid hiding a partial read as success.
 const PENDING_ATTEMPTS = 3;
 const TRANSIENT_PENDING_CODES: ReadonlySet<string> = new Set([
   'NETWORK_ERROR',
@@ -447,25 +449,18 @@ export class StewardResource {
     if (!digestRunId) throw invalid('a digest run id is required');
     const inboxPath = requireInboxPath(params);
     const deliveryIds = requireDeliveryIds(params.deliveryIds);
-    for (
-      let offset = 0;
-      offset < deliveryIds.length;
-      offset += MAX_DELIVERY_IDS_PER_REQUEST
-    ) {
-      const data = await this.graphql<{
-        completeStewardBrief?: { ok?: boolean } | null;
-      }>(BRIEFED, {
-        input: {
-          inboxPath,
-          deliveryIds: deliveryIds.slice(
-            offset,
-            offset + MAX_DELIVERY_IDS_PER_REQUEST
-          ),
-          digestRunId,
-        },
-      });
-      if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
-    }
+    if (deliveryIds.length > MAX_LEGACY_BRIEFED_IDS)
+      throw invalid('legacy briefed accepts at most 100 delivery ids');
+    const data = await this.graphql<{
+      completeStewardBrief?: { ok?: boolean } | null;
+    }>(BRIEFED, {
+      input: {
+        inboxPath,
+        deliveryIds,
+        digestRunId,
+      },
+    });
+    if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
     return { ok: true };
   }
 

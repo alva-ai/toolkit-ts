@@ -391,34 +391,20 @@ describe('StewardResource', () => {
     await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
   });
 
-  it.each([100, 101, 357])(
-    'batches %i briefed delivery ids into backend-sized chunks',
-    async (count) => {
-      const c = client();
-      const request = vi.spyOn(c, '_request').mockResolvedValue({
-        data: { completeStewardBrief: { ok: true } },
-      });
-      const deliveryIds = Array.from({ length: count }, (_, index) =>
-        String(index + 1)
-      );
+  it('rejects more than 100 legacy briefed ids before transport', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { completeStewardBrief: { ok: true } },
+    });
+    const deliveryIds = Array.from({ length: 101 }, (_, index) =>
+      String(index + 1)
+    );
 
-      await expect(
-        c.steward.briefed({ inboxPath, deliveryIds, digestRunId: 'run-1' })
-      ).resolves.toEqual({ ok: true });
-
-      expect(request).toHaveBeenCalledTimes(Math.ceil(count / 100));
-      for (const [index, call] of request.mock.calls.entries()) {
-        const input = (
-          call[2] as {
-            body: { variables: { input: { deliveryIds: string[] } } };
-          }
-        ).body.variables.input;
-        expect(input.deliveryIds).toEqual(
-          deliveryIds.slice(index * 100, (index + 1) * 100)
-        );
-      }
-    }
-  );
+    await expect(
+      c.steward.briefed({ inboxPath, deliveryIds, digestRunId: 'run-1' })
+    ).rejects.toThrow(/at most 100/);
+    expect(request).not.toHaveBeenCalled();
+  });
 
   it.each([alertSnapshot, null, undefined])(
     'requests and preserves the pending alert snapshot: %s',
