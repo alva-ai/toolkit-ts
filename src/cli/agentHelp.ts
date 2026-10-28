@@ -67,8 +67,8 @@ status   --digest-run-id <uuid>
 pending  --digest-run-id <uuid>
          Read the complete fixed-window delivery set owned by this run.
 send     --digest-run-id <uuid> [--delivery-ids <a,b,c>] [--body <markdown>]
-         Publish the reviewed coverage and complete the run. Omit both
-         delivery ids and body only for a server-validated empty window.
+         Publish the reviewed coverage and complete the run. Omit the body
+         when reviewed coverage yields no useful content; keep those ids.
 pending  [--since <RFC3339>] [--until <RFC3339>]
          Legacy fixed-window read; automatic paging and bounded retries.
 send     [--delivery-ids <a,b,c>] --body <markdown> [--request-id <uuid>]

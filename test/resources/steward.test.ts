@@ -510,6 +510,26 @@ describe('StewardResource', () => {
     }
   );
 
+  it('fails closed on a non-adjacent durable pagination cursor cycle', async () => {
+    const c = client();
+    const cursors = ['cursor-a', 'cursor-b', 'cursor-a'];
+    const request = vi.spyOn(c, '_request').mockImplementation(async () => ({
+      data: {
+        viewer: {
+          stewardDigestRunPending: {
+            edges: [],
+            pageInfo: { hasNextPage: true, endCursor: cursors.shift() },
+          },
+        },
+      },
+    }));
+
+    await expect(
+      c.steward.digestRunPending({ inboxPath, digestRunId })
+    ).rejects.toThrow(/empty/);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
   it('rejects more than 100 legacy briefed ids before transport', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({

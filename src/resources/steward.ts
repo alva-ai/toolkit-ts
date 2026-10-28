@@ -599,6 +599,7 @@ export class StewardResource {
     const inboxPath = requireInboxPath(params);
     const digestRunId = requireDigestRunId(params.digestRunId);
     const items: StewardPendingItem[] = [];
+    const seenCursors = new Set<string>();
     let after: string | undefined;
     for (;;) {
       const data = await this.graphql<{
@@ -628,8 +629,9 @@ export class StewardResource {
       }
       if (!pageInfo.hasNextPage) break;
       const next = pageInfo.endCursor;
-      if (typeof next !== 'string' || next === '' || next === after)
+      if (typeof next !== 'string' || next === '' || seenCursors.has(next))
         throw emptyResponse();
+      seenCursors.add(next);
       after = next;
     }
     return items;

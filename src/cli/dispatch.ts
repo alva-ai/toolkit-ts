@@ -219,7 +219,7 @@ Flags:
   --delivery-ids <a,b,c>    Comma-separated deliveries (legacy briefed: max 100; optional for send — omit for a For-You-only Brief)
   --decision <immediate|digest|suppress>
   --reason <text>           Short audit note stored with the decision
-  --body <markdown>         Message body (durable send: omit only for an empty run)
+  --body <markdown>         Message body (durable send: omit when reviewed coverage yields no useful content)
   --request-id <uuid>       Idempotency key; generated when omitted
   --since <RFC3339>         Lower bound on decision time (pending)
   --until <RFC3339>         Fixed upper bound of the Brief window (pending)
