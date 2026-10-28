@@ -175,7 +175,8 @@ authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
 IDs and directions as a full author-version update. Update accepts --entity-stances <json>.
-Only editing the body? Resubmit the existing entity IDs and directions.
+Only editing the body? Resubmit the existing entity IDs, directions, and medias.
+Pass current medias unchanged with --medias; omission clears attachments.
 Omitted directions become unknown; explicit unknown clears a direction.
 Create and update require a caller-supplied non-zero
 UUID in --request-id; the dispatcher never creates request IDs or retries.

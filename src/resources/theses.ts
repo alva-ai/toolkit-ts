@@ -34,6 +34,12 @@ export interface ThesisAssetCandidatesResponse {
 /** Canonical server-supported candidate rewrite operation. */
 export type ThesisRewriteMode = 'reformat' | 'shorten' | 'enrich';
 
+export interface ThesisMedia {
+  type: 'image' | 'price_chart' | 'audio' | 'video';
+  cover_url: string;
+  url?: string | null;
+}
+
 export interface Thesis {
   id: ThesisID;
   author_version_id: ThesisID;
@@ -43,6 +49,7 @@ export interface Thesis {
   entity_ids: ThesisID[];
   entity_stances?: ThesisEntityStance[];
   visibility: ThesisVisibility;
+  medias?: ThesisMedia[];
   closed: boolean;
   closing_note: string;
   author_kind: string;
@@ -127,6 +134,8 @@ export interface ThesisSignalsResponse {
 }
 
 export interface CreateThesisParams {
+  /** Public images already uploaded with the existing upload tool, in display order. */
+  images?: string[];
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
   body: string;
@@ -141,6 +150,8 @@ export interface CreateThesisParams {
 }
 
 export interface UpdateThesisParams {
+  /** Full media replacement; pass current medias for a text-only update. */
+  medias?: ThesisMedia[];
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
   expected_author_version_id: ThesisID;
@@ -340,6 +351,68 @@ export class ThesesResource {
     return response;
   }
 
+  /** Lists reader-visible Updates, with editorial revisions folded together. */
+  async listUpdates(
+    id: ThesisID,
+    params: { first?: number; cursor?: string } = {}
+  ): Promise<{ versions: Thesis[]; next_cursor: string }> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const first = params.first ?? 10;
+    if (!Number.isInteger(first) || first < 1 || first > 100)
+      throw invalidArgument('first must be between 1 and 100');
+    if (params.cursor !== undefined && typeof params.cursor !== 'string')
+      throw invalidArgument('cursor must be a string');
+    const response = await this.client._request(
+      'GET',
+      `/api/v1/theses/${thesisID}/versions`,
+      {
+        query: { first, cursor: params.cursor, updates_only: true },
+      }
+    );
+    if (
+      !isRecord(response) ||
+      !Array.isArray(response.versions) ||
+      typeof response.next_cursor !== 'string'
+    )
+      throw invalidResponse('invalid Update list');
+    const versions = response.versions.map(
+      (value) => thesisResponse({ thesis: value }).thesis
+    );
+    if (versions.some((version) => version.id !== thesisID))
+      throw invalidResponse('Update list must match requested Thesis');
+    return { versions, next_cursor: response.next_cursor };
+  }
+
+  /** Deletes only the selected Update; never falls back to whole-Thesis deletion. */
+  async deleteUpdate(
+    id: ThesisID,
+    authorVersionID: ThesisID,
+    expectedAuthorVersionID: ThesisID
+  ): Promise<ThesisResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const versionID = requireID(authorVersionID, 'author_version_id');
+    const expected = requireID(
+      expectedAuthorVersionID,
+      'expected_author_version_id'
+    );
+    const response = thesisResponse(
+      await this.client._request(
+        'DELETE',
+        `/api/v1/theses/${thesisID}/versions/${versionID}`,
+        {
+          query: { expected_author_version_id: expected },
+        }
+      )
+    );
+    if (response.thesis.id !== thesisID)
+      throw invalidResponse(
+        'delete Update response must match requested Thesis'
+      );
+    return response;
+  }
+
   async signals(
     id: ThesisID,
     params: ListThesisSignalsParams = {}
@@ -427,6 +500,7 @@ export class ThesesResource {
       entity_stances: current.thesis.entity_stances,
       visibility: current.thesis.visibility,
       archived: params.archived,
+      medias: current.thesis.medias,
       note: params.note,
     });
     if (
@@ -623,6 +697,21 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requirePublicVisibility(params.visibility ?? 'public'),
   };
+  if (params.images !== undefined) {
+    if (!Array.isArray(params.images) || params.images.length > 20)
+      throw invalidArgument('images must contain at most 20 URLs');
+    if (params.images.length && body.visibility !== 'public')
+      throw invalidArgument(
+        'image publication currently requires public visibility'
+      );
+    body.medias = params.images.map((url) => {
+      if (!validMediaURL(url) || !url.startsWith('https://'))
+        throw invalidArgument(
+          'images must contain HTTPS URLs returned by the upload tool'
+        );
+      return { type: 'image', cover_url: url, url };
+    });
+  }
   if (params.tickers !== undefined)
     body.tickers = requireTickers(params.tickers);
   if (params.entity_stances !== undefined) {
@@ -673,12 +762,20 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
     visibility: requireVisibility(params.visibility),
     editorial: params.editorial ?? false,
   };
+  if (params.medias !== undefined) {
+    if (!Array.isArray(params.medias) || params.medias.length > 20)
+      throw invalidArgument('medias must be an array of at most 20 items');
+    if (!params.medias.every(validMedia))
+      throw invalidArgument('medias contains invalid media');
+    body.medias = params.medias;
+  }
   if (params.archived !== undefined) {
     if (typeof params.archived !== 'boolean')
       throw invalidArgument('archived must be a boolean');
     body.archived = params.archived;
   }
   if (params.note !== undefined) body.note = requireText(params.note, 'note');
+
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
       params.entity_stances,
@@ -713,6 +810,19 @@ function thesisResponse(response: unknown): ThesisResponse {
     author_kind: responseText(thesis.author_kind, 'thesis.author_kind'),
     author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
   };
+  if (thesis.medias !== undefined) {
+    if (!Array.isArray(thesis.medias) || thesis.medias.length > 20)
+      throw invalidResponse('thesis.medias must contain at most 20 items');
+    value.medias = thesis.medias.map((item: unknown) => {
+      if (!validMedia(item))
+        throw invalidResponse('thesis.medias contains invalid media');
+      return {
+        type: item.type as ThesisMedia['type'],
+        cover_url: item.cover_url as string,
+        ...(item.url === undefined ? {} : { url: item.url as string | null }),
+      };
+    });
+  }
   if (thesis.version_archived !== undefined)
     value.version_archived = responseBoolean(
       thesis.version_archived,
@@ -720,6 +830,7 @@ function thesisResponse(response: unknown): ThesisResponse {
     );
   if (thesis.note !== undefined)
     value.note = responseText(thesis.note, 'thesis.note');
+
   if (thesis.entity_stances !== undefined) {
     if (!Array.isArray(thesis.entity_stances))
       throw invalidResponse('thesis.entity_stances must be an array');
@@ -1105,6 +1216,35 @@ function invalidArgument(message: string): AlvaError {
 
 function invalidResponse(message: string): AlvaError {
   return new AlvaError('INVALID_RESPONSE', message, 502);
+}
+
+function validMedia(item: unknown): item is ThesisMedia {
+  return (
+    isRecord(item) &&
+    ['image', 'price_chart', 'audio', 'video'].includes(item.type as string) &&
+    validMediaURL(item.cover_url) &&
+    (item.url == null || validMediaURL(item.url))
+  );
+}
+
+function validMediaURL(value: unknown): value is string {
+  if (
+    typeof value !== 'string' ||
+    value.length > 2048 ||
+    /[\s\u0000]/.test(value)
+  )
+    return false;
+  try {
+    const url = new URL(value);
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      !!url.hostname &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function thesisGraphql(
