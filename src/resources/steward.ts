@@ -619,12 +619,15 @@ export class StewardResource {
       const connection = data.viewer?.stewardDigestRunPending;
       if (!connection || !Array.isArray(connection.edges))
         throw emptyResponse();
+      const pageInfo = connection.pageInfo;
+      if (!pageInfo || typeof pageInfo.hasNextPage !== 'boolean')
+        throw emptyResponse();
       for (const edge of connection.edges) {
         if (!edge?.node) throw emptyResponse();
         items.push(edge.node);
       }
-      if (connection.pageInfo?.hasNextPage !== true) break;
-      const next = connection.pageInfo.endCursor;
+      if (!pageInfo.hasNextPage) break;
+      const next = pageInfo.endCursor;
       if (typeof next !== 'string' || next === '' || next === after)
         throw emptyResponse();
       after = next;

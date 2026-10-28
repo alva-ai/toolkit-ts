@@ -2117,7 +2117,8 @@ function feedReleaseParams(flags: Record<string, string>, command: string) {
     version: requireFlag(flags, 'version', command),
     cronjob_id: requireNumericFlag(flags, 'cronjob-id', command),
     view_json: jsonParse(flags['view-json']) as
-      Record<string, unknown> | undefined,
+      | Record<string, unknown>
+      | undefined,
     description: flags['description'],
     changelog: flags['changelog'],
     agent_type: flags['agent-type'],

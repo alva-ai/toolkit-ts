@@ -726,6 +726,27 @@ describe('StewardResource', () => {
     });
   });
 
+  it.each([undefined, {}, { hasNextPage: 'false', endCursor: null }])(
+    'fails closed on malformed durable run page metadata: %j',
+    async (pageInfo) => {
+      const c = client();
+      vi.spyOn(c, '_request').mockResolvedValue({
+        data: {
+          viewer: {
+            stewardDigestRunPending: {
+              edges: [],
+              pageInfo,
+            },
+          },
+        },
+      });
+
+      await expect(
+        c.steward.digestRunPending({ inboxPath, digestRunId })
+      ).rejects.toThrow(/empty/);
+    }
+  );
+
   it('canonicalizes uppercase digest run ids before transport', async () => {
     const c = client();
     const uppercaseRunId = digestRunId.toUpperCase();
