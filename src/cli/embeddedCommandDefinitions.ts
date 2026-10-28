@@ -123,11 +123,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       { values: ['body', 'delivery-ids', 'request-id'] },
       'steward-self'
     ),
-    action(
-      'steward pending',
-      { values: ['after', 'since', 'until', 'first'] },
-      'steward-self'
-    ),
+    action('steward pending', { values: ['since', 'until'] }, 'steward-self'),
     action(
       'steward briefed',
       { values: ['delivery-ids', 'digest-run-id'] },

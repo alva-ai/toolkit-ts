@@ -66,9 +66,9 @@ send     [--delivery-ids <a,b,c>] --body <markdown> [--request-id <uuid>]
          Post your own Markdown covering the listed deliveries; the response
          echoes requestId — pass it to briefed. Omit --delivery-ids for a
          For-You-only Brief that covers no ledger delivery.
-pending  [--after <cursor>] [--since <RFC3339>] [--until <RFC3339>] [--first <1-100>]
-         Deliveries held for the Daily Brief. Repeat with --after <nextCursor>
-         until nextCursor is null; the cursor carries the window.
+pending  [--since <RFC3339>] [--until <RFC3339>]
+         Read every delivery held for one fixed Daily Brief window. Paging and
+         bounded transient retries are automatic; no cursor is exposed.
 briefed  --digest-run-id <id> --delivery-ids <a,b,c>
          Mark every reviewed delivery covered: use the requestId echoed by send,
          or the digest_request run id when nothing was worth sending.

@@ -74,7 +74,6 @@ describe('steward CLI', () => {
 
       expect(result).toEqual({
         items: [item],
-        nextCursor: null,
         windowSinceMs: 1788700000000,
         windowUntilMs: 1788720000000,
       });
@@ -175,19 +174,14 @@ describe('steward CLI', () => {
     await dispatchEmbedded(client, [
       'steward',
       'pending',
-      '--after',
-      'c1',
       '--until',
       '2026-09-15T13:00:00Z',
-      '--first',
-      '20',
     ]);
     expect(client.steward.pending).toHaveBeenCalledWith({
       inboxPath,
-      after: 'c1',
       sinceMs: undefined,
       untilMs: Date.parse('2026-09-15T13:00:00Z'),
-      first: 20,
+      first: undefined,
     });
 
     await dispatchEmbedded(client, [
@@ -342,5 +336,33 @@ describe('steward CLI details', () => {
       ).rejects.toThrow(/RFC3339/);
     }
     expect(client.steward.pending).not.toHaveBeenCalled();
+  });
+
+  it('does not expose continuation cursors in the model-facing pending command', async () => {
+    const client = clientWithSteward(true);
+    await expect(
+      dispatchEmbedded(client, ['steward', 'pending', '--after', 'cursor-1'])
+    ).rejects.toThrow(/--after is not supported/);
+    expect(client.steward.pending).not.toHaveBeenCalled();
+  });
+
+  it('passes several hundred delivery ids without a CLI-side limit', async () => {
+    const client = clientWithSteward(true);
+    const deliveryIds = Array.from({ length: 357 }, (_, index) =>
+      String(index + 1)
+    );
+    await dispatchEmbedded(client, [
+      'steward',
+      'briefed',
+      '--digest-run-id',
+      'digest-357',
+      '--delivery-ids',
+      deliveryIds.join(','),
+    ]);
+    expect(client.steward.briefed).toHaveBeenCalledWith({
+      inboxPath,
+      deliveryIds,
+      digestRunId: 'digest-357',
+    });
   });
 });

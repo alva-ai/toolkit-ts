@@ -209,7 +209,7 @@ Subcommands:
   decide     Record the decision for one delivery (required before forward/send)
   forward    Re-post the original alert card by reference (immediate only)
   send       Post steward-authored Markdown covering the listed deliveries
-  pending    Page deliveries decided "digest" that no brief has covered yet
+  pending    Read every delivery in one fixed Daily Brief window
   briefed    Record that a Daily Brief covered the listed deliveries
 
 Flags:
@@ -220,10 +220,9 @@ Flags:
   --reason <text>           Short audit note stored with the decision
   --body <markdown>         Message body (send)
   --request-id <uuid>       Idempotency key; generated when omitted
-  --after <cursor>          Opaque cursor from the previous page's nextCursor (pending)
-  --since <RFC3339>         First page only: lower bound on decision time (pending)
-  --until <RFC3339>         First page only: fixed upper bound of the Brief window; later pages inherit it through the cursor (pending)
-  --first <n>               Page size, 1-100 (pending)
+  --since <RFC3339>         Lower bound on decision time (pending)
+  --until <RFC3339>         Fixed upper bound of the Brief window (pending)
+  --first <n>               Internal page size, 1-100 (terminal pending only)
   --digest-run-id <id>      The request id echoed by the send that carried these deliveries (briefed)
 
 Examples (terminal; the embedded Agent tool omits --inbox-path):
@@ -232,7 +231,6 @@ Examples (terminal; the embedded Agent tool omits --inbox-path):
   alva steward send --inbox-path <inbox> --delivery-ids 124,125 --body "Two related moves..."
   alva steward send --inbox-path <inbox> --body "For You: ..."   # For-You-only Brief, no ledger delivery
   alva steward pending --inbox-path <inbox> --until 2026-09-15T13:00:00Z
-  alva steward pending --inbox-path <inbox> --after <nextCursor from the previous page>
   alva steward briefed --inbox-path <inbox> --digest-run-id <request id echoed by send> --delivery-ids 124,125`,
   configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
@@ -3509,7 +3507,6 @@ export async function executeParsedCommand(
             flags.first === undefined ? undefined : Number(flags.first);
           return client.steward.pending({
             inboxPath,
-            after: flags.after,
             sinceMs: parseTime('since'),
             untilMs: parseTime('until'),
             first,

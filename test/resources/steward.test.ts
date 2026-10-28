@@ -123,7 +123,7 @@ describe('StewardResource', () => {
     ).rejects.toThrow(/at least one delivery id/);
   });
 
-  it('reads one connection page and returns the next opaque cursor', async () => {
+  it('reads one connection page through the explicit low-level method', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
       data: {
@@ -148,7 +148,10 @@ describe('StewardResource', () => {
         },
       },
     });
-    const page = await c.steward.pending({ inboxPath, untilMs: 1788720000000 });
+    const page = await c.steward.pendingPage({
+      inboxPath,
+      untilMs: 1788720000000,
+    });
     expect(page.nextCursor).toBe('cur-5');
     expect(page.items[0].deliveryId).toBe('5');
     expect(page.windowUntilMs).toBe(1788720000000);
@@ -159,17 +162,263 @@ describe('StewardResource', () => {
       },
     });
     // A continuation passes only the cursor; the window travels inside it.
-    await c.steward.pending({ inboxPath, after: 'cur-5', untilMs: 1 });
+    await c.steward.pendingPage({ inboxPath, after: 'cur-5', untilMs: 1 });
     expect(request).toHaveBeenLastCalledWith('POST', '/query', {
       body: {
         query: expect.stringContaining('stewardDigestPending'),
         variables: { inboxPath, input: { first: 50, after: 'cur-5' } },
       },
     });
-    await expect(c.steward.pending({ inboxPath, first: 500 })).rejects.toThrow(
-      /between 1 and 100/
-    );
+    await expect(
+      c.steward.pendingPage({ inboxPath, first: 500 })
+    ).rejects.toThrow(/between 1 and 100/);
   });
+
+  it.each([
+    { name: 'zero', pages: [[]], expected: [] },
+    { name: 'one', pages: [['1']], expected: ['1'] },
+    {
+      name: 'multiple',
+      pages: [['1', '2'], ['3'], ['4', '5']],
+      expected: ['1', '2', '3', '4', '5'],
+    },
+  ])('automatically reads $name pending pages', async ({ pages, expected }) => {
+    const c = client();
+    const request = vi.spyOn(c, '_request');
+    pages.forEach((deliveryIds, index) => {
+      request.mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: deliveryIds.map((deliveryId) => ({
+                cursor: `edge-${deliveryId}`,
+                node: {
+                  deliveryId,
+                  feedEntryId: deliveryId,
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000000 + index,
+                },
+              })),
+              pageInfo: {
+                hasNextPage: index < pages.length - 1,
+                endCursor:
+                  index < pages.length - 1 ? `page-${index + 1}` : null,
+              },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+    });
+
+    const result = await c.steward.pending({
+      inboxPath,
+      untilMs: 1788720000000,
+      first: 2,
+    });
+
+    expect(result.items.map((item) => item.deliveryId)).toEqual(expected);
+    expect(result).not.toHaveProperty('nextCursor');
+    expect(result.windowSinceMs).toBe(1788700000000);
+    expect(result.windowUntilMs).toBe(1788720000000);
+    expect(request).toHaveBeenCalledTimes(pages.length);
+    if (pages.length > 1) {
+      expect(request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
+        body: {
+          query: expect.stringContaining('stewardDigestPending'),
+          variables: {
+            inboxPath,
+            input: { first: 2, after: 'page-1' },
+          },
+        },
+      });
+    }
+  });
+
+  it('deduplicates delivery ids repeated across pages', async () => {
+    const c = client();
+    vi.spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: ['1', '2'].map((deliveryId) => ({
+                cursor: `edge-${deliveryId}`,
+                node: {
+                  deliveryId,
+                  feedEntryId: deliveryId,
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000000,
+                },
+              })),
+              pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: ['2', '3'].map((deliveryId) => ({
+                cursor: `edge-${deliveryId}`,
+                node: {
+                  deliveryId,
+                  feedEntryId: deliveryId,
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000001,
+                },
+              })),
+              pageInfo: { hasNextPage: false, endCursor: null },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+    const result = await c.steward.pending({ inboxPath });
+    expect(result.items.map((item) => item.deliveryId)).toEqual([
+      '1',
+      '2',
+      '3',
+    ]);
+  });
+
+  it.each([
+    new AlvaError('NETWORK_TIMEOUT', 'timed out', 0),
+    new AlvaError('NETWORK_ERROR', 'connection reset', 0),
+    new AlvaError('UNAVAILABLE', 'temporarily unavailable', 503),
+    new AlvaError('DEADLINE_EXCEEDED', 'deadline exceeded', 504),
+  ])('recovers from a transient pending failure: %s', async (error) => {
+    const c = client();
+    const request = vi
+      .spyOn(c, '_request')
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+    const result = await c.steward.pending({ inboxPath });
+    expect(result.items).toEqual([]);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails after bounded retries are exhausted', async () => {
+    const c = client();
+    const error = new AlvaError('NETWORK_TIMEOUT', 'timed out', 0);
+    const request = vi.spyOn(c, '_request').mockRejectedValue(error);
+
+    await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails the whole read when a later page exhausts retries', async () => {
+    const c = client();
+    const error = new AlvaError('NETWORK_ERROR', 'connection reset', 0);
+    const request = vi
+      .spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [
+                {
+                  cursor: 'edge-1',
+                  node: {
+                    deliveryId: '1',
+                    feedEntryId: '1',
+                    source: { kind: 'FEED', id: '3' },
+                    decisionReason: 'digest',
+                    consumedAtMs: 1788710000000,
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      })
+      .mockRejectedValue(error);
+
+    await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
+    expect(request).toHaveBeenCalledTimes(4);
+  });
+
+  it('fails closed when the backend says another page exists without a cursor', async () => {
+    const c = client();
+    vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        viewer: {
+          stewardDigestPending: {
+            edges: [
+              {
+                cursor: 'edge-1',
+                node: {
+                  deliveryId: '1',
+                  feedEntryId: '1',
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000000,
+                },
+              },
+            ],
+            pageInfo: { hasNextPage: true, endCursor: null },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
+        },
+      },
+    });
+
+    await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+  });
+
+  it.each([100, 101, 357])(
+    'batches %i briefed delivery ids into backend-sized chunks',
+    async (count) => {
+      const c = client();
+      const request = vi.spyOn(c, '_request').mockResolvedValue({
+        data: { completeStewardBrief: { ok: true } },
+      });
+      const deliveryIds = Array.from({ length: count }, (_, index) =>
+        String(index + 1)
+      );
+
+      await expect(
+        c.steward.briefed({ inboxPath, deliveryIds, digestRunId: 'run-1' })
+      ).resolves.toEqual({ ok: true });
+
+      expect(request).toHaveBeenCalledTimes(Math.ceil(count / 100));
+      for (const [index, call] of request.mock.calls.entries()) {
+        const input = (
+          call[2] as {
+            body: { variables: { input: { deliveryIds: string[] } } };
+          }
+        ).body.variables.input;
+        expect(input.deliveryIds).toEqual(
+          deliveryIds.slice(index * 100, (index + 1) * 100)
+        );
+      }
+    }
+  );
 
   it.each([alertSnapshot, null, undefined])(
     'requests and preserves the pending alert snapshot: %s',
@@ -200,7 +449,7 @@ describe('StewardResource', () => {
         { inboxPath, untilMs: 1788720000000 },
         { inboxPath, after: 'cur-5' },
       ]) {
-        const page = await c.steward.pending(params);
+        const page = await c.steward.pendingPage(params);
         expect(page.items).toEqual([item]);
         expect(page.items[0].alertSnapshot).toBe(snapshot);
         expect(page.nextCursor).toBe('cur-5');
@@ -242,7 +491,9 @@ describe('StewardResource', () => {
       request.mockResolvedValue({
         data: { viewer: { stewardDigestPending: { edges: [], ...bounds } } },
       });
-      await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+      await expect(c.steward.pendingPage({ inboxPath })).rejects.toThrow(
+        /empty/
+      );
     }
   });
 

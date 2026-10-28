@@ -36,13 +36,16 @@ export interface StewardSendParams extends StewardTarget {
 export type StewardSourceKind = 'FEED' | 'MARKET_ENTITY' | 'THESIS_FEED';
 
 export interface StewardPendingParams extends StewardTarget {
-  /** Opaque cursor from the previous page's `nextCursor`; carries the window. */
-  after?: string;
   /** First page only: lower bound on decision time. */
   sinceMs?: number;
   /** First page only: fixed upper bound of the Brief window (the digest_request's untilMs). */
   untilMs?: number;
   first?: number;
+}
+
+export interface StewardPendingPageParams extends StewardPendingParams {
+  /** Opaque cursor from the previous page's `nextCursor`; carries the window. */
+  after?: string;
 }
 
 export interface StewardBriefedParams extends StewardTarget {
@@ -79,6 +82,13 @@ export interface StewardPendingPage {
   /** Cursor for the next page; `null` when this page was the last. */
   nextCursor: string | null;
   /** The window every page of this Brief was read with. */
+  windowSinceMs: number;
+  windowUntilMs: number;
+}
+
+export interface StewardPendingResult {
+  items: StewardPendingItem[];
+  /** The fixed window used for the complete read. */
   windowSinceMs: number;
   windowUntilMs: number;
 }
@@ -150,6 +160,14 @@ const DECISIONS: ReadonlySet<string> = new Set([
   'suppress',
 ]);
 const DELIVERY_ID = /^[1-9][0-9]{0,18}$/;
+const MAX_DELIVERY_IDS_PER_REQUEST = 100;
+const PENDING_ATTEMPTS = 3;
+const TRANSIENT_PENDING_CODES: ReadonlySet<string> = new Set([
+  'NETWORK_ERROR',
+  'NETWORK_TIMEOUT',
+  'UNAVAILABLE',
+  'DEADLINE_EXCEEDED',
+]);
 
 function invalid(message: string): AlvaError {
   return new AlvaError('INVALID_ARGUMENT', message, 400);
@@ -298,7 +316,54 @@ export class StewardResource {
     return message;
   }
 
-  async pending(params: StewardPendingParams): Promise<StewardPendingPage> {
+  async pending(params: StewardPendingParams): Promise<StewardPendingResult> {
+    const items: StewardPendingItem[] = [];
+    const deliveryIds = new Set<string>();
+    const cursors = new Set<string>();
+    let after: string | undefined;
+    let windowSinceMs: number | undefined;
+    let windowUntilMs: number | undefined;
+
+    do {
+      const page = await this.pendingPageWithRetry({
+        ...params,
+        after,
+        sinceMs: after === undefined ? params.sinceMs : undefined,
+        untilMs: after === undefined ? params.untilMs : undefined,
+      });
+      if (windowSinceMs === undefined) {
+        windowSinceMs = page.windowSinceMs;
+        windowUntilMs = page.windowUntilMs;
+      } else if (
+        page.windowSinceMs !== windowSinceMs ||
+        page.windowUntilMs !== windowUntilMs
+      ) {
+        throw emptyResponse();
+      }
+      for (const item of page.items) {
+        if (deliveryIds.has(item.deliveryId)) continue;
+        deliveryIds.add(item.deliveryId);
+        items.push(item);
+      }
+      after = page.nextCursor ?? undefined;
+      if (after !== undefined) {
+        if (cursors.has(after)) throw emptyResponse();
+        cursors.add(after);
+      }
+    } while (after !== undefined);
+
+    if (windowSinceMs === undefined || windowUntilMs === undefined)
+      throw emptyResponse();
+    return {
+      items,
+      windowSinceMs,
+      windowUntilMs,
+    };
+  }
+
+  async pendingPage(
+    params: StewardPendingPageParams
+  ): Promise<StewardPendingPage> {
     this.client._requireAuth();
     const first = params.first ?? 50;
     if (!Number.isInteger(first) || first < 1 || first > 100)
@@ -345,10 +410,10 @@ export class StewardResource {
     )
       throw emptyResponse();
     const items = page.edges.map((edge) => edge.node);
-    const nextCursor =
-      page.pageInfo?.hasNextPage === true && page.pageInfo.endCursor
-        ? page.pageInfo.endCursor
-        : null;
+    const hasNextPage = page.pageInfo?.hasNextPage === true;
+    const endCursor = page.pageInfo?.endCursor;
+    if (hasNextPage && !endCursor) throw emptyResponse();
+    const nextCursor = hasNextPage ? (endCursor as string) : null;
     return {
       items,
       nextCursor,
@@ -357,20 +422,50 @@ export class StewardResource {
     };
   }
 
+  private async pendingPageWithRetry(
+    params: StewardPendingPageParams
+  ): Promise<StewardPendingPage> {
+    for (let attempt = 1; attempt <= PENDING_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.pendingPage(params);
+      } catch (error) {
+        if (
+          attempt === PENDING_ATTEMPTS ||
+          !(error instanceof AlvaError) ||
+          !TRANSIENT_PENDING_CODES.has(error.code)
+        ) {
+          throw error;
+        }
+      }
+    }
+    throw emptyResponse();
+  }
+
   async briefed(params: StewardBriefedParams): Promise<{ ok: true }> {
     this.client._requireAuth();
     const digestRunId = params.digestRunId?.trim();
     if (!digestRunId) throw invalid('a digest run id is required');
-    const data = await this.graphql<{
-      completeStewardBrief?: { ok?: boolean } | null;
-    }>(BRIEFED, {
-      input: {
-        inboxPath: requireInboxPath(params),
-        deliveryIds: requireDeliveryIds(params.deliveryIds),
-        digestRunId,
-      },
-    });
-    if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
+    const inboxPath = requireInboxPath(params);
+    const deliveryIds = requireDeliveryIds(params.deliveryIds);
+    for (
+      let offset = 0;
+      offset < deliveryIds.length;
+      offset += MAX_DELIVERY_IDS_PER_REQUEST
+    ) {
+      const data = await this.graphql<{
+        completeStewardBrief?: { ok?: boolean } | null;
+      }>(BRIEFED, {
+        input: {
+          inboxPath,
+          deliveryIds: deliveryIds.slice(
+            offset,
+            offset + MAX_DELIVERY_IDS_PER_REQUEST
+          ),
+          digestRunId,
+        },
+      });
+      if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
+    }
     return { ok: true };
   }
 
