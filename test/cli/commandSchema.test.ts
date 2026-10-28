@@ -26,6 +26,19 @@ describe('declarative CLI command parser', () => {
     ).toEqual({ 'args-stdin': 'true', code: '1+1' });
   });
 
+  it('accepts a durable run id on steward pending', () => {
+    expect(
+      parseCommand([
+        'steward',
+        'pending',
+        '--digest-run-id',
+        '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
+      ]).flags
+    ).toEqual({
+      'digest-run-id': '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
+    });
+  });
+
   it('rejects an unknown flag and suggests a flag from the same leaf', () => {
     expect(() =>
       parseCommand(['alert', 'enable', '--automation-idss', '10,11'])
