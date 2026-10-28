@@ -174,6 +174,32 @@ describe('StewardResource', () => {
     ).rejects.toThrow(/between 1 and 100/);
   });
 
+  it('preserves the legacy pending continuation entry point', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        viewer: {
+          stewardDigestPending: {
+            edges: [],
+            pageInfo: { hasNextPage: false, endCursor: null },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
+        },
+      },
+    });
+
+    const page = await c.steward.pending({ inboxPath, after: 'cur-5' });
+
+    expect(page.nextCursor).toBeNull();
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('stewardDigestPending'),
+        variables: { inboxPath, input: { first: 50, after: 'cur-5' } },
+      },
+    });
+  });
+
   it.each([
     { name: 'zero', pages: [[]], expected: [] },
     { name: 'one', pages: [['1']], expected: ['1'] },
@@ -390,6 +416,29 @@ describe('StewardResource', () => {
 
     await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
   });
+
+  it.each([undefined, {}, { hasNextPage: 'false', endCursor: null }])(
+    'fails closed on malformed page metadata: %j',
+    async (pageInfo) => {
+      const c = client();
+      vi.spyOn(c, '_request').mockResolvedValue({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo,
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+      await expect(c.steward.pendingPage({ inboxPath })).rejects.toThrow(
+        /empty/
+      );
+    }
+  );
 
   it('rejects more than 100 legacy briefed ids before transport', async () => {
     const c = client();

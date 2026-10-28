@@ -36,6 +36,8 @@ export interface StewardSendParams extends StewardTarget {
 export type StewardSourceKind = 'FEED' | 'MARKET_ENTITY' | 'THESIS_FEED';
 
 export interface StewardPendingParams extends StewardTarget {
+  /** @deprecated Use `pendingPage` for explicit single-page reads. */
+  after?: string;
   /** First page only: lower bound on decision time. */
   sinceMs?: number;
   /** First page only: fixed upper bound of the Brief window (the digest_request's untilMs). */
@@ -318,7 +320,14 @@ export class StewardResource {
     return message;
   }
 
-  async pending(params: StewardPendingParams): Promise<StewardPendingResult> {
+  async pending(
+    params: StewardPendingParams & { after: string }
+  ): Promise<StewardPendingPage>;
+  async pending(params: StewardPendingParams): Promise<StewardPendingResult>;
+  async pending(
+    params: StewardPendingParams
+  ): Promise<StewardPendingResult | StewardPendingPage> {
+    if (params.after !== undefined) return this.pendingPage(params);
     const items: StewardPendingItem[] = [];
     const deliveryIds = new Set<string>();
     const cursors = new Set<string>();
@@ -412,10 +421,18 @@ export class StewardResource {
     )
       throw emptyResponse();
     const items = page.edges.map((edge) => edge.node);
-    const hasNextPage = page.pageInfo?.hasNextPage === true;
-    const endCursor = page.pageInfo?.endCursor;
-    if (hasNextPage && !endCursor) throw emptyResponse();
-    const nextCursor = hasNextPage ? (endCursor as string) : null;
+    const pageInfo = page.pageInfo;
+    if (!pageInfo || typeof pageInfo.hasNextPage !== 'boolean')
+      throw emptyResponse();
+    const endCursor = pageInfo.endCursor;
+    if (
+      endCursor !== undefined &&
+      endCursor !== null &&
+      typeof endCursor !== 'string'
+    )
+      throw emptyResponse();
+    if (pageInfo.hasNextPage && !endCursor) throw emptyResponse();
+    const nextCursor = pageInfo.hasNextPage ? (endCursor as string) : null;
     return {
       items,
       nextCursor,
