@@ -793,21 +793,22 @@ describe('StewardResource', () => {
     });
   });
 
-  it('finalizes a server-validated empty durable run', async () => {
+  it('finalizes a server-validated bodyless run with complete reviewed coverage', async () => {
     const c = client();
+    const deliveryIds = ['7', '8'];
     const run = { digestRunId, state: 'INTENTIONALLY_EMPTY' };
     const request = vi.spyOn(c, '_request').mockResolvedValue({
       data: { publishStewardDailyBrief: { run } },
     });
 
     await expect(
-      c.steward.sendDigestRun({ inboxPath, digestRunId })
+      c.steward.sendDigestRun({ inboxPath, digestRunId, deliveryIds })
     ).resolves.toEqual(run);
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
         query: expect.stringMatching(/publishStewardDailyBrief/),
         variables: {
-          input: { inboxPath, digestRunId, deliveryIds: [] },
+          input: { inboxPath, digestRunId, deliveryIds },
         },
       },
     });

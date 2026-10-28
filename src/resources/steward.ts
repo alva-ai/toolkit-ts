@@ -66,7 +66,7 @@ export interface StewardDigestRunParams extends StewardTarget {
 export interface StewardSendDigestRunParams extends StewardDigestRunParams {
   /** Exact reviewed coverage; omit or pass [] for a For-You-only Brief. */
   deliveryIds?: string[];
-  /** Omit only when the fixed run window is intentionally empty. */
+  /** Omit when complete reviewed coverage produces no useful Brief content. */
   body?: string;
 }
 
@@ -644,8 +644,6 @@ export class StewardResource {
       throw invalid('durable Daily Brief accepts at most 10000 delivery ids');
     if (params.body !== undefined && params.body.trim() === '')
       throw invalid('a message body must be non-blank when provided');
-    if (params.body === undefined && deliveryIds.length !== 0)
-      throw invalid('delivery ids require a message body');
     const data = await this.graphql<{
       publishStewardDailyBrief?: { run?: StewardDigestRun | null } | null;
     }>(PUBLISH_DAILY_BRIEF, {
