@@ -137,6 +137,118 @@ describe('MarketsResource', () => {
     });
   });
 
+  it('ignores an upcoming default period for latest-completed', async () => {
+    const client = makeClient();
+    client._request
+      .mockResolvedValueOnce({
+        data: {
+          market: {
+            entity: {
+              ticker: 'AAPL',
+              earningsPeriods: {
+                periods: [upcomingPeriod, completedPeriod],
+                defaultPeriod: { ...upcomingPeriod, isDefault: true },
+                unresolvedEventCount: 0,
+              },
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce(earningsResponse());
+
+    await new MarketsResource(client).earnings({
+      ticker: 'AAPL',
+      event: 'latest-completed',
+    });
+
+    expect(client._request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
+      body: {
+        query: expect.any(String),
+        variables: {
+          ticker: 'AAPL',
+          input: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
+        },
+      },
+    });
+  });
+
+  it('selects the newest completed period from an unordered catalog', async () => {
+    const client = makeClient();
+    const olderCompleted = {
+      ...completedPeriod,
+      fiscalQuarter: 'Q2',
+      fiscalDateEnding: '2026-03-28',
+      earningsDate: '2026-04-30',
+    };
+    client._request
+      .mockResolvedValueOnce({
+        data: {
+          market: {
+            entity: {
+              ticker: 'AAPL',
+              earningsPeriods: {
+                periods: [olderCompleted, upcomingPeriod, completedPeriod],
+                defaultPeriod: olderCompleted,
+                unresolvedEventCount: 0,
+              },
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce(earningsResponse());
+
+    await new MarketsResource(client).earnings({ ticker: 'AAPL' });
+
+    expect(client._request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
+      body: {
+        query: expect.any(String),
+        variables: {
+          ticker: 'AAPL',
+          input: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
+        },
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: 'only upcoming periods',
+      periods: [upcomingPeriod],
+      defaultPeriod: upcomingPeriod,
+    },
+    { name: 'an empty catalog', periods: [], defaultPeriod: null },
+  ])(
+    'reports no completed event with $name',
+    async ({ periods, defaultPeriod }) => {
+      const client = makeClient();
+      client._request.mockResolvedValue({
+        data: {
+          market: {
+            entity: {
+              ticker: 'AAPL',
+              earningsPeriods: {
+                periods,
+                defaultPeriod,
+                unresolvedEventCount: 0,
+              },
+            },
+          },
+        },
+      });
+
+      await expect(
+        new MarketsResource(client).earnings({
+          ticker: 'AAPL',
+          event: 'latest-completed',
+        })
+      ).rejects.toMatchObject({
+        code: 'MARKETS_EARNINGS_EVENT_NOT_FOUND',
+        status: 404,
+      });
+      expect(client._request).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it('selects the nearest upcoming period for next-confirmed', async () => {
     const client = makeClient();
     const laterUpcoming = {
