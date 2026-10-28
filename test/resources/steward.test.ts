@@ -323,6 +323,7 @@ describe('StewardResource', () => {
     new AlvaError('NETWORK_ERROR', 'connection reset', 0),
     new AlvaError('UNAVAILABLE', 'temporarily unavailable', 503),
     new AlvaError('DEADLINE_EXCEEDED', 'deadline exceeded', 504),
+    new AlvaError('UNKNOWN', 'upstream unavailable', 503),
   ])('recovers from a transient pending failure: %s', async (error) => {
     const c = client();
     const request = vi
@@ -387,6 +388,69 @@ describe('StewardResource', () => {
 
     await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
     expect(request).toHaveBeenCalledTimes(4);
+  });
+
+  it('reports a changed pagination window as aborted', async () => {
+    const c = client();
+    vi.spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+              windowSinceMs: 1788700000001,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+    const error = await c.steward
+      .pending({ inboxPath })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'ABORTED',
+      status: 409,
+      message: 'steward pending window changed during pagination',
+    });
+  });
+
+  it('reports a repeated pagination cursor as an internal loop', async () => {
+    const c = client();
+    vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        viewer: {
+          stewardDigestPending: {
+            edges: [],
+            pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
+        },
+      },
+    });
+
+    const error = await c.steward
+      .pending({ inboxPath })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'INTERNAL',
+      status: 500,
+      message: 'steward pending pagination loop detected',
+    });
   });
 
   it('fails closed when the backend says another page exists without a cursor', async () => {
@@ -630,6 +694,25 @@ describe('StewardResource', () => {
     });
   });
 
+  it('canonicalizes uppercase digest run ids before transport', async () => {
+    const c = client();
+    const uppercaseRunId = digestRunId.toUpperCase();
+    const run = { digestRunId, state: 'RUNNING' };
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { viewer: { stewardDigestRun: run } },
+    });
+
+    await expect(
+      c.steward.digestRun({ inboxPath, digestRunId: uppercaseRunId })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringMatching(/stewardDigestRun\(/),
+        variables: { inboxPath, digestRunId },
+      },
+    });
+  });
+
   it('stages arbitrary coverage in bounded batches', async () => {
     const c = client();
     const deliveryIds = Array.from({ length: 205 }, (_, index) =>
@@ -689,6 +772,25 @@ describe('StewardResource', () => {
         variables: { input: { inboxPath, digestRunId, body } },
       },
     });
+  });
+
+  it('reconciles after a plain transient HTTP send failure', async () => {
+    const c = client();
+    const body = '# Daily Brief\n\nBody';
+    const run = { digestRunId, state: 'SENT', channelMessageId: '77' };
+    const request = vi
+      .spyOn(c, '_request')
+      .mockRejectedValueOnce(
+        new AlvaError('UNKNOWN', 'service unavailable', 503)
+      )
+      .mockResolvedValueOnce({
+        data: { reconcileStewardDigestRunSend: { run } },
+      });
+
+    await expect(
+      c.steward.sendDigestRun({ inboxPath, digestRunId, body })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it('finalizes a run with a typed intent', async () => {

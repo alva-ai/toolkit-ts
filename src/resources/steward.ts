@@ -250,7 +250,7 @@ const DELIVERY_ID = /^[1-9][0-9]{0,18}$/;
 const MAX_LEGACY_BRIEFED_IDS = 100;
 const DIGEST_RUN_STAGE_BATCH = 100;
 const DIGEST_RUN_ID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // No shared/testable sleep seam exists in Toolkit today, so retries are
 // immediate but strictly bounded to avoid hiding a partial read as success.
 const PENDING_ATTEMPTS = 3;
@@ -260,6 +260,7 @@ const TRANSIENT_PENDING_CODES: ReadonlySet<string> = new Set([
   'UNAVAILABLE',
   'DEADLINE_EXCEEDED',
 ]);
+const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 
 function invalid(message: string): AlvaError {
   return new AlvaError('INVALID_ARGUMENT', message, 400);
@@ -339,7 +340,15 @@ function requireRequestId(value: string | undefined): string {
 
 function requireDigestRunId(value: string): string {
   if (!DIGEST_RUN_ID.test(value)) throw invalid('digest run id must be a UUID');
-  return value;
+  return value.toLowerCase();
+}
+
+function isTransientStewardError(error: unknown): error is AlvaError {
+  return (
+    error instanceof AlvaError &&
+    (TRANSIENT_PENDING_CODES.has(error.code) ||
+      TRANSIENT_HTTP_STATUSES.has(error.status))
+  );
 }
 
 function emptyResponse(): AlvaError {
@@ -442,7 +451,11 @@ export class StewardResource {
         page.windowSinceMs !== windowSinceMs ||
         page.windowUntilMs !== windowUntilMs
       ) {
-        throw emptyResponse();
+        throw new AlvaError(
+          'ABORTED',
+          'steward pending window changed during pagination',
+          409
+        );
       }
       for (const item of page.items) {
         if (deliveryIds.has(item.deliveryId)) continue;
@@ -451,7 +464,13 @@ export class StewardResource {
       }
       after = page.nextCursor ?? undefined;
       if (after !== undefined) {
-        if (cursors.has(after)) throw emptyResponse();
+        if (cursors.has(after)) {
+          throw new AlvaError(
+            'INTERNAL',
+            'steward pending pagination loop detected',
+            500
+          );
+        }
         cursors.add(after);
       }
     } while (after !== undefined);
@@ -537,20 +556,14 @@ export class StewardResource {
   private async pendingPageWithRetry(
     params: StewardPendingPageParams
   ): Promise<StewardPendingPage> {
-    for (let attempt = 1; attempt <= PENDING_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt < PENDING_ATTEMPTS; attempt += 1) {
       try {
         return await this.pendingPage(params);
       } catch (error) {
-        if (
-          attempt === PENDING_ATTEMPTS ||
-          !(error instanceof AlvaError) ||
-          !TRANSIENT_PENDING_CODES.has(error.code)
-        ) {
-          throw error;
-        }
+        if (!isTransientStewardError(error)) throw error;
       }
     }
-    throw emptyResponse();
+    return this.pendingPage(params);
   }
 
   async briefed(params: StewardBriefedParams): Promise<{ ok: true }> {
@@ -645,11 +658,7 @@ export class StewardResource {
         params
       );
     } catch (error) {
-      if (
-        !(error instanceof AlvaError) ||
-        !TRANSIENT_PENDING_CODES.has(error.code)
-      )
-        throw error;
+      if (!isTransientStewardError(error)) throw error;
       return this.reconcileDigestRunSend(params);
     }
   }
