@@ -24,7 +24,7 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
-    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(130);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(131);
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain('thesis list');
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(
       'thesis related'
@@ -48,9 +48,21 @@ describe('Slim Alva Agent command profile', () => {
       'for-you theses'
     );
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain('schedule put');
-    for (const leaf of ['decide', 'forward', 'send', 'pending', 'briefed']) {
+    for (const leaf of [
+      'decide',
+      'forward',
+      'send',
+      'pending',
+      'briefed',
+      'status',
+    ]) {
       expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(
         `steward ${leaf}`
+      );
+    }
+    for (const removed of ['stage', 'reconcile', 'finalize']) {
+      expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).not.toContain(
+        `steward ${removed}`
       );
     }
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(

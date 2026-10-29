@@ -17,7 +17,7 @@ Commands:
   trading-pairs Discover and strictly verify canonical trading pairs
   automation    Create and operate scheduled automations
   schedule      Manage future messages for this Session Inbox
-  steward       Push steward reports for this Session Inbox (decide, forward, send, pending, briefed)
+  steward       Push steward routing and durable Daily Brief runs
   thesis        Read published viewpoints and manage authored theses
   company-news  Create backend-managed multi-ticker News Feeds
   playbooks     Discover, build, release, and manage Playbooks
@@ -62,16 +62,18 @@ decide   --delivery-id <id> --decision <immediate|digest|suppress> --reason <tex
          Record the decision first; forward/send are rejected without it.
 forward  --delivery-id <id> [--request-id <uuid>]
          Re-post the original alert card by reference (immediate only).
+status   --digest-run-id <uuid>
+         Read the durable state and receipt of this Brief occurrence.
+pending  --digest-run-id <uuid>
+         Read the complete fixed-window delivery set owned by this run.
+send     --digest-run-id <uuid> [--delivery-ids <a,b,c>] [--body <markdown>]
+         Publish the reviewed coverage and complete the run. Omit the body
+         when reviewed coverage yields no useful content; keep those ids.
+pending  [--since <RFC3339>] [--until <RFC3339>]
+         Legacy fixed-window read; automatic paging and bounded retries.
 send     [--delivery-ids <a,b,c>] --body <markdown> [--request-id <uuid>]
-         Post your own Markdown covering the listed deliveries; the response
-         echoes requestId — pass it to briefed. Omit --delivery-ids for a
-         For-You-only Brief that covers no ledger delivery.
-pending  [--after <cursor>] [--since <RFC3339>] [--until <RFC3339>] [--first <1-100>]
-         Deliveries held for the Daily Brief. Repeat with --after <nextCursor>
-         until nextCursor is null; the cursor carries the window.
 briefed  --digest-run-id <id> --delivery-ids <a,b,c>
-         Mark every reviewed delivery covered: use the requestId echoed by send,
-         or the digest_request run id when nothing was worth sending.
+         Legacy send/completion contract; do not use for durable runs.
 
 request ids are generated when omitted; pass one to retry an unclear result.
 

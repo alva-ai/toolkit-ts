@@ -208,31 +208,30 @@ Embedded commands target the host-attached Inbox; the terminal CLI requires
 Subcommands:
   decide     Record the decision for one delivery (required before forward/send)
   forward    Re-post the original alert card by reference (immediate only)
-  send       Post steward-authored Markdown covering the listed deliveries
-  pending    Page deliveries decided "digest" that no brief has covered yet
-  briefed    Record that a Daily Brief covered the listed deliveries
+  status     Read one durable Daily Brief run
+  pending    Read a durable run's complete fixed-window set, or use legacy bounds
+  send       Publish and complete a durable run, or use the legacy send contract
+  briefed    Record that a Daily Brief covered at most 100 listed deliveries
 
 Flags:
   --inbox-path <path>       Steward Session Inbox (terminal CLI only)
   --delivery-id <id>        One delivery (decide, forward)
-  --delivery-ids <a,b,c>    Comma-separated deliveries (briefed; optional for send — omit for a For-You-only Brief)
+  --delivery-ids <a,b,c>    Comma-separated deliveries (legacy briefed: max 100; optional for send — omit for a For-You-only Brief)
   --decision <immediate|digest|suppress>
   --reason <text>           Short audit note stored with the decision
-  --body <markdown>         Message body (send)
+  --body <markdown>         Message body (durable send: omit when reviewed coverage yields no useful content)
   --request-id <uuid>       Idempotency key; generated when omitted
-  --after <cursor>          Opaque cursor from the previous page's nextCursor (pending)
-  --since <RFC3339>         First page only: lower bound on decision time (pending)
-  --until <RFC3339>         First page only: fixed upper bound of the Brief window; later pages inherit it through the cursor (pending)
-  --first <n>               Page size, 1-100 (pending)
-  --digest-run-id <id>      The request id echoed by the send that carried these deliveries (briefed)
+  --since <RFC3339>         Lower bound on decision time (pending)
+  --until <RFC3339>         Fixed upper bound of the Brief window (pending)
+  --first <n>               Internal page size, 1-100 (terminal pending only)
+  --digest-run-id <uuid>    Durable run identity (status/pending/send)
 
 Examples (terminal; the embedded Agent tool omits --inbox-path):
   alva steward decide --inbox-path /alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl --delivery-id 123 --decision immediate --reason "guidance cut 15%"
   alva steward forward --inbox-path <inbox> --delivery-id 123
-  alva steward send --inbox-path <inbox> --delivery-ids 124,125 --body "Two related moves..."
-  alva steward send --inbox-path <inbox> --body "For You: ..."   # For-You-only Brief, no ledger delivery
-  alva steward pending --inbox-path <inbox> --until 2026-09-15T13:00:00Z
-  alva steward pending --inbox-path <inbox> --after <nextCursor from the previous page>
+  alva steward status --inbox-path <inbox> --digest-run-id <uuid>
+  alva steward pending --inbox-path <inbox> --digest-run-id <uuid>
+  alva steward send --inbox-path <inbox> --digest-run-id <uuid> --delivery-ids 124,125 --body "Daily Brief..."
   alva steward briefed --inbox-path <inbox> --digest-run-id <request id echoed by send> --delivery-ids 124,125`,
   configure: `Usage: alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 
@@ -3486,6 +3485,14 @@ export async function executeParsedCommand(
             requestId: flags['request-id'],
           });
         case 'send':
+          if (flags['digest-run-id'] !== undefined) {
+            return client.steward.sendDigestRun({
+              inboxPath,
+              digestRunId: requireFlag(flags, 'digest-run-id', 'steward send'),
+              deliveryIds: optionalIds('delivery-ids'),
+              body: flags.body,
+            });
+          }
           return client.steward.send({
             inboxPath,
             body: requireFlag(flags, 'body', 'steward send'),
@@ -3493,6 +3500,16 @@ export async function executeParsedCommand(
             requestId: flags['request-id'],
           });
         case 'pending': {
+          if (flags['digest-run-id'] !== undefined) {
+            return client.steward.digestRunPending({
+              inboxPath,
+              digestRunId: requireFlag(
+                flags,
+                'digest-run-id',
+                'steward pending'
+              ),
+            });
+          }
           const parseTime = (name: 'since' | 'until'): number | undefined => {
             const value = flags[name];
             if (value === undefined) return undefined;
@@ -3509,7 +3526,6 @@ export async function executeParsedCommand(
             flags.first === undefined ? undefined : Number(flags.first);
           return client.steward.pending({
             inboxPath,
-            after: flags.after,
             sinceMs: parseTime('since'),
             untilMs: parseTime('until'),
             first,
@@ -3520,6 +3536,11 @@ export async function executeParsedCommand(
             inboxPath,
             deliveryIds: ids('delivery-ids'),
             digestRunId: requireFlag(flags, 'digest-run-id', 'steward briefed'),
+          });
+        case 'status':
+          return client.steward.digestRun({
+            inboxPath,
+            digestRunId: requireFlag(flags, 'digest-run-id', 'steward status'),
           });
         default:
           throw new CliUsageError(

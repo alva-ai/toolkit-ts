@@ -83,13 +83,20 @@ export {
 export {
   StewardResource,
   type StewardBriefedParams,
+  type StewardDigestRun,
+  type StewardDigestRunParams,
+  type StewardDigestRunState,
   type StewardDecideParams,
   type StewardDecision,
   type StewardForwardParams,
   type StewardPendingItem,
   type StewardPendingPage,
+  type StewardPendingPageParams,
+  type StewardPendingFullParams,
   type StewardPendingParams,
+  type StewardPendingResult,
   type StewardSendParams,
+  type StewardSendDigestRunParams,
   type StewardTarget,
 } from './resources/steward.js';
 export type {

@@ -120,12 +120,12 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     ),
     action(
       'steward send',
-      { values: ['body', 'delivery-ids', 'request-id'] },
+      { values: ['body', 'delivery-ids', 'request-id', 'digest-run-id'] },
       'steward-self'
     ),
     action(
       'steward pending',
-      { values: ['after', 'since', 'until', 'first'] },
+      { values: ['since', 'until', 'digest-run-id'] },
       'steward-self'
     ),
     action(
@@ -133,6 +133,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       { values: ['delivery-ids', 'digest-run-id'] },
       'steward-self'
     ),
+    action('steward status', { values: ['digest-run-id'] }, 'steward-self'),
     route('company-news create', 'company-news create', {
       values: ['name', 'tickers', 'initial-lookback-hours', 'page-size'],
     }),

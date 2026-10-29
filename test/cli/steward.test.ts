@@ -6,6 +6,7 @@ import { CliUsageError } from '../../src/error.js';
 
 const inboxPath =
   '/alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl';
+const digestRunId = '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77';
 
 function clientWithSteward(attached = false) {
   const client = new AlvaClient({
@@ -26,6 +27,13 @@ function clientWithSteward(attached = false) {
     windowUntilMs: 2,
   });
   client.steward.briefed = vi.fn().mockResolvedValue({ ok: true });
+  client.steward.digestRun = vi
+    .fn()
+    .mockResolvedValue({ digestRunId, state: 'RUNNING' });
+  client.steward.digestRunPending = vi.fn().mockResolvedValue([]);
+  client.steward.sendDigestRun = vi
+    .fn()
+    .mockResolvedValue({ digestRunId, state: 'SENT' });
   return client;
 }
 
@@ -74,7 +82,6 @@ describe('steward CLI', () => {
 
       expect(result).toEqual({
         items: [item],
-        nextCursor: null,
         windowSinceMs: 1788700000000,
         windowUntilMs: 1788720000000,
       });
@@ -175,19 +182,14 @@ describe('steward CLI', () => {
     await dispatchEmbedded(client, [
       'steward',
       'pending',
-      '--after',
-      'c1',
       '--until',
       '2026-09-15T13:00:00Z',
-      '--first',
-      '20',
     ]);
     expect(client.steward.pending).toHaveBeenCalledWith({
       inboxPath,
-      after: 'c1',
       sinceMs: undefined,
       untilMs: Date.parse('2026-09-15T13:00:00Z'),
-      first: 20,
+      first: undefined,
     });
 
     await dispatchEmbedded(client, [
@@ -202,6 +204,61 @@ describe('steward CLI', () => {
       inboxPath,
       deliveryIds: ['124', '125'],
       digestRunId: 'digest-555-42',
+    });
+  });
+
+  it('dispatches durable run commands through the host-attached Inbox', async () => {
+    const client = clientWithSteward(true);
+    await dispatchEmbedded(client, [
+      'steward',
+      'status',
+      '--digest-run-id',
+      digestRunId,
+    ]);
+    expect(client.steward.digestRun).toHaveBeenCalledWith({
+      inboxPath,
+      digestRunId,
+    });
+
+    await dispatchEmbedded(client, [
+      'steward',
+      'pending',
+      '--digest-run-id',
+      digestRunId,
+    ]);
+    expect(client.steward.digestRunPending).toHaveBeenCalledWith({
+      inboxPath,
+      digestRunId,
+    });
+
+    await dispatchEmbedded(client, [
+      'steward',
+      'send',
+      '--digest-run-id',
+      digestRunId,
+      '--delivery-ids',
+      '1,2',
+      '--body',
+      'Brief',
+    ]);
+    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
+      inboxPath,
+      digestRunId,
+      deliveryIds: ['1', '2'],
+      body: 'Brief',
+    });
+
+    await dispatchEmbedded(client, [
+      'steward',
+      'send',
+      '--digest-run-id',
+      digestRunId,
+    ]);
+    expect(client.steward.sendDigestRun).toHaveBeenLastCalledWith({
+      inboxPath,
+      digestRunId,
+      deliveryIds: [],
+      body: undefined,
     });
   });
 
@@ -342,5 +399,33 @@ describe('steward CLI details', () => {
       ).rejects.toThrow(/RFC3339/);
     }
     expect(client.steward.pending).not.toHaveBeenCalled();
+  });
+
+  it('does not expose continuation cursors in the model-facing pending command', async () => {
+    const client = clientWithSteward(true);
+    await expect(
+      dispatchEmbedded(client, ['steward', 'pending', '--after', 'cursor-1'])
+    ).rejects.toThrow(/--after is not supported/);
+    expect(client.steward.pending).not.toHaveBeenCalled();
+  });
+
+  it('passes reviewed coverage through durable send mode', async () => {
+    const client = clientWithSteward(true);
+    await dispatchEmbedded(client, [
+      'steward',
+      'send',
+      '--digest-run-id',
+      digestRunId,
+      '--delivery-ids',
+      '5',
+      '--body',
+      'brief',
+    ]);
+    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
+      inboxPath,
+      digestRunId,
+      deliveryIds: ['5'],
+      body: 'brief',
+    });
   });
 });

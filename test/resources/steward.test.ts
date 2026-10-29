@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
+import type { StewardPendingParams } from '../../src/resources/steward.js';
 
 const inboxPath =
   '/alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl';
+const digestRunId = '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77';
 
 const alertSnapshot = JSON.stringify({
   kind: 'alert',
@@ -123,7 +125,7 @@ describe('StewardResource', () => {
     ).rejects.toThrow(/at least one delivery id/);
   });
 
-  it('reads one connection page and returns the next opaque cursor', async () => {
+  it('reads one connection page through the explicit low-level method', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
       data: {
@@ -148,7 +150,10 @@ describe('StewardResource', () => {
         },
       },
     });
-    const page = await c.steward.pending({ inboxPath, untilMs: 1788720000000 });
+    const page = await c.steward.pendingPage({
+      inboxPath,
+      untilMs: 1788720000000,
+    });
     expect(page.nextCursor).toBe('cur-5');
     expect(page.items[0].deliveryId).toBe('5');
     expect(page.windowUntilMs).toBe(1788720000000);
@@ -159,16 +164,385 @@ describe('StewardResource', () => {
       },
     });
     // A continuation passes only the cursor; the window travels inside it.
-    await c.steward.pending({ inboxPath, after: 'cur-5', untilMs: 1 });
+    await c.steward.pendingPage({ inboxPath, after: 'cur-5', untilMs: 1 });
     expect(request).toHaveBeenLastCalledWith('POST', '/query', {
       body: {
         query: expect.stringContaining('stewardDigestPending'),
         variables: { inboxPath, input: { first: 50, after: 'cur-5' } },
       },
     });
-    await expect(c.steward.pending({ inboxPath, first: 500 })).rejects.toThrow(
-      /between 1 and 100/
+    await expect(
+      c.steward.pendingPage({ inboxPath, first: 500 })
+    ).rejects.toThrow(/between 1 and 100/);
+  });
+
+  it('preserves the legacy pending continuation entry point', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        viewer: {
+          stewardDigestPending: {
+            edges: [],
+            pageInfo: { hasNextPage: false, endCursor: null },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
+        },
+      },
+    });
+
+    const page = await c.steward.pending({ inboxPath, after: 'cur-5' });
+
+    expect(page.nextCursor).toBeNull();
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringContaining('stewardDigestPending'),
+        variables: { inboxPath, input: { first: 50, after: 'cur-5' } },
+      },
+    });
+
+    const widened: StewardPendingParams = { inboxPath, after: 'cur-5' };
+    const widenedResult = await c.steward.pending(widened);
+    expect('nextCursor' in widenedResult).toBe(true);
+  });
+
+  it.each([
+    { name: 'zero', pages: [[]], expected: [] },
+    { name: 'one', pages: [['1']], expected: ['1'] },
+    {
+      name: 'multiple',
+      pages: [['1', '2'], ['3'], ['4', '5']],
+      expected: ['1', '2', '3', '4', '5'],
+    },
+  ])('automatically reads $name pending pages', async ({ pages, expected }) => {
+    const c = client();
+    const request = vi.spyOn(c, '_request');
+    pages.forEach((deliveryIds, index) => {
+      request.mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: deliveryIds.map((deliveryId) => ({
+                cursor: `edge-${deliveryId}`,
+                node: {
+                  deliveryId,
+                  feedEntryId: deliveryId,
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000000 + index,
+                },
+              })),
+              pageInfo: {
+                hasNextPage: index < pages.length - 1,
+                endCursor:
+                  index < pages.length - 1 ? `page-${index + 1}` : null,
+              },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+    });
+
+    const result = await c.steward.pending({
+      inboxPath,
+      untilMs: 1788720000000,
+      first: 2,
+    });
+
+    expect(result.items.map((item) => item.deliveryId)).toEqual(expected);
+    expect(result).not.toHaveProperty('nextCursor');
+    expect(result.windowSinceMs).toBe(1788700000000);
+    expect(result.windowUntilMs).toBe(1788720000000);
+    expect(request).toHaveBeenCalledTimes(pages.length);
+    if (pages.length > 1) {
+      expect(request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
+        body: {
+          query: expect.stringContaining('stewardDigestPending'),
+          variables: {
+            inboxPath,
+            input: { first: 2, after: 'page-1' },
+          },
+        },
+      });
+    }
+  });
+
+  it('deduplicates delivery ids repeated across pages', async () => {
+    const c = client();
+    vi.spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: ['1', '2'].map((deliveryId) => ({
+                cursor: `edge-${deliveryId}`,
+                node: {
+                  deliveryId,
+                  feedEntryId: deliveryId,
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000000,
+                },
+              })),
+              pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: ['2', '3'].map((deliveryId) => ({
+                cursor: `edge-${deliveryId}`,
+                node: {
+                  deliveryId,
+                  feedEntryId: deliveryId,
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000001,
+                },
+              })),
+              pageInfo: { hasNextPage: false, endCursor: null },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+    const result = await c.steward.pending({ inboxPath });
+    expect(result.items.map((item) => item.deliveryId)).toEqual([
+      '1',
+      '2',
+      '3',
+    ]);
+  });
+
+  it.each([
+    new AlvaError('NETWORK_TIMEOUT', 'timed out', 0),
+    new AlvaError('NETWORK_ERROR', 'connection reset', 0),
+    new AlvaError('UNAVAILABLE', 'temporarily unavailable', 503),
+    new AlvaError('DEADLINE_EXCEEDED', 'deadline exceeded', 504),
+    new AlvaError('UNKNOWN', 'upstream unavailable', 503),
+  ])('recovers from a transient pending failure: %s', async (error) => {
+    const c = client();
+    const request = vi
+      .spyOn(c, '_request')
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+    const result = await c.steward.pending({ inboxPath });
+    expect(result.items).toEqual([]);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails after bounded retries are exhausted', async () => {
+    const c = client();
+    const error = new AlvaError('NETWORK_TIMEOUT', 'timed out', 0);
+    const request = vi.spyOn(c, '_request').mockRejectedValue(error);
+
+    await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails the whole read when a later page exhausts retries', async () => {
+    const c = client();
+    const error = new AlvaError('NETWORK_ERROR', 'connection reset', 0);
+    const request = vi
+      .spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [
+                {
+                  cursor: 'edge-1',
+                  node: {
+                    deliveryId: '1',
+                    feedEntryId: '1',
+                    source: { kind: 'FEED', id: '3' },
+                    decisionReason: 'digest',
+                    consumedAtMs: 1788710000000,
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      })
+      .mockRejectedValue(error);
+
+    await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
+    expect(request).toHaveBeenCalledTimes(4);
+  });
+
+  it('reports a changed pagination window as aborted', async () => {
+    const c = client();
+    vi.spyOn(c, '_request')
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+              windowSinceMs: 1788700000001,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+    const error = await c.steward
+      .pending({ inboxPath })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'ABORTED',
+      status: 409,
+      message: 'steward pending window changed during pagination',
+    });
+  });
+
+  it('reports a repeated pagination cursor as an internal loop', async () => {
+    const c = client();
+    vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        viewer: {
+          stewardDigestPending: {
+            edges: [],
+            pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
+        },
+      },
+    });
+
+    const error = await c.steward
+      .pending({ inboxPath })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'INTERNAL',
+      status: 500,
+      message: 'steward pending pagination loop detected',
+    });
+  });
+
+  it('fails closed when the backend says another page exists without a cursor', async () => {
+    const c = client();
+    vi.spyOn(c, '_request').mockResolvedValue({
+      data: {
+        viewer: {
+          stewardDigestPending: {
+            edges: [
+              {
+                cursor: 'edge-1',
+                node: {
+                  deliveryId: '1',
+                  feedEntryId: '1',
+                  source: { kind: 'FEED', id: '3' },
+                  decisionReason: 'digest',
+                  consumedAtMs: 1788710000000,
+                },
+              },
+            ],
+            pageInfo: { hasNextPage: true, endCursor: null },
+            windowSinceMs: 1788700000000,
+            windowUntilMs: 1788720000000,
+          },
+        },
+      },
+    });
+
+    await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+  });
+
+  it.each([undefined, {}, { hasNextPage: 'false', endCursor: null }])(
+    'fails closed on malformed page metadata: %j',
+    async (pageInfo) => {
+      const c = client();
+      vi.spyOn(c, '_request').mockResolvedValue({
+        data: {
+          viewer: {
+            stewardDigestPending: {
+              edges: [],
+              pageInfo,
+              windowSinceMs: 1788700000000,
+              windowUntilMs: 1788720000000,
+            },
+          },
+        },
+      });
+
+      await expect(c.steward.pendingPage({ inboxPath })).rejects.toThrow(
+        /empty/
+      );
+    }
+  );
+
+  it('fails closed on a non-adjacent durable pagination cursor cycle', async () => {
+    const c = client();
+    const cursors = ['cursor-a', 'cursor-b', 'cursor-a'];
+    const request = vi.spyOn(c, '_request').mockImplementation(async () => ({
+      data: {
+        viewer: {
+          stewardDigestRunPending: {
+            edges: [],
+            pageInfo: { hasNextPage: true, endCursor: cursors.shift() },
+          },
+        },
+      },
+    }));
+
+    await expect(
+      c.steward.digestRunPending({ inboxPath, digestRunId })
+    ).rejects.toThrow(/empty/);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects more than 100 legacy briefed ids before transport', async () => {
+    const c = client();
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { completeStewardBrief: { ok: true } },
+    });
+    const deliveryIds = Array.from({ length: 101 }, (_, index) =>
+      String(index + 1)
     );
+
+    await expect(
+      c.steward.briefed({ inboxPath, deliveryIds, digestRunId: 'run-1' })
+    ).rejects.toThrow(/at most 100/);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it.each([alertSnapshot, null, undefined])(
@@ -200,7 +574,7 @@ describe('StewardResource', () => {
         { inboxPath, untilMs: 1788720000000 },
         { inboxPath, after: 'cur-5' },
       ]) {
-        const page = await c.steward.pending(params);
+        const page = await c.steward.pendingPage(params);
         expect(page.items).toEqual([item]);
         expect(page.items[0].alertSnapshot).toBe(snapshot);
         expect(page.nextCursor).toBe('cur-5');
@@ -242,7 +616,9 @@ describe('StewardResource', () => {
       request.mockResolvedValue({
         data: { viewer: { stewardDigestPending: { edges: [], ...bounds } } },
       });
-      await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+      await expect(c.steward.pendingPage({ inboxPath })).rejects.toThrow(
+        /empty/
+      );
     }
   });
 
@@ -286,6 +662,176 @@ describe('StewardResource', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AlvaError);
     expect((error as AlvaError).status).toBe(403);
+  });
+
+  it('reads durable run status and its complete fixed-window pending set', async () => {
+    const c = client();
+    const run = {
+      digestRunId,
+      state: 'RUNNING',
+      scheduleId: '91',
+      scheduleVersion: 4,
+      occurrenceIndex: 12,
+      windowSinceMs: 1788700000000,
+      windowUntilMs: 1788720000000,
+      scanCompletedAtMs: null,
+      bodySha256: null,
+      coverageSha256: null,
+      channelMessageId: null,
+      attempts: 1,
+      lastError: '',
+      startedAtMs: 1788720001000,
+      completedAtMs: null,
+      sendUncertainAtMs: null,
+    };
+    const item = {
+      deliveryId: '5',
+      feedEntryId: '9',
+      source: { kind: 'THESIS_FEED', id: '7' },
+      decisionReason: 'daily',
+      consumedAtMs: 1788710000000,
+      alertSnapshot,
+    };
+    const request = vi
+      .spyOn(c, '_request')
+      .mockResolvedValueOnce({ data: { viewer: { stewardDigestRun: run } } })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestRunPending: {
+              edges: [{ node: item }],
+              pageInfo: { hasNextPage: true, endCursor: 'cursor-5' },
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          viewer: {
+            stewardDigestRunPending: {
+              edges: [{ node: { ...item, deliveryId: '6' } }],
+              pageInfo: { hasNextPage: false, endCursor: 'cursor-6' },
+            },
+          },
+        },
+      });
+
+    await expect(
+      c.steward.digestRun({ inboxPath, digestRunId })
+    ).resolves.toEqual(run);
+    await expect(
+      c.steward.digestRunPending({ inboxPath, digestRunId })
+    ).resolves.toEqual([item, { ...item, deliveryId: '6' }]);
+    expect(request.mock.calls[0][2]).toEqual({
+      body: {
+        query: expect.stringMatching(/stewardDigestRun\(/),
+        variables: { inboxPath, digestRunId },
+      },
+    });
+    expect(request.mock.calls[1][2]).toEqual({
+      body: {
+        query: expect.stringMatching(/stewardDigestRunPending\(/),
+        variables: { inboxPath, digestRunId, input: { first: 100 } },
+      },
+    });
+    expect(request.mock.calls[2][2]).toEqual({
+      body: {
+        query: expect.stringMatching(/stewardDigestRunPending\(/),
+        variables: {
+          inboxPath,
+          digestRunId,
+          input: { first: 100, after: 'cursor-5' },
+        },
+      },
+    });
+  });
+
+  it.each([undefined, {}, { hasNextPage: 'false', endCursor: null }])(
+    'fails closed on malformed durable run page metadata: %j',
+    async (pageInfo) => {
+      const c = client();
+      vi.spyOn(c, '_request').mockResolvedValue({
+        data: {
+          viewer: {
+            stewardDigestRunPending: {
+              edges: [],
+              pageInfo,
+            },
+          },
+        },
+      });
+
+      await expect(
+        c.steward.digestRunPending({ inboxPath, digestRunId })
+      ).rejects.toThrow(/empty/);
+    }
+  );
+
+  it('canonicalizes uppercase digest run ids before transport', async () => {
+    const c = client();
+    const uppercaseRunId = digestRunId.toUpperCase();
+    const run = { digestRunId, state: 'RUNNING' };
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { viewer: { stewardDigestRun: run } },
+    });
+
+    await expect(
+      c.steward.digestRun({ inboxPath, digestRunId: uppercaseRunId })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringMatching(/stewardDigestRun\(/),
+        variables: { inboxPath, digestRunId },
+      },
+    });
+  });
+
+  it('publishes complete durable coverage in one business workflow', async () => {
+    const c = client();
+    const deliveryIds = Array.from({ length: 205 }, (_, index) =>
+      String(index + 1)
+    );
+    const body = '# Daily Brief\n\nBody';
+    const run = { digestRunId, state: 'SENT' };
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { publishStewardDailyBrief: { run } },
+    });
+
+    await expect(
+      c.steward.sendDigestRun({
+        inboxPath,
+        digestRunId,
+        deliveryIds,
+        body,
+      })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringMatching(/publishStewardDailyBrief/),
+        variables: { input: { inboxPath, digestRunId, deliveryIds, body } },
+      },
+    });
+  });
+
+  it('finalizes a server-validated bodyless run with complete reviewed coverage', async () => {
+    const c = client();
+    const deliveryIds = ['7', '8'];
+    const run = { digestRunId, state: 'INTENTIONALLY_EMPTY' };
+    const request = vi.spyOn(c, '_request').mockResolvedValue({
+      data: { publishStewardDailyBrief: { run } },
+    });
+
+    await expect(
+      c.steward.sendDigestRun({ inboxPath, digestRunId, deliveryIds })
+    ).resolves.toEqual(run);
+    expect(request).toHaveBeenCalledWith('POST', '/query', {
+      body: {
+        query: expect.stringMatching(/publishStewardDailyBrief/),
+        variables: {
+          input: { inboxPath, digestRunId, deliveryIds },
+        },
+      },
+    });
   });
 });
 

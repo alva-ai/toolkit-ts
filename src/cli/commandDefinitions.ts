@@ -175,14 +175,21 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     values: ['inbox-path', 'delivery-id', 'request-id'],
   }),
   command('steward send', {
-    values: ['inbox-path', 'body', 'delivery-ids', 'request-id'],
+    values: [
+      'inbox-path',
+      'body',
+      'delivery-ids',
+      'request-id',
+      'digest-run-id',
+    ],
   }),
   command('steward pending', {
-    values: ['inbox-path', 'after', 'since', 'until', 'first'],
+    values: ['inbox-path', 'since', 'until', 'first', 'digest-run-id'],
   }),
   command('steward briefed', {
     values: ['inbox-path', 'delivery-ids', 'digest-run-id'],
   }),
+  command('steward status', { values: ['inbox-path', 'digest-run-id'] }),
 
   command('company-news create', {
     values: ['name', 'tickers', 'initial-lookback-hours', 'page-size'],

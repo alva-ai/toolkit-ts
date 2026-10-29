@@ -36,7 +36,7 @@ export interface StewardSendParams extends StewardTarget {
 export type StewardSourceKind = 'FEED' | 'MARKET_ENTITY' | 'THESIS_FEED';
 
 export interface StewardPendingParams extends StewardTarget {
-  /** Opaque cursor from the previous page's `nextCursor`; carries the window. */
+  /** @deprecated Use `pendingPage` for explicit single-page reads. */
   after?: string;
   /** First page only: lower bound on decision time. */
   sinceMs?: number;
@@ -45,9 +45,29 @@ export interface StewardPendingParams extends StewardTarget {
   first?: number;
 }
 
+export interface StewardPendingPageParams extends StewardPendingParams {
+  /** Opaque cursor from the previous page's `nextCursor`; carries the window. */
+  after?: string;
+}
+
+export type StewardPendingFullParams = Omit<StewardPendingParams, 'after'> & {
+  after?: undefined;
+};
+
 export interface StewardBriefedParams extends StewardTarget {
   deliveryIds: string[];
   digestRunId: string;
+}
+
+export interface StewardDigestRunParams extends StewardTarget {
+  digestRunId: string;
+}
+
+export interface StewardSendDigestRunParams extends StewardDigestRunParams {
+  /** Exact reviewed coverage; omit or pass [] for a For-You-only Brief. */
+  deliveryIds?: string[];
+  /** Omit when complete reviewed coverage produces no useful Brief content. */
+  body?: string;
 }
 
 export interface StewardDecideResult {
@@ -81,6 +101,42 @@ export interface StewardPendingPage {
   /** The window every page of this Brief was read with. */
   windowSinceMs: number;
   windowUntilMs: number;
+}
+
+export interface StewardPendingResult {
+  items: StewardPendingItem[];
+  /** The fixed window used for the complete read. */
+  windowSinceMs: number;
+  windowUntilMs: number;
+}
+
+export type StewardDigestRunState =
+  | 'EXPECTED'
+  | 'RUNNING'
+  | 'SEND_UNCERTAIN'
+  | 'SENT'
+  | 'INTENTIONALLY_EMPTY'
+  | 'FAILED_BEFORE_SEND'
+  | 'FAILED'
+  | 'FAILED_EXPIRED';
+
+export interface StewardDigestRun {
+  digestRunId: string;
+  state: StewardDigestRunState;
+  scheduleId: string;
+  scheduleVersion: number;
+  occurrenceIndex: number;
+  windowSinceMs: number;
+  windowUntilMs: number;
+  scanCompletedAtMs?: number | null;
+  bodySha256?: string | null;
+  coverageSha256?: string | null;
+  channelMessageId?: string | null;
+  attempts: number;
+  lastError: string;
+  startedAtMs?: number | null;
+  completedAtMs?: number | null;
+  sendUncertainAtMs?: number | null;
 }
 
 interface GraphQLErrorPayload {
@@ -144,12 +200,54 @@ mutation ToolkitStewardBriefed($input: CompleteStewardBriefInput!) {
   completeStewardBrief(input: $input) { ok }
 }`.trim();
 
+const DIGEST_RUN_FIELDS = `
+digestRunId state scheduleId scheduleVersion occurrenceIndex
+windowSinceMs windowUntilMs scanCompletedAtMs bodySha256 coverageSha256
+channelMessageId attempts lastError startedAtMs completedAtMs sendUncertainAtMs
+`.trim();
+
+const DIGEST_RUN = `
+query ToolkitStewardDigestRun($inboxPath: String!, $digestRunId: String!) {
+  viewer { stewardDigestRun(inboxPath: $inboxPath, digestRunId: $digestRunId) { ${DIGEST_RUN_FIELDS} } }
+}`.trim();
+
+const DIGEST_RUN_PENDING = `
+query ToolkitStewardDigestRunPending($inboxPath: String!, $digestRunId: String!, $input: StewardDigestRunPendingInput) {
+  viewer {
+    stewardDigestRunPending(inboxPath: $inboxPath, digestRunId: $digestRunId, input: $input) {
+      edges {
+        node { deliveryId feedEntryId source { kind id } decisionReason consumedAtMs alertSnapshot }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`.trim();
+
+const PUBLISH_DAILY_BRIEF = `
+mutation ToolkitStewardPublishDailyBrief($input: PublishStewardDailyBriefInput!) {
+  publishStewardDailyBrief(input: $input) { run { ${DIGEST_RUN_FIELDS} } }
+}`.trim();
+
 const DECISIONS: ReadonlySet<string> = new Set([
   'immediate',
   'digest',
   'suppress',
 ]);
 const DELIVERY_ID = /^[1-9][0-9]{0,18}$/;
+const MAX_LEGACY_BRIEFED_IDS = 100;
+const MAX_DIGEST_RUN_COVERAGE = 10_000;
+const DIGEST_RUN_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// No shared/testable sleep seam exists in Toolkit today, so retries are
+// immediate but strictly bounded to avoid hiding a partial read as success.
+const PENDING_ATTEMPTS = 3;
+const TRANSIENT_PENDING_CODES: ReadonlySet<string> = new Set([
+  'NETWORK_ERROR',
+  'NETWORK_TIMEOUT',
+  'UNAVAILABLE',
+  'DEADLINE_EXCEEDED',
+]);
+const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 
 function invalid(message: string): AlvaError {
   return new AlvaError('INVALID_ARGUMENT', message, 400);
@@ -227,6 +325,19 @@ function requireRequestId(value: string | undefined): string {
   return value;
 }
 
+function requireDigestRunId(value: string): string {
+  if (!DIGEST_RUN_ID.test(value)) throw invalid('digest run id must be a UUID');
+  return value.toLowerCase();
+}
+
+function isTransientStewardError(error: unknown): error is AlvaError {
+  return (
+    error instanceof AlvaError &&
+    (TRANSIENT_PENDING_CODES.has(error.code) ||
+      TRANSIENT_HTTP_STATUSES.has(error.status))
+  );
+}
+
 function emptyResponse(): AlvaError {
   return new AlvaError('EMPTY_RESPONSE', 'steward response was empty', 502);
 }
@@ -298,7 +409,76 @@ export class StewardResource {
     return message;
   }
 
-  async pending(params: StewardPendingParams): Promise<StewardPendingPage> {
+  async pending(
+    params: StewardPendingParams & { after: string }
+  ): Promise<StewardPendingPage>;
+  async pending(
+    params: StewardPendingFullParams
+  ): Promise<StewardPendingResult>;
+  async pending(
+    params: StewardPendingParams
+  ): Promise<StewardPendingResult | StewardPendingPage>;
+  async pending(
+    params: StewardPendingParams
+  ): Promise<StewardPendingResult | StewardPendingPage> {
+    if (params.after !== undefined) return this.pendingPage(params);
+    const items: StewardPendingItem[] = [];
+    const deliveryIds = new Set<string>();
+    const cursors = new Set<string>();
+    let after: string | undefined;
+    let windowSinceMs: number | undefined;
+    let windowUntilMs: number | undefined;
+
+    do {
+      const page = await this.pendingPageWithRetry({
+        ...params,
+        after,
+        sinceMs: after === undefined ? params.sinceMs : undefined,
+        untilMs: after === undefined ? params.untilMs : undefined,
+      });
+      if (windowSinceMs === undefined) {
+        windowSinceMs = page.windowSinceMs;
+        windowUntilMs = page.windowUntilMs;
+      } else if (
+        page.windowSinceMs !== windowSinceMs ||
+        page.windowUntilMs !== windowUntilMs
+      ) {
+        throw new AlvaError(
+          'ABORTED',
+          'steward pending window changed during pagination',
+          409
+        );
+      }
+      for (const item of page.items) {
+        if (deliveryIds.has(item.deliveryId)) continue;
+        deliveryIds.add(item.deliveryId);
+        items.push(item);
+      }
+      after = page.nextCursor ?? undefined;
+      if (after !== undefined) {
+        if (cursors.has(after)) {
+          throw new AlvaError(
+            'INTERNAL',
+            'steward pending pagination loop detected',
+            500
+          );
+        }
+        cursors.add(after);
+      }
+    } while (after !== undefined);
+
+    if (windowSinceMs === undefined || windowUntilMs === undefined)
+      throw emptyResponse();
+    return {
+      items,
+      windowSinceMs,
+      windowUntilMs,
+    };
+  }
+
+  async pendingPage(
+    params: StewardPendingPageParams
+  ): Promise<StewardPendingPage> {
     this.client._requireAuth();
     const first = params.first ?? 50;
     if (!Number.isInteger(first) || first < 1 || first > 100)
@@ -345,10 +525,18 @@ export class StewardResource {
     )
       throw emptyResponse();
     const items = page.edges.map((edge) => edge.node);
-    const nextCursor =
-      page.pageInfo?.hasNextPage === true && page.pageInfo.endCursor
-        ? page.pageInfo.endCursor
-        : null;
+    const pageInfo = page.pageInfo;
+    if (!pageInfo || typeof pageInfo.hasNextPage !== 'boolean')
+      throw emptyResponse();
+    const endCursor = pageInfo.endCursor;
+    if (
+      endCursor !== undefined &&
+      endCursor !== null &&
+      typeof endCursor !== 'string'
+    )
+      throw emptyResponse();
+    if (pageInfo.hasNextPage && !endCursor) throw emptyResponse();
+    const nextCursor = pageInfo.hasNextPage ? (endCursor as string) : null;
     return {
       items,
       nextCursor,
@@ -357,21 +545,120 @@ export class StewardResource {
     };
   }
 
+  private async pendingPageWithRetry(
+    params: StewardPendingPageParams
+  ): Promise<StewardPendingPage> {
+    for (let attempt = 1; attempt < PENDING_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.pendingPage(params);
+      } catch (error) {
+        if (!isTransientStewardError(error)) throw error;
+      }
+    }
+    return this.pendingPage(params);
+  }
+
   async briefed(params: StewardBriefedParams): Promise<{ ok: true }> {
     this.client._requireAuth();
     const digestRunId = params.digestRunId?.trim();
     if (!digestRunId) throw invalid('a digest run id is required');
+    const inboxPath = requireInboxPath(params);
+    const deliveryIds = requireDeliveryIds(params.deliveryIds);
+    if (deliveryIds.length > MAX_LEGACY_BRIEFED_IDS)
+      throw invalid('legacy briefed accepts at most 100 delivery ids');
     const data = await this.graphql<{
       completeStewardBrief?: { ok?: boolean } | null;
     }>(BRIEFED, {
       input: {
-        inboxPath: requireInboxPath(params),
-        deliveryIds: requireDeliveryIds(params.deliveryIds),
+        inboxPath,
+        deliveryIds,
         digestRunId,
       },
     });
     if (data.completeStewardBrief?.ok !== true) throw emptyResponse();
     return { ok: true };
+  }
+
+  async digestRun(params: StewardDigestRunParams): Promise<StewardDigestRun> {
+    this.client._requireAuth();
+    const data = await this.graphql<{
+      viewer?: { stewardDigestRun?: StewardDigestRun | null } | null;
+    }>(DIGEST_RUN, {
+      inboxPath: requireInboxPath(params),
+      digestRunId: requireDigestRunId(params.digestRunId),
+    });
+    const run = data.viewer?.stewardDigestRun;
+    if (!run) throw emptyResponse();
+    return run;
+  }
+
+  async digestRunPending(
+    params: StewardDigestRunParams
+  ): Promise<StewardPendingItem[]> {
+    this.client._requireAuth();
+    const inboxPath = requireInboxPath(params);
+    const digestRunId = requireDigestRunId(params.digestRunId);
+    const items: StewardPendingItem[] = [];
+    const seenCursors = new Set<string>();
+    let after: string | undefined;
+    for (;;) {
+      const data = await this.graphql<{
+        viewer?: {
+          stewardDigestRunPending?: {
+            edges?: Array<{ node?: StewardPendingItem | null } | null> | null;
+            pageInfo?: {
+              hasNextPage?: boolean;
+              endCursor?: string | null;
+            } | null;
+          } | null;
+        } | null;
+      }>(DIGEST_RUN_PENDING, {
+        inboxPath,
+        digestRunId,
+        input: { first: 100, ...(after === undefined ? {} : { after }) },
+      });
+      const connection = data.viewer?.stewardDigestRunPending;
+      if (!connection || !Array.isArray(connection.edges))
+        throw emptyResponse();
+      const pageInfo = connection.pageInfo;
+      if (!pageInfo || typeof pageInfo.hasNextPage !== 'boolean')
+        throw emptyResponse();
+      for (const edge of connection.edges) {
+        if (!edge?.node) throw emptyResponse();
+        items.push(edge.node);
+      }
+      if (!pageInfo.hasNextPage) break;
+      const next = pageInfo.endCursor;
+      if (typeof next !== 'string' || next === '' || seenCursors.has(next))
+        throw emptyResponse();
+      seenCursors.add(next);
+      after = next;
+    }
+    return items;
+  }
+
+  async sendDigestRun(
+    params: StewardSendDigestRunParams
+  ): Promise<StewardDigestRun> {
+    this.client._requireAuth();
+    const deliveryIds = normalizeDeliveryIds(params.deliveryIds ?? []);
+    if (deliveryIds.length > MAX_DIGEST_RUN_COVERAGE)
+      throw invalid('durable Daily Brief accepts at most 10000 delivery ids');
+    if (params.body !== undefined && params.body.trim() === '')
+      throw invalid('a message body must be non-blank when provided');
+    const data = await this.graphql<{
+      publishStewardDailyBrief?: { run?: StewardDigestRun | null } | null;
+    }>(PUBLISH_DAILY_BRIEF, {
+      input: {
+        inboxPath: requireInboxPath(params),
+        digestRunId: requireDigestRunId(params.digestRunId),
+        deliveryIds,
+        ...(params.body === undefined ? {} : { body: params.body }),
+      },
+    });
+    const run = data.publishStewardDailyBrief?.run;
+    if (!run) throw emptyResponse();
+    return run;
   }
 
   private async graphql<T>(
