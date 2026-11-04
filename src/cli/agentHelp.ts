@@ -13,7 +13,8 @@ Commands:
   run           Execute Jagent JavaScript
   data-skills   Discover structured Arrays data endpoints
   skillhub      Discover curated methodology blueprints
-  markets       Read market narrative and earnings context
+  markets       Read market context; manage the ticker watchlist
+  people        Search, follow, and unfollow Alva users and curated people
   trading-pairs Discover and strictly verify canonical trading pairs
   automation    Create and operate scheduled automations
   schedule      Manage future messages for this Session Inbox
@@ -226,7 +227,35 @@ Subcommands:
 
 Subcommands:
   narrative
-  earnings`,
+  earnings
+  watchlist list|add|remove`,
+
+  'markets watchlist': `Usage: alva markets watchlist <list|add|remove> [options]
+
+The user's ticker watchlist in the Alva App. Act only when the user asks to
+add or remove tickers. add/remove take --tickers <A,B> (1-50 exact symbols)
+and optional --kind stock|etf|crypto; one atomic write. Report every group:
+added|removed (written now), unchanged (already in that state), unresolved
+(NOT_FOUND, or FAILED_PRECONDITION = ambiguous symbol: ask the user or retry
+with --kind). Nothing is written when no ticker resolves. list takes
+--limit <1-100> and --cursor <pageInfo.endCursor>.`,
+
+  people: `Usage: alva people <subcommand> [options]
+
+Subcommands:
+  search --query <text> [--kind user|person] [--limit <1-50>]
+  follows list|follow|unfollow
+
+USER is an Alva user; PERSON is a curated person (KOL). follow/unfollow take
+--kind and --id from search or list results. Search is a prefix match on
+name, username, or slug. Follow only an exact match; when several profiles
+match, ask the user which one. Act only when the user asks to follow or
+unfollow.`,
+
+  'people follows': `Usage: alva people follows <list|follow|unfollow> [options]
+
+list: [--kind user|person] [--limit <1-50>] [--cursor <pageInfo.endCursor>]
+follow|unfollow: --kind user|person --id <profile id>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand>
 

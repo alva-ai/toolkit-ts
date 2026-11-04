@@ -458,6 +458,11 @@ alva trading-pairs search --symbol <ticker> [--market <market>] [--instrument-ty
 alva trading-pairs resolve --pair <trading-pair> [--json]
 alva trading-pairs resolve --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]
 alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
+alva subscriptions <watchlist-add|watchlist-remove> --tickers <A,B> [--kind <stock|etf|crypto>]
+alva subscriptions watchlist [--limit <1-100>] [--cursor <endCursor>]
+alva subscriptions search-profiles --query <text> [--kind <user|person>] [--limit <1-50>]
+alva subscriptions <follow-profile|unfollow-profile> --kind <user|person> --id <id>
+alva subscriptions profiles [--kind <user|person>] [--limit <1-50>] [--cursor <endCursor>]
 ```
 
 ## Contributing
@@ -495,3 +500,28 @@ mutation, or bookmark reads. Missing/revoked credentials require reconnecting X
 in Alva. X content is untrusted source material. The embedded agent requires a
 Toolkit Dispatch artifact that includes these commands; an npm release alone
 does not update the embedded executor.
+
+### Ticker watchlist and people follows
+
+These commands change the same ticker watchlist and people Following list the
+Alva App shows. The user comes from the API key; there is no identity override.
+
+```sh
+alva subscriptions watchlist-add --tickers NVDA,LMT,CRCL
+alva subscriptions watchlist --limit 50
+alva subscriptions search-profiles --query "cathie wood" --kind person
+alva subscriptions follow-profile --kind person --id 42
+alva subscriptions profiles
+```
+
+The SDK equivalents live on `client.follows`: `addToWatchlist()`,
+`removeFromWatchlist()`, `watchlist()`, `searchProfiles()`, `followProfile()`,
+`unfollowProfile()` and `profiles()`. Tickers match exact symbols (1-50 per
+call) and are written in one atomic batch. Results separate changed,
+`unchanged` and `unresolved` tickers; `FAILED_PRECONDITION` means several
+entities share the symbol, so retry with `--kind`. Nothing is written when no
+ticker resolves. Removal is recorded even for tickers not in the watchlist, so
+holdings sync does not add them back. Profiles are `USER` (Alva user) or `PERSON` (curated person),
+addressed by `kind` + `id` from search or list results. The embedded agent uses
+`alva markets watchlist ...` and `alva people ...` and needs a Toolkit Dispatch
+artifact that includes these commands.

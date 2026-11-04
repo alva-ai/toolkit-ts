@@ -496,6 +496,15 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('subscriptions list', { values: ['first', 'cursor'] }),
   command('subscriptions follows', { values: ['limit', 'cursor'] }),
+  command('subscriptions watchlist-add', { values: ['tickers', 'kind'] }),
+  command('subscriptions watchlist-remove', { values: ['tickers', 'kind'] }),
+  command('subscriptions watchlist', { values: ['limit', 'cursor'] }),
+  command('subscriptions search-profiles', {
+    values: ['query', 'kind', 'limit'],
+  }),
+  command('subscriptions follow-profile', { values: ['kind', 'id'] }),
+  command('subscriptions unfollow-profile', { values: ['kind', 'id'] }),
+  command('subscriptions profiles', { values: ['kind', 'limit', 'cursor'] }),
   command('subscriptions subscribe', {
     values: ['feed-ids', 'channel-id', 'playbook-ids'],
   }),

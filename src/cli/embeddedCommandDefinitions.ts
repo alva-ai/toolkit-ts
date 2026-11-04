@@ -309,6 +309,27 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('markets earnings', 'markets earnings', {
       values: ['ticker', 'event', 'fiscal-year', 'fiscal-quarter'],
     }),
+    route('markets watchlist list', 'subscriptions watchlist', {
+      values: ['limit', 'cursor'],
+    }),
+    route('markets watchlist add', 'subscriptions watchlist-add', {
+      values: ['tickers', 'kind'],
+    }),
+    route('markets watchlist remove', 'subscriptions watchlist-remove', {
+      values: ['tickers', 'kind'],
+    }),
+    route('people search', 'subscriptions search-profiles', {
+      values: ['query', 'kind', 'limit'],
+    }),
+    route('people follows list', 'subscriptions profiles', {
+      values: ['kind', 'limit', 'cursor'],
+    }),
+    route('people follows follow', 'subscriptions follow-profile', {
+      values: ['kind', 'id'],
+    }),
+    route('people follows unfollow', 'subscriptions unfollow-profile', {
+      values: ['kind', 'id'],
+    }),
     route('trading-pairs search', 'trading-pairs search', {
       values: [
         'symbol',
