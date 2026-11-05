@@ -118,9 +118,12 @@ confirmed against Backend `mutateManualFollows` /
 `marketEntityViewerState`; fixed as B6 and F4 with tests. The skills commit
 review found no defects.
 
-`npm ci` from the lockfile, then `npm test` (62 files, 1425 tests),
+PR review (gemini): an omitted Person `xHandle` now reads as null (fixed with
+a test); `Object.hasOwn` kept because the package targets Node >=18 / ES2022.
+
+`npm ci` from the lockfile, then `npm test` (62 files, 1426 tests),
 `npm run typecheck`, `npm run lint`, `npm run format:check` and `npm run build`
-passed. New coverage: 21 resource cases and 30 CLI cases (15 per dispatch
+passed. New coverage: 22 resource cases and 30 CLI cases (15 per dispatch
 path), plus the Slim leaf inventory (131 -> 138). `node dist/cli.js
 subscriptions --help` shows the new subcommands. Requests are mocked; no live
 Gateway, STG, or PRD call was made.
