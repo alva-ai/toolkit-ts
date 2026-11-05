@@ -3,25 +3,19 @@ import { AlvaClient } from '../../src/client.js';
 import { dispatchCli } from '../../src/cli/dispatch.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 
+// New commands use one path in both the terminal and the embedded tree.
+const commands = {
+  add: ['markets', 'watchlist', 'add'],
+  remove: ['markets', 'watchlist', 'remove'],
+  watchlist: ['markets', 'watchlist', 'list'],
+  search: ['people', 'search'],
+  followProfile: ['people', 'follows', 'follow'],
+  profiles: ['people', 'follows', 'list'],
+} as const;
+
 const paths = {
-  terminal: {
-    dispatch: dispatchCli,
-    add: ['subscriptions', 'watchlist-add'],
-    remove: ['subscriptions', 'watchlist-remove'],
-    watchlist: ['subscriptions', 'watchlist'],
-    search: ['subscriptions', 'search-profiles'],
-    followProfile: ['subscriptions', 'follow-profile'],
-    profiles: ['subscriptions', 'profiles'],
-  },
-  embedded: {
-    dispatch: embedded,
-    add: ['markets', 'watchlist', 'add'],
-    remove: ['markets', 'watchlist', 'remove'],
-    watchlist: ['markets', 'watchlist', 'list'],
-    search: ['people', 'search'],
-    followProfile: ['people', 'follows', 'follow'],
-    profiles: ['people', 'follows', 'list'],
-  },
+  terminal: { dispatch: dispatchCli, ...commands },
+  embedded: { dispatch: embedded, ...commands },
 } as const;
 
 function lookup(id: string, ticker: string, isFollowed: boolean) {
@@ -156,10 +150,44 @@ for (const [name, cli] of Object.entries(paths)) {
       });
     });
 
+    it('mixes kinds in one atomic write with a per-symbol suffix', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      const request = vi
+        .spyOn(client, '_request')
+        .mockResolvedValueOnce(lookup('11', 'NVDA', false))
+        .mockResolvedValueOnce(lookup('21', 'BTC', false))
+        .mockResolvedValueOnce({
+          data: { followTickers: { entities: [{ id: '11' }, { id: '21' }] } },
+        });
+      const result = await cli.dispatch(client, [
+        ...cli.add,
+        '--tickers',
+        'NVDA,btc:Crypto',
+        '--kind',
+        'stock',
+      ]);
+      expect(result).toMatchObject({
+        added: [{ input: 'NVDA' }, { input: 'BTC' }],
+      });
+      expect(request.mock.calls[0][2]?.body).toMatchObject({
+        variables: { input: { ticker: 'NVDA', kind: 'STOCK' } },
+      });
+      expect(request.mock.calls[1][2]?.body).toMatchObject({
+        variables: { input: { ticker: 'BTC', kind: 'CRYPTO' } },
+      });
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(request.mock.calls[2][2]?.body).toMatchObject({
+        variables: { input: { entityIds: ['11', '21'] } },
+      });
+    });
+
     it.each([
       [[...cli.add]],
       [[...cli.add, '--tickers', ',']],
       [[...cli.add, '--tickers', 'NVDA', '--kind', 'bond']],
+      [[...cli.add, '--tickers', 'BTC:bond']],
+      [[...cli.add, '--tickers', 'BTC:']],
+      [[...cli.add, '--tickers', ':crypto']],
       [[...cli.add, '--tickers', 'NVDA', '--user-id', '9']],
       [[...cli.watchlist, '--limit', '0']],
       [[...cli.watchlist, '--limit', '101']],
@@ -177,3 +205,19 @@ for (const [name, cli] of Object.entries(paths)) {
     });
   });
 }
+
+describe('follows terminal paths', () => {
+  it.each([
+    ['subscriptions', 'watchlist-add', '--tickers', 'NVDA'],
+    ['subscriptions', 'watchlist'],
+    ['subscriptions', 'follow-profile', '--kind', 'user', '--id', '1'],
+  ])(
+    'does not expose the unreleased subscriptions path %j',
+    async (...args) => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      const request = vi.spyOn(client, '_request');
+      await expect(dispatchCli(client, args)).rejects.toThrow();
+      expect(request).not.toHaveBeenCalled();
+    }
+  );
+});

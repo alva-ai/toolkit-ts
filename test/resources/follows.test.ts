@@ -105,9 +105,49 @@ describe('ticker watchlist', () => {
     const result = await client.follows.addToWatchlist({
       tickers: ['BRK.B', 'BRK-B'],
     });
-    expect(result.added).toHaveLength(1);
-    expect(result.unchanged).toHaveLength(1);
+    // Both inputs report the entity's real outcome; neither is "unchanged".
+    expect(result.added.map((t) => t.input)).toEqual(['BRK.B', 'BRK-B']);
+    expect(result.unchanged).toEqual([]);
     expect(mutations[0].variables).toEqual({ input: { entityIds: ['30'] } });
+  });
+
+  it('names the kind when a kind-restricted lookup misses', async () => {
+    const { client, mutations } = tickerClient({
+      BTC: { data: { market: { entity: null } } },
+    });
+    const result = await client.follows.addToWatchlist({
+      tickers: [{ ticker: 'BTC', kind: 'STOCK' }],
+    });
+    expect(result.unresolved).toEqual([
+      expect.objectContaining({
+        input: 'BTC',
+        kind: 'STOCK',
+        code: 'NOT_FOUND',
+        message: expect.stringContaining(
+          'no STOCK entity found for ticker BTC'
+        ),
+      }),
+    ]);
+    expect(mutations).toEqual([]);
+  });
+
+  it('lets a per-ticker kind override the default and dedupes by ticker and kind', async () => {
+    const { client, request } = tickerClient({
+      NVDA: entityResponse({ id: '11', ticker: 'NVDA', isFollowed: false }),
+      BTC: entityResponse({ id: '21', ticker: 'BTC', isFollowed: false }),
+    });
+    await client.follows.addToWatchlist({
+      tickers: ['nvda', { ticker: 'btc', kind: 'CRYPTO' }, 'NVDA'],
+      kind: 'STOCK',
+    });
+    const lookups = request.mock.calls
+      .map((call) => call[2]?.body as { variables: { input: unknown } })
+      .filter((body) => JSON.stringify(body).includes('ToolkitTickerLookup'))
+      .map((body) => body.variables.input);
+    expect(lookups).toEqual([
+      { ticker: 'NVDA', kind: 'STOCK' },
+      { ticker: 'BTC', kind: 'CRYPTO' },
+    ]);
   });
 
   it('records removal for every resolved ticker and forwards the kind filter', async () => {

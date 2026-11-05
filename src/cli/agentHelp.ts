@@ -233,11 +233,13 @@ Subcommands:
   'markets watchlist': `Usage: alva markets watchlist <list|add|remove> [options]
 
 The user's ticker watchlist in the Alva App. Act only when the user asks to
-add or remove tickers. add/remove take --tickers <A,B> (1-50 exact symbols)
-and optional --kind stock|etf|crypto; one atomic write. Report every group:
-added|removed (written now), unchanged (already in that state), unresolved
-(NOT_FOUND, or FAILED_PRECONDITION = ambiguous symbol: ask the user or retry
-with --kind). Nothing is written when no ticker resolves. list takes
+add or remove tickers. add/remove take --tickers <A,B> (1-50 exact symbols;
+suffix one with :stock, :etf, or :crypto to pick its kind, e.g. BTC:crypto)
+and optional --kind stock|etf|crypto as the default kind; one atomic write.
+Report every group: added|removed (written now), unchanged (already in that
+state), unresolved (NOT_FOUND, or FAILED_PRECONDITION = ambiguous symbol: ask
+the user or retry with a kind suffix). Nothing is written when no ticker
+resolves. add re-adds a ticker the user removed earlier. list takes
 --limit <1-100> and --cursor <pageInfo.endCursor>.`,
 
   people: `Usage: alva people <subcommand> [options]

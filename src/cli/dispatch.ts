@@ -1,6 +1,7 @@
 import { validateXReadParams } from '../resources/x.js';
 import {
   normalizeWatchlistTickersParams,
+  parseTickerSpec,
   validateProfileRef,
   validateSearchProfilesParams,
   type FollowProfileKind,
@@ -156,10 +157,11 @@ Commands:
   notification-history  Feed notification delivery history (list-feed)
   notification-preferences  Notification preferences (list, enable-session-completed, disable-session-completed)
   feedback    Submit user-confirmed Alva platform feedback (submit)
-  subscriptions       Playbook and people follows, ticker watchlist, feed alerts
+  subscriptions       Playbook follows and feed alert subscriptions
   remix       Save playbook remix lineage
   portfolio   Connected-account portfolio (accounts, summary, activities)
-  markets     Company narrative and earnings context (narrative, earnings)
+  markets     Company context and the ticker watchlist (narrative, earnings, watchlist list|add|remove)
+  people      Search, follow, and unfollow Alva users and curated people (search, follows list|follow|unfollow)
   trading-pairs  Discover and strictly verify canonical trading pairs (search, resolve)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   broker      Agentic order execution — venue-native passthrough to trex (accounts, quote, order, balance, positions, ...; run 'alva broker describe')
@@ -1293,8 +1295,8 @@ Examples:
   subscriptions: `Usage: alva subscriptions <subcommand> [options]
 
 Three DISTINCT concepts share the word "subscribe" in the product:
-  - FOLLOW   — the social relation: playbooks ("Subscribed Playbooks") and
-               people. Enumerate with: follows | profiles
+  - FOLLOW   — the social relation (the UI's "Subscribed Playbooks").
+               Enumerate with: alva subscriptions follows
   - ALERTS   — push/notification opt-ins (what list returns).
   - PURCHASE — paid playbook access / the SaaS plan. NOT this command.
 
@@ -1313,25 +1315,6 @@ Subcommands:
   unsubscribe            Bulk disable alerts by feed id
   list                   List the caller's active alert subscriptions
   follows                List the playbooks the caller follows
-  watchlist-add          Add tickers to the App's watchlist
-  watchlist-remove       Remove tickers from the watchlist
-  watchlist              List watchlist tickers, most recently added first
-  search-profiles        Search Alva users and curated people to follow
-  follow-profile         Follow one user or person by kind + id
-  unfollow-profile       Unfollow one user or person by kind + id
-  profiles               List followed users and people
-
-Watchlist flags:
-  --tickers <A,B>        1-50 exact ticker symbols (required)
-  --kind <stock|etf|crypto>  Optional; disambiguates a shared symbol
-  Result groups: added|removed (written now), unchanged (already in that
-  state), unresolved (NOT_FOUND, or FAILED_PRECONDITION = ambiguous).
-  Nothing is written when no ticker resolves.
-
-Profile flags:
-  --query <text>         Prefix of a name, username, or slug (search-profiles)
-  --kind <user|person>   USER = Alva user, PERSON = curated person
-  --id <id>              Profile id from search-profiles or profiles
 
 Name-addressed flags:
   --username <user>      Owner's username (required)
@@ -1360,11 +1343,7 @@ Examples:
   alva subscriptions subscribe   --feed-ids 13292,13293
   alva subscriptions unsubscribe --feed-ids 13292,13293
   alva subscriptions list --first 200
-  alva subscriptions follows
-  alva subscriptions watchlist-add --tickers NVDA,LMT,CRCL
-  alva subscriptions watchlist --limit 50
-  alva subscriptions search-profiles --query "cathie wood"
-  alva subscriptions follow-profile --kind person --id 42`,
+  alva subscriptions follows`,
 
   remix: `Usage: alva remix --child-username <u> --child-name <n> --parents <json>
 
@@ -1436,6 +1415,8 @@ owners, feed slugs, versions, or paths.
 Subcommands:
   narrative    Get the current narrative, history, and narrative change log
   earnings     Get Pre, Release, Transcript, and Post for one fiscal event
+  watchlist list|add|remove
+               The user's ticker watchlist in the Alva App
 
 Narrative flags:
   --ticker <symbol>             Stock ticker (required)
@@ -1448,6 +1429,21 @@ Earnings flags:
 
 Do not combine --event with --fiscal-year/--fiscal-quarter. These commands read
 the current backend view; historical query-as-of gating is not supported yet.
+
+Watchlist flags:
+  --tickers <A,B>               add/remove: 1-50 exact symbols (required).
+                                Suffix one symbol with :stock, :etf, or
+                                :crypto to pick its kind (BTC:crypto)
+  --kind <stock|etf|crypto>     add/remove: default kind for unsuffixed symbols
+  --limit <1-100>               list: page size (default 20)
+  --cursor <endCursor>          list: pageInfo.endCursor of the previous page
+
+  add/remove write every resolved symbol in one atomic batch. Result groups:
+  added|removed (written now), unchanged (already in that state), unresolved
+  (NOT_FOUND, or FAILED_PRECONDITION = several entities share the symbol:
+  retry it with a kind suffix). Nothing is written when no symbol resolves.
+  remove is recorded even for symbols not in the watchlist, so holdings sync
+  does not add them back; add re-adds a symbol the user removed earlier.
 
 Output semantics:
   Narrative is dated Alva analysis. Use current for present-tense company
@@ -1466,7 +1462,33 @@ Examples:
   alva markets narrative --ticker AAPL
   alva markets earnings --ticker AAPL
   alva markets earnings --ticker AAPL --event next-confirmed
-  alva markets earnings --ticker AAPL --fiscal-year 2026 --fiscal-quarter Q3`,
+  alva markets earnings --ticker AAPL --fiscal-year 2026 --fiscal-quarter Q3
+  alva markets watchlist add --tickers NVDA,LMT,BTC:crypto
+  alva markets watchlist list --limit 50`,
+
+  people: `Usage: alva people <subcommand> [options]
+
+Search and follow public profiles: USER is an Alva user, PERSON is a curated
+person. These change the same Following list the user sees in the Alva App.
+
+Subcommands:
+  search                    Prefix match on name, username, slug, or alias
+  follows list              List the profiles the caller follows
+  follows follow            Follow one profile (idempotent)
+  follows unfollow          Unfollow one profile (idempotent)
+
+Flags:
+  --query <text>            search: name or username prefix (required)
+  --kind <user|person>      search/list: optional filter; follow/unfollow:
+                            required, from a search or list result
+  --id <id>                 follow/unfollow: profile id (required)
+  --limit <1-50>            search/list: page size
+  --cursor <endCursor>      list: pageInfo.endCursor of the previous page
+
+Examples:
+  alva people search --query "cathie wood" --kind person
+  alva people follows follow --kind person --id 42
+  alva people follows list`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
@@ -2118,6 +2140,101 @@ function usageChecked<T>(command: string, check: () => T): T {
       command.split(' ')[0]
     );
   }
+}
+
+function dispatchWatchlist(
+  client: AlvaClient,
+  leaf: string | undefined,
+  flags: Record<string, string>
+) {
+  switch (leaf) {
+    case undefined:
+      return { _help: true, text: COMMAND_HELP.markets };
+    case 'add':
+    case 'remove': {
+      const command = `markets watchlist ${leaf}`;
+      const params = usageChecked(command, () =>
+        normalizeWatchlistTickersParams({
+          tickers: (csvList(requireFlag(flags, 'tickers', command)) ?? []).map(
+            parseTickerSpec
+          ),
+          kind: upperFlag(flags['kind']) as WatchlistTickerKind | undefined,
+        })
+      );
+      return leaf === 'add'
+        ? client.follows.addToWatchlist(params)
+        : client.follows.removeFromWatchlist(params);
+    }
+    case 'list': {
+      const command = 'markets watchlist list';
+      return client.follows.watchlist({
+        first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 100),
+        after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
+      });
+    }
+    default:
+      throw new CliUsageError(
+        `Unknown subcommand: markets watchlist ${leaf}`,
+        'markets'
+      );
+  }
+}
+
+function dispatchPeople(
+  client: AlvaClient,
+  path: readonly string[],
+  flags: Record<string, string>
+) {
+  const [subcommand, leaf] = path;
+  if (subcommand === undefined || (subcommand === 'follows' && !leaf)) {
+    return { _help: true, text: COMMAND_HELP.people };
+  }
+  const command = ['people', ...path].join(' ');
+  switch (subcommand === 'follows' ? `follows ${leaf}` : subcommand) {
+    case 'search':
+      return client.follows.searchProfiles(
+        usageChecked(command, () =>
+          validateSearchProfilesParams({
+            query: requireFlag(flags, 'query', command),
+            kind: upperFlag(flags['kind']) as FollowProfileKind | undefined,
+            first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
+          })
+        )
+      );
+    case 'follows list':
+      return client.follows.profiles({
+        kind: usageChecked(command, () =>
+          optionalProfileKind(upperFlag(flags['kind']))
+        ),
+        first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
+        after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
+      });
+    case 'follows follow':
+    case 'follows unfollow': {
+      const params = usageChecked(command, () =>
+        validateProfileRef({
+          kind: upperFlag(
+            requireFlag(flags, 'kind', command)
+          ) as FollowProfileKind,
+          id: requireFlag(flags, 'id', command),
+        })
+      );
+      return leaf === 'follow'
+        ? client.follows.followProfile(params)
+        : client.follows.unfollowProfile(params);
+    }
+    default:
+      throw new CliUsageError(`Unknown subcommand: ${command}`, 'people');
+  }
+}
+
+function optionalProfileKind(
+  kind: string | undefined
+): FollowProfileKind | undefined {
+  if (kind !== undefined && kind !== 'USER' && kind !== 'PERSON') {
+    throw new Error('kind must be USER or PERSON');
+  }
+  return kind;
 }
 
 function csvList(val: string | undefined): string[] | undefined {
@@ -4744,78 +4861,6 @@ export async function executeParsedCommand(
             limit: num(flags['limit']),
             cursor: flags['cursor'],
           });
-        case 'watchlist-add':
-        case 'watchlist-remove': {
-          const command = `subscriptions ${subcommand}`;
-          const params = usageChecked(command, () =>
-            normalizeWatchlistTickersParams({
-              tickers: csvList(requireFlag(flags, 'tickers', command)) ?? [],
-              kind: upperFlag(flags['kind']) as WatchlistTickerKind | undefined,
-            })
-          );
-          return subcommand === 'watchlist-add'
-            ? client.follows.addToWatchlist(params)
-            : client.follows.removeFromWatchlist(params);
-        }
-        case 'watchlist':
-          return client.follows.watchlist({
-            first: optionalBoundedIntegerFlag(
-              flags,
-              'limit',
-              'subscriptions watchlist',
-              1,
-              100
-            ),
-            after: usageChecked('subscriptions watchlist', () =>
-              optionalCursorFlag(flags['cursor'])
-            ),
-          });
-        case 'search-profiles': {
-          const command = 'subscriptions search-profiles';
-          const params = usageChecked(command, () =>
-            validateSearchProfilesParams({
-              query: requireFlag(flags, 'query', command),
-              kind: upperFlag(flags['kind']) as FollowProfileKind | undefined,
-              first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
-            })
-          );
-          return client.follows.searchProfiles(params);
-        }
-        case 'follow-profile':
-        case 'unfollow-profile': {
-          const command = `subscriptions ${subcommand}`;
-          const params = usageChecked(command, () =>
-            validateProfileRef({
-              kind: upperFlag(
-                requireFlag(flags, 'kind', command)
-              ) as FollowProfileKind,
-              id: requireFlag(flags, 'id', command),
-            })
-          );
-          return subcommand === 'follow-profile'
-            ? client.follows.followProfile(params)
-            : client.follows.unfollowProfile(params);
-        }
-        case 'profiles':
-          return client.follows.profiles({
-            kind: usageChecked('subscriptions profiles', () => {
-              const kind = upperFlag(flags['kind']);
-              if (kind !== undefined && kind !== 'USER' && kind !== 'PERSON') {
-                throw new Error('kind must be USER or PERSON');
-              }
-              return kind as FollowProfileKind | undefined;
-            }),
-            first: optionalBoundedIntegerFlag(
-              flags,
-              'limit',
-              'subscriptions profiles',
-              1,
-              50
-            ),
-            after: usageChecked('subscriptions profiles', () =>
-              optionalCursorFlag(flags['cursor'])
-            ),
-          });
         case 'subscribe': {
           if (flags['playbook-ids'] !== undefined) {
             throw new CliUsageError(
@@ -5162,6 +5207,9 @@ export async function executeParsedCommand(
     case 'markets': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for markets', 'markets');
+      if (subcommand === 'watchlist') {
+        return dispatchWatchlist(client, parsedCommand.path[2], flags);
+      }
       const ticker = requireFlag(flags, 'ticker', `markets ${subcommand}`);
       switch (subcommand) {
         case 'narrative':
@@ -5289,6 +5337,9 @@ export async function executeParsedCommand(
           );
       }
     }
+
+    case 'people':
+      return dispatchPeople(client, parsedCommand.path.slice(1), flags);
 
     case 'trading': {
       if (!subcommand)

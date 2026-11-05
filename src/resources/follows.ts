@@ -7,10 +7,24 @@ export type WatchlistTickerKind = 'STOCK' | 'ETF' | 'CRYPTO';
 /** Public profile kinds: USER is an Alva user, PERSON a curated person. */
 export type FollowProfileKind = 'USER' | 'PERSON';
 
+/** One requested symbol with an optional kind for just that symbol. */
+export interface WatchlistTickerSpec {
+  ticker: string;
+  kind?: WatchlistTickerKind;
+}
+
 export interface WatchlistTickersParams {
-  /** 1-50 ticker symbols, matched exactly (case-insensitive). */
-  tickers: string[];
-  /** Optional kind applied to every ticker to disambiguate a symbol. */
+  /**
+   * 1-50 ticker symbols, matched exactly (case-insensitive). A spec's own
+   * kind overrides `kind`, so one call can mix kinds (NVDA and BTC:crypto).
+   */
+  tickers: Array<string | WatchlistTickerSpec>;
+  /** Default kind for tickers without their own kind. */
+  kind?: WatchlistTickerKind;
+}
+
+interface NormalizedTicker {
+  ticker: string;
   kind?: WatchlistTickerKind;
 }
 
@@ -25,6 +39,8 @@ export interface ResolvedTicker {
 
 export interface UnresolvedTicker {
   input: string;
+  /** The kind the lookup was restricted to, when one was given. */
+  kind?: WatchlistTickerKind;
   /** NOT_FOUND or FAILED_PRECONDITION (several entities share the symbol). */
   code: string;
   message: string;
@@ -309,38 +325,66 @@ function profileKind(value: unknown, required: boolean) {
   return value as FollowProfileKind;
 }
 
+function tickerKind(value: unknown): WatchlistTickerKind | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'string' ||
+    !TICKER_KINDS.includes(value as WatchlistTickerKind)
+  ) {
+    throw new Error('kind must be STOCK, ETF, or CRYPTO');
+  }
+  return value as WatchlistTickerKind;
+}
+
+/**
+ * Parses one CLI symbol, `NVDA` or `BTC:crypto`, into a ticker spec; the
+ * suffix is the kind for that symbol only. Exported for the CLI.
+ */
+export function parseTickerSpec(raw: string): WatchlistTickerSpec {
+  const separator = raw.lastIndexOf(':');
+  if (separator === -1) return { ticker: raw };
+  return {
+    ticker: raw.slice(0, separator),
+    kind: tickerKind(
+      raw
+        .slice(separator + 1)
+        .trim()
+        .toUpperCase()
+    ),
+  };
+}
+
 /** Normalizes and validates watchlist ticker input; exported for CLI usage errors. */
 export function normalizeWatchlistTickersParams(
   params: WatchlistTickersParams
-): {
-  tickers: string[];
-  kind?: WatchlistTickerKind;
-} {
+): { tickers: NormalizedTicker[] } {
   if (!record(params) || !Array.isArray(params.tickers)) {
     throw new Error('tickers must be a list of ticker symbols');
   }
-  const tickers: string[] = [];
+  const defaultKind = tickerKind(params.kind);
+  const tickers: NormalizedTicker[] = [];
   for (const raw of params.tickers) {
-    if (typeof raw !== 'string') throw new Error('tickers must be strings');
-    const ticker = raw.trim().toUpperCase();
+    const spec = typeof raw === 'string' ? { ticker: raw } : raw;
+    if (!record(spec) || typeof spec.ticker !== 'string') {
+      throw new Error('tickers must be symbols or {ticker, kind} specs');
+    }
+    const ticker = spec.ticker.trim().toUpperCase();
     if (!ticker || /\s/.test(ticker) || ticker.length > MAX_TICKER_LENGTH) {
       throw new Error(
-        `ticker '${raw}' must be a non-empty symbol of at most ${MAX_TICKER_LENGTH} characters`
+        `ticker '${spec.ticker}' must be a non-empty symbol of at most ${MAX_TICKER_LENGTH} characters`
       );
     }
-    if (!tickers.includes(ticker)) tickers.push(ticker);
+    const kind = tickerKind(spec.kind) ?? defaultKind;
+    if (!tickers.some((t) => t.ticker === ticker && t.kind === kind)) {
+      tickers.push(kind === undefined ? { ticker } : { ticker, kind });
+    }
   }
   if (tickers.length === 0 || tickers.length > MAX_TICKERS) {
     throw new Error(
       `tickers must contain between 1 and ${MAX_TICKERS} symbols`
     );
   }
-  if (params.kind !== undefined && !TICKER_KINDS.includes(params.kind)) {
-    throw new Error('kind must be STOCK, ETF, or CRYPTO');
-  }
-  return params.kind === undefined
-    ? { tickers }
-    : { tickers, kind: params.kind };
+  return { tickers };
 }
 
 /** Validates a profile reference; exported for CLI usage errors. */
@@ -370,6 +414,33 @@ export function validateSearchProfilesParams(
     query,
     kind: profileKind(params.kind, false),
     first: boundedFirst(params.first, MAX_PROFILE_FIRST),
+  };
+}
+
+/**
+ * A kind-restricted miss names the kind: the symbol may exist under another
+ * kind (BTC as STOCK vs CRYPTO), so "not found" alone would mislead.
+ */
+function unresolvedTicker(
+  input: string,
+  kind: WatchlistTickerKind | undefined,
+  code: string,
+  message: string
+): TickerLookup {
+  if (kind === undefined) {
+    return { ok: false, unresolved: { input, code, message } };
+  }
+  return {
+    ok: false,
+    unresolved: {
+      input,
+      kind,
+      code,
+      message:
+        code === 'NOT_FOUND'
+          ? `no ${kind} entity found for ticker ${input}; it may exist as another kind (retry with a different :kind suffix or none)`
+          : message,
+    },
   };
 }
 
@@ -545,28 +616,31 @@ export class FollowsResource {
     unchanged: ResolvedTicker[];
     unresolved: UnresolvedTicker[];
   }> {
-    const { tickers, kind } = normalizeWatchlistTickersParams(params);
+    const { tickers } = normalizeWatchlistTickersParams(params);
     this.client._requireAuth();
-    const lookups = await this.lookupTickers(tickers, kind);
+    const lookups = await this.lookupTickers(tickers);
     const changed: ResolvedTicker[] = [];
     const unchanged: ResolvedTicker[] = [];
     const unresolved: UnresolvedTicker[] = [];
-    const seen = new Set<string>();
+    const groupByEntity = new Map<string, ResolvedTicker[]>();
     const writeIds: string[] = [];
     for (const lookup of lookups) {
       if (!lookup.ok) {
         unresolved.push(lookup.unresolved);
         continue;
       }
-      // Two inputs (e.g. BRK.B and BRK-B) can name one entity; write it once.
-      if (seen.has(lookup.ticker.entityId)) {
-        unchanged.push(lookup.ticker);
+      // Two inputs (e.g. BRK.B and BRK-B) can name one entity: write it once
+      // and report every input with that entity's outcome.
+      const seenGroup = groupByEntity.get(lookup.ticker.entityId);
+      if (seenGroup) {
+        seenGroup.push(lookup.ticker);
         continue;
       }
-      seen.add(lookup.ticker.entityId);
       const needsChange =
         direction === 'add' ? !lookup.inWatchlist : lookup.inWatchlist;
-      (needsChange ? changed : unchanged).push(lookup.ticker);
+      const group = needsChange ? changed : unchanged;
+      group.push(lookup.ticker);
+      groupByEntity.set(lookup.ticker.entityId, group);
       // A removal is also recorded for tickers not in the watchlist: the
       // Backend then keeps holdings sync from adding them later.
       if (needsChange || direction === 'remove') {
@@ -593,15 +667,15 @@ export class FollowsResource {
   }
 
   private async lookupTickers(
-    tickers: string[],
-    kind: WatchlistTickerKind | undefined
+    tickers: NormalizedTicker[]
   ): Promise<TickerLookup[]> {
     const results: TickerLookup[] = new Array(tickers.length);
     let next = 0;
     const worker = async () => {
       while (next < tickers.length) {
         const index = next++;
-        results[index] = await this.lookupTicker(tickers[index], kind);
+        const { ticker, kind } = tickers[index];
+        results[index] = await this.lookupTicker(ticker, kind);
       }
     };
     await Promise.all(
@@ -626,10 +700,7 @@ export class FollowsResource {
     const failure = graphQLFailure(response);
     if (failure) {
       if (UNRESOLVED_LOOKUP_CODES.has(failure.code)) {
-        return {
-          ok: false,
-          unresolved: { input, code: failure.code, message: failure.message },
-        };
+        return unresolvedTicker(input, kind, failure.code, failure.message);
       }
       throwFailure(failure);
     }
@@ -643,14 +714,12 @@ export class FollowsResource {
     }
     const entity = response.data.market.entity;
     if (entity === null || entity === undefined) {
-      return {
-        ok: false,
-        unresolved: {
-          input,
-          code: 'NOT_FOUND',
-          message: `no entity found for ticker: ${input}`,
-        },
-      };
+      return unresolvedTicker(
+        input,
+        kind,
+        'NOT_FOUND',
+        `no entity found for ticker: ${input}`
+      );
     }
     if (!record(entity)) return invalidResponse(field);
     const viewerState = entity.viewerState;

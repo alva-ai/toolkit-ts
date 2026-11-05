@@ -248,6 +248,7 @@ export {
   FollowsResource,
   type WatchlistTickerKind,
   type FollowProfileKind,
+  type WatchlistTickerSpec,
   type WatchlistTickersParams,
   type ResolvedTicker,
   type UnresolvedTicker,

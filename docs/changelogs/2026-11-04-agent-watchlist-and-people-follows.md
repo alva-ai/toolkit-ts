@@ -32,7 +32,14 @@ and the viewer following list (`viewer.followingProfiles`).
 - B3: The Agent can list the watchlist one page at a time.
 - B4: The Agent can search public profiles (users and people), then follow or
   unfollow one profile by `kind` + `id`, and list the profiles it follows.
-- B5: Terminal CLI and embedded Dispatch expose identical behavior.
+- B5: Terminal CLI and embedded Dispatch expose identical behavior under the
+  same command paths (`markets watchlist list|add|remove`, `people search`,
+  `people follows list|follow|unfollow`).
+- B7: One call can mix kinds: a `:stock|:etf|:crypto` suffix sets one symbol's
+  kind (`NVDA,BTC:crypto`), `--kind` is the default for the rest. A
+  kind-restricted miss names the kind instead of a bare "not found".
+- B8: Two inputs naming one entity (BRK.B, BRK-B) are written once and both
+  are reported with that entity's outcome.
 - F1: No identity override; Gateway derives the user from the API key.
 - F2: Upstream errors (auth, unavailable, rate limit) propagate as typed errors;
   a failed resolution never becomes an empty success, and no mutation is sent
@@ -57,8 +64,11 @@ and the viewer following list (`viewer.followingProfiles`).
   Gateway exact lookup, never fuzzy search. Optional `--kind` disambiguates.
 - D3: Profiles are addressed by `kind` + numeric `id` from search or list
   results. The Agent picks an exact match or asks the user.
-- D4: Terminal commands sit beside `subscriptions follow-playbook`. Embedded
-  commands follow the Slim tree: `markets watchlist ...` and `people ...`.
+- D4: Both catalogs use the Slim, resource-shaped paths `markets watchlist
+...` and `people ...`; embedded routes target the same terminal path.
+  Rejected: hyphenated terminal leaves beside `subscriptions follow-playbook`
+  (`watchlist-add`, `follow-profile`), which forked the two catalogs and put
+  the watchlist under a group documented as Playbook follows and alerts.
 - D5: User-facing names follow product semantics: tickers use watchlist
   add/remove (`added` / `removed` result groups), people use follow/unfollow.
   Only the Gateway mutation names keep "follow".
@@ -79,15 +89,15 @@ and the viewer following list (`viewer.followingProfiles`).
   1-50. Profiles are normalized to `{kind, id, displayName, username|slug,
 xHandle, followersCount, following}`.
 
-| Terminal                                               | Embedded                   |
-| ------------------------------------------------------ | -------------------------- |
-| `subscriptions watchlist-add --tickers --kind`         | `markets watchlist add`    |
-| `subscriptions watchlist-remove --tickers --kind`      | `markets watchlist remove` |
-| `subscriptions watchlist --limit --cursor`             | `markets watchlist list`   |
-| `subscriptions search-profiles --query --kind --limit` | `people search`            |
-| `subscriptions follow-profile --kind --id`             | `people follows follow`    |
-| `subscriptions unfollow-profile --kind --id`           | `people follows unfollow`  |
-| `subscriptions profiles --kind --limit --cursor`       | `people follows list`      |
+| Command (terminal and embedded)                          |
+| -------------------------------------------------------- |
+| `markets watchlist add --tickers <A,B:crypto> --kind`    |
+| `markets watchlist remove --tickers <A,B:crypto> --kind` |
+| `markets watchlist list --limit --cursor`                |
+| `people search --query --kind --limit`                   |
+| `people follows follow --kind --id`                      |
+| `people follows unfollow --kind --id`                    |
+| `people follows list --kind --limit --cursor`            |
 
 Checklist:
 
@@ -105,6 +115,11 @@ no-mutation when nothing resolved, ambiguous lookup, propagated upstream
 errors, invalid argv rejected before any request.
 
 ## 6. Human decisions
+
+Reviewer (2026-11-05): one command path in both catalogs, as subcommands
+rather than `-add`/`-remove` leaves; per-ticker kind instead of a call-wide
+`--kind` only. The existing divergent paths are a separate proposal
+(alva-ai/toolkit-ts#205).
 
 The user asked for ticker and user follows in the same request, then set the
 product semantics: ticker = add to watchlist, user = follow, Thesis = bookmark
@@ -128,10 +143,20 @@ path), plus the Slim leaf inventory (131 -> 138). `node dist/cli.js
 subscriptions --help` shows the new subcommands. Requests are mocked; no live
 Gateway, STG, or PRD call was made.
 
+Review follow-up (2026-11-05): paths unified, per-ticker kind, kind-named
+misses and duplicate reporting added; `npm test` 62 files / 1439 tests. A live
+STG run with an API key (account ming2) covered list, add with mixed
+found/unchanged/NOT_FOUND/ambiguous symbols, `--kind` retry, remove of a
+ticker not in the watchlist, profile search, follow/unfollow of a PERSON and
+a USER, self-follow (`INVALID_ARGUMENT`) and an unknown id (`NOT_FOUND`).
+
 ## 8. Remaining work
 
-- R1: The live API-key path to `followTickers` / `followProfile` is inferred
-  from existing Toolkit GraphQL commands, not exercised against STG.
+- R1: Closed on STG (see section 7); PRD serves the same Gateway operations
+  (v0.43.1) but was not exercised.
+- R3: Gateway `followProfile` / `unfollowProfile` lacked the group guest
+  sandbox gate the ticker mutations have; alva-ai/alva-gateway#1167 adds it
+  and should reach PRD before this Toolkit release.
 - R2: Release chain: Toolkit npm release, then sdk-monorepo Toolkit pin and
   Dispatch version for the embedded agent, then the Skill release. Until the
   Sandbox CLI includes these commands, the Agent still cannot follow.
