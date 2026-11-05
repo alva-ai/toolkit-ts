@@ -258,7 +258,11 @@ function normalizeProfile(value: unknown, field: string): FollowProfile {
     };
   }
   if (value.__typename === 'Person') {
-    if (value.xHandle !== null && typeof value.xHandle !== 'string') {
+    if (
+      value.xHandle !== null &&
+      value.xHandle !== undefined &&
+      typeof value.xHandle !== 'string'
+    ) {
       return invalidResponse(field);
     }
     return {

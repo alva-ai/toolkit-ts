@@ -352,6 +352,22 @@ describe('profile follows', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('reads an omitted person X handle as null', async () => {
+    const client = new AlvaClient({ apiKey: 'test-key' });
+    const withoutHandle: Record<string, unknown> = { ...personNode };
+    delete withoutHandle.xHandle;
+    vi.spyOn(client, '_request').mockResolvedValue({
+      data: {
+        profiles: {
+          edges: [{ node: withoutHandle }],
+          pageInfo: { endCursor: '', hasNextPage: false },
+        },
+      },
+    });
+    const page = await client.follows.searchProfiles({ query: 'cathie' });
+    expect(page.profiles[0]).toMatchObject({ kind: 'PERSON', xHandle: null });
+  });
+
   it('fails closed on an unrecognized profile type', async () => {
     const client = new AlvaClient({ apiKey: 'test-key' });
     vi.spyOn(client, '_request').mockResolvedValue({
