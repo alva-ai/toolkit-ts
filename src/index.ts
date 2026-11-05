@@ -243,3 +243,25 @@ export {
   type XPost,
   type XReadPage,
 } from './resources/x.js';
+
+export {
+  FollowsResource,
+  type WatchlistTickerKind,
+  type FollowProfileKind,
+  type WatchlistTickerSpec,
+  type WatchlistTickersParams,
+  type ResolvedTicker,
+  type UnresolvedTicker,
+  type AddToWatchlistResult,
+  type RemoveFromWatchlistResult,
+  type FollowPageParams,
+  type FollowPageInfo,
+  type WatchlistTicker,
+  type WatchlistPage,
+  type FollowProfile,
+  type SearchProfilesParams,
+  type ProfileRefParams,
+  type FollowedProfilesParams,
+  type ProfilesPage,
+  type ProfileFollowResult,
+} from './resources/follows.js';

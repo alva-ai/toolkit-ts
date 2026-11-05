@@ -24,6 +24,7 @@ import { ArraysJwtResource } from './resources/arraysJwt.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { NotificationPreferencesResource } from './resources/notificationPreferences.js';
 import { SubscriptionsResource } from './resources/subscriptions.js';
+import { FollowsResource } from './resources/follows.js';
 import { AlertsResource } from './resources/alerts.js';
 import { ChannelGroupSubscriptionsResource } from './resources/channelGroupSubscriptions.js';
 import { FeedbackResource } from './resources/feedback.js';
@@ -179,6 +180,7 @@ export class AlvaClient {
   private _notifications?: NotificationsResource;
   private _notificationPreferences?: NotificationPreferencesResource;
   private _subscriptions?: SubscriptionsResource;
+  private _follows?: FollowsResource;
   private _alerts?: AlertsResource;
   private _channelGroupSubscriptions?: ChannelGroupSubscriptionsResource;
   private _feedback?: FeedbackResource;
@@ -272,6 +274,10 @@ export class AlvaClient {
   }
   get subscriptions(): SubscriptionsResource {
     return (this._subscriptions ??= new SubscriptionsResource(this));
+  }
+
+  get follows(): FollowsResource {
+    return (this._follows ??= new FollowsResource(this));
   }
   get alerts(): AlertsResource {
     return (this._alerts ??= new AlertsResource(this));
