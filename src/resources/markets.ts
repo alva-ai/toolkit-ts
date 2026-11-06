@@ -485,7 +485,10 @@ export class MarketsResource {
     ticker: string
   ): CompanyEarningsPeriod {
     if (event === 'latest-completed') {
-      if (catalog.defaultPeriod) return catalog.defaultPeriod;
+      const completed = catalog.periods
+        .filter((period) => period.status === 'COMPLETED')
+        .sort((a, b) => b.earningsDate.localeCompare(a.earningsDate));
+      if (completed.length > 0) return completed[0];
     } else {
       const upcoming = catalog.periods
         .filter((period) => period.status === 'UPCOMING')
