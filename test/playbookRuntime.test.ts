@@ -4,6 +4,7 @@ type MessageListener = (event: MessageEvent) => void;
 
 type FakeWindow = {
   location: URL;
+  __ALVA_PBSV_BOOTSTRAP__?: string;
   history: { replaceState: ReturnType<typeof vi.fn> };
   parent: { postMessage: ReturnType<typeof vi.fn> };
   alva?: {
@@ -34,6 +35,8 @@ function installFakeWindow(url: string): FakeWindow {
   const listeners: MessageListener[] = [];
   const fake: FakeWindow = {
     location: new URL(url),
+    __ALVA_PBSV_BOOTSTRAP__:
+      new URL(url).searchParams.get('_pbsv') || undefined,
     history: {
       replaceState: vi.fn((_state, _title, nextUrl: string) => {
         fake.location = new URL(nextUrl, fake.location.origin);
@@ -71,7 +74,7 @@ describe('playbook runtime SDK', () => {
     vi.resetModules();
   });
 
-  it('boots from URL params, strips only _pbsv, and exposes alva.udf', async () => {
+  it('boots from memory, strips historical URL credentials, and exposes alva.udf', async () => {
     const token = tokenWithPid('42');
     const fake = installFakeWindow(
       `https://alice.playbook.alva.ai/demo/v1?x=1&_pbsv=${token}&parent_origin=https%3A%2F%2Falva.ai`
@@ -87,6 +90,17 @@ describe('playbook runtime SDK', () => {
       '',
       '/demo/v1?x=1&parent_origin=https%3A%2F%2Falva.ai'
     );
+  });
+
+  it('never authenticates a URL token without a trusted response bootstrap', async () => {
+    const fake = installFakeWindow(
+      'https://alice.playbook.alva.ai/demo/v1?_pbsv=leaked'
+    );
+    delete fake.__ALVA_PBSV_BOOTSTRAP__;
+    const runtime = await import('../src/playbookRuntime.js');
+    runtime.installPlaybookRuntime();
+    expect(runtime.getViewerToken()).toBeNull();
+    expect(fake.location.search).not.toContain('_pbsv');
   });
 
   it('accepts pbsv refresh messages only from the expected parent', async () => {

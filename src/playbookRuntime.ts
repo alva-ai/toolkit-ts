@@ -246,14 +246,17 @@ const stripPbsvFromUrl = (targetWindow: Window) => {
 
 const parseBootParams = (targetWindow: Window) => {
   const params = new URLSearchParams(targetWindow.location.search);
-  cachedToken = params.get('_pbsv');
+  const boot = targetWindow as Window & { __ALVA_PBSV_BOOTSTRAP__?: string };
+  cachedToken = boot.__ALVA_PBSV_BOOTSTRAP__ || null;
+  delete boot.__ALVA_PBSV_BOOTSTRAP__;
+  // Never trust historical URL credentials; scrub them before runtime starts.
+  if (params.has('_pbsv')) stripPbsvFromUrl(targetWindow);
   expectedParentOrigin = params.get('parent_origin');
   apiOrigin = (params.get('api_origin') || DEFAULT_API_ORIGIN).replace(
     /\/$/,
     ''
   );
   playbookIdFromBoot = playbookIdFromToken(cachedToken);
-  if (cachedToken) stripPbsvFromUrl(targetWindow);
 };
 
 const safeJson = async (response: Response): Promise<UdfErrorBody> => {
