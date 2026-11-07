@@ -287,9 +287,10 @@ Add the browser bundle via a CDN:
 
 When the browser bundle is loaded inside an Alva playbook iframe, it also
 installs `window.alva.udf`. The runtime reads the playbook-scoped viewer
-token (`_pbsv`) from the iframe URL, removes only that sensitive query
-parameter, accepts parent-pushed token refreshes, and uses PBSV headers for
-UDF calls.
+token from the private navigation response bootstrap, deletes that in-memory
+bootstrap after consumption, accepts origin/source-checked parent refreshes,
+and uses PBSV headers for UDF calls. URL credentials are ignored and scrubbed.
+Non-owner viewers have read access only; invoking a UDF requires ownership.
 
 Register creator-side functions first with `alva functions register`; viewer
 HTML should call the browser runtime instead of hand-writing API fetches.
