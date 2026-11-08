@@ -34,6 +34,8 @@ Independent Forge session pbsv-1138-review reviews design and final diff; main a
 - Gateway browser regression uses both the base 0.35.0 runtime source (commit 38cce7a) and this source bundled by installed esbuild. Both pass actual React ViewerFrame + proxy CSP, native POST, immediate list/invoke, bootstrap deletion, clean URL, refresh/reload and cross-pid navigation. No package publication or deployment performed.
 - Cross-review: independent Forge session `pbsv-1138-review` plus main-agent complete net-diff review; confirmed findings fixed and regression-covered. Round 4 disposition: PASS, no unresolved security/correctness findings; main-agent review also has no outstanding finding. Staged candidate and PR text secret scans PASS.
 
+Cross-provider final acceptance: main Codex and verified Claude child explicitly accept product `bd616dcb6190dfdd293b480080e27930b93943ff` with no unresolved actionable finding. [Full report, decision ledger and SHA-256 evidence](https://github.com/alva-ai/alva-backend/blob/security/issue-1138-research/docs/changelogs/2026-11-07-pbsv-credential-boundary.md). Subsequent sections 7–8 updates are evidence-only; no merge/deploy/apply is authorized.
+
 ## 8. Remaining work
 
 - Human-controlled rollout: Gateway body/bootstrap support must precede the frontend switch. The bundled-old-runtime bridge avoids requiring existing HTML to update Toolkit first; Toolkit release supports future bundles. Backend owner restriction is independently deployable. Do not merge or deploy as part of this task.
