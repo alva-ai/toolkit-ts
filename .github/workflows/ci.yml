@@ -2,7 +2,7 @@ name: CI
 'on':
   push:
     branches:
-    - main
+      - main
   pull_request: null
   workflow_dispatch: null
 jobs:
@@ -11,279 +11,286 @@ jobs:
     strategy:
       matrix:
         node-version:
-        - 18
-        - 20
-        - 22
+          - 18
+          - 20
+          - 22
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        persist-credentials: 'false'
-      if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
-        github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
-        == github.event.repository.id && github.base_ref == github.event.repository.default_branch) }}
-    - name: Seed authenticated current-repository Git bundle
-      if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
-        github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
-        == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
-      shell: bash
-      env:
-        CHECKOUT_TOKEN: ${{ github.token }}
-        CI_GIT_CACHE_CA_PEM: ${{ vars.CI_CACHE_SHARED_CA_PEM }}
-      run: |
-        set -euo pipefail
-        cat > "$RUNNER_TEMP/toolkit-arc-cache.py" <<'PY'
-        """Current-repository Git/npm cache adapter for a public Actions workflow."""
-        import hashlib
-        import json
-        import os
-        from pathlib import Path
-        import ssl
-        import subprocess
-        import sys
-        import tarfile
-        import tempfile
-        import time
-        import urllib.error
-        import urllib.parse
-        import urllib.request
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: 'false'
+        if:
+          ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
+          github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
+          == github.event.repository.id && github.base_ref == github.event.repository.default_branch) }}
+      - name: Seed authenticated current-repository Git bundle
+        if:
+          ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
+          github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
+          == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
+        shell: bash
+        env:
+          CHECKOUT_TOKEN: ${{ github.token }}
+          CI_GIT_CACHE_CA_PEM: ${{ vars.CI_CACHE_SHARED_CA_PEM }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/toolkit-arc-cache.py" <<'PY'
+          """Current-repository Git/npm cache adapter for a public Actions workflow."""
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import ssl
+          import subprocess
+          import sys
+          import tarfile
+          import tempfile
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
 
-        LIMIT = 2 * 1024**3
-        BASE = 'https://ci-git-cache.ci-cache.svc.cluster.local:8443'
-        REPOSITORY = 'alva-ai/toolkit-ts'
-
-
-        class NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self, *args):
-                return None
+          LIMIT = 2 * 1024**3
+          BASE = 'https://ci-git-cache.ci-cache.svc.cluster.local:8443'
+          REPOSITORY = 'alva-ai/toolkit-ts'
 
 
-        def identity():
-            url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
-            url += ('&' if '?' in url else '?') + 'audience=alva-ci-repository-cache'
-            request = urllib.request.Request(url, headers={'Authorization': 'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
-            with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as response:
-                body = response.read(65537)
-            if len(body) > 65536:
-                raise ValueError('Identity response exceeds bound')
-            return json.loads(body)['value']
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args):
+                  return None
 
 
-        def request(path, method='GET', data=None):
-            if os.environ['GITHUB_REPOSITORY'] != REPOSITORY or os.environ['GITHUB_REPOSITORY_ID'] != '1204128080':
-                raise ValueError('Unexpected repository')
-            context = ssl.create_default_context(cadata=os.environ['CI_GIT_CACHE_CA_PEM'])
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPSHandler(context=context))
-            for attempt in range(5):
-                headers = {'Authorization': 'Bearer '+os.environ['CHECKOUT_TOKEN'], 'X-GitHub-OIDC': identity()}
-                if data is not None:
-                    data.seek(0)
-                    headers['Content-Length'] = str(os.fstat(data.fileno()).st_size)
-                try:
-                    return opener.open(urllib.request.Request(BASE+path, headers=headers, method=method, data=data), timeout=600)
-                except urllib.error.HTTPError as error:
-                    if error.code != 503 or attempt == 4:
-                        raise
-                    error.close()
-                    time.sleep(min(16, 2**attempt))
+          def identity():
+              url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
+              url += ('&' if '?' in url else '?') + 'audience=alva-ci-repository-cache'
+              request = urllib.request.Request(url, headers={'Authorization': 'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+              with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as response:
+                  body = response.read(65537)
+              if len(body) > 65536:
+                  raise ValueError('Identity response exceeds bound')
+              return json.loads(body)['value']
 
 
-        def download(response, destination):
-            length = int(response.headers['Content-Length'])
-            if not 0 < length <= LIMIT:
-                raise ValueError('Cache object exceeds bound')
-            with destination.open('wb') as output:
-                remaining = length
-                while remaining:
-                    chunk = response.read(min(1024**2, remaining))
-                    if not chunk:
-                        raise ValueError('Truncated cache object')
-                    output.write(chunk)
-                    remaining -= len(chunk)
-                if response.read(1):
-                    raise ValueError('Oversized cache response')
+          def request(path, method='GET', data=None):
+              if os.environ['GITHUB_REPOSITORY'] != REPOSITORY or os.environ['GITHUB_REPOSITORY_ID'] != '1204128080':
+                  raise ValueError('Unexpected repository')
+              context = ssl.create_default_context(cadata=os.environ['CI_GIT_CACHE_CA_PEM'])
+              context.minimum_version = ssl.TLSVersion.TLSv1_2
+              opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPSHandler(context=context))
+              for attempt in range(5):
+                  headers = {'Authorization': 'Bearer '+os.environ['CHECKOUT_TOKEN'], 'X-GitHub-OIDC': identity()}
+                  if data is not None:
+                      data.seek(0)
+                      headers['Content-Length'] = str(os.fstat(data.fileno()).st_size)
+                  try:
+                      return opener.open(urllib.request.Request(BASE+path, headers=headers, method=method, data=data), timeout=600)
+                  except urllib.error.HTTPError as error:
+                      if error.code != 503 or attempt == 4:
+                          raise
+                      error.close()
+                      time.sleep(min(16, 2**attempt))
 
 
-        def git(*args, capture=False):
-            env = dict(os.environ, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null',
-                       GIT_CONFIG_COUNT='0', GIT_TRACE='0', GIT_TRACE_CURL='0', GIT_CURL_VERBOSE='0')
-            result = subprocess.run(['git','-c','core.hooksPath=/dev/null',*map(str,args)],env=env,
-                                    input=b'',stdout=subprocess.PIPE if capture else subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            if result.returncode:
-                raise ValueError('Repository bundle verification/import failed')
-            return result.stdout.decode().strip() if capture else None
+          def download(response, destination):
+              length = int(response.headers['Content-Length'])
+              if not 0 < length <= LIMIT:
+                  raise ValueError('Cache object exceeds bound')
+              with destination.open('wb') as output:
+                  remaining = length
+                  while remaining:
+                      chunk = response.read(min(1024**2, remaining))
+                      if not chunk:
+                          raise ValueError('Truncated cache object')
+                      output.write(chunk)
+                      remaining -= len(chunk)
+                  if response.read(1):
+                      raise ValueError('Oversized cache response')
 
 
-        def seed():
-            workspace = Path(os.environ['GITHUB_WORKSPACE'])
-            with tempfile.TemporaryDirectory(dir=os.environ['RUNNER_TEMP']) as directory:
-                bundle = Path(directory)/'repository.bundle'
-                with request('/bundles/'+REPOSITORY+'.bundle') as response:
-                    download(response, bundle)
-                git('init', workspace)
-                git('-C',workspace,'remote','add','origin','https://github.com/'+REPOSITORY)
-                git('-C',workspace,'bundle','verify',bundle)
-                git('-C',workspace,'fetch','--no-tags',bundle,
-                    '+refs/heads/*:refs/cache-seed/heads/*','+refs/tags/*:refs/cache-seed/tags/*')
-                tree=git('-C',workspace,'mktree',capture=True)
-                placeholder=git('-C',workspace,'-c','user.name=ARC cache preparation','-c','user.email=ci-cache@example.invalid','-c','commit.gpgsign=false','commit-tree',tree,'-m','Empty preparation placeholder; GitHub selects source',capture=True)
-                git('-C',workspace,'update-ref','--no-deref','HEAD',placeholder)
-                (workspace/'.git/cache-seed.receipt').write_text('approved-own-repository-bundle\n')
-            print('Shared repository bundle loaded; GitHub checkout selects the exact event SHA')
+          def git(*args, capture=False):
+              env = dict(os.environ, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null',
+                         GIT_CONFIG_COUNT='0', GIT_TRACE='0', GIT_TRACE_CURL='0', GIT_CURL_VERBOSE='0')
+              result = subprocess.run(['git','-c','core.hooksPath=/dev/null',*map(str,args)],env=env,
+                                      input=b'',stdout=subprocess.PIPE if capture else subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+              if result.returncode:
+                  raise ValueError('Repository bundle verification/import failed')
+              return result.stdout.decode().strip() if capture else None
 
 
-        def allowed(path):
-            return (path.parts[:2] == ('npm','_cacache') and '..' not in path.parts and not path.is_absolute()
-                    and not {'.git','.ssh','.npmrc','.netrc','.gitconfig','.git-credentials','credentials'} & set(path.parts))
+          def seed():
+              workspace = Path(os.environ['GITHUB_WORKSPACE'])
+              with tempfile.TemporaryDirectory(dir=os.environ['RUNNER_TEMP']) as directory:
+                  bundle = Path(directory)/'repository.bundle'
+                  with request('/bundles/'+REPOSITORY+'.bundle') as response:
+                      download(response, bundle)
+                  git('init', workspace)
+                  git('-C',workspace,'remote','add','origin','https://github.com/'+REPOSITORY)
+                  git('-C',workspace,'bundle','verify',bundle)
+                  git('-C',workspace,'fetch','--no-tags',bundle,
+                      '+refs/heads/*:refs/cache-seed/heads/*','+refs/tags/*:refs/cache-seed/tags/*')
+                  tree=git('-C',workspace,'mktree',capture=True)
+                  placeholder=git('-C',workspace,'-c','user.name=ARC cache preparation','-c','user.email=ci-cache@example.invalid','-c','commit.gpgsign=false','commit-tree',tree,'-m','Empty preparation placeholder; GitHub selects source',capture=True)
+                  git('-C',workspace,'update-ref','--no-deref','HEAD',placeholder)
+                  (workspace/'.git/cache-seed.receipt').write_text('approved-own-repository-bundle\n')
+              print('Shared repository bundle loaded; GitHub checkout selects the exact event SHA')
 
 
-        def unpack(archive, root):
-            total = 0
-            with tarfile.open(archive,'r:gz') as stream:
-                for member in stream:
-                    path = Path(member.name)
-                    if not allowed(path) or not (member.isfile() or member.isdir()):
-                        raise ValueError('Unsafe npm cache entry')
-                    total += member.size
-                    if total > LIMIT:
-                        raise ValueError('Expanded cache exceeds bound')
-                    target = root/path
-                    if any(p.is_symlink() for p in [target,*target.parents] if p != root):
-                        raise ValueError('Cache symlink rejected')
-                    if member.isdir():
-                        target.mkdir(parents=True,exist_ok=True)
-                    else:
-                        target.parent.mkdir(parents=True,exist_ok=True)
-                        with stream.extractfile(member) as source, target.open('wb') as output:
-                            while chunk := source.read(1024**2):
-                                output.write(chunk)
-                        target.chmod(0o600)
+          def allowed(path):
+              return (path.parts[:2] == ('npm','_cacache') and '..' not in path.parts and not path.is_absolute()
+                      and not {'.git','.ssh','.npmrc','.netrc','.gitconfig','.git-credentials','credentials'} & set(path.parts))
 
 
-        def packages(operation):
-            fingerprint = '\0'.join(['public-npm-objects-v1',os.environ['BUILD_CACHE_TOOLCHAIN'],
-                                      os.environ['RUNNER_OS'],os.environ['RUNNER_ARCH'],'npm'])
-            key = hashlib.sha256(fingerprint.encode()).hexdigest()
-            root = Path(os.environ['RUNNER_TEMP'])/'public-npm-cache'/key
-            if root != root.resolve():
-                raise ValueError('Invalid cache root')
-            root.mkdir(parents=True,exist_ok=True)
-            path = '/build-cache/'+REPOSITORY+'/'+key
-            with tempfile.TemporaryDirectory(dir=os.environ['RUNNER_TEMP']) as directory:
-                archive = Path(directory)/'npm.tar.gz'
-                if operation == 'restore':
-                    hit = False
-                    try:
-                        with request(path) as response:
-                            download(response,archive)
-                        unpack(archive,root)
-                        hit = True
-                    except urllib.error.HTTPError as error:
-                        if error.code != 404 or error.headers.get('X-Build-Cache') != 'authenticated-miss':
-                            raise ValueError('Cache authorization/service failed') from None
-                    (root/'npm').mkdir(exist_ok=True)
-                    with open(os.environ['GITHUB_ENV'],'a') as output:
-                        output.write('NPM_CONFIG_CACHE='+str(root/'npm')+'\n')
-                    print(json.dumps({'build_cache_restore':'hit' if hit else 'cold','key':key}))
-                elif operation == 'save':
-                    size = 0
-                    with tarfile.open(archive,'w:gz') as stream:
-                        cache = root/'npm/_cacache'
-                        if (root/'npm').is_symlink() or cache.is_symlink():
-                            raise ValueError('Symlink cache roots are forbidden')
-                        for file in sorted(cache.rglob('*')) if cache.exists() else []:
-                            path = file.relative_to(root)
-                            if file.is_symlink() or not file.is_file() or not allowed(path):
-                                continue
-                            if not file.resolve().is_relative_to(root):
-                                raise ValueError('Cache object leaves the authenticated root')
-                            if size+file.stat().st_size > 1024**3:
-                                continue
-                            size += file.stat().st_size
-                            stream.add(file,arcname=str(path),recursive=False)
-                    with archive.open('rb') as source, request(path='/build-cache/'+REPOSITORY+'/'+key,method='PUT',data=source) as response:
-                        if response.status != 204:
-                            raise ValueError('Cache upload rejected')
-                    print(json.dumps({'build_cache_save':'success','archive_bytes':archive.stat().st_size,'key':key}))
-                else:
-                    raise ValueError('Invalid operation')
+          def unpack(archive, root):
+              total = 0
+              with tarfile.open(archive,'r:gz') as stream:
+                  for member in stream:
+                      path = Path(member.name)
+                      if not allowed(path) or not (member.isfile() or member.isdir()):
+                          raise ValueError('Unsafe npm cache entry')
+                      total += member.size
+                      if total > LIMIT:
+                          raise ValueError('Expanded cache exceeds bound')
+                      target = root/path
+                      if any(p.is_symlink() for p in [target,*target.parents] if p != root):
+                          raise ValueError('Cache symlink rejected')
+                      if member.isdir():
+                          target.mkdir(parents=True,exist_ok=True)
+                      else:
+                          target.parent.mkdir(parents=True,exist_ok=True)
+                          with stream.extractfile(member) as source, target.open('wb') as output:
+                              while chunk := source.read(1024**2):
+                                  output.write(chunk)
+                          target.chmod(0o600)
 
 
-        if __name__ == '__main__':
-            try:
-                seed() if sys.argv[1] == 'seed' else packages(sys.argv[1])
-            except Exception:
-                raise SystemExit('Authenticated ARC cache operation failed; no trusted-path fallback') from None
-        PY
-        python3 "$RUNNER_TEMP/toolkit-arc-cache.py" seed
-    - name: Fetch exact authoritative event commit
-      if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
-        github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
-        == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
-      uses: actions/checkout@v7
-      with:
-        token: ${{ github.token }}
-        persist-credentials: false
-        fetch-depth: 1
-    - name: Verify retained Git bundle and exact event commit
-      if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
-        github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
-        == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        test -f .git/cache-seed.receipt
-        test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-        git for-each-ref --format='delete %(refname)' refs/cache-seed/ | git update-ref --stdin
-    - name: Verify public cache adapter boundaries
-      run: python3 .github/tests/test_arc_cache.py
-    - name: Capture package cache identity
-      id: arc_cache_identity
-      env:
-        CACHE_TOOLCHAIN: arc-batch1-72c640b108ddaa33-${{ github.job }}-${{ toJSON(matrix) }}-${{ hashFiles('**/go.mod','**/go.sum','go.work','go.work.sum','**/package-lock.json','uv.lock','pyproject.toml')
-          }}
-      shell: bash
-      run: |
-        key=$(printf '%s' "$CACHE_TOOLCHAIN" | sha256sum | cut -d ' ' -f1)
-        printf 'toolchain=%s\n' "$key" >> "$GITHUB_OUTPUT"
-    - name: Restore authenticated PVC package cache
-      if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
-        github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
-        == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
-      shell: bash
-      env:
-        CHECKOUT_TOKEN: ${{ github.token }}
-        CI_GIT_CACHE_CA_PEM: ${{ vars.CI_CACHE_SHARED_CA_PEM }}
-        BUILD_CACHE_TOOLCHAIN: ${{ steps.arc_cache_identity.outputs.toolchain }}
-      run: python3 "$RUNNER_TEMP/toolkit-arc-cache.py" restore
-    - name: Setup Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v6
-      with:
-        node-version: ${{ matrix.node-version }}
-        package-manager-cache: 'false'
-    - name: Install dependencies
-      run: npm ci
-    - name: Lint
-      run: npm run lint
-    - name: Check formatting
-      run: npm run format:check
-    - name: Type check
-      run: npm run typecheck
-    - name: Test
-      run: npm test
-    - name: Build
-      run: npm run build
-    - name: Save authenticated PVC package cache
-      if: ${{ success() && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
-        github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
-        == github.event.repository.id && github.base_ref == github.event.repository.default_branch) }}
-      shell: bash
-      env:
-        CHECKOUT_TOKEN: ${{ github.token }}
-        CI_GIT_CACHE_CA_PEM: ${{ vars.CI_CACHE_SHARED_CA_PEM }}
-        BUILD_CACHE_TOOLCHAIN: ${{ steps.arc_cache_identity.outputs.toolchain }}
-      run: python3 "$RUNNER_TEMP/toolkit-arc-cache.py" save
+          def packages(operation):
+              fingerprint = '\0'.join(['public-npm-objects-v1',os.environ['BUILD_CACHE_TOOLCHAIN'],
+                                        os.environ['RUNNER_OS'],os.environ['RUNNER_ARCH'],'npm'])
+              key = hashlib.sha256(fingerprint.encode()).hexdigest()
+              root = Path(os.environ['RUNNER_TEMP'])/'public-npm-cache'/key
+              if root != root.resolve():
+                  raise ValueError('Invalid cache root')
+              root.mkdir(parents=True,exist_ok=True)
+              path = '/build-cache/'+REPOSITORY+'/'+key
+              with tempfile.TemporaryDirectory(dir=os.environ['RUNNER_TEMP']) as directory:
+                  archive = Path(directory)/'npm.tar.gz'
+                  if operation == 'restore':
+                      hit = False
+                      try:
+                          with request(path) as response:
+                              download(response,archive)
+                          unpack(archive,root)
+                          hit = True
+                      except urllib.error.HTTPError as error:
+                          if error.code != 404 or error.headers.get('X-Build-Cache') != 'authenticated-miss':
+                              raise ValueError('Cache authorization/service failed') from None
+                      (root/'npm').mkdir(exist_ok=True)
+                      with open(os.environ['GITHUB_ENV'],'a') as output:
+                          output.write('NPM_CONFIG_CACHE='+str(root/'npm')+'\n')
+                      print(json.dumps({'build_cache_restore':'hit' if hit else 'cold','key':key}))
+                  elif operation == 'save':
+                      size = 0
+                      with tarfile.open(archive,'w:gz') as stream:
+                          cache = root/'npm/_cacache'
+                          if (root/'npm').is_symlink() or cache.is_symlink():
+                              raise ValueError('Symlink cache roots are forbidden')
+                          for file in sorted(cache.rglob('*')) if cache.exists() else []:
+                              path = file.relative_to(root)
+                              if file.is_symlink() or not file.is_file() or not allowed(path):
+                                  continue
+                              if not file.resolve().is_relative_to(root):
+                                  raise ValueError('Cache object leaves the authenticated root')
+                              if size+file.stat().st_size > 1024**3:
+                                  continue
+                              size += file.stat().st_size
+                              stream.add(file,arcname=str(path),recursive=False)
+                      with archive.open('rb') as source, request(path='/build-cache/'+REPOSITORY+'/'+key,method='PUT',data=source) as response:
+                          if response.status != 204:
+                              raise ValueError('Cache upload rejected')
+                      print(json.dumps({'build_cache_save':'success','archive_bytes':archive.stat().st_size,'key':key}))
+                  else:
+                      raise ValueError('Invalid operation')
+
+
+          if __name__ == '__main__':
+              try:
+                  seed() if sys.argv[1] == 'seed' else packages(sys.argv[1])
+              except Exception:
+                  raise SystemExit('Authenticated ARC cache operation failed; no trusted-path fallback') from None
+          PY
+          python3 "$RUNNER_TEMP/toolkit-arc-cache.py" seed
+      - name: Fetch exact authoritative event commit
+        if:
+          ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
+          github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
+          == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
+        uses: actions/checkout@v7
+        with:
+          token: ${{ github.token }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify retained Git bundle and exact event commit
+        if:
+          ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
+          github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
+          == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .git/cache-seed.receipt
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git for-each-ref --format='delete %(refname)' refs/cache-seed/ | git update-ref --stdin
+      - name: Verify public cache adapter boundaries
+        run: python3 .github/tests/test_arc_cache.py
+      - name: Capture package cache identity
+        id: arc_cache_identity
+        env:
+          CACHE_TOOLCHAIN:
+            arc-batch1-72c640b108ddaa33-${{ github.job }}-${{ toJSON(matrix) }}-${{ hashFiles('**/go.mod','**/go.sum','go.work','go.work.sum','**/package-lock.json','uv.lock','pyproject.toml')
+            }}
+        shell: bash
+        run: |
+          key=$(printf '%s' "$CACHE_TOOLCHAIN" | sha256sum | cut -d ' ' -f1)
+          printf 'toolchain=%s\n' "$key" >> "$GITHUB_OUTPUT"
+      - name: Restore authenticated PVC package cache
+        if:
+          ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
+          github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
+          == github.event.repository.id && github.base_ref == github.event.repository.default_branch }}
+        shell: bash
+        env:
+          CHECKOUT_TOKEN: ${{ github.token }}
+          CI_GIT_CACHE_CA_PEM: ${{ vars.CI_CACHE_SHARED_CA_PEM }}
+          BUILD_CACHE_TOOLCHAIN: ${{ steps.arc_cache_identity.outputs.toolchain }}
+        run: python3 "$RUNNER_TEMP/toolkit-arc-cache.py" restore
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          package-manager-cache: 'false'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+      - name: Type check
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Save authenticated PVC package cache
+        if:
+          ${{ success() && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}',
+          github.event.repository.default_branch) || github.event_name == 'pull_request' && github.event.pull_request.head.repo.id
+          == github.event.repository.id && github.base_ref == github.event.repository.default_branch) }}
+        shell: bash
+        env:
+          CHECKOUT_TOKEN: ${{ github.token }}
+          CI_GIT_CACHE_CA_PEM: ${{ vars.CI_CACHE_SHARED_CA_PEM }}
+          BUILD_CACHE_TOOLCHAIN: ${{ steps.arc_cache_identity.outputs.toolchain }}
+        run: python3 "$RUNNER_TEMP/toolkit-arc-cache.py" save
     timeout-minutes: 30
     permissions:
       contents: read
