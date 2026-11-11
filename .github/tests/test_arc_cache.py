@@ -23,6 +23,17 @@ exec(compile(source,str(workflow),'exec'),m.__dict__)
 
 
 class CacheTests(unittest.TestCase):
+    def test_symlinked_cache_root_never_uploads_external_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();env=dict(RUNNER_TEMP=str(root),BUILD_CACHE_TOOLCHAIN='node18-lock',RUNNER_OS='Linux',RUNNER_ARCH='X64',GITHUB_ENV=str(root/'env'))
+            miss=urllib.error.HTTPError('https://cache',404,'cold',{'X-Build-Cache':'authenticated-miss'},None)
+            with patch.dict(os.environ,env),patch.object(m,'request',side_effect=miss):m.packages('restore')
+            npm=Path((root/'env').read_text().strip().split('=',1)[1]);outside=root/'outside';outside.mkdir();(outside/'unrelated-file').write_text('must-not-upload')
+            (npm/'_cacache').symlink_to(outside,target_is_directory=True)
+            with patch.dict(os.environ,env),patch.object(m,'request') as upload:
+                with self.assertRaises(ValueError):m.packages('save')
+                upload.assert_not_called()
+
     def test_real_seed_retains_receipt_through_checkout_preparation_without_materializing_cached_tree(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory).resolve();cached=root/'cached';authoritative=root/'authority';workspace=root/'workspace';workspace.mkdir()

@@ -190,10 +190,14 @@ jobs:
                     size = 0
                     with tarfile.open(archive,'w:gz') as stream:
                         cache = root/'npm/_cacache'
+                        if (root/'npm').is_symlink() or cache.is_symlink():
+                            raise ValueError('Symlink cache roots are forbidden')
                         for file in sorted(cache.rglob('*')) if cache.exists() else []:
                             path = file.relative_to(root)
                             if file.is_symlink() or not file.is_file() or not allowed(path):
                                 continue
+                            if not file.resolve().is_relative_to(root):
+                                raise ValueError('Cache object leaves the authenticated root')
                             if size+file.stat().st_size > 1024**3:
                                 continue
                             size += file.stat().st_size
