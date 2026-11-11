@@ -7,7 +7,9 @@ name: CI
   workflow_dispatch: null
 jobs:
   build:
-    runs-on: alva-ci-cpu
+    runs-on:
+      group: alva-arc-ci
+      labels: alva-ci-cpu
     strategy:
       matrix:
         node-version:
