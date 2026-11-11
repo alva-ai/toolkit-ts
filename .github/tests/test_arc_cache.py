@@ -6,6 +6,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+import subprocess
 from unittest.mock import patch, MagicMock
 import urllib.error
 
@@ -22,6 +23,26 @@ exec(compile(source,str(workflow),'exec'),m.__dict__)
 
 
 class CacheTests(unittest.TestCase):
+    def test_real_seed_retains_receipt_through_checkout_preparation_without_materializing_cached_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();cached=root/'cached';authoritative=root/'authority';workspace=root/'workspace';workspace.mkdir()
+            def git(repo,*args):
+                return subprocess.check_output(['git','-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false','-C',str(repo),*args],stderr=subprocess.DEVNULL,text=True).strip()
+            for repo,name,text in [(cached,'unverified.txt','unverified cache tree'),(authoritative,'source.txt','authoritative source')]:
+                repo.mkdir();git(repo,'init');(repo/name).write_text(text);git(repo,'add',name)
+                git(repo,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-m','Fixture')
+            bundle=root/'repository.bundle';git(cached,'bundle','create',str(bundle),'--all');payload=bundle.read_bytes()
+            response=MagicMock();response.headers={'Content-Length':str(len(payload))};response.read=io.BytesIO(payload).read
+            context=MagicMock();context.__enter__.return_value=response
+            with patch.dict(os.environ,RUNNER_TEMP=str(root),GITHUB_WORKSPACE=str(workspace)),patch.object(m,'request',return_value=context):m.seed()
+            self.assertEqual('https://github.com/alva-ai/toolkit-ts',git(workspace,'remote','get-url','origin'))
+            self.assertEqual('',git(workspace,'ls-files'));self.assertFalse((workspace/'unverified.txt').exists())
+            git(workspace,'clean','-ffdx');git(workspace,'reset','--hard','HEAD')
+            self.assertTrue((workspace/'.git/cache-seed.receipt').exists())
+            expected=git(authoritative,'rev-parse','HEAD');git(workspace,'fetch',str(authoritative),'HEAD');git(workspace,'checkout','--force',expected)
+            self.assertEqual(expected,git(workspace,'rev-parse','HEAD'));self.assertEqual('authoritative source',(workspace/'source.txt').read_text())
+            self.assertFalse((workspace/'unverified.txt').exists());self.assertTrue((workspace/'.git/cache-seed.receipt').exists())
+
     def test_restore_rejects_links_escape_credentials_and_unbounded_objects(self):
         for name,kind in [('npm/../../outside',tarfile.REGTYPE),('npm/.npmrc',tarfile.REGTYPE),('npm/_cacache/link',tarfile.SYMTYPE)]:
             with tempfile.TemporaryDirectory() as directory:
