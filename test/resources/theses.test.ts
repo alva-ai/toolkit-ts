@@ -371,8 +371,6 @@ describe('ThesesResource', () => {
       .mockResolvedValueOnce(thesisGet())
       .mockResolvedValueOnce(thesis('private'))
       .mockResolvedValueOnce(thesis())
-      .mockResolvedValueOnce(thesis())
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ body: 'rewritten' });
 
     await client.theses.get(MAX_ID);
@@ -383,11 +381,6 @@ describe('ThesesResource', () => {
       body: 'updated',
       visibility: 'private',
     });
-    await client.theses.close(MAX_ID, {
-      expected_author_version_id: '9223372036854775806',
-      note: 'done',
-    });
-    await client.theses.delete(MAX_ID);
     await client.theses.rewrite({ body: 'draft' });
 
     expect(client._request.mock.calls).toEqual([
@@ -408,21 +401,9 @@ describe('ThesesResource', () => {
             title: '',
             entity_ids: [],
             visibility: 'private',
-            editorial: false,
           },
         },
       ],
-      [
-        'POST',
-        `/api/v1/theses/${MAX_ID}/close`,
-        {
-          body: {
-            expected_author_version_id: '9223372036854775806',
-            note: 'done',
-          },
-        },
-      ],
-      ['DELETE', `/api/v1/theses/${MAX_ID}`],
       [
         'POST',
         '/api/v1/theses/rewrite',
@@ -468,7 +449,6 @@ describe('ThesesResource', () => {
           entity_ids: current.thesis.entity_ids,
           entity_stances: current.thesis.entity_stances,
           visibility: current.thesis.visibility,
-          editorial: false,
           archived: true,
           note: 'review later',
         },
@@ -660,36 +640,6 @@ describe('ThesesResource', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('normalizes an actual HTTP 204 delete response to an empty object', async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }));
-    globalThis.fetch = fetch;
-
-    await expect(
-      new AlvaClient({
-        apiKey: 'key',
-        baseUrl: 'https://api.test',
-      }).theses.delete(MAX_ID)
-    ).resolves.toEqual({});
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects malformed delete responses and preserves request errors', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue({ deleted: true });
-
-    await expect(client.theses.delete(MAX_ID)).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-
-    const error = new AlvaError('UNAVAILABLE', 'backend down', 503);
-    client._request.mockRejectedValueOnce(error);
-    await expect(client.theses.delete(MAX_ID)).rejects.toBe(error);
-  });
-
   it('rejects any numeric response ID instead of losing int64 precision', async () => {
     const response = thesis() as { thesis: Record<string, unknown> };
     response.thesis.id = 9_007_199_254_740_992;
@@ -796,21 +746,6 @@ describe('ThesesResource', () => {
     await expect(client.theses.create(params)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
-    expect(client._request).not.toHaveBeenCalled();
-  });
-
-  it('rejects NUL in a close note before the HTTP boundary', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn();
-
-    await expect(
-      client.theses.close(MAX_ID, {
-        expected_author_version_id: '9223372036854775806',
-        note: 'done\0now',
-      })
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(client._request).not.toHaveBeenCalled();
   });
 

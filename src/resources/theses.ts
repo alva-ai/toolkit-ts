@@ -162,7 +162,6 @@ export interface UpdateThesisParams {
   entity_stances?: ThesisEntityStance[];
   /** Required so an update cannot inadvertently publish a private thesis. */
   visibility: ThesisVisibility;
-  editorial?: boolean;
   archived?: boolean;
   note?: string;
 }
@@ -190,11 +189,6 @@ export interface ThesisSignalEnabledResponse {
 
 export interface SetThesisVisibilityParams {
   visibility: 'public' | 'private';
-}
-
-export interface CloseThesisParams {
-  expected_author_version_id: ThesisID;
-  note?: string;
 }
 
 export interface RewriteThesisParams {
@@ -382,35 +376,6 @@ export class ThesesResource {
     if (versions.some((version) => version.id !== thesisID))
       throw invalidResponse('Update list must match requested Thesis');
     return { versions, next_cursor: response.next_cursor };
-  }
-
-  /** Deletes only the selected Update; never falls back to whole-Thesis deletion. */
-  async deleteUpdate(
-    id: ThesisID,
-    authorVersionID: ThesisID,
-    expectedAuthorVersionID: ThesisID
-  ): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    const thesisID = requireID(id, 'id');
-    const versionID = requireID(authorVersionID, 'author_version_id');
-    const expected = requireID(
-      expectedAuthorVersionID,
-      'expected_author_version_id'
-    );
-    const response = thesisResponse(
-      await this.client._request(
-        'DELETE',
-        `/api/v1/theses/${thesisID}/versions/${versionID}`,
-        {
-          query: { expected_author_version_id: expected },
-        }
-      )
-    );
-    if (response.thesis.id !== thesisID)
-      throw invalidResponse(
-        'delete Update response must match requested Thesis'
-      );
-    return response;
   }
 
   async signals(
@@ -633,41 +598,6 @@ export class ThesesResource {
     return response;
   }
 
-  async close(
-    id: ThesisID,
-    params: CloseThesisParams
-  ): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    const body: CloseThesisParams = {
-      expected_author_version_id: requireID(
-        params.expected_author_version_id,
-        'expected_author_version_id'
-      ),
-    };
-    if (params.note !== undefined) body.note = requireText(params.note, 'note');
-    return thesisResponse(
-      await this.client._request(
-        'POST',
-        `/api/v1/theses/${requireID(id, 'id')}/close`,
-        { body }
-      )
-    );
-  }
-
-  async delete(id: ThesisID): Promise<Record<string, never>> {
-    this.client._requireAuth();
-    const response = await this.client._request(
-      'DELETE',
-      `/api/v1/theses/${requireID(id, 'id')}`
-    );
-    // _request returns undefined only for a successful HTTP 204 response.
-    if (response === undefined) return {};
-    if (!isRecord(response) || Object.keys(response).length !== 0) {
-      throw invalidResponse('delete response must be {}');
-    }
-    return {};
-  }
-
   async rewrite(params: RewriteThesisParams): Promise<RewriteThesisResponse> {
     this.client._requireAuth();
     const body = requireBody(params.body);
@@ -760,7 +690,6 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
     title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requireVisibility(params.visibility),
-    editorial: params.editorial ?? false,
   };
   if (params.medias !== undefined) {
     if (!Array.isArray(params.medias) || params.medias.length > 20)

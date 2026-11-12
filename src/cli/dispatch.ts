@@ -1602,7 +1602,7 @@ Examples:
 
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Create, read, inspect Signals and exact author versions, update, close, delete, or explicitly rewrite an authored thesis.
+Create, read, inspect Signals and exact author versions, publish Updates to, or explicitly rewrite an authored thesis.
 Backend owns Signal/Alert setup; the CLI never starts them separately.
 Create and update never rewrite text automatically.
 
@@ -1613,7 +1613,6 @@ Subcommands:
   get      Get one thesis
   version get  Get one exact author version
   version list  List visible Updates with editorial revisions folded together
-  version delete  Delete one Update; restore prior content if it is current
   signals  Read published Signal history
   set-visibility  Change current access without publishing a version
   archive   Archive the current author version
@@ -1621,9 +1620,7 @@ Subcommands:
   star      Add the Thesis to your bookmarks
   unstar    Remove the Thesis from your bookmarks
   set-signal-enabled  Enable or disable managed Signal research
-  update   Replaces document fields: body, title, entities, visibility (all sent in full)
-  close    Close the current author version with an optional note
-  delete   Delete a thesis
+  update   Publish a new Update replacing body, title, entities, visibility (all sent in full)
   rewrite  Explicitly request a candidate body rewrite; never called by another command
 
 Body input (create, update, rewrite): choose exactly one:
@@ -1660,8 +1657,6 @@ Other flags:
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
   version list --id <id> [--first <1-100>] [--cursor <next_cursor>]
-  version delete --id <id> --author-version-id <selected> --expected-author-version-id <current>
-       Cannot remove the last Update. Never falls back to whole-Thesis deletion.
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   set-visibility --id <id> --visibility public|private
   archive --id <id> --request-id <uuid> [--note <text>]
@@ -1682,13 +1677,11 @@ Maintenance behavior:
   set-signal-enabled changes managed Signal research without deleting history.
   The command returns enabled, research_paused, archived, and author version
   state; GraphQL errors and noncanonical error codes fail closed.
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--editorial]
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>]
        For text edits, pass current medias unchanged; omission clears media.
 
   Only editing the body? Resubmit the existing entity IDs and directions.
   Omitted directions become unknown; explicit unknown clears a direction.
-  close   --id <id> --expected-author-version-id <id> [--note <text>]
-  delete  --id <id>
   rewrite --body ... [--mode reformat|shorten|enrich]
 
 Rewrite mode defaults only when omitted, and the toolkit always sends the
@@ -3830,17 +3823,6 @@ export async function executeParsedCommand(
               }
             );
           }
-          if (parsedCommand.path[2] === 'delete') {
-            return client.theses.deleteUpdate(
-              requireFlag(flags, 'id', 'thesis version delete'),
-              requireFlag(flags, 'author-version-id', 'thesis version delete'),
-              requireFlag(
-                flags,
-                'expected-author-version-id',
-                'thesis version delete'
-              )
-            );
-          }
           return client.theses.getVersion(
             requireFlag(flags, 'id', 'thesis version get'),
             requireFlag(flags, 'author-version-id', 'thesis version get')
@@ -3914,21 +3896,7 @@ export async function executeParsedCommand(
               visibility: thesisVisibility(
                 requireFlag(flags, 'visibility', 'thesis update')
               ),
-              editorial: boolFlag(flags.editorial) ?? false,
             }
-          );
-        case 'close':
-          return client.theses.close(requireFlag(flags, 'id', 'thesis close'), {
-            expected_author_version_id: requireFlag(
-              flags,
-              'expected-author-version-id',
-              'thesis close'
-            ),
-            note: flags.note,
-          });
-        case 'delete':
-          return client.theses.delete(
-            requireFlag(flags, 'id', 'thesis delete')
           );
         case 'rewrite':
           return client.theses.rewrite({

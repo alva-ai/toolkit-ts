@@ -135,7 +135,7 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, set-visibility, archive, restore, star, unstar, set-signal-enabled, update, close, delete, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, set-visibility, archive, restore, star, unstar, set-signal-enabled, update, rewrite.
 
 list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
@@ -177,7 +177,8 @@ IDs, and noncanonical GraphQL errors fail closed. The returned state is the
 authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
-IDs and directions as a full author-version update. Update accepts --entity-stances <json>.
+IDs and directions as a full author-version update. Each update publishes a new
+Update; a published Update cannot be edited in place. Update accepts --entity-stances <json>.
 Only editing the body? Resubmit the existing entity IDs, directions, and medias.
 Pass current medias unchanged with --medias; omission clears attachments.
 Omitted directions become unknown; explicit unknown clears a direction.
@@ -186,7 +187,7 @@ UUID in --request-id; the dispatcher never creates request IDs or retries.
 
 If a write response is ambiguous, retain and reuse the same request ID only
 when resolving that ambiguity with the backend. Rewrite is explicit-only: no
-create, update, close, or delete command invokes it. Backend owns Signal/Alert
+create or update command invokes it. Backend owns Signal/Alert
 setup; the CLI never starts them separately. IDs remain decimal strings, never
 numbers. Rewrite returns a candidate only; it does not create or update a Thesis,
 select a mode from body length/errors, or invent supporting evidence.`,

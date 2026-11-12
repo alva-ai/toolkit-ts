@@ -171,9 +171,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis version list', 'thesis version list', {
       values: ['id', 'first', 'cursor'],
     }),
-    route('thesis version delete', 'thesis version delete', {
-      values: ['id', 'author-version-id', 'expected-author-version-id'],
-    }),
     route('thesis version get', 'thesis version get', {
       values: ['id', 'author-version-id'],
     }),
@@ -206,12 +203,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'medias',
         'visibility',
       ],
-      booleans: ['editorial'],
     }),
-    route('thesis close', 'thesis close', {
-      values: ['id', 'expected-author-version-id', 'note'],
-    }),
-    route('thesis delete', 'thesis delete', { values: ['id'] }),
     route('thesis rewrite', 'thesis rewrite', { values: ['body', 'mode'] }),
     route('account whoami', 'whoami'),
     route('account credits wallet', 'credits wallet'),
