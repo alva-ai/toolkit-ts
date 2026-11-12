@@ -465,6 +465,7 @@ alva markets watchlist list [--limit <1-100>] [--cursor <endCursor>]
 alva people search --query <text> [--kind <user|person>] [--limit <1-50>]
 alva people follows <follow|unfollow> --kind <user|person> --id <id>
 alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <endCursor>]
+alva people follows activity [--since <ISO time | Unix ms>]
 ```
 
 ## Contributing
@@ -514,11 +515,17 @@ alva markets watchlist list --limit 50
 alva people search --query "cathie wood" --kind person
 alva people follows follow --kind person --id 42
 alva people follows list
+alva people follows activity --since 2026-11-12T08:00:00Z
 ```
+
+`people follows activity` returns what the users you follow did on public
+Theses (published, updated, edited, bookmarked, liked) and their Watchlists,
+newest first, at most 200 items and seven days back. Pass the previous
+result's `until` as the next `--since`.
 
 The SDK equivalents live on `client.follows`: `addToWatchlist()`,
 `removeFromWatchlist()`, `watchlist()`, `searchProfiles()`, `followProfile()`,
-`unfollowProfile()` and `profiles()`. Tickers match exact symbols (1-50 per
+`unfollowProfile()`, `profiles()` and `activity()`. Tickers match exact symbols (1-50 per
 call) and are written in one atomic batch. A `:stock`, `:etf` or `:crypto`
 suffix picks the kind of one symbol (`BTC:crypto`); `--kind` is the default
 for unsuffixed symbols, so one call can mix kinds. Results separate changed,

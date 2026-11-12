@@ -124,6 +124,34 @@ export interface ProfilesPage {
   pageInfo: FollowPageInfo;
 }
 
+export type FollowingActivityKind =
+  | 'THESIS_PUBLISHED'
+  | 'THESIS_UPDATED'
+  | 'THESIS_EDITED'
+  | 'THESIS_BOOKMARKED'
+  | 'THESIS_LIKED'
+  | 'WATCHLIST_ADDED';
+
+export interface FollowingActivityParams {
+  /** ISO 8601 time or Unix milliseconds; omitted means the last day. */
+  since?: string | number;
+}
+
+export interface FollowingActivityItem {
+  kind: FollowingActivityKind;
+  at: string;
+  actor: { username?: string; displayName: string } | null;
+  thesis?: { id: string; title: string; versionId?: string };
+  ticker?: { id: string; ticker: string; name: string };
+}
+
+export interface FollowingActivityPage {
+  items: FollowingActivityItem[];
+  hasMore: boolean;
+  /** End of the window; pass it as --since next time. */
+  until: string;
+}
+
 export interface ProfileFollowResult {
   following: boolean;
   profile: FollowProfile | null;
@@ -219,6 +247,72 @@ function responseData(
   if (!record(response) || !record(response.data))
     return invalidResponse(field);
   return response.data;
+}
+
+const ACTIVITY_KINDS: readonly FollowingActivityKind[] = [
+  'THESIS_PUBLISHED',
+  'THESIS_UPDATED',
+  'THESIS_EDITED',
+  'THESIS_BOOKMARKED',
+  'THESIS_LIKED',
+  'WATCHLIST_ADDED',
+];
+
+/** Parse --since as ISO 8601 or Unix milliseconds. */
+export function sinceMillis(
+  since: string | number | undefined
+): number | undefined {
+  if (since === undefined || since === '') return undefined;
+  const ms =
+    typeof since === 'number'
+      ? since
+      : /^\d+$/.test(since)
+        ? Number(since)
+        : Date.parse(since);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    throw new Error('since must be an ISO 8601 time or Unix milliseconds');
+  }
+  return Math.trunc(ms);
+}
+
+function activityItem(value: unknown, field: string): FollowingActivityItem {
+  if (
+    !record(value) ||
+    typeof value.kind !== 'string' ||
+    !ACTIVITY_KINDS.includes(value.kind as FollowingActivityKind) ||
+    typeof value.occurredAtMs !== 'number'
+  ) {
+    return invalidResponse(field);
+  }
+  const item: FollowingActivityItem = {
+    kind: value.kind as FollowingActivityKind,
+    at: new Date(value.occurredAtMs).toISOString(),
+    actor: null,
+  };
+  if (record(value.actor) && typeof value.actor.displayName === 'string') {
+    item.actor = { displayName: value.actor.displayName };
+    if (typeof value.actor.username === 'string') {
+      item.actor.username = value.actor.username;
+    }
+  }
+  if (record(value.thesis)) {
+    item.thesis = {
+      id: requireString(value.thesis.id, field),
+      title: typeof value.thesis.title === 'string' ? value.thesis.title : '',
+    };
+    if (typeof value.thesisVersionId === 'string') {
+      item.thesis.versionId = value.thesisVersionId;
+    }
+  }
+  if (record(value.entity)) {
+    item.ticker = {
+      id: requireString(value.entity.id, field),
+      ticker:
+        typeof value.entity.ticker === 'string' ? value.entity.ticker : '',
+      name: typeof value.entity.name === 'string' ? value.entity.name : '',
+    };
+  }
+  return item;
 }
 
 function viewerField(response: unknown, field: string): unknown {
@@ -555,6 +649,38 @@ export class FollowsResource {
       viewerField(response, 'followingProfiles'),
       'viewer.followingProfiles'
     );
+  }
+
+  /**
+   * What the users the caller follows did on public Theses and their
+   * Watchlists after `since`, newest first (at most 200 items, 7 days back).
+   */
+  async activity(
+    params: FollowingActivityParams = {}
+  ): Promise<FollowingActivityPage> {
+    const sinceMs = sinceMillis(params.since);
+    this.client._requireAuth();
+    const response = await this.client._request('POST', '/query', {
+      body: {
+        query: `query ToolkitFollowingActivity($sinceMs: TimestampMs) { viewer { followingActivity(sinceMs: $sinceMs) { items { kind occurredAtMs thesisVersionId actor { __typename displayName ... on PublicUser { username } } thesis { id title } entity { id ticker name } } hasMore untilMs } } }`,
+        variables: { sinceMs },
+      },
+    });
+    const field = 'viewer.followingActivity';
+    const value = viewerField(response, 'followingActivity');
+    if (
+      !record(value) ||
+      !Array.isArray(value.items) ||
+      typeof value.hasMore !== 'boolean' ||
+      typeof value.untilMs !== 'number'
+    ) {
+      return invalidResponse(field);
+    }
+    return {
+      items: value.items.map((item: unknown) => activityItem(item, field)),
+      hasMore: value.hasMore,
+      until: new Date(value.untilMs).toISOString(),
+    };
   }
 
   /** Follow one profile. Idempotent. */

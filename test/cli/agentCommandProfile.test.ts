@@ -33,6 +33,7 @@ describe('Slim Alva Agent command profile', () => {
       'people follows list',
       'people follows follow',
       'people follows unfollow',
+      'people follows activity',
     ]) {
       expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(leaf);
     }

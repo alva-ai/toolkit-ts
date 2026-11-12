@@ -2,6 +2,7 @@ import { validateXReadParams } from '../resources/x.js';
 import {
   normalizeWatchlistTickersParams,
   parseTickerSpec,
+  sinceMillis,
   validateProfileRef,
   validateSearchProfilesParams,
   type FollowProfileKind,
@@ -1476,6 +1477,8 @@ Subcommands:
   follows list              List the profiles the caller follows
   follows follow            Follow one profile (idempotent)
   follows unfollow          Unfollow one profile (idempotent)
+  follows activity          What the people you follow did on public Theses and
+                            their Watchlists (newest first, up to 200, 7 days)
 
 Flags:
   --query <text>            search: name or username prefix (required)
@@ -1484,11 +1487,14 @@ Flags:
   --id <id>                 follow/unfollow: profile id (required)
   --limit <1-50>            search/list: page size
   --cursor <endCursor>      list: pageInfo.endCursor of the previous page
+  --since <time>            activity: ISO 8601 time or Unix ms; default is the
+                            last day. Pass the previous result's "until".
 
 Examples:
   alva people search --query "cathie wood" --kind person
   alva people follows follow --kind person --id 42
-  alva people follows list`,
+  alva people follows list
+  alva people follows activity --since 2026-11-12T08:00:00Z`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
@@ -2220,6 +2226,10 @@ function dispatchPeople(
         ),
         first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
         after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
+      });
+    case 'follows activity':
+      return client.follows.activity({
+        since: usageChecked(command, () => sinceMillis(flags['since'])),
       });
     case 'follows follow':
     case 'follows unfollow': {

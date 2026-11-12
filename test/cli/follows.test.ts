@@ -11,6 +11,7 @@ const commands = {
   search: ['people', 'search'],
   followProfile: ['people', 'follows', 'follow'],
   profiles: ['people', 'follows', 'list'],
+  activity: ['people', 'follows', 'activity'],
 } as const;
 
 const paths = {
@@ -181,6 +182,105 @@ for (const [name, cli] of Object.entries(paths)) {
       });
     });
 
+    it('reads following activity since a time and maps every kind', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      const request = vi.spyOn(client, '_request').mockResolvedValueOnce({
+        data: {
+          viewer: {
+            followingActivity: {
+              items: [
+                {
+                  kind: 'THESIS_EDITED',
+                  occurredAtMs: Date.UTC(2026, 10, 12, 9),
+                  thesisVersionId: '21',
+                  actor: {
+                    __typename: 'PublicUser',
+                    displayName: 'Kai Lin',
+                    username: 'kailin',
+                  },
+                  thesis: { id: '11', title: 'Power caps neocloud growth' },
+                  entity: null,
+                },
+                {
+                  kind: 'WATCHLIST_ADDED',
+                  occurredAtMs: Date.UTC(2026, 10, 12, 8),
+                  thesisVersionId: null,
+                  actor: null,
+                  thesis: null,
+                  entity: { id: '31', ticker: 'MU', name: 'Micron' },
+                },
+              ],
+              hasMore: false,
+              untilMs: Date.UTC(2026, 10, 12, 12),
+            },
+          },
+        },
+      });
+      const result = await cli.dispatch(client, [
+        ...cli.activity,
+        '--since',
+        '2026-11-12T08:00:00Z',
+      ]);
+      expect(request.mock.calls[0][2]?.body).toMatchObject({
+        variables: { sinceMs: Date.UTC(2026, 10, 12, 8) },
+      });
+      expect(result).toEqual({
+        items: [
+          {
+            kind: 'THESIS_EDITED',
+            at: '2026-11-12T09:00:00.000Z',
+            actor: { displayName: 'Kai Lin', username: 'kailin' },
+            thesis: {
+              id: '11',
+              title: 'Power caps neocloud growth',
+              versionId: '21',
+            },
+          },
+          {
+            kind: 'WATCHLIST_ADDED',
+            at: '2026-11-12T08:00:00.000Z',
+            actor: null,
+            ticker: { id: '31', ticker: 'MU', name: 'Micron' },
+          },
+        ],
+        hasMore: false,
+        until: '2026-11-12T12:00:00.000Z',
+      });
+    });
+
+    it('omits since when the flag is absent', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      const request = vi.spyOn(client, '_request').mockResolvedValueOnce({
+        data: {
+          viewer: {
+            followingActivity: { items: [], hasMore: false, untilMs: 1 },
+          },
+        },
+      });
+      await cli.dispatch(client, [...cli.activity]);
+      expect(request.mock.calls[0][2]?.body).toMatchObject({
+        variables: { sinceMs: undefined },
+      });
+    });
+
+    it('rejects an unknown activity kind', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      vi.spyOn(client, '_request').mockResolvedValueOnce({
+        data: {
+          viewer: {
+            followingActivity: {
+              items: [{ kind: 'SHARED', occurredAtMs: 1 }],
+              hasMore: false,
+              untilMs: 1,
+            },
+          },
+        },
+      });
+      await expect(cli.dispatch(client, [...cli.activity])).rejects.toThrow(
+        /invalid viewer.followingActivity/
+      );
+    });
+
     it.each([
       [[...cli.add]],
       [[...cli.add, '--tickers', ',']],
@@ -197,6 +297,8 @@ for (const [name, cli] of Object.entries(paths)) {
       [[...cli.followProfile, '--kind', 'user', '--id', 'alice']],
       [[...cli.followProfile, '--kind', 'user']],
       [[...cli.profiles, '--kind', 'team']],
+      [[...cli.activity, '--since', 'yesterday-ish']],
+      [[...cli.activity, '--since', '0']],
     ])('rejects invalid argv %j before any request', async (args) => {
       const client = new AlvaClient({ apiKey: 'host-key' });
       const request = vi.spyOn(client, '_request');
