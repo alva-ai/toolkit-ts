@@ -2,9 +2,9 @@
 
 ## 1. Background and Current State
 
-Thesis returns (shipping 2026-11-18) are computed per Thesis from its tickers
-and long/short directions. Product decision (Zet, 2026-11-10 and 2026-11-12):
-authors only publish new Updates; a published Update can no longer be edited in
+Product decision (Zet, 2026-11-10 and 2026-11-12): a Thesis's published
+tickers and long/short directions stay on the record. Authors only publish new
+Updates; a published Update can no longer be edited in
 place, and the Alva Agent can no longer close a Thesis, delete a Thesis, or
 delete an Update.
 
