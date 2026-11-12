@@ -14,8 +14,8 @@ the embedded Agent catalog (`thesis close`, `thesis delete`,
 `thesis version delete`, `thesis update --editorial`). In parallel,
 alva-gateway removes `POST /api/v1/theses/:id/close`,
 `DELETE /api/v1/theses/:id` and `DELETE /api/v1/theses/:id/versions/:version_id`,
-and `PUT /api/v1/theses/:id` rejects `"editorial": true` (false or omitted is
-still accepted).
+and `PUT /api/v1/theses/:id` rejects `"editorial": true` from non-Admins (false
+or omitted is still accepted).
 
 ## 2. Behavior
 
