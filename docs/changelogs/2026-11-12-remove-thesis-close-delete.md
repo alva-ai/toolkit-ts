@@ -12,8 +12,9 @@ Toolkit 0.35.0 exposed all four in the SDK (`theses.close`, `theses.delete`,
 `theses.deleteUpdate`, `UpdateThesisParams.editorial`), the terminal CLI, and
 the embedded Agent catalog (`thesis close`, `thesis delete`,
 `thesis version delete`, `thesis update --editorial`). In parallel,
-alva-gateway removes `POST /api/v1/theses/:id/close`,
-`DELETE /api/v1/theses/:id` and `DELETE /api/v1/theses/:id/versions/:version_id`,
+alva-gateway removes `POST /api/v1/theses/:id/close` and
+`DELETE /api/v1/theses/:id/versions/:version_id`, makes
+`DELETE /api/v1/theses/:id` Admin only (operations cleanup),
 and `PUT /api/v1/theses/:id` rejects `"editorial": true` from non-Admins (false
 or omitted is still accepted).
 
