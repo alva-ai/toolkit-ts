@@ -263,6 +263,64 @@ for (const [name, cli] of Object.entries(paths)) {
       });
     });
 
+    it('keeps the page when one item field fails, but not when the page fails', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      vi.spyOn(client, '_request')
+        .mockResolvedValueOnce({
+          data: {
+            viewer: {
+              followingActivity: {
+                items: [
+                  {
+                    kind: 'THESIS_BOOKMARKED',
+                    occurredAtMs: 2,
+                    actor: { displayName: 'Bob', username: 'bob' },
+                    thesis: null,
+                    entity: null,
+                  },
+                  {
+                    kind: 'WATCHLIST_ADDED',
+                    occurredAtMs: 1,
+                    actor: { displayName: 'Bob', username: 'bob' },
+                    thesis: null,
+                    entity: { id: '31', ticker: 'MU', name: 'Micron' },
+                  },
+                ],
+                hasMore: false,
+                untilMs: 3,
+              },
+            },
+          },
+          errors: [
+            {
+              message: 'internal error',
+              path: ['viewer', 'followingActivity', 'items', 0, 'thesis'],
+              extensions: { code: 'INTERNAL' },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          data: { viewer: null },
+          errors: [
+            {
+              message: 'login required',
+              extensions: { code: 'UNAUTHENTICATED' },
+            },
+          ],
+        });
+      const page = await cli.dispatch(client, [...cli.activity]);
+      expect(page).toMatchObject({
+        items: [
+          { kind: 'THESIS_BOOKMARKED', actor: { username: 'bob' } },
+          { kind: 'WATCHLIST_ADDED', ticker: { ticker: 'MU' } },
+        ],
+        hasMore: false,
+      });
+      await expect(cli.dispatch(client, [...cli.activity])).rejects.toThrow(
+        /login required/
+      );
+    });
+
     it('rejects an unknown activity kind', async () => {
       const client = new AlvaClient({ apiKey: 'host-key' });
       vi.spyOn(client, '_request').mockResolvedValueOnce({

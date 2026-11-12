@@ -667,7 +667,15 @@ export class FollowsResource {
       },
     });
     const field = 'viewer.followingActivity';
-    const value = viewerField(response, 'followingActivity');
+    // An item's actor, Thesis and ticker are nullable: one that fails to load
+    // leaves the rest of the page usable. A missing page still fails.
+    const loaded =
+      record(response) && record(response.data) && record(response.data.viewer)
+        ? response.data.viewer.followingActivity
+        : undefined;
+    const value = record(loaded)
+      ? loaded
+      : viewerField(response, 'followingActivity');
     if (
       !record(value) ||
       !Array.isArray(value.items) ||
