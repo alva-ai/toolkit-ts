@@ -46,7 +46,6 @@ export {
   type ThesisStarredResponse,
   type ThesisSignalEnabledResponse,
   type SetThesisVisibilityParams,
-  type CloseThesisParams,
   type RewriteThesisParams,
   type RewriteThesisResponse,
 } from './resources/theses.js';

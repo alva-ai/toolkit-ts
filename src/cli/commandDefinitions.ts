@@ -224,9 +224,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('thesis related', { values: ['id', 'first', 'cursor'] }),
   command('thesis get', { values: ['id'] }),
   command('thesis version list', { values: ['id', 'first', 'cursor'] }),
-  command('thesis version delete', {
-    values: ['id', 'author-version-id', 'expected-author-version-id'],
-  }),
   command('thesis version get', {
     values: ['id', 'author-version-id'],
   }),
@@ -250,12 +247,8 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'medias',
       'visibility',
     ],
-    booleans: ['body-stdin', 'editorial'],
+    booleans: ['body-stdin'],
   }),
-  command('thesis close', {
-    values: ['id', 'expected-author-version-id', 'note'],
-  }),
-  command('thesis delete', { values: ['id'] }),
   command('thesis rewrite', {
     values: ['body', 'body-file', 'mode'],
     booleans: ['body-stdin'],

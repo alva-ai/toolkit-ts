@@ -71,8 +71,6 @@ function mockLifecycle(value: AlvaClient) {
         enabled: true,
       }),
     update: vi.spyOn(value.theses, 'update').mockResolvedValue(THESIS),
-    close: vi.spyOn(value.theses, 'close').mockResolvedValue(THESIS),
-    remove: vi.spyOn(value.theses, 'delete').mockResolvedValue({}),
     rewrite: vi
       .spyOn(value.theses, 'rewrite')
       .mockResolvedValue({ body: 'new' }),
@@ -177,27 +175,10 @@ describe('thesis terminal dispatch', () => {
         '/tmp/thesis.md',
         '--visibility',
         'private',
-        '--editorial',
       ],
       undefined,
       { localFiles }
     );
-    await dispatchTerminal(value, [
-      'thesis',
-      'close',
-      '--id',
-      THESIS.thesis.id,
-      '--expected-author-version-id',
-      THESIS.thesis.author_version_id,
-      '--note',
-      'done',
-    ]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'delete',
-      '--id',
-      THESIS.thesis.id,
-    ]);
     await dispatchTerminal(
       value,
       ['thesis', 'rewrite', '--body-stdin'],
@@ -256,13 +237,7 @@ describe('thesis terminal dispatch', () => {
       entity_ids: [],
       entity_stances: undefined,
       visibility: 'private',
-      editorial: true,
     });
-    expect(calls.close).toHaveBeenCalledWith(THESIS.thesis.id, {
-      expected_author_version_id: THESIS.thesis.author_version_id,
-      note: 'done',
-    });
-    expect(calls.remove).toHaveBeenCalledWith(THESIS.thesis.id);
     expect(calls.rewrite).toHaveBeenCalledWith({
       body: 'stdin\r\nbody',
       mode: 'reformat',
@@ -514,7 +489,7 @@ describe('thesis terminal dispatch', () => {
     const result = (await dispatchTerminal(client(), ['thesis', '--help'])) as {
       text: string;
     };
-    expect(result.text).toContain('Replaces document fields');
+    expect(result.text).toContain('Publish a new Update replacing');
     expect(result.text).toContain('response is ambiguous');
     expect(result.text).toContain('defaults --visibility to public');
     expect(result.text).toContain('--tickers <ticker,ticker>');
@@ -655,20 +630,6 @@ describe('thesis embedded dispatch', () => {
       '--visibility',
       'private',
     ]);
-    await dispatchEmbedded(value, [
-      'thesis',
-      'close',
-      '--id',
-      THESIS.thesis.id,
-      '--expected-author-version-id',
-      THESIS.thesis.author_version_id,
-    ]);
-    await dispatchEmbedded(value, [
-      'thesis',
-      'delete',
-      '--id',
-      THESIS.thesis.id,
-    ]);
     await dispatchEmbedded(value, ['thesis', 'rewrite', '--body', 'rewrite']);
 
     expect(calls.create).toHaveBeenCalledWith({
@@ -688,7 +649,6 @@ describe('thesis embedded dispatch', () => {
       expect.objectContaining({
         body: 'update',
         visibility: 'private',
-        editorial: false,
       })
     );
     expect(calls.rewrite).toHaveBeenCalledWith({
@@ -765,4 +725,70 @@ describe('thesis embedded dispatch', () => {
       expect(calls.rewrite).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('removed thesis commands', () => {
+  const UPDATE_ARGS = [
+    'thesis',
+    'update',
+    '--id',
+    '1',
+    '--request-id',
+    REQUEST_ID,
+    '--expected-author-version-id',
+    '2',
+    '--body',
+    'draft',
+    '--visibility',
+    'private',
+  ];
+  const REMOVED = [
+    ['thesis', 'close', '--id', '1', '--expected-author-version-id', '2'],
+    ['thesis', 'delete', '--id', '1'],
+    [
+      'thesis',
+      'version',
+      'delete',
+      '--id',
+      '1',
+      '--author-version-id',
+      '2',
+      '--expected-author-version-id',
+      '3',
+    ],
+  ];
+
+  for (const [name, dispatch] of [
+    ['terminal', dispatchTerminal],
+    ['embedded', dispatchEmbedded],
+  ] as const) {
+    it.each(REMOVED)(
+      `${name} rejects %s %s before any request`,
+      async (...argv) => {
+        const value = client();
+        const request = vi.spyOn(value, '_request');
+        await expect(dispatch(value, argv)).rejects.toBeInstanceOf(
+          CliUsageError
+        );
+        expect(request).not.toHaveBeenCalled();
+      }
+    );
+
+    it(`${name} rejects update --editorial before any request`, async () => {
+      const value = client();
+      const calls = mockLifecycle(value);
+      await expect(
+        dispatch(value, [...UPDATE_ARGS, '--editorial'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(calls.update).not.toHaveBeenCalled();
+    });
+
+    it(`${name} help no longer offers close, delete, or editorial edits`, async () => {
+      const result = (await dispatch(client(), ['thesis', '--help'])) as {
+        text: string;
+      };
+      expect(result.text).not.toMatch(/\bclose\b|version delete|--editorial/);
+      expect(result.text).not.toMatch(/^\s+delete\b/m);
+    });
+  }
 });

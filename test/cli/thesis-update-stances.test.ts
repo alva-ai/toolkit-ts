@@ -91,7 +91,6 @@ for (const [name, dispatch] of [
           entity_ids: ['508176'],
           entity_stances: stances,
           visibility: 'private',
-          editorial: false,
         });
       }
     );
