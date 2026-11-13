@@ -41,13 +41,11 @@ Author verification: Backend portfolio/playbook/servicefunction/server + tagged 
 
 Remaining limits and existing compatibility notes in §8 remain. Rebased remote heads require fresh CI/feedback monitoring before ready-for-human-review; previous-head checks are historical. Any subsequent changes here are §7–8 evidence only and do not change accepted product/test/config/CI content.
 
-
 ### 2026-11-13 explicit origin/main rebase (v10)
 
 Yumin explicitly requested rebasing this published branch. Previous published head `72b8db6f2c1eb731c132e1e9828b580ab08deb88` is preserved under a local `refs/backup/pbsv-1138/` ref; integration base is `5ce80070632e1b9c68c87458f82d6aadf98f8ad0`. Exact old remote SHA leases are required for publication. No shared checkout, live data, deployment or dbops changes.
 
 Initial rebase tree equals `git merge-tree --write-tree <previous-head> <new-main>`; conflict resolutions preserve the prior product changes and new upstream behavior. Frontend remains byte-identical to v9; Node screenshot already has the current main ancestor and its exact commit is unchanged. New-main verification and the independent same-VM Claude Code review are complete in the final v11 record above; historical acceptances below are retained as history.
-
 
 - Runtime consumes and deletes the private document response bootstrap; historical URL PBSV is ignored and scrubbed. Parent refresh still requires expected source/origin. Gateway provides compatibility for already-published old runtime bundles.
 - `npm test` (Vitest run): PASS, 62 files / 1444 tests, including 14 runtime tests. `npm run typecheck`: PASS. `npm run build`: PASS. `npm run lint`: PASS (repository ESLint check). `npm run format:check`: PASS. No `make lint-fix` target exists in this TypeScript repository.
