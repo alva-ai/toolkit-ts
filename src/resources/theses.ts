@@ -59,12 +59,10 @@ export interface ThesisAssetMention {
   ticker: string;
   resolution: 'RESOLVED' | 'AMBIGUOUS' | 'UNRESOLVED';
   stance: 'UNKNOWN' | 'BULLISH' | 'BEARISH';
-  direction: ThesisDirection;
   candidates: ThesisAssetCandidate[];
 }
 export interface ThesisAssetCandidatesResponse {
   mentions: ThesisAssetMention[];
-  selectedEntityStances: ThesisSelectedDirection[];
   /** Null only from a server without the preview. */
   returnPreview: ThesisReturnPreview | null;
 }
@@ -300,8 +298,7 @@ export class ThesesResource {
       body: {
         query: `query ThesisAssetCandidates($input: ThesisAssetCandidatesInput!) {
           viewer { thesisAssetCandidates(input: $input) {
-            mentions { quote ticker resolution stance direction candidates { entityId ticker name kind } }
-            selectedEntityStances { entityId direction }
+            mentions { quote ticker resolution stance candidates { entityId ticker name kind } }
             returnPreview { tracking askSwitch directions { entityId direction } keptEntityIds lastLegRemoved }
           } }
         }`,
@@ -328,7 +325,6 @@ export class ThesesResource {
           item.resolution as string
         ) ||
         !['UNKNOWN', 'BULLISH', 'BEARISH'].includes(item.stance as string) ||
-        !THESIS_DIRECTIONS.includes(item.direction as string) ||
         !Array.isArray(item.candidates)
       ) {
         throw invalidResponse(`asset mention ${index} is invalid`);
@@ -356,14 +352,7 @@ export class ThesesResource {
       });
       return { ...item, candidates } as unknown as ThesisAssetMention;
     });
-    return {
-      mentions,
-      selectedEntityStances: selectedDirections(
-        result.selectedEntityStances,
-        'selectedEntityStances'
-      ),
-      returnPreview: returnPreview(result.returnPreview),
-    };
+    return { mentions, returnPreview: returnPreview(result.returnPreview) };
   }
 
   /** The Thesis return of a Playbook's current publication; detail revalues it. */

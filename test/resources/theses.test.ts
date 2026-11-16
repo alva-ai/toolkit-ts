@@ -153,7 +153,6 @@ describe('ThesesResource', () => {
                 ticker: 'NVDA',
                 resolution: 'RESOLVED',
                 stance: 'BEARISH',
-                direction: 'BEARISH',
                 candidates: [
                   {
                     entityId: '745337',
@@ -164,7 +163,6 @@ describe('ThesesResource', () => {
                 ],
               },
             ],
-            selectedEntityStances: [],
             returnPreview: null,
           },
         },
@@ -832,9 +830,6 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
           viewer: {
             thesisAssetCandidates: {
               mentions: [],
-              selectedEntityStances: [
-                { entityId: '745337', direction: 'NONE' },
-              ],
               returnPreview: {
                 tracking: 'ON',
                 askSwitch: false,
@@ -862,9 +857,6 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
         discover: false,
       },
     });
-    expect(got.selectedEntityStances).toEqual([
-      { entityId: '745337', direction: 'NONE' },
-    ]);
     expect(got.returnPreview).toEqual({
       tracking: 'ON',
       askSwitch: false,
@@ -881,7 +873,6 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
           viewer: {
             thesisAssetCandidates: {
               mentions: [],
-              selectedEntityStances: [],
               returnPreview: { tracking: 'MAYBE' },
             },
           },

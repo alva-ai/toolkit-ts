@@ -36,6 +36,11 @@ Local record. Primary record: alva-backend `docs/changelogs/2026-11-16-thesis-ag
 See the primary record section 4 (contracts, copy table, rollout) for this
 repository's row of the impact table and its checklist step.
 
+Occam pass on the code (2026-11-16): the raw `selectedEntityStances` and the
+per-mention `direction` were dropped from `asset-candidates` results; the
+Agent reads only `returnPreview` directions, and mentions serve identity only.
+Thesis responses keep each entity's `direction` for readback.
+
 ## 5. Verification and E2E Design
 
 See the primary record section 5 for this repository's tests. E2E Required: no.

@@ -46,7 +46,6 @@ function mockLifecycle(value: AlvaClient) {
       .spyOn(value.theses, 'assetCandidates')
       .mockResolvedValue({
         mentions: [],
-        selectedEntityStances: [],
         returnPreview: null,
       }),
     get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
@@ -551,7 +550,6 @@ describe('thesis embedded dispatch', () => {
           ticker: 'NVDA',
           resolution: 'RESOLVED' as const,
           stance: 'BEARISH' as const,
-          direction: 'BEARISH' as const,
           candidates: [
             {
               entityId: '745337',
@@ -562,7 +560,6 @@ describe('thesis embedded dispatch', () => {
           ],
         },
       ],
-      selectedEntityStances: [],
       returnPreview: null,
     };
     calls.assetCandidates.mockResolvedValue(candidates);
