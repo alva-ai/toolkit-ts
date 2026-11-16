@@ -929,50 +929,52 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
     });
   });
 
-  it('reads the Thesis return of the current publication', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(
-      jsonResponse({
-        data: {
-          node: {
-            latestRelease: {
-              thesisPublication: {
-                returnTracking: 'ON',
-                thesisReturn: {
-                  live: true,
-                  value: 0.25,
-                  firstFillAtMs: 1,
-                  pricedAtMs: 2,
-                  stale: false,
-                  computedAtMs: 3,
-                  updates: [
-                    {
-                      authorVersionId: '15691',
-                      publishedAtMs: 1,
-                      startValue: 0,
-                      updateReturn: 0.25,
-                      positions: [
-                        {
-                          entityId: '745337',
-                          symbol: 'NVDA',
-                          direction: 'BEARISH',
-                          startPrice: 216.38,
-                          startAtMs: 1,
-                          endPrice: 161.01,
-                          endAtMs: 2,
-                          end: 'LATEST',
-                          positionReturn: 0.25,
-                          currency: 'USD',
-                        },
-                      ],
-                    },
-                  ],
-                },
+  const returnResponse = (update: Record<string, unknown> = {}) =>
+    jsonResponse({
+      data: {
+        node: {
+          latestRelease: {
+            thesisPublication: {
+              returnTracking: 'ON',
+              thesisReturn: {
+                live: true,
+                value: 0.25,
+                firstFillAtMs: 1,
+                pricedAtMs: 2,
+                stale: false,
+                computedAtMs: 3,
+                updates: [
+                  {
+                    authorVersionId: '15691',
+                    publishedAtMs: 1,
+                    startValue: 0,
+                    updateReturn: 0.25,
+                    positions: [
+                      {
+                        entityId: '745337',
+                        symbol: 'NVDA',
+                        direction: 'BEARISH',
+                        startPrice: 216.38,
+                        startAtMs: 1,
+                        endPrice: 161.01,
+                        endAtMs: 2,
+                        end: 'LATEST',
+                        positionReturn: 0.25,
+                        currency: 'USD',
+                      },
+                    ],
+                    ...update,
+                  },
+                ],
               },
             },
           },
         },
-      })
-    );
+      },
+    });
+
+  it('reads the Thesis return of the current publication', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(returnResponse());
     globalThis.fetch = fetch;
     const got = await client().theses.thesisReturn('9451', { detail: true });
     const [, init] = fetch.mock.calls[0] as [string, RequestInit];
@@ -984,6 +986,15 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
     expect(got.thesisReturn?.updates[0]?.positions[0]?.symbol).toBe('NVDA');
     await expect(client().theses.thesisReturn('x')).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('rejects a Thesis return Update without its publication time', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(returnResponse({ publishedAtMs: null }));
+    await expect(client().theses.thesisReturn('9451')).rejects.toMatchObject({
+      code: 'GRAPHQL_INVALID_RESPONSE',
     });
   });
 });

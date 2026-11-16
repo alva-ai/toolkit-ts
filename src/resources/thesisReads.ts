@@ -480,6 +480,7 @@ function validThesisReturn(value: unknown): boolean {
     (update) =>
       record(update) &&
       nonempty(update.authorVersionId) &&
+      typeof update.publishedAtMs === 'number' &&
       typeof update.startValue === 'number' &&
       Array.isArray(update.positions) &&
       update.positions.every(

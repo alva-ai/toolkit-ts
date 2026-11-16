@@ -54,6 +54,11 @@ See the primary record section 6.
 See the primary record section 7 for this repository's verification results
 and the publication links.
 
+Review feedback: `thesisReturn` now rejects an Update without
+`publishedAtMs` (non-null in the gateway schema), covered by a new test that
+fails without the check. `npm test` 62 files / 1457 tests pass; `npm run
+build` passes.
+
 ## 8. Remaining Work
 
 See the primary record section 8 (STG release chain, public skill coupling,
