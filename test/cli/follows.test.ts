@@ -190,7 +190,7 @@ for (const [name, cli] of Object.entries(paths)) {
             followingActivity: {
               items: [
                 {
-                  kind: 'THESIS_EDITED',
+                  kind: 'THESIS_UPDATED',
                   occurredAtMs: Date.UTC(2026, 10, 12, 9),
                   thesisVersionId: '21',
                   actor: {
@@ -199,6 +199,28 @@ for (const [name, cli] of Object.entries(paths)) {
                     username: 'kailin',
                   },
                   thesis: { id: '11', title: 'Power caps neocloud growth' },
+                  entity: null,
+                },
+                {
+                  kind: 'SIGNAL_LIKED',
+                  occurredAtMs: Date.UTC(2026, 10, 12, 8, 30),
+                  thesisVersionId: null,
+                  actor: {
+                    __typename: 'PublicUser',
+                    displayName: 'Kai Lin',
+                    username: 'kailin',
+                  },
+                  thesis: { id: '11', title: 'Power caps neocloud growth' },
+                  signal: {
+                    id: '41',
+                    stance: 'supports',
+                    explanation: 'Grid queues push new sites to 2028.',
+                    evidenceExcerpt: { text: 'Interconnect waits now run...' },
+                    source: {
+                      title: 'Utility filing',
+                      url: 'https://x.test/a',
+                    },
+                  },
                   entity: null,
                 },
                 {
@@ -227,13 +249,26 @@ for (const [name, cli] of Object.entries(paths)) {
       expect(result).toEqual({
         items: [
           {
-            kind: 'THESIS_EDITED',
+            kind: 'THESIS_UPDATED',
             at: '2026-11-12T09:00:00.000Z',
             actor: { displayName: 'Kai Lin', username: 'kailin' },
             thesis: {
               id: '11',
               title: 'Power caps neocloud growth',
               versionId: '21',
+            },
+          },
+          {
+            kind: 'SIGNAL_LIKED',
+            at: '2026-11-12T08:30:00.000Z',
+            actor: { displayName: 'Kai Lin', username: 'kailin' },
+            thesis: { id: '11', title: 'Power caps neocloud growth' },
+            signal: {
+              id: '41',
+              stance: 'supports',
+              explanation: 'Grid queues push new sites to 2028.',
+              excerpt: 'Interconnect waits now run...',
+              source: { title: 'Utility filing', url: 'https://x.test/a' },
             },
           },
           {

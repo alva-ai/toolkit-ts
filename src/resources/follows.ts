@@ -127,9 +127,8 @@ export interface ProfilesPage {
 export type FollowingActivityKind =
   | 'THESIS_PUBLISHED'
   | 'THESIS_UPDATED'
-  | 'THESIS_EDITED'
   | 'THESIS_BOOKMARKED'
-  | 'THESIS_LIKED'
+  | 'SIGNAL_LIKED'
   | 'WATCHLIST_ADDED';
 
 export interface FollowingActivityParams {
@@ -142,6 +141,14 @@ export interface FollowingActivityItem {
   at: string;
   actor: { username?: string; displayName: string } | null;
   thesis?: { id: string; title: string; versionId?: string };
+  /** The liked Signal, for SIGNAL_LIKED; `thesis` is the Thesis it belongs to. */
+  signal?: {
+    id: string;
+    stance: string;
+    explanation: string;
+    excerpt?: string;
+    source: { title: string; url?: string };
+  };
   ticker?: { id: string; ticker: string; name: string };
 }
 
@@ -252,9 +259,8 @@ function responseData(
 const ACTIVITY_KINDS: readonly FollowingActivityKind[] = [
   'THESIS_PUBLISHED',
   'THESIS_UPDATED',
-  'THESIS_EDITED',
   'THESIS_BOOKMARKED',
-  'THESIS_LIKED',
+  'SIGNAL_LIKED',
   'WATCHLIST_ADDED',
 ];
 
@@ -303,6 +309,26 @@ function activityItem(value: unknown, field: string): FollowingActivityItem {
     if (typeof value.thesisVersionId === 'string') {
       item.thesis.versionId = value.thesisVersionId;
     }
+  }
+  if (record(value.signal)) {
+    const source = record(value.signal.source) ? value.signal.source : {};
+    item.signal = {
+      id: requireString(value.signal.id, field),
+      stance:
+        typeof value.signal.stance === 'string' ? value.signal.stance : '',
+      explanation:
+        typeof value.signal.explanation === 'string'
+          ? value.signal.explanation
+          : '',
+      source: { title: typeof source.title === 'string' ? source.title : '' },
+    };
+    if (
+      record(value.signal.evidenceExcerpt) &&
+      typeof value.signal.evidenceExcerpt.text === 'string'
+    ) {
+      item.signal.excerpt = value.signal.evidenceExcerpt.text;
+    }
+    if (typeof source.url === 'string') item.signal.source.url = source.url;
   }
   if (record(value.entity)) {
     item.ticker = {
@@ -652,8 +678,8 @@ export class FollowsResource {
   }
 
   /**
-   * What the users the caller follows did on public Theses and their
-   * Watchlists after `since`, newest first (at most 200 items, 7 days back).
+   * What the users the caller follows did on public Theses, their Signals and
+   * their Watchlists after `since`, newest first (at most 200 items, 7 days back).
    */
   async activity(
     params: FollowingActivityParams = {}
@@ -662,7 +688,7 @@ export class FollowsResource {
     this.client._requireAuth();
     const response = await this.client._request('POST', '/query', {
       body: {
-        query: `query ToolkitFollowingActivity($sinceMs: TimestampMs) { viewer { followingActivity(sinceMs: $sinceMs) { items { kind occurredAtMs thesisVersionId actor { __typename displayName ... on PublicUser { username } } thesis { id title } entity { id ticker name } } hasMore untilMs } } }`,
+        query: `query ToolkitFollowingActivity($sinceMs: TimestampMs) { viewer { followingActivity(sinceMs: $sinceMs) { items { kind occurredAtMs thesisVersionId actor { __typename displayName ... on PublicUser { username } } thesis { id title } signal { id stance explanation evidenceExcerpt { text } source { title url } } entity { id ticker name } } hasMore untilMs } } }`,
         variables: { sinceMs },
       },
     });
