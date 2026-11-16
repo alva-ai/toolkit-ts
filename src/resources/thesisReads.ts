@@ -371,6 +371,131 @@ function nextCursor(page: Record<string, unknown>): string | null {
   return info.hasNextPage ? (info.endCursor as string) : null;
 }
 
+export interface ThesisReturnParams {
+  /** Revalue at the latest prices and include each Update's positions. */
+  detail?: boolean;
+}
+
+/** A position of one Update, as ThesisPositionReturn in GraphQL. */
+export interface ThesisPositionReturn {
+  entityId: string;
+  symbol: string;
+  direction: 'BULLISH' | 'BEARISH';
+  startPrice: number | null;
+  startAtMs: number | null;
+  endPrice: number | null;
+  endAtMs: number | null;
+  end: 'PENDING' | 'NEXT_UPDATE' | 'LATEST';
+  positionReturn: number;
+  currency: string;
+}
+
+/** One Update on the return chart. */
+export interface ThesisUpdateReturn {
+  authorVersionId: string;
+  publishedAtMs: number;
+  startValue: number;
+  updateReturn: number | null;
+  positions: ThesisPositionReturn[];
+}
+
+/** The Thesis return; values are fractions (0.05 is +5%). */
+export interface ThesisReturnValue {
+  live: boolean;
+  value: number;
+  firstFillAtMs: number | null;
+  pricedAtMs: number | null;
+  stale: boolean;
+  computedAtMs: number;
+  updates: ThesisUpdateReturn[];
+}
+
+export interface ThesisReturnResult {
+  playbookId: string;
+  /** UNSET, ON or OFF; null when the current publication is not readable. */
+  returnTracking: 'UNSET' | 'ON' | 'OFF' | null;
+  /** Null when the Thesis is not tracked. */
+  thesisReturn: ThesisReturnValue | null;
+}
+
+const RETURN_QUERY = `query ToolkitThesisReturn($id: ID!, $detail: Boolean!) {
+  node(id: $id) { ... on Playbook { latestRelease { thesisPublication {
+    returnTracking
+    thesisReturn(detail: $detail) {
+      live value firstFillAtMs pricedAtMs stale computedAtMs
+      updates { authorVersionId publishedAtMs startValue updateReturn
+        positions { entityId symbol direction startPrice startAtMs endPrice endAtMs end positionReturn currency } }
+    }
+  } } } }
+}`;
+
+/** The return of a Thesis's current publication, read through GraphQL. */
+export async function thesisReturn(
+  client: AlvaClient,
+  id: string,
+  params: ThesisReturnParams = {}
+): Promise<ThesisReturnResult> {
+  if (!isPositiveInt64(id))
+    throw argument('id must be an internal positive int64 Playbook ID');
+  if (params.detail !== undefined && typeof params.detail !== 'boolean')
+    throw argument('detail must be a boolean');
+  client._requireAuth();
+  const data = await graphql(client, RETURN_QUERY, {
+    id: `Playbook:${id}`,
+    detail: params.detail ?? false,
+  });
+  if (data.node === null) throw notFound();
+  if (!record(data.node)) throw invalid();
+  const release = data.node.latestRelease;
+  if (release === null || release === undefined)
+    return { playbookId: id, returnTracking: null, thesisReturn: null };
+  if (!record(release)) throw invalid();
+  const publication = release.thesisPublication;
+  if (publication === null)
+    return { playbookId: id, returnTracking: null, thesisReturn: null };
+  if (!record(publication)) throw invalid();
+  const tracking = publication.returnTracking;
+  if (tracking !== null && !['UNSET', 'ON', 'OFF'].includes(tracking as string))
+    throw invalid();
+  const value = publication.thesisReturn;
+  if (value !== null && !validThesisReturn(value)) throw invalid();
+  return {
+    playbookId: id,
+    returnTracking: tracking as ThesisReturnResult['returnTracking'],
+    thesisReturn: value as ThesisReturnValue | null,
+  };
+}
+
+function validThesisReturn(value: unknown): boolean {
+  if (
+    !record(value) ||
+    typeof value.live !== 'boolean' ||
+    typeof value.value !== 'number' ||
+    typeof value.stale !== 'boolean' ||
+    typeof value.computedAtMs !== 'number' ||
+    !Array.isArray(value.updates)
+  )
+    return false;
+  return value.updates.every(
+    (update) =>
+      record(update) &&
+      nonempty(update.authorVersionId) &&
+      typeof update.publishedAtMs === 'number' &&
+      typeof update.startValue === 'number' &&
+      Array.isArray(update.positions) &&
+      update.positions.every(
+        (position) =>
+          record(position) &&
+          nonempty(position.symbol) &&
+          ['BULLISH', 'BEARISH'].includes(position.direction as string) &&
+          ['PENDING', 'NEXT_UPDATE', 'LATEST'].includes(
+            position.end as string
+          ) &&
+          typeof position.positionReturn === 'number'
+      )
+  );
+}
+
 /**
  * Fails closed on any GraphQL error, even with partial data. A uniform
  * canonical Gateway code (NOT_FOUND, PERMISSION_DENIED, UNAUTHENTICATED) keeps

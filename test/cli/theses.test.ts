@@ -46,6 +46,7 @@ function mockLifecycle(value: AlvaClient) {
       .spyOn(value.theses, 'assetCandidates')
       .mockResolvedValue({
         mentions: [],
+        returnPreview: null,
       }),
     get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
     getVersion: vi.spyOn(value.theses, 'getVersion').mockResolvedValue(THESIS),
@@ -559,6 +560,7 @@ describe('thesis embedded dispatch', () => {
           ],
         },
       ],
+      returnPreview: null,
     };
     calls.assetCandidates.mockResolvedValue(candidates);
 
@@ -677,7 +679,9 @@ describe('thesis embedded dispatch', () => {
     };
     expect(result.text).toContain('asset-candidates --text');
     expect(result.text).toContain('--entity-stances <json>');
-    expect(result.text).toContain('candidate.entityId to JSON entity_id');
+    expect(result.text).toContain('returnPreview.directions');
+    expect(result.text).toContain('--no-discovery');
+    expect(result.text).toContain('--track-return false');
     expect(result.text).toContain('"stance":"bearish"');
     expect(result.text).toContain('never creates request IDs or retries');
     expect(result.text).toContain('Create defaults --visibility to public');
@@ -789,6 +793,101 @@ describe('removed thesis commands', () => {
       };
       expect(result.text).not.toMatch(/\bclose\b|version delete|--editorial/);
       expect(result.text).not.toMatch(/^\s+delete\b/m);
+    });
+  }
+});
+
+describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return-preview)', () => {
+  for (const [name, run] of [
+    ['terminal', dispatchTerminal],
+    ['embedded', dispatchEmbedded],
+  ] as const) {
+    it(`${name}: asset-candidates passes known tickers, the Thesis and no-discovery`, async () => {
+      const value = client();
+      const calls = mockLifecycle(value);
+      await run(value, [
+        'thesis',
+        'asset-candidates',
+        '--text',
+        'body',
+        '--entity-ids',
+        '745337,1',
+        '--thesis-id',
+        '9451',
+        '--no-discovery',
+      ]);
+      expect(calls.assetCandidates).toHaveBeenLastCalledWith('body', {
+        entityIds: ['745337', '1'],
+        thesisId: '9451',
+        discover: false,
+      });
+      await run(value, ['thesis', 'asset-candidates', '--text', 'body']);
+      expect(calls.assetCandidates).toHaveBeenLastCalledWith('body', {
+        entityIds: [],
+        thesisId: undefined,
+        discover: true,
+      });
+    });
+
+    it(`${name}: create and update pass --track-return`, async () => {
+      const value = client();
+      const calls = mockLifecycle(value);
+      await run(value, [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'body',
+        '--track-return',
+        'false',
+      ]);
+      expect(calls.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ track_return: false })
+      );
+      await run(value, [
+        'thesis',
+        'update',
+        '--id',
+        '1',
+        '--request-id',
+        REQUEST_ID,
+        '--expected-author-version-id',
+        '2',
+        '--body',
+        'body',
+        '--visibility',
+        'public',
+      ]);
+      expect(calls.update).toHaveBeenLastCalledWith(
+        '1',
+        expect.objectContaining({ track_return: undefined })
+      );
+      await expect(
+        run(value, [
+          'thesis',
+          'create',
+          '--request-id',
+          REQUEST_ID,
+          '--body',
+          'body',
+          '--track-return',
+          'off',
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+    });
+
+    it(`${name}: return reads the Thesis return`, async () => {
+      const value = client();
+      const read = vi.spyOn(value.theses, 'thesisReturn').mockResolvedValue({
+        playbookId: '9451',
+        returnTracking: 'ON',
+        thesisReturn: null,
+      });
+      await run(value, ['thesis', 'return', '--id', '9451', '--detail']);
+      expect(read).toHaveBeenLastCalledWith('9451', { detail: true });
+      await run(value, ['thesis', 'return', '--id', '9451']);
+      expect(read).toHaveBeenLastCalledWith('9451', { detail: false });
     });
   }
 });
