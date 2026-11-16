@@ -147,10 +147,16 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'entity-stances',
         'tickers',
         'visibility',
+        'track-return',
       ],
     }),
     route('thesis asset-candidates', 'thesis asset-candidates', {
-      values: ['text'],
+      values: ['text', 'entity-ids', 'thesis-id'],
+      booleans: ['no-discovery'],
+    }),
+    route('thesis return', 'thesis return', {
+      values: ['id'],
+      booleans: ['detail'],
     }),
     route('thesis list', 'thesis list', {
       values: [
@@ -202,6 +208,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'entity-stances',
         'medias',
         'visibility',
+        'track-return',
       ],
     }),
     route('thesis rewrite', 'thesis rewrite', { values: ['body', 'mode'] }),

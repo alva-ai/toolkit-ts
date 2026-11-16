@@ -205,10 +205,15 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'entity-stances',
       'tickers',
       'visibility',
+      'track-return',
     ],
     booleans: ['body-stdin'],
   }),
-  command('thesis asset-candidates', { values: ['text'] }),
+  command('thesis asset-candidates', {
+    values: ['text', 'entity-ids', 'thesis-id'],
+    booleans: ['no-discovery'],
+  }),
+  command('thesis return', { values: ['id'], booleans: ['detail'] }),
   command('thesis list', {
     values: [
       'person',
@@ -246,6 +251,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'entity-stances',
       'medias',
       'visibility',
+      'track-return',
     ],
     booleans: ['body-stdin'],
   }),

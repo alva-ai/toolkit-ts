@@ -1635,7 +1635,7 @@ the backend; do not send a fresh ID. Create defaults --visibility to public.
 Update requires --visibility explicitly so it cannot inadvertently publish.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false]
   Images: public creation only, at most 20 in display order. Upload selected files
        with the existing host upload tool after publication confirmation. Private
        images and local/ALFS paths are not supported; this flag does not upload.
@@ -1653,7 +1653,11 @@ Other flags:
        publication.playbookId is the ID for get/version/signals/related;
        publication=null means no readable snapshot. Author lists include the
        signed-in owner's private Theses (visibility private).
-  asset-candidates --text <unsaved thesis text>
+  asset-candidates --text <unsaved thesis text> [--entity-ids <id,id>] [--thesis-id <id>] [--no-discovery]
+       --no-discovery only classifies --entity-ids (no ticker discovery) and
+       returns returnPreview: the directions publishing would store, the return
+       switch (askSwitch) and lastLegRemoved. --thesis-id seeds an Update.
+  return  --id <id> [--detail]   the Thesis return; --detail adds each Update's positions
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
   version list --id <id> [--first <1-100>] [--cursor <next_cursor>]
@@ -1677,11 +1681,12 @@ Maintenance behavior:
   set-signal-enabled changes managed Signal research without deleting history.
   The command returns enabled, research_paused, archived, and author version
   state; GraphQL errors and noncanonical error codes fail closed.
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>]
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false]
        For text edits, pass current medias unchanged; omission clears media.
 
   Only editing the body? Resubmit the existing entity IDs and directions.
-  Omitted directions become unknown; explicit unknown clears a direction.
+  On an Update, an omitted or unknown direction of a carried ticker keeps its
+  previous direction; none is an exit.
   rewrite --body ... [--mode reformat|shorten|enrich]
 
 Rewrite mode defaults only when omitted, and the toolkit always sends the
@@ -2918,10 +2923,26 @@ function thesisImages(flags: Record<string, string>): string[] | undefined {
   );
 }
 
-function thesisEntityStances(
-  flags: Record<string, string>
-):
-  | Array<{ entity_id: string; stance: 'unknown' | 'bullish' | 'bearish' }>
+function thesisTrackReturn(
+  flags: Record<string, string>,
+  command: string
+): boolean | undefined {
+  const raw = flags['track-return'];
+  if (raw === undefined) return undefined;
+  const parsed = boolFlag(raw);
+  if (parsed === undefined)
+    throw new CliUsageError(
+      `--track-return must be true or false for ${command}`,
+      'thesis'
+    );
+  return parsed;
+}
+
+function thesisEntityStances(flags: Record<string, string>):
+  | Array<{
+      entity_id: string;
+      stance: 'unknown' | 'bullish' | 'bearish' | 'none';
+    }>
   | undefined {
   const raw = flags['entity-stances'];
   if (raw === undefined) return undefined;
@@ -2935,7 +2956,7 @@ function thesisEntityStances(
     throw new CliUsageError('--entity-stances must be a JSON array', 'thesis');
   return parsed as Array<{
     entity_id: string;
-    stance: 'unknown' | 'bullish' | 'bearish';
+    stance: 'unknown' | 'bullish' | 'bearish' | 'none';
   }>;
 }
 
@@ -3772,10 +3793,21 @@ export async function executeParsedCommand(
               flags.visibility === undefined
                 ? 'public'
                 : thesisCreateVisibility(flags.visibility),
+            track_return: thesisTrackReturn(flags, 'thesis create'),
           });
         case 'asset-candidates':
           return client.theses.assetCandidates(
-            requireFlag(flags, 'text', 'thesis asset-candidates')
+            requireFlag(flags, 'text', 'thesis asset-candidates'),
+            {
+              entityIds: thesisEntityIDs(flags),
+              thesisId: flags['thesis-id'],
+              discover: boolFlag(flags['no-discovery']) !== true,
+            }
+          );
+        case 'return':
+          return client.theses.thesisReturn(
+            requireFlag(flags, 'id', 'thesis return'),
+            { detail: boolFlag(flags.detail) === true }
           );
         case 'list': {
           const params: ListThesesParams = {
@@ -3896,6 +3928,7 @@ export async function executeParsedCommand(
               visibility: thesisVisibility(
                 requireFlag(flags, 'visibility', 'thesis update')
               ),
+              track_return: thesisTrackReturn(flags, 'thesis update'),
             }
           );
         case 'rewrite':

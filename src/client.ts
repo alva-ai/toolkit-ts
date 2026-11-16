@@ -487,12 +487,16 @@ export class AlvaClient {
         try {
           const data = JSON.parse(bodyText) as {
             error?: { code?: string; message?: string };
+            details?: unknown;
           };
           if (data.error) {
+            // details carries the typed reason (domain, reason, metadata) of
+            // rejections such as THESIS_RETURN_LAST_LEG.
             throw new AlvaError(
               data.error.code ?? 'UNKNOWN',
               data.error.message ?? `HTTP ${response.status}`,
-              response.status
+              response.status,
+              data.details
             );
           }
         } catch (e) {

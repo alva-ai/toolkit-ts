@@ -152,11 +152,17 @@ signed-in owner's private Theses. Related uses the source's current version
 (GENERATING, READY or FAILED), never a quoted historical version.
 
 asset-candidates --text <unsaved thesis text> reads catalog IDs and suggested
-directions without publishing. Use resolved entity IDs with create/update --entity-ids
-<id,id> and --entity-stances <json> to preserve the author's direction.
-Map each candidate.entityId to JSON entity_id and lowercase its stance:
+directions without publishing. For known tickers, add --entity-ids <id,id>
+--no-discovery (and --thesis-id <id> for an Update): it skips ticker discovery
+and returns returnPreview, the directions publishing would store, whether to ask
+the Thesis return switch (askSwitch) and whether the draft would be rejected
+(lastLegRemoved). Publish with create/update --entity-ids <id,id> and
+--entity-stances <json> equal to returnPreview.directions, lowercased:
 --entity-stances '[{"entity_id":"745337","stance":"bearish"}]'. Valid stances:
-unknown, bullish, bearish. Ask the author if a suggested direction is ambiguous.
+unknown, bullish, bearish, none. --track-return false turns the Thesis return
+off for good; it is accepted only while the switch is UNSET.
+return --id <id> [--detail] reads the Thesis return (fractions; --detail adds
+each Update's positions).
 
 Embedded thesis commands accept literal --body text only; file and stdin body
 transports are intentionally unavailable because this runtime has no verified
@@ -181,7 +187,8 @@ IDs and directions as a full author-version update. Each update publishes a new
 Update; a published Update cannot be edited in place. Update accepts --entity-stances <json>.
 Only editing the body? Resubmit the existing entity IDs, directions, and medias.
 Pass current medias unchanged with --medias; omission clears attachments.
-Omitted directions become unknown; explicit unknown clears a direction.
+On an Update, an omitted or unknown direction of a carried ticker keeps its
+previous direction; none is an exit.
 Create and update require a caller-supplied non-zero
 UUID in --request-id; the dispatcher never creates request IDs or retries.
 

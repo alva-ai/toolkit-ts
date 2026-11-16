@@ -153,6 +153,7 @@ describe('ThesesResource', () => {
                 ticker: 'NVDA',
                 resolution: 'RESOLVED',
                 stance: 'BEARISH',
+                direction: 'BEARISH',
                 candidates: [
                   {
                     entityId: '745337',
@@ -163,6 +164,8 @@ describe('ThesesResource', () => {
                 ],
               },
             ],
+            selectedEntityStances: [],
+            returnPreview: null,
           },
         },
       },
@@ -182,7 +185,7 @@ describe('ThesesResource', () => {
     const [queryUrl, queryInit] = fetch.mock.calls[0] as [string, RequestInit];
     expect(queryUrl).toBe('https://api.test/query');
     expect(JSON.parse(queryInit.body as string).variables).toEqual({
-      input: { text: '看跌英伟达' },
+      input: { text: '看跌英伟达', selectedEntityIds: [] },
     });
 
     await client.theses.create({
@@ -816,4 +819,180 @@ describe('ThesesResource', () => {
       expect(client._request).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-preview)', () => {
+  const client = () =>
+    new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
+
+  it('asks for directions of known tickers without discovery and parses the preview', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          viewer: {
+            thesisAssetCandidates: {
+              mentions: [],
+              selectedEntityStances: [
+                { entityId: '745337', direction: 'NONE' },
+              ],
+              returnPreview: {
+                tracking: 'ON',
+                askSwitch: false,
+                directions: [{ entityId: '745337', direction: 'BULLISH' }],
+                keptEntityIds: ['745337'],
+                lastLegRemoved: false,
+              },
+            },
+          },
+        },
+      })
+    );
+    globalThis.fetch = fetch;
+    const got = await client().theses.assetCandidates('平仓英伟达', {
+      entityIds: ['745337'],
+      thesisId: '9451',
+      discover: false,
+    });
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).variables).toEqual({
+      input: {
+        text: '平仓英伟达',
+        selectedEntityIds: ['745337'],
+        thesisId: '9451',
+        discover: false,
+      },
+    });
+    expect(got.selectedEntityStances).toEqual([
+      { entityId: '745337', direction: 'NONE' },
+    ]);
+    expect(got.returnPreview).toEqual({
+      tracking: 'ON',
+      askSwitch: false,
+      directions: [{ entityId: '745337', direction: 'BULLISH' }],
+      keptEntityIds: ['745337'],
+      lastLegRemoved: false,
+    });
+  });
+
+  it('rejects an invalid preview', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          viewer: {
+            thesisAssetCandidates: {
+              mentions: [],
+              selectedEntityStances: [],
+              returnPreview: { tracking: 'MAYBE' },
+            },
+          },
+        },
+      })
+    );
+    await expect(
+      client().theses.assetCandidates('x', { discover: false })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('sends track_return and none only when given', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
+    globalThis.fetch = fetch;
+    await client().theses.create({
+      request_id: REQUEST_ID,
+      body: 'statement',
+      entity_ids: ['745337'],
+      entity_stances: [{ entity_id: '745337', stance: 'none' }],
+      track_return: false,
+    });
+    const [, createInit] = fetch.mock.calls[0] as [string, RequestInit];
+    const created = JSON.parse(createInit.body as string);
+    expect(created.track_return).toBe(false);
+    expect(created.entity_stances).toEqual([
+      { entity_id: '745337', stance: 'none' },
+    ]);
+    await client().theses.create({ request_id: REQUEST_ID, body: 'statement' });
+    const [, plainInit] = fetch.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(plainInit.body as string)).not.toHaveProperty(
+      'track_return'
+    );
+  });
+
+  it('keeps the typed reason of a REST rejection', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { code: 'FAILED_PRECONDITION', message: 'must keep a ticker' },
+          details: {
+            domain: 'alva.ai/thesis',
+            reason: 'THESIS_RETURN_LAST_LEG',
+          },
+        }),
+        { status: 412, headers: { 'content-type': 'application/json' } }
+      )
+    );
+    await expect(
+      client().theses.create({ request_id: REQUEST_ID, body: 'statement' })
+    ).rejects.toMatchObject({
+      code: 'FAILED_PRECONDITION',
+      status: 412,
+      details: { domain: 'alva.ai/thesis', reason: 'THESIS_RETURN_LAST_LEG' },
+    });
+  });
+
+  it('reads the Thesis return of the current publication', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          node: {
+            latestRelease: {
+              thesisPublication: {
+                returnTracking: 'ON',
+                thesisReturn: {
+                  live: true,
+                  value: 0.25,
+                  firstFillAtMs: 1,
+                  pricedAtMs: 2,
+                  stale: false,
+                  computedAtMs: 3,
+                  updates: [
+                    {
+                      authorVersionId: '15691',
+                      publishedAtMs: 1,
+                      startValue: 0,
+                      updateReturn: 0.25,
+                      positions: [
+                        {
+                          entityId: '745337',
+                          symbol: 'NVDA',
+                          direction: 'BEARISH',
+                          startPrice: 216.38,
+                          startAtMs: 1,
+                          endPrice: 161.01,
+                          endAtMs: 2,
+                          end: 'LATEST',
+                          positionReturn: 0.25,
+                          currency: 'USD',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      })
+    );
+    globalThis.fetch = fetch;
+    const got = await client().theses.thesisReturn('9451', { detail: true });
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).variables).toEqual({
+      id: 'Playbook:9451',
+      detail: true,
+    });
+    expect(got.returnTracking).toBe('ON');
+    expect(got.thesisReturn?.updates[0]?.positions[0]?.symbol).toBe('NVDA');
+    await expect(client().theses.thesisReturn('x')).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
 });

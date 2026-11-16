@@ -1,8 +1,10 @@
 import {
   listTheses,
   relatedTheses,
+  thesisReturn,
   type ListThesesParams,
   type ThesisPageParams,
+  type ThesisReturnParams,
 } from './thesisReads.js';
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
@@ -10,10 +12,41 @@ import { AlvaError } from '../error.js';
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
 export type ThesisVisibility = 'public' | 'private' | 'paid';
-export type ThesisAssetStance = 'unknown' | 'bullish' | 'bearish';
+/** unknown: not judged; none: judged without a current long or short. */
+export type ThesisAssetStance = 'unknown' | 'bullish' | 'bearish' | 'none';
 export interface ThesisEntityStance {
   entity_id: ThesisID;
   stance: ThesisAssetStance;
+  /** Full direction in responses; stance reports none as unknown there. */
+  direction?: ThesisAssetStance;
+}
+/** GraphQL direction, including NONE. */
+export type ThesisDirection = 'UNKNOWN' | 'BULLISH' | 'BEARISH' | 'NONE';
+export interface ThesisSelectedDirection {
+  entityId: ThesisID;
+  direction: ThesisDirection;
+}
+export type ThesisReturnTracking = 'UNSET' | 'ON' | 'OFF';
+/** What publishing the selected entities with their directions would store. */
+export interface ThesisReturnPreview {
+  /** The Thesis's return switch now; UNSET for a new Thesis. */
+  tracking: ThesisReturnTracking;
+  /** Ask the author whether to keep the return on. */
+  askSwitch: boolean;
+  /** Directions publishing would store; UNKNOWN could not be judged. */
+  directions: ThesisSelectedDirection[];
+  /** Exits that keep the previous direction (last-leg rule). */
+  keptEntityIds: ThesisID[];
+  /** Publishing this draft fails with THESIS_RETURN_LAST_LEG. */
+  lastLegRemoved: boolean;
+}
+export interface ThesisAssetCandidatesParams {
+  /** Known catalog IDs to classify; with discover false, only these. */
+  entityIds?: ThesisID[];
+  /** The Thesis being updated: its current directions seed carried tickers. */
+  thesisId?: ThesisID;
+  /** False skips ticker discovery. Defaults to true. */
+  discover?: boolean;
 }
 export interface ThesisAssetCandidate {
   entityId: ThesisID;
@@ -26,10 +59,14 @@ export interface ThesisAssetMention {
   ticker: string;
   resolution: 'RESOLVED' | 'AMBIGUOUS' | 'UNRESOLVED';
   stance: 'UNKNOWN' | 'BULLISH' | 'BEARISH';
+  direction: ThesisDirection;
   candidates: ThesisAssetCandidate[];
 }
 export interface ThesisAssetCandidatesResponse {
   mentions: ThesisAssetMention[];
+  selectedEntityStances: ThesisSelectedDirection[];
+  /** Null only from a server without the preview. */
+  returnPreview: ThesisReturnPreview | null;
 }
 /** Canonical server-supported candidate rewrite operation. */
 export type ThesisRewriteMode = 'reformat' | 'shorten' | 'enrich';
@@ -147,6 +184,8 @@ export interface CreateThesisParams {
   tickers?: string[];
   /** Omitted means public, as defined by the REST contract. */
   visibility?: 'public' | 'private';
+  /** Thesis return switch; omitted keeps the default (on). */
+  track_return?: boolean;
 }
 
 export interface UpdateThesisParams {
@@ -164,6 +203,8 @@ export interface UpdateThesisParams {
   visibility: ThesisVisibility;
   archived?: boolean;
   note?: string;
+  /** Thesis return switch; omitted keeps the current decision or default. */
+  track_return?: boolean;
 }
 
 export interface SetThesisArchivedParams {
@@ -238,17 +279,33 @@ export class ThesesResource {
     return relatedTheses(this.client, id, params);
   }
 
-  async assetCandidates(text: string): Promise<ThesisAssetCandidatesResponse> {
+  async assetCandidates(
+    text: string,
+    params: ThesisAssetCandidatesParams = {}
+  ): Promise<ThesisAssetCandidatesResponse> {
     this.client._requireAuth();
     const source = requireBody(text);
+    const input: Record<string, unknown> = {
+      text: source,
+      selectedEntityIds: requireIDs(params.entityIds ?? [], 'entityIds'),
+    };
+    if (params.thesisId !== undefined)
+      input.thesisId = requireID(params.thesisId, 'thesisId');
+    if (params.discover !== undefined) {
+      if (typeof params.discover !== 'boolean')
+        throw invalidArgument('discover must be a boolean');
+      input.discover = params.discover;
+    }
     const response = (await this.client._request('POST', '/query', {
       body: {
         query: `query ThesisAssetCandidates($input: ThesisAssetCandidatesInput!) {
           viewer { thesisAssetCandidates(input: $input) {
-            mentions { quote ticker resolution stance candidates { entityId ticker name kind } }
+            mentions { quote ticker resolution stance direction candidates { entityId ticker name kind } }
+            selectedEntityStances { entityId direction }
+            returnPreview { tracking askSwitch directions { entityId direction } keptEntityIds lastLegRemoved }
           } }
         }`,
-        variables: { input: { text: source } },
+        variables: { input },
       },
     })) as Record<string, unknown>;
     if (Array.isArray(response?.errors) && response.errors.length > 0) {
@@ -271,6 +328,7 @@ export class ThesesResource {
           item.resolution as string
         ) ||
         !['UNKNOWN', 'BULLISH', 'BEARISH'].includes(item.stance as string) ||
+        !THESIS_DIRECTIONS.includes(item.direction as string) ||
         !Array.isArray(item.candidates)
       ) {
         throw invalidResponse(`asset mention ${index} is invalid`);
@@ -298,7 +356,19 @@ export class ThesesResource {
       });
       return { ...item, candidates } as unknown as ThesisAssetMention;
     });
-    return { mentions };
+    return {
+      mentions,
+      selectedEntityStances: selectedDirections(
+        result.selectedEntityStances,
+        'selectedEntityStances'
+      ),
+      returnPreview: returnPreview(result.returnPreview),
+    };
+  }
+
+  /** The Thesis return of a Playbook's current publication; detail revalues it. */
+  thesisReturn(id: ThesisID, params: ThesisReturnParams = {}) {
+    return thesisReturn(this.client, id, params);
   }
 
   async create(params: CreateThesisParams): Promise<ThesisResponse> {
@@ -644,6 +714,8 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
   }
   if (params.tickers !== undefined)
     body.tickers = requireTickers(params.tickers);
+  if (params.track_return !== undefined)
+    body.track_return = requireTrackReturn(params.track_return);
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
       params.entity_stances,
@@ -651,6 +723,68 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     );
   }
   return body;
+}
+
+const ENTITY_STANCES: readonly string[] = [
+  'unknown',
+  'bullish',
+  'bearish',
+  'none',
+];
+const THESIS_DIRECTIONS: readonly string[] = [
+  'UNKNOWN',
+  'BULLISH',
+  'BEARISH',
+  'NONE',
+];
+const RETURN_TRACKING: readonly string[] = ['UNSET', 'ON', 'OFF'];
+
+function requireTrackReturn(value: unknown): boolean {
+  if (typeof value !== 'boolean')
+    throw invalidArgument('track_return must be a boolean');
+  return value;
+}
+
+function selectedDirections(
+  value: unknown,
+  field: string
+): ThesisSelectedDirection[] {
+  if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
+  return value.map((item: unknown, index) => {
+    if (
+      !isRecord(item) ||
+      !THESIS_DIRECTIONS.includes(item.direction as string)
+    )
+      throw invalidResponse(`${field}[${index}] is invalid`);
+    return {
+      entityId: responseID(item.entityId, `${field}[${index}].entityId`),
+      direction: item.direction as ThesisDirection,
+    };
+  });
+}
+
+function returnPreview(value: unknown): ThesisReturnPreview | null {
+  if (value === null || value === undefined) return null;
+  if (
+    !isRecord(value) ||
+    !RETURN_TRACKING.includes(value.tracking as string) ||
+    typeof value.askSwitch !== 'boolean' ||
+    typeof value.lastLegRemoved !== 'boolean' ||
+    !Array.isArray(value.keptEntityIds)
+  )
+    throw invalidResponse('returnPreview is invalid');
+  return {
+    tracking: value.tracking as ThesisReturnTracking,
+    askSwitch: value.askSwitch,
+    directions: selectedDirections(
+      value.directions,
+      'returnPreview.directions'
+    ),
+    keptEntityIds: value.keptEntityIds.map((id: unknown, index) =>
+      responseID(id, `returnPreview.keptEntityIds[${index}]`)
+    ),
+    lastLegRemoved: value.lastLegRemoved,
+  };
 }
 
 function requireEntityStances(
@@ -673,7 +807,7 @@ function requireEntityStances(
         'entity stance must reference one unique entity_id'
       );
     seen.add(entityID);
-    if (!['unknown', 'bullish', 'bearish'].includes(item.stance as string))
+    if (!ENTITY_STANCES.includes(item.stance as string))
       throw invalidArgument(`entity_stances[${index}].stance is invalid`);
     return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
   });
@@ -704,6 +838,8 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
     body.archived = params.archived;
   }
   if (params.note !== undefined) body.note = requireText(params.note, 'note');
+  if (params.track_return !== undefined)
+    body.track_return = requireTrackReturn(params.track_return);
 
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
@@ -769,9 +905,20 @@ function thesisResponse(response: unknown): ThesisResponse {
       const entityID = responseID(item.entity_id, 'entity_stances.entity_id');
       if (!value.entity_ids.includes(entityID))
         throw invalidResponse('entity stance must reference a thesis entity');
-      if (!['unknown', 'bullish', 'bearish'].includes(item.stance as string))
+      if (!ENTITY_STANCES.includes(item.stance as string))
         throw invalidResponse('thesis.entity_stances contains invalid stance');
-      return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
+      const stance: ThesisEntityStance = {
+        entity_id: entityID,
+        stance: item.stance as ThesisAssetStance,
+      };
+      if (item.direction !== undefined) {
+        if (!ENTITY_STANCES.includes(item.direction as string))
+          throw invalidResponse(
+            'thesis.entity_stances contains invalid direction'
+          );
+        stance.direction = item.direction as ThesisAssetStance;
+      }
+      return stance;
     });
   }
   return { thesis: value };

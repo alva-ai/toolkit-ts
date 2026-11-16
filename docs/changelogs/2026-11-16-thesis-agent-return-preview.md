@@ -1,0 +1,45 @@
+# feat(thesis): preview directions and the return switch, and read Thesis returns
+
+Local record. Primary record: alva-backend `docs/changelogs/2026-11-16-thesis-agent-return-preview.md` (behaviors B1–B10, decisions D1–D7).
+
+## 1. Background and Current State
+
+- `theses.assetCandidates` (`src/resources/theses.ts`) sends only `text` and
+  reads the legacy `stance`.
+- `--entity-stances` rejects `none`; create and update have no switch flag.
+- `src/client.ts` builds errors from `error.code` and `error.message` only,
+  dropping `details.domain` and `details.reason`.
+- No command reads a Thesis return.
+
+## 2. Problem Model and End-to-End Behavior
+
+- **B1:** `asset-candidates` can classify known entities without discovery,
+  on an Update with the Thesis id, and returns the full `direction` and the
+  rule block.
+- **B2:** create and update take `--track-return true|false`, sent only when
+  given; `--entity-stances` accepts `none`.
+- **B3:** errors expose `details.domain` and `details.reason`.
+- **B4:** `alva thesis return --id <id> [--detail]` reads
+  `ThesisPublication.thesisReturn` through GraphQL.
+- Release: npm release and the sandbox pin before the skills release.
+- Deferred (Occam): accepting COMMODITY candidates on the fallback path, as
+  its own fix.
+
+## 3. Research, Findings, and Architecture Decision
+
+- **D1:** No rules in the client; it passes Backend results through.
+- **D2:** Return reads reuse the existing Thesis publication GraphQL pattern
+  (`src/resources/thesisReads.ts`).
+
+## 4. Implementation Design
+
+See the primary record section 4 (contracts, copy table, rollout) for this
+repository's row of the impact table and its checklist step.
+
+## 5. Verification and E2E Design
+
+See the primary record section 5 for this repository's tests. E2E Required: no.
+
+## 6. Human Decisions and Interaction
+
+See the primary record section 6.
