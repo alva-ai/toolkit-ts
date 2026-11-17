@@ -1,12 +1,46 @@
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
 import { writeConfig } from './config.js';
 import { parseCommand } from './commandSchema.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
+
+/**
+ * This computer's name, used to name the API key a CLI sign-in mints: the
+ * sign-in has no step where the user could name it. macOS gives the name the
+ * user sees in Sharing settings ("Leo’s MacBook Pro"); elsewhere it is the
+ * host name without a trailing ".local". Empty when neither can be read, and
+ * the gateway then keeps its default name.
+ */
+export function computerName(
+  platform: NodeJS.Platform = process.platform,
+  readMacName: () => string = () =>
+    execFileSync('scutil', ['--get', 'ComputerName'], {
+      encoding: 'utf8',
+      timeout: 1000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }),
+  hostname: () => string = () => os.hostname()
+): string {
+  if (platform === 'darwin') {
+    try {
+      const name = readMacName().trim();
+      if (name) return name;
+    } catch {
+      // Fall back to the host name.
+    }
+  }
+  try {
+    return hostname()
+      .trim()
+      .replace(/\.local$/i, '');
+  } catch {
+    return '';
+  }
+}
 
 export function generateState(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -56,6 +90,8 @@ export interface AuthLoginDeps {
   timeout?: number;
   log: (msg: string) => void;
   fetch: FetchLike;
+  // Names the minted key; defaults to this computer's name.
+  computerName?: () => string;
   // Readline for the OOB paste path. The terminal also prints an
   // OOB-redirect authorize URL so a user on a different device can
   // open it, see the code on the display page, and paste it back here.
@@ -86,6 +122,8 @@ export interface AuthLoginNoBrowserDeps {
   fetch: FetchLike;
   readline: (prompt?: string) => Promise<string>;
   oobRedirectUrl?: string;
+  // Names the minted key; defaults to this computer's name.
+  computerName?: () => string;
 }
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
@@ -154,6 +192,7 @@ function defaultDeps(): AuthLoginDeps {
         init as Parameters<FetchLike>[1]
       )) as FetchLike,
     readline: defaultReadline,
+    computerName: () => computerName(),
   };
 }
 
@@ -202,6 +241,8 @@ export async function exchangeCodeForApiKey(params: {
   codeVerifier: string;
   redirectUri: string;
   fetch: FetchLike;
+  /** Name for the minted key; omitted or empty keeps the gateway default. */
+  keyName?: string;
 }): Promise<string> {
   // Gateway mounts the OAuth-CLI handler on the `/api/v1` router group
   // (sibling to /api/v1/discord). The full path is /api/v1/oauth/token —
@@ -216,6 +257,7 @@ export async function exchangeCodeForApiKey(params: {
       code_verifier: params.codeVerifier,
       redirect_uri: params.redirectUri,
       client_id: CLIENT_ID,
+      ...(params.keyName ? { name: params.keyName } : {}),
     }),
   });
 
@@ -353,6 +395,7 @@ export async function handleAuthLogin(
         codeVerifier,
         redirectUri: localRedirectUri,
         fetch: d.fetch,
+        keyName: d.computerName?.(),
       })
         .then(async (apiKey) => {
           if (settled) return;
@@ -439,6 +482,7 @@ export async function handleAuthLogin(
                 codeVerifier,
                 redirectUri: oobRedirectUrl,
                 fetch: d.fetch,
+                keyName: d.computerName?.(),
               });
               if (settled) return;
               await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
@@ -566,6 +610,7 @@ function defaultNoBrowserDeps(): AuthLoginNoBrowserDeps {
         init as Parameters<FetchLike>[1]
       )) as FetchLike,
     readline: defaultReadline,
+    computerName: () => computerName(),
     // oobRedirectUrl deliberately left undefined — derived from --auth-url
     // at call time so it tracks prd / stg / local-dev automatically.
   };
@@ -641,6 +686,7 @@ export async function handleAuthLoginNoBrowser(
         codeVerifier,
         redirectUri: oobRedirectUrl,
         fetch: d.fetch,
+        keyName: d.computerName?.(),
       });
       await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
       return { status: 'logged_in', apiKey, profile: profileName };

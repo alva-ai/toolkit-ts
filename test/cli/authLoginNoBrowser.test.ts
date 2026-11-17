@@ -133,6 +133,7 @@ function makeBaseDeps(
       readline: readline.fn,
       oobRedirectUrl:
         overrides.oobRedirectUrl ?? 'https://alva.ai/oauth/code/callback',
+      computerName: () => 'Mac mini',
     },
   };
 }
@@ -171,6 +172,7 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
       code_verifier: fixedVerifier,
       redirect_uri: 'https://alva.ai/oauth/code/callback',
       client_id: 'alva-cli',
+      name: 'Mac mini',
     });
 
     // Printed URL contains the PKCE params and OOB redirect_uri

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as http from 'node:http';
-import { generateState, handleAuthLogin } from '../../src/cli/auth.js';
+import {
+  computerName,
+  generateState,
+  handleAuthLogin,
+} from '../../src/cli/auth.js';
 import { deriveChallenge } from '../../src/cli/pkce.js';
 
 // Mode A is a dual-URL race:
@@ -93,6 +97,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       timeout: 500,
       log: (msg: string) => logged.push(msg),
       fetch: fetchMock.fn,
+      computerName: () => 'Test computer',
       ...overrides,
     },
   };
@@ -192,6 +197,26 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
     expect(body.code).toBe('PASTED-ABC');
     expect(body.code_verifier).toBe(fixedVerifier);
     expect(body.redirect_uri).toBe('https://alva.ai/oauth/code/callback');
+  });
+
+  it('names the key after this computer, and sends no name when there is none', async () => {
+    const named = makeDeps({
+      readline: vi.fn().mockResolvedValueOnce('CODE-1'),
+      computerName: () => 'Leo’s MacBook Pro',
+    });
+    await handleAuthLogin(['auth', 'login'], named.deps);
+    expect(JSON.parse(named.fetchMock.calls[0].init?.body ?? '{}').name).toBe(
+      'Leo’s MacBook Pro'
+    );
+
+    const unnamed = makeDeps({
+      readline: vi.fn().mockResolvedValueOnce('CODE-2'),
+      computerName: () => '',
+    });
+    await handleAuthLogin(['auth', 'login'], unnamed.deps);
+    expect(
+      JSON.parse(unnamed.fetchMock.calls[0].init?.body ?? '{}')
+    ).not.toHaveProperty('name');
   });
 
   it('printed message contains the OOB URL (for copy/share)', async () => {
@@ -324,5 +349,42 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
 
     expect(result.profile).toBe('stg');
     expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+  });
+});
+
+describe('computerName', () => {
+  it('uses the macOS computer name, then the host name without .local', () => {
+    expect(
+      computerName(
+        'darwin',
+        () => 'Leo’s MacBook Pro\n',
+        () => 'leos-mbp.local'
+      )
+    ).toBe('Leo’s MacBook Pro');
+    expect(
+      computerName(
+        'darwin',
+        () => {
+          throw new Error('no scutil');
+        },
+        () => 'leos-mbp.local'
+      )
+    ).toBe('leos-mbp');
+    expect(
+      computerName(
+        'linux',
+        () => 'unused',
+        () => 'devbox'
+      )
+    ).toBe('devbox');
+    expect(
+      computerName(
+        'linux',
+        () => '',
+        () => {
+          throw new Error('no hostname');
+        }
+      )
+    ).toBe('');
   });
 });
