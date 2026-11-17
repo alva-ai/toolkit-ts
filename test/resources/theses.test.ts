@@ -989,6 +989,60 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
     });
   });
 
+  const watchpointsResponse = (publication: unknown) =>
+    jsonResponse({
+      data: { node: { latestRelease: { thesisPublication: publication } } },
+    });
+
+  it('reads the current watchpoints of a Thesis', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(
+      watchpointsResponse({
+        watchpoints: [
+          { label: 'W1', text: 'AI capex peaks', origin: 'stated' },
+          { label: 'W4', text: 'Export rules tighten', origin: 'inferred' },
+        ],
+      })
+    );
+    globalThis.fetch = fetch;
+    const got = await client().theses.watchpoints('9451');
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.variables).toEqual({ id: 'Playbook:9451' });
+    expect(body.query).toContain('watchpoints { label text origin }');
+    expect(got).toEqual({
+      playbookId: '9451',
+      watchpoints: [
+        { label: 'W1', text: 'AI capex peaks', origin: 'stated' },
+        { label: 'W4', text: 'Export rules tighten', origin: 'inferred' },
+      ],
+    });
+    await expect(client().theses.watchpoints('x')).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('returns no watchpoints without a readable publication and fails closed on a malformed entry', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(watchpointsResponse(null));
+    expect(await client().theses.watchpoints('9451')).toEqual({
+      playbookId: '9451',
+      watchpoints: [],
+    });
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { node: null } }));
+    await expect(client().theses.watchpoints('9451')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(
+      watchpointsResponse({
+        watchpoints: [{ label: 'W1', text: 'x', origin: 'guessed' }],
+      })
+    );
+    await expect(client().theses.watchpoints('9451')).rejects.toMatchObject({
+      code: 'GRAPHQL_INVALID_RESPONSE',
+    });
+  });
+
   it('rejects a Thesis return Update without its publication time', async () => {
     globalThis.fetch = vi
       .fn()

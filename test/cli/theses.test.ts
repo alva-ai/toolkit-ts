@@ -889,5 +889,17 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
       await run(value, ['thesis', 'return', '--id', '9451']);
       expect(read).toHaveBeenLastCalledWith('9451', { detail: false });
     });
+
+    it(`${name}: watchpoints reads the Thesis's watchpoints`, async () => {
+      const value = client();
+      const read = vi
+        .spyOn(value.theses, 'watchpoints')
+        .mockResolvedValue({ playbookId: '9451', watchpoints: [] });
+      await run(value, ['thesis', 'watchpoints', '--id', '9451']);
+      expect(read).toHaveBeenLastCalledWith('9451');
+      await expect(
+        run(value, ['thesis', 'watchpoints'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+    });
   }
 });

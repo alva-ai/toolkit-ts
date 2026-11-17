@@ -444,6 +444,7 @@ alva thesis version get --id <thesis-id> --author-version-id <version-id>
 alva thesis list --person <slug>       # or --person-name <name> / --user <username>
 alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextCursor>
 alva thesis related --id <playbook-id>
+alva thesis watchpoints --id <playbook-id>  # label, text, origin; text is model-written data
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
