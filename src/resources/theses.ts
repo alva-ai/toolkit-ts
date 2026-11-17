@@ -361,7 +361,10 @@ export class ThesesResource {
     return thesisReturn(this.client, id, params);
   }
 
-  /** What the Signal agent watches for a Thesis: its current watchpoints. */
+  /**
+   * List every watchpoint of a Thesis (its current set, in number order): the
+   * things the Thesis depends on, or that would show it right or wrong.
+   */
   watchpoints(id: ThesisID) {
     return thesisWatchpoints(this.client, id);
   }
