@@ -33,7 +33,7 @@ to below.
 
 - `src/resources/thesisReads.ts`: `thesisWatchpoints(client, id)` querying
   `node(id: "Playbook:<id>") { latestRelease { thesisPublication {
-  watchpoints { label text origin } } } }`, with the validation and not-found
+watchpoints { label text origin } } } }`, with the validation and not-found
   handling of `thesisReturn`; `src/resources/theses.ts` exposes it.
 - `src/cli/commandDefinitions.ts`, `dispatch.ts`, `agentHelp.ts`, `README.md`:
   the subcommand and its help. The help says the text is model-written and
@@ -42,8 +42,24 @@ to below.
 
 ### Serial Implementation Checklist
 
-- [ ] Resource method and types.
-- [ ] Command, dispatch, help, README, version.
+- [x] Resource method and types.
+- [x] Command, dispatch, help, README.
+- [ ] Version: left at 0.35.0. Releases bump the version in their own PR
+      (`v0.35.0 (#206)`), so 0.36.0 is taken by the release PR, not here.
+
+### Implementation notes
+
+- `thesisWatchpoints` in `src/resources/thesisReads.ts` follows
+  `thesisReturn`: a positive int64 id, a login, `node: null` as `NOT_FOUND`,
+  a missing release or publication as an empty list, and any malformed entry
+  (empty label or text, an origin other than `stated`, `inferred`, `agent`) as
+  `GRAPHQL_INVALID_RESPONSE`.
+- The command is in both catalogs (`commandDefinitions.ts`,
+  `embeddedCommandDefinitions.ts`) under the same path. The Agent profile's
+  leaf inventory guard in `test/cli/agentCommandProfile.test.ts` goes from 136
+  to 137.
+- `README.md`: one line in the command list. `agentHelp.ts` and `dispatch.ts`
+  help state the three origins and that the text is model-written data.
 
 ## 5. Verification and E2E Design
 
@@ -59,4 +75,17 @@ to below.
 
 ## 7. Outcome and Evidence
 
+Run on 2026-11-17 after `npm ci`:
+
+- `npm run typecheck`: pass.
+- `npm run lint`: pass.
+- `npm run format:check`: pass.
+- `npm test`: 62 files, 1461 tests, all pass.
+- No run against a deployed Gateway. The GraphQL field ships in
+  alva-ai/alva-gateway#1429 (merged).
+
 ## 8. Remaining Work
+
+- Release: a version PR, then the npm release; the STG chat agent gets the
+  command only after a toolkit beta release and a sandbox-agent STG redeploy.
+- skills: the Thesis tracking guidance, after the toolkit release.
