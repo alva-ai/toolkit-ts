@@ -12,25 +12,29 @@ to below.
 - Current implementation (`02f34a8`, 0.35.0): `alva thesis signals --id` is
   defined in `src/cli/commandDefinitions.ts`, dispatched in
   `src/cli/dispatch.ts` to `client.theses.signals`, and described in
-  `src/cli/agentHelp.ts`. No command reads watchpoints.
+  `src/cli/agentHelp.ts`; it is a REST read. The newer Thesis reads (`list`,
+  `related`, `return`) query GraphQL through `graphql()` in
+  `src/resources/thesisReads.ts`. No command reads watchpoints.
 - Runtime evidence: none.
 
 ## 2. Problem Model and End-to-End Behavior
 
 - Carries B14 of the primary record: `alva thesis watchpoints --id <id>`
   returns the current set (`label`, `text`, `origin`) for a Thesis the caller
-  may read. `alva thesis signals` passes through the `watchpoint` the Gateway
-  adds to each row.
+  may read. `alva thesis signals` is unchanged: its REST rows carry no
+  watchpoint in this change.
 
 ## 3. Research, Findings, and Architecture Decision
 
-- Follows D6 of the primary record. The command mirrors `thesis signals`.
+- Follows D6 of the primary record. The command mirrors `thesis return`: a
+  GraphQL read, no REST route (owner, 2026-11-17).
 
 ## 4. Implementation Design
 
-- `src/resources/theses.ts`: `watchpoints(id)` calling
-  `GET /api/v1/theses/:id/watchpoints`; the Signal row type gains
-  `watchpoint`.
+- `src/resources/thesisReads.ts`: `thesisWatchpoints(client, id)` querying
+  `node(id: "Playbook:<id>") { latestRelease { thesisPublication {
+  watchpoints { label text origin } } } }`, with the validation and not-found
+  handling of `thesisReturn`; `src/resources/theses.ts` exposes it.
 - `src/cli/commandDefinitions.ts`, `dispatch.ts`, `agentHelp.ts`, `README.md`:
   the subcommand and its help. The help says the text is model-written and
   what the three origins mean.
@@ -43,8 +47,8 @@ to below.
 
 ## 5. Verification and E2E Design
 
-- Tests beside the existing `thesis signals` resource and dispatch tests:
-  the request path, the returned shape, a missing `--id`.
+- Tests beside the existing `thesis return` resource and dispatch tests: the
+  query and variables, the returned shape, a null node, a missing `--id`.
 - Commands: the package's `test` and `lint` scripts. No `make lint-fix`
   exists here.
 - E2E Required: no — not requested.
