@@ -2,6 +2,7 @@ import {
   listTheses,
   relatedTheses,
   thesisReturn,
+  thesisWatchpoints,
   type ListThesesParams,
   type ThesisPageParams,
   type ThesisReturnParams,
@@ -358,6 +359,14 @@ export class ThesesResource {
   /** The Thesis return of a Playbook's current publication; detail revalues it. */
   thesisReturn(id: ThesisID, params: ThesisReturnParams = {}) {
     return thesisReturn(this.client, id, params);
+  }
+
+  /**
+   * List every watchpoint of a Thesis (its current set, in number order): the
+   * things the Thesis depends on, or that would show it right or wrong.
+   */
+  watchpoints(id: ThesisID) {
+    return thesisWatchpoints(this.client, id);
   }
 
   async create(params: CreateThesisParams): Promise<ThesisResponse> {

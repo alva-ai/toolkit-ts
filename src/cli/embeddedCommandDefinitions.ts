@@ -158,6 +158,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['id'],
       booleans: ['detail'],
     }),
+    route('thesis watchpoints', 'thesis watchpoints', { values: ['id'] }),
     route('thesis list', 'thesis list', {
       values: [
         'person',

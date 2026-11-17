@@ -214,6 +214,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     booleans: ['no-discovery'],
   }),
   command('thesis return', { values: ['id'], booleans: ['detail'] }),
+  command('thesis watchpoints', { values: ['id'] }),
   command('thesis list', {
     values: [
       'person',
