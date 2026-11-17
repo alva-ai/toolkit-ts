@@ -1477,8 +1477,9 @@ Subcommands:
   follows list              List the profiles the caller follows
   follows follow            Follow one profile (idempotent)
   follows unfollow          Unfollow one profile (idempotent)
-  follows activity          What the people you follow did on public Theses and
-                            their Watchlists (newest first, up to 200, 7 days)
+  follows activity          What the people you follow did on public Theses,
+                            Signals and their Watchlists (newest first, up to
+                            200, 7 days)
 
 Flags:
   --query <text>            search: name or username prefix (required)

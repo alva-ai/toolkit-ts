@@ -124,12 +124,18 @@ export interface ProfilesPage {
   pageInfo: FollowPageInfo;
 }
 
+/**
+ * Known today: THESIS_PUBLISHED, THESIS_UPDATED, THESIS_BOOKMARKED,
+ * SIGNAL_LIKED, WATCHLIST_ADDED. Alva may add kinds; an installed CLI passes a
+ * new one through as it is.
+ */
 export type FollowingActivityKind =
   | 'THESIS_PUBLISHED'
   | 'THESIS_UPDATED'
   | 'THESIS_BOOKMARKED'
   | 'SIGNAL_LIKED'
-  | 'WATCHLIST_ADDED';
+  | 'WATCHLIST_ADDED'
+  | (string & {});
 
 export interface FollowingActivityParams {
   /** ISO 8601 time or Unix milliseconds; omitted means the last day. */
@@ -256,14 +262,6 @@ function responseData(
   return response.data;
 }
 
-const ACTIVITY_KINDS: readonly FollowingActivityKind[] = [
-  'THESIS_PUBLISHED',
-  'THESIS_UPDATED',
-  'THESIS_BOOKMARKED',
-  'SIGNAL_LIKED',
-  'WATCHLIST_ADDED',
-];
-
 /** Parse --since as ISO 8601 or Unix milliseconds. */
 export function sinceMillis(
   since: string | number | undefined
@@ -285,13 +283,13 @@ function activityItem(value: unknown, field: string): FollowingActivityItem {
   if (
     !record(value) ||
     typeof value.kind !== 'string' ||
-    !ACTIVITY_KINDS.includes(value.kind as FollowingActivityKind) ||
+    !value.kind ||
     typeof value.occurredAtMs !== 'number'
   ) {
     return invalidResponse(field);
   }
   const item: FollowingActivityItem = {
-    kind: value.kind as FollowingActivityKind,
+    kind: value.kind,
     at: new Date(value.occurredAtMs).toISOString(),
     actor: null,
   };

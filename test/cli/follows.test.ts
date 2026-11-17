@@ -356,13 +356,44 @@ for (const [name, cli] of Object.entries(paths)) {
       );
     });
 
-    it('rejects an unknown activity kind', async () => {
+    it('passes a kind added after this CLI through, and rejects a malformed item', async () => {
       const client = new AlvaClient({ apiKey: 'host-key' });
-      vi.spyOn(client, '_request').mockResolvedValueOnce({
+      const request = vi.spyOn(client, '_request').mockResolvedValueOnce({
         data: {
           viewer: {
             followingActivity: {
-              items: [{ kind: 'SHARED', occurredAtMs: 1 }],
+              items: [
+                {
+                  kind: 'THESIS_SHARED',
+                  occurredAtMs: 1,
+                  actor: { displayName: 'Bob', username: 'bob' },
+                  thesis: { id: '11', title: 'T' },
+                },
+              ],
+              hasMore: false,
+              untilMs: 1,
+            },
+          },
+        },
+      });
+      await expect(cli.dispatch(client, [...cli.activity])).resolves.toEqual({
+        items: [
+          {
+            kind: 'THESIS_SHARED',
+            at: '1970-01-01T00:00:00.001Z',
+            actor: { displayName: 'Bob', username: 'bob' },
+            thesis: { id: '11', title: 'T' },
+          },
+        ],
+        hasMore: false,
+        until: '1970-01-01T00:00:00.001Z',
+      });
+
+      request.mockResolvedValueOnce({
+        data: {
+          viewer: {
+            followingActivity: {
+              items: [{ occurredAtMs: 1 }],
               hasMore: false,
               untilMs: 1,
             },
