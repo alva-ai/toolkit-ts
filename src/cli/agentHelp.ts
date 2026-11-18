@@ -189,10 +189,9 @@ the Update and unarchives the Thesis, also with unchanged content.
 star and unstar set the viewer's bookmark without changing the Thesis or alert
 subscriptions. set-signal-enabled --id <id> --enabled true|false pauses or
 resumes managed Signal research and returns the resulting research state.
-Archive preserves the current Thesis fields and uses the current author version
-for optimistic concurrency. A repeated request in the requested state is an
-idempotent read; stale content, incomplete directions, mismatched
-IDs, and noncanonical GraphQL errors fail closed. The returned state is the
+A repeated archive request in the requested state is an idempotent read;
+stale content, incomplete directions, mismatched IDs, and noncanonical GraphQL
+errors fail closed. The returned state is the
 authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
