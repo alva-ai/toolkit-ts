@@ -138,14 +138,6 @@ describe('thesis terminal dispatch', () => {
       '--note',
       'review later',
     ]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'restore',
-      '--id',
-      THESIS.thesis.id,
-      '--request-id',
-      REQUEST_ID,
-    ]);
     await dispatchTerminal(value, ['thesis', 'star', '--id', THESIS.thesis.id]);
     await dispatchTerminal(value, [
       'thesis',
@@ -210,16 +202,14 @@ describe('thesis terminal dispatch', () => {
     expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
       visibility: 'private',
     });
-    expect(calls.setArchived).toHaveBeenNthCalledWith(1, THESIS.thesis.id, {
-      request_id: REQUEST_ID,
-      archived: true,
-      note: 'review later',
-    });
-    expect(calls.setArchived).toHaveBeenNthCalledWith(2, THESIS.thesis.id, {
-      request_id: REQUEST_ID,
-      archived: false,
-      note: undefined,
-    });
+    expect(calls.setArchived).toHaveBeenCalledExactlyOnceWith(
+      THESIS.thesis.id,
+      {
+        request_id: REQUEST_ID,
+        archived: true,
+        note: 'review later',
+      }
+    );
     expect(calls.setStarred).toHaveBeenNthCalledWith(1, THESIS.thesis.id, true);
     expect(calls.setStarred).toHaveBeenNthCalledWith(
       2,
@@ -244,6 +234,53 @@ describe('thesis terminal dispatch', () => {
       mode: 'reformat',
     });
     expect(calls.rewrite).toHaveBeenCalledTimes(1);
+  });
+
+  it('unarchives only by publishing an Update', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+    const update = [
+      'thesis',
+      'update',
+      '--id',
+      THESIS.thesis.id,
+      '--request-id',
+      REQUEST_ID,
+      '--expected-author-version-id',
+      THESIS.thesis.author_version_id,
+      '--body',
+      'Back in play',
+      '--visibility',
+      'public',
+    ];
+
+    await dispatchTerminal(value, [...update, '--archived', 'false']);
+    expect(calls.update).toHaveBeenCalledExactlyOnceWith(THESIS.thesis.id, {
+      request_id: REQUEST_ID,
+      expected_author_version_id: THESIS.thesis.author_version_id,
+      body: 'Back in play',
+      title: '',
+      entity_ids: [],
+      entity_stances: undefined,
+      visibility: 'public',
+      archived: false,
+    });
+
+    await expect(
+      dispatchTerminal(value, [...update, '--archived', 'true'])
+    ).rejects.toThrow(/--archived only accepts false/);
+    await expect(
+      dispatchEmbedded(value, [
+        'thesis',
+        'restore',
+        '--id',
+        THESIS.thesis.id,
+        '--request-id',
+        REQUEST_ID,
+      ])
+    ).rejects.toThrow(/Unknown subcommand: thesis restore/);
+    expect(calls.update).toHaveBeenCalledTimes(1);
+    expect(calls.setArchived).not.toHaveBeenCalled();
   });
 
   it('requires update visibility and one body transport before resource calls', async () => {

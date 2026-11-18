@@ -135,7 +135,7 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, set-visibility, archive, restore, star, unstar, set-signal-enabled, update, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, set-visibility, archive, star, unstar, set-signal-enabled, update, rewrite.
 
 list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
@@ -181,15 +181,17 @@ local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enric
 only omission defaults to canonical reformat, which is sent to the API. Create defaults --visibility to public.
 Set-visibility changes current access without publishing a new author version.
 It requires --id and --visibility public|private and never uses a request ID.
-Archive and restore preserve the current Thesis fields and use the current
-author version for optimistic concurrency. They require --id and a caller-supplied
-non-zero --request-id; an optional --note is stored on the new author version.
+Archive preserves the current Thesis fields and uses the current author version
+for optimistic concurrency. It requires --id and a caller-supplied non-zero
+--request-id; an optional --note is the archive note. An archived Thesis takes
+no Update except the one that unarchives it: update --archived false publishes
+the Update and unarchives the Thesis, also with unchanged content.
 star and unstar set the viewer's bookmark without changing the Thesis or alert
 subscriptions. set-signal-enabled --id <id> --enabled true|false pauses or
 resumes managed Signal research and returns the resulting research state.
-Archive and restore preserve the current Thesis fields and use the current
-author version for optimistic concurrency. A repeated request in the requested
-state is an idempotent read; stale content, incomplete directions, mismatched
+Archive preserves the current Thesis fields and uses the current author version
+for optimistic concurrency. A repeated request in the requested state is an
+idempotent read; stale content, incomplete directions, mismatched
 IDs, and noncanonical GraphQL errors fail closed. The returned state is the
 authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing

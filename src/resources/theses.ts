@@ -492,7 +492,11 @@ export class ThesesResource {
     return response;
   }
 
-  /** Archive or restore the current version without asking callers to resend its body. */
+  /**
+   * Archive or unarchive the current version without asking callers to resend
+   * its body. Unarchiving publishes the current content as a new Update; an
+   * archived Thesis takes no other Update.
+   */
   async setArchived(
     id: ThesisID,
     params: SetThesisArchivedParams
