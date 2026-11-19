@@ -420,6 +420,24 @@ describe('FsResource with an API key (/api/v2)', () => {
     expect(v2).not.toHaveBeenCalled();
   });
 
+  it('a client whose PBSV token is sent instead of its key keeps v1', async () => {
+    const { client, v2, legacy } = v2Client(
+      {},
+      {
+        apiKey: 'key',
+        pbsvToken: 'pbsv',
+      }
+    );
+    legacy.mockResolvedValue({ ok: true } as never);
+    await client.fs.read({ path: '~/data.json' });
+    expect(legacy).toHaveBeenCalledWith(
+      'GET',
+      '/api/v1/fs/read',
+      expect.anything()
+    );
+    expect(v2).not.toHaveBeenCalled();
+  });
+
   it('write sends UTF8 content with explicit flags', async () => {
     const { client, v2 } = v2Client({ 'POST /fs/write': { bytesWritten: 5 } });
     expect(

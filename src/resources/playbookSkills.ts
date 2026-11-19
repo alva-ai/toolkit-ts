@@ -2,7 +2,6 @@ import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 import { collectAll, v2Path } from '../platformApi.js';
 import type { AlvaId } from '../types.js';
-import { sendsApiKey } from './playbooks.js';
 
 type Envelope<T> = { success: boolean; data: T; request_id?: string };
 
@@ -100,8 +99,8 @@ export function parsePlaybookSkillId(s: string): {
 
 /**
  * Playbook skills (Skillhub). With an API key they are read from /api/v2;
- * without one (see `sendsApiKey`), from the /api/v1 catalog, whose IDs are
- * 0.x IDs.
+ * without one (see `AlvaClient._sendsApiKey`), from the /api/v1 catalog,
+ * whose IDs are 0.x IDs.
  */
 export class PlaybookSkillsResource {
   constructor(private client: AlvaClient) {}
@@ -110,7 +109,7 @@ export class PlaybookSkillsResource {
     tag?: string;
     username?: string;
   }): Promise<{ skills: PlaybookSkillSummary[] }> {
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       const query: Record<string, string> = {};
       if (params?.tag) query.tag = params.tag;
       if (params?.username) query.username = params.username;
@@ -132,7 +131,7 @@ export class PlaybookSkillsResource {
   }
 
   async tags(): Promise<{ tags: PlaybookSkillTagEntry[] }> {
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       const res = (await this.client._request(
         'GET',
         '/api/v1/skills/tags'
@@ -147,7 +146,7 @@ export class PlaybookSkillsResource {
 
   async get(id: string): Promise<PlaybookSkillMeta> {
     const { username, name } = parsePlaybookSkillId(id);
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       const res = (await this.client._request(
         'GET',
         `/api/v1/skills/${encodeURIComponent(username)}/${encodeURIComponent(name)}`
@@ -174,7 +173,7 @@ export class PlaybookSkillsResource {
 
   async file(id: string, path: string): Promise<PlaybookSkillFile> {
     const { username, name } = parsePlaybookSkillId(id);
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       // path may contain '/'; encode each segment separately to preserve them
       const p = path.split('/').map(encodeURIComponent).join('/');
       const res = (await this.client._request(

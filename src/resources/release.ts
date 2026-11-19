@@ -10,7 +10,7 @@ import type {
   PlaybookReleaseResponse,
 } from '../types.js';
 import { parsePlaybookSkillId } from './playbookSkills.js';
-import { callerUsername, ownPlaybook, type WirePlaybook } from './playbooks.js';
+import { ownPlaybook, type WirePlaybook } from './playbooks.js';
 
 function automationPins(
   feeds: Array<{ feed_id: AlvaId; feed_major?: number }>
@@ -23,7 +23,7 @@ export class ReleaseResource {
 
   async feed(params: FeedReleaseRequest): Promise<FeedReleaseResponse> {
     this.client._requireAuth();
-    const username = await callerUsername(this.client);
+    const username = await this.client.user._username();
     const released = await this.client._v2Request<{
       automationId: AlvaId;
       name: string;

@@ -447,8 +447,8 @@ export class TradingResource {
     sourceUsername: string,
     sourceFeed: string
   ): Promise<AlvaId> {
-    const me = await this.client._v2Request<{ username: string }>('GET', '/me');
-    if (me.username.toLowerCase() !== sourceUsername.toLowerCase()) {
+    const username = await this.client.user._username();
+    if (username.toLowerCase() !== sourceUsername.toLowerCase()) {
       throw new AlvaError(
         'INVALID_ARGUMENT',
         `pass signalSourceId (the feed's Automation ID) to copy ${sourceUsername}/${sourceFeed}: only your own feeds can be found by name`,

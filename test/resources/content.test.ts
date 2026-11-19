@@ -329,7 +329,7 @@ describe('ReleaseResource', () => {
     });
   });
 
-  it('reads the caller once per client', async () => {
+  it('reads the caller once per client, shared with the other resources', async () => {
     const { calls } = v2Fetch({
       'GET /me': ME,
       'POST /me/automations': {
@@ -347,6 +347,7 @@ describe('ReleaseResource', () => {
 
     await c.release.feed(params);
     await c.release.feed(params);
+    expect(await c.user._username()).toBe('alice');
 
     expect(calls.filter((call) => call.path === '/me')).toHaveLength(1);
   });

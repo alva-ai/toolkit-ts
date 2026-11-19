@@ -104,8 +104,7 @@ export class FsResource {
   constructor(private client: AlvaClient) {}
 
   private get v1(): boolean {
-    const c = this.client;
-    return Boolean(c.pbsvToken || c.viewer_token || !c.apiKey);
+    return !this.client._sendsApiKey();
   }
 
   /** Returns `ArrayBuffer` for binary files, or parsed JSON for time-series virtual paths. */

@@ -174,11 +174,12 @@ export class PlaybooksResource {
    * Max 100 per call.
    *
    * Auth is optional (like `trending`): with an API key, /api/v2 evaluates
-   * private/paid visibility for the caller; without one (see `sendsApiKey`)
-   * the /api/v1 catalog answers as in 0.x, with 0.x IDs.
+   * private/paid visibility for the caller; without one (see
+   * `AlvaClient._sendsApiKey`) the /api/v1 catalog answers as in 0.x, with
+   * 0.x IDs.
    */
   async getByIds(ids: AlvaId[]): Promise<DiscoveryByIDsResponse> {
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       return (await this.client._request('GET', '/api/v1/playbooks', {
         query: { ids: ids.join(',') },
       })) as DiscoveryByIDsResponse;
@@ -198,7 +199,7 @@ export class PlaybooksResource {
    * playbooks are listed.
    */
   async listByOwner(params: ListByOwnerParams): Promise<ListByOwnerResponse> {
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       const query: Record<string, string> = { owner: params.owner };
       if (params.limit !== undefined && params.limit > 0) {
         query.limit = String(params.limit);
@@ -274,7 +275,7 @@ export class PlaybooksResource {
     ref?: string;
   }): Promise<PlaybookDiscoveryItem | null> {
     if (params.id) {
-      if (!sendsApiKey(this.client)) {
+      if (!this.client._sendsApiKey()) {
         const resp = await this.getByIds([params.id]);
         return resp.items[0] ?? null;
       }
@@ -296,7 +297,7 @@ export class PlaybooksResource {
       }
       const owner = params.ref.slice(0, slash);
       const name = params.ref.slice(slash + 1);
-      if (sendsApiKey(this.client)) {
+      if (this.client._sendsApiKey()) {
         return orNull(playbookBySlug(this.client, owner, name));
       }
       let cursor: string | undefined;
@@ -323,7 +324,7 @@ export class PlaybooksResource {
     params: TrendingPlaybooksParams = {}
   ): Promise<TrendingPlaybooksResponse> {
     const webOrigin = webOriginFromApiBase(this.client.baseUrl);
-    if (!sendsApiKey(this.client)) {
+    if (!this.client._sendsApiKey()) {
       const query: Record<string, string | number> = {};
       if (params.cursor) query.cursor = params.cursor;
       if (params.current) query.current = params.current;
@@ -458,31 +459,6 @@ const TRENDING_ORDER: Record<TrendingPlaybooksSort, string> = {
   RECENT: 'NEWEST',
 };
 
-/**
- * Whether requests carry the client's API key, the credential /api/v2 reads
- * need. Discovery without one (no credential, or a browser Playbook's PBSV
- * or viewer token, which take precedence and /api/v2 does not accept) stays
- * on the public /api/v1 catalog.
- */
-export function sendsApiKey(client: AlvaClient): boolean {
-  return Boolean(client.apiKey && !client.pbsvToken && !client.viewer_token);
-}
-
-const callerUsernames = new WeakMap<AlvaClient, Promise<string>>();
-
-/** The caller's username (GET /api/v2/me), read once per client. */
-export function callerUsername(client: AlvaClient): Promise<string> {
-  let username = callerUsernames.get(client);
-  if (!username) {
-    username = client
-      ._v2Request<{ username: string }>('GET', '/me')
-      .then((me) => me.username);
-    callerUsernames.set(client, username);
-    username.catch(() => callerUsernames.delete(client));
-  }
-  return username;
-}
-
 /** A Playbook by its owner's username and its slug. */
 export function playbookBySlug(
   client: AlvaClient,
@@ -500,7 +476,7 @@ export async function ownPlaybook(
   client: AlvaClient,
   slug: string
 ): Promise<WirePlaybook> {
-  return playbookBySlug(client, await callerUsername(client), slug);
+  return playbookBySlug(client, await client.user._username(), slug);
 }
 
 function discoveryItem(p: WirePlaybook): PlaybookDiscoveryItem {

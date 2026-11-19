@@ -45,13 +45,15 @@ export class UserResource {
    * home-relative and `/alva/home/<username>/…` paths with it.
    */
   _username(): Promise<string> {
-    this.username ??= this.me().then(
-      (me) => me.username,
-      (error: unknown) => {
-        this.username = undefined;
-        throw error;
-      }
-    );
+    this.username ??= this.client
+      ._v2Request<Pick<WireMe, 'username'>>('GET', '/me')
+      .then(
+        (me) => me.username,
+        (error: unknown) => {
+          this.username = undefined;
+          throw error;
+        }
+      );
     return this.username;
   }
 }
