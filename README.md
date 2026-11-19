@@ -68,6 +68,17 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
   the first result. The SDK still does not retry on its own.
 - **Resources.** Changes per resource are listed here as each one moves to
   `/api/v2`.
+  - Theses, Thesis reads and For You: `publication.playbookId` names the
+    Playbook; use `thesisId` (or a list node's `playbookId`) with
+    `theses.get`, `signals` and `related`. Lists put the next cursor on the
+    last edge only. `thesis update --archived false` on an archived Thesis
+    unarchives it, then publishes the Update. `for-you list --newer-than` is
+    gone: read the first page again.
+  - Playbooks, comments, remix, release, Skillhub, SDK docs and feeds: feed
+    IDs are Automation IDs and `release feed --cronjob-id` takes a Cronjob
+    ID. Without an API key (keyless, or a browser Playbook's PBSV token),
+    playbook and Skillhub discovery still read the `/api/v1` catalog and
+    return 0.x IDs.
 
 ## CLI Quick Start
 
@@ -464,7 +475,7 @@ alva thesis <list|related|create|get|signals|set-visibility|update|rewrite>
 alva thesis version get --id <thesis-id> --author-version-id <version-id>
 alva thesis list --person <slug>       # or --person-name <name> / --user <username>
 alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextCursor>
-alva thesis related --id <playbook-id>
+alva thesis related --id <thesis-id>
 alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoints: [{label, text, origin}]
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
