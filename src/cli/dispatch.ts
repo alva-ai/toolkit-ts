@@ -494,7 +494,7 @@ Options:
   --args <json>          JSON object passed to require("env").args
   --args-stdin           Read the JSON object from stdin (mutually exclusive with --args)
   --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
-  --timeout-ms <ms>      Client HTTP timeout for /api/v1/run (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
+  --timeout-ms <ms>      Client HTTP timeout for /api/v2/runs (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
 
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
