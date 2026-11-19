@@ -2792,15 +2792,7 @@ function functionRunAsFlag(
       command.split(' ')[0]
     );
   }
-  const raw = flags['run-as-service-account'];
-  if (raw === undefined) return undefined;
-  if (!/^\S+$/.test(raw)) {
-    throw new CliUsageError(
-      `--run-as-service-account must be a service account's Account ID for '${command}', got '${raw}'`,
-      command.split(' ')[0]
-    );
-  }
-  return raw;
+  return optionalServiceAccountIdFlag(flags, command);
 }
 
 // An optional /api/v2 enum flag of the trading commands, upper-cased.

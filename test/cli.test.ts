@@ -3018,22 +3018,25 @@ components: {}
     expect(client.deploy.update).not.toHaveBeenCalled();
   });
 
-  it('rejects an empty --run-as-service-account (functions register)', async () => {
+  it('rejects an empty or 0 --run-as-service-account (functions register)', async () => {
     const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'functions',
-        'register',
-        '--playbook-id',
-        'playbook_0abc',
-        '--function-name',
-        'analyze',
-        '--entry-script-path',
-        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-        '--run-as-service-account',
-        '',
-      ])
-    ).rejects.toThrow(/run-as-service-account/);
+    // "0" cleared run_as in 0.x; /api/v2 has no clear, so it must not pass.
+    for (const value of ['', '0']) {
+      await expect(
+        dispatch(client, [
+          'functions',
+          'register',
+          '--playbook-id',
+          'playbook_0abc',
+          '--function-name',
+          'analyze',
+          '--entry-script-path',
+          '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+          '--run-as-service-account',
+          value,
+        ])
+      ).rejects.toThrow(/run-as-service-account/);
+    }
     expect(client.functions.register).not.toHaveBeenCalled();
   });
 
