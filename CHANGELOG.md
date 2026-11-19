@@ -101,6 +101,12 @@ Releases before 1.0.0 are listed under the repository's tags.
   Session ID. `extras` is gone; entries add `title`. Entries have no cursor of
   their own: the last edge carries the page's `endCursor`, the others `''`.
   `source` is `other` for reasons v1 had no name for.
+- `functions`: `playbook_id` params and every `id`/`playbook_id` are Alva
+  IDs (were numbers or decimal strings), and `run_as_user_id` is a service
+  account's Account ID. `register` can no longer clear `run_as_user_id`
+  (`"0"`, CLI `--clear-run-as`): `/api/v2` has no way to do so. `delete` and
+  `invoke` look the function up by name first (`NOT_FOUND` when there is
+  none). Allowances drop `consumer_uid` (always the caller).
 
 ### Added
 

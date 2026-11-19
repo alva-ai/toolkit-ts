@@ -108,6 +108,8 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
   - `x`: X accounts and posts have Alva IDs; posts add `url`.
   - `run`, `arraysJwt`: same results.
   - `credits.items`: entries have Alva IDs and `title` instead of `extras`.
+  - `functions`: Playbook, function and service-account IDs are Alva IDs;
+    `--clear-run-as` is not available; allowances drop `consumer_uid`.
 
 ## CLI Quick Start
 

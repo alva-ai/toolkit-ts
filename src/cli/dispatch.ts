@@ -952,7 +952,7 @@ Subcommands:
   allowance   Manage your viewer credit allowance for a playbook
 
 Register flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name exposed to window.alva.udf (required)
   --entry-script-path <path>  Absolute ALFS path to a .js entry script (required)
   --params-schema <json>      JSON Schema object/string for parameters_json
@@ -963,18 +963,18 @@ Register flags:
                               (id from "alva service-account create"); scopes file
                               access to the SA's grants. Omit on re-register ⇒
                               unchanged (#602)
-  --clear-run-as              Clear run_as on re-register — run as the owner again
-                              (mutually exclusive with --run-as-service-account)
+  --clear-run-as              Not available for functions: the platform API keeps
+                              the identity; omit both flags to leave it unchanged
 
 List flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
 
 Delete flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name to delete (required)
 
 Invoke flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name to invoke (required)
   --params <json>             Parameters object passed as parameters_json
 
@@ -985,7 +985,7 @@ Allowance subcommands:
   allowance revoke   Revoke your allowance for a playbook
 
 Allowance flags:
-  --playbook-id <id>          Numeric playbook id (required for get/create/revoke)
+  --playbook-id <id>          Playbook ID (required for get/create/revoke)
   --amount <credits>          Positive integer allowance amount (required for create)
 
 Notes:
@@ -993,18 +993,18 @@ Notes:
   /alva/home/alice/playbooks/my-playbook/udf/analyze.js. Use alva whoami to
   discover home_path. Use the browser runtime window.alva.udf for released
   playbook UI; this CLI is mainly for creator-side setup and smoke tests.
-  Allowance commands use the gateway GraphQL session-user surface and reject
-  playbook-scoped viewer tokens.
+  Allowance commands act for the signed-in user and reject playbook-scoped
+  viewer tokens.
 
 Examples:
-  alva functions register --playbook-id 123 --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
-  alva functions list --playbook-id 123
-  alva functions delete --playbook-id 123 --function-name analyze
-  alva functions invoke --playbook-id 123 --function-name analyze --params '{"ticker":"AAPL"}'
-  alva functions allowance create --playbook-id 123 --amount 25
-  alva functions allowance get --playbook-id 123
+  alva functions register --playbook-id playbook_0abc --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
+  alva functions list --playbook-id playbook_0abc
+  alva functions delete --playbook-id playbook_0abc --function-name analyze
+  alva functions invoke --playbook-id playbook_0abc --function-name analyze --params '{"ticker":"AAPL"}'
+  alva functions allowance create --playbook-id playbook_0abc --amount 25
+  alva functions allowance get --playbook-id playbook_0abc
   alva functions allowance list
-  alva functions allowance revoke --playbook-id 123`,
+  alva functions allowance revoke --playbook-id playbook_0abc`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -2775,6 +2775,29 @@ function jsonSchemaStringFlag(
   return raw;
 }
 
+// The service account a function runs as: an Account ID, passed unchanged.
+// /api/v2 cannot clear it, so --clear-run-as is refused rather than ignored.
+function functionRunAsFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  if (boolFlag(flags['clear-run-as'])) {
+    throw new CliUsageError(
+      `--clear-run-as is not available for '${command}'; omit --run-as-service-account to keep the current identity`,
+      command.split(' ')[0]
+    );
+  }
+  const raw = flags['run-as-service-account'];
+  if (raw === undefined) return undefined;
+  if (!/^\S+$/.test(raw)) {
+    throw new CliUsageError(
+      `--run-as-service-account must be a service account's Account ID for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return raw;
+}
+
 function localFileUnsupported(command: string, flag: string): CliUsageError {
   return new CliUsageError(
     `--${flag} reads or writes a local file, which is unavailable in jagent. ` +
@@ -4344,7 +4367,7 @@ export async function executeParsedCommand(
           switch (leaf) {
             case 'get':
               return client.functions.getAllowance({
-                playbook_id: requireNumericFlag(
+                playbook_id: requireFlag(
                   flags,
                   'playbook-id',
                   'functions allowance get'
@@ -4354,7 +4377,7 @@ export async function executeParsedCommand(
               return client.functions.listAllowances();
             case 'create':
               return client.functions.createAllowance({
-                playbook_id: requireNumericFlag(
+                playbook_id: requireFlag(
                   flags,
                   'playbook-id',
                   'functions allowance create'
@@ -4367,7 +4390,7 @@ export async function executeParsedCommand(
               });
             case 'revoke':
               return client.functions.revokeAllowance({
-                playbook_id: requireNumericFlag(
+                playbook_id: requireFlag(
                   flags,
                   'playbook-id',
                   'functions allowance revoke'
@@ -4382,7 +4405,7 @@ export async function executeParsedCommand(
         }
         case 'register':
           return client.functions.register({
-            playbook_id: requireNumericFlag(
+            playbook_id: requireFlag(
               flags,
               'playbook-id',
               'functions register'
@@ -4403,23 +4426,15 @@ export async function executeParsedCommand(
               deps
             ),
             allow_charges: boolFlag(flags['allow-charges']),
-            run_as_user_id: resolveRunAsFlag(flags, 'functions register'),
+            run_as_user_id: functionRunAsFlag(flags, 'functions register'),
           });
         case 'list':
           return client.functions.list({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions list'
-            ),
+            playbook_id: requireFlag(flags, 'playbook-id', 'functions list'),
           });
         case 'delete':
           return client.functions.delete({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions delete'
-            ),
+            playbook_id: requireFlag(flags, 'playbook-id', 'functions delete'),
             function_name: requireFlag(
               flags,
               'function-name',
@@ -4428,11 +4443,7 @@ export async function executeParsedCommand(
           });
         case 'invoke':
           return client.functions.invoke({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions invoke'
-            ),
+            playbook_id: requireFlag(flags, 'playbook-id', 'functions invoke'),
             function_name: requireFlag(
               flags,
               'function-name',

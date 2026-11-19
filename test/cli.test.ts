@@ -401,7 +401,7 @@ function makeClient(
   client.remix.save = vi.fn().mockResolvedValue(undefined);
   client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
   client.functions.register = vi.fn().mockResolvedValue({
-    function: { function_name: 'analyze', playbook_id: 123 },
+    function: { function_name: 'analyze', playbook_id: 'playbook_0abc' },
   });
   client.functions.list = vi.fn().mockResolvedValue({ functions: [] });
   client.functions.delete = vi.fn().mockResolvedValue(undefined);
@@ -413,9 +413,8 @@ function makeClient(
     credits_charged_consumer: 0,
   });
   client.functions.getAllowance = vi.fn().mockResolvedValue({
-    id: '1',
-    consumer_uid: '42',
-    playbook_id: '123',
+    id: 'allowance_0a',
+    playbook_id: 'playbook_0abc',
     amount: 25,
     used: 0,
     remaining: 25,
@@ -427,9 +426,8 @@ function makeClient(
     .mockResolvedValue({ allowances: [] });
   client.functions.createAllowance = vi.fn().mockResolvedValue({
     allowance: {
-      id: '1',
-      consumer_uid: '42',
-      playbook_id: '123',
+      id: 'allowance_0a',
+      playbook_id: 'playbook_0abc',
       amount: 25,
       used: 0,
       remaining: 25,
@@ -2241,7 +2239,7 @@ describe('CLI dispatch', () => {
       'functions',
       'register',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--entry-script-path',
@@ -2251,7 +2249,7 @@ describe('CLI dispatch', () => {
       '--no-allow-charges',
     ]);
     expect(client.functions.register).toHaveBeenCalledWith({
-      playbook_id: 123,
+      playbook_id: 'playbook_0abc',
       function_name: 'analyze',
       entry_script_path:
         '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
@@ -2266,38 +2264,35 @@ describe('CLI dispatch', () => {
       'functions',
       'register',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--entry-script-path',
       '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
       '--run-as-service-account',
-      '90123',
+      'account_0sa',
     ]);
     expect(client.functions.register).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: '90123' })
+      expect.objectContaining({ run_as_user_id: 'account_0sa' })
     );
   });
 
-  it('preserves a snowflake (>2^53) --run-as-service-account id as a string', async () => {
+  it('refuses --clear-run-as for functions register, which /api/v2 cannot clear', async () => {
     const client = makeClient();
-    // 19-digit snowflake id; would round to ...3776 if parsed as a JS number.
-    const snowflake = '1234567890123456789';
-    await dispatch(client, [
-      'functions',
-      'register',
-      '--playbook-id',
-      '123',
-      '--function-name',
-      'analyze',
-      '--entry-script-path',
-      '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-      '--run-as-service-account',
-      snowflake,
-    ]);
-    expect(client.functions.register).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: snowflake })
-    );
+    await expect(
+      dispatch(client, [
+        'functions',
+        'register',
+        '--playbook-id',
+        'playbook_0abc',
+        '--function-name',
+        'analyze',
+        '--entry-script-path',
+        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+        '--clear-run-as',
+      ])
+    ).rejects.toThrow(/--clear-run-as is not available/);
+    expect(client.functions.register).not.toHaveBeenCalled();
   });
 
   it('dispatches functions register with params schema file', async () => {
@@ -2309,7 +2304,7 @@ describe('CLI dispatch', () => {
       'functions',
       'register',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--entry-script-path',
@@ -2335,7 +2330,7 @@ describe('CLI dispatch', () => {
         'functions',
         'register',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--function-name',
         'analyze',
         '--entry-script-path',
@@ -2352,8 +2347,15 @@ describe('CLI dispatch', () => {
 
   it('dispatches functions list', async () => {
     const client = makeClient();
-    await dispatch(client, ['functions', 'list', '--playbook-id', '123']);
-    expect(client.functions.list).toHaveBeenCalledWith({ playbook_id: 123 });
+    await dispatch(client, [
+      'functions',
+      'list',
+      '--playbook-id',
+      'playbook_0abc',
+    ]);
+    expect(client.functions.list).toHaveBeenCalledWith({
+      playbook_id: 'playbook_0abc',
+    });
   });
 
   it('dispatches functions delete', async () => {
@@ -2362,12 +2364,12 @@ describe('CLI dispatch', () => {
       'functions',
       'delete',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
     ]);
     expect(client.functions.delete).toHaveBeenCalledWith({
-      playbook_id: 123,
+      playbook_id: 'playbook_0abc',
       function_name: 'analyze',
     });
   });
@@ -2378,14 +2380,14 @@ describe('CLI dispatch', () => {
       'functions',
       'invoke',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--params',
       '{"ticker":"AAPL"}',
     ]);
     expect(client.functions.invoke).toHaveBeenCalledWith({
-      playbook_id: 123,
+      playbook_id: 'playbook_0abc',
       function_name: 'analyze',
       parameters: { ticker: 'AAPL' },
     });
@@ -2398,7 +2400,7 @@ describe('CLI dispatch', () => {
         'functions',
         'invoke',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--function-name',
         'analyze',
         '--params',
@@ -2414,10 +2416,10 @@ describe('CLI dispatch', () => {
       'allowance',
       'get',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
     ]);
     expect(client.functions.getAllowance).toHaveBeenCalledWith({
-      playbook_id: 123,
+      playbook_id: 'playbook_0abc',
     });
   });
 
@@ -2434,12 +2436,12 @@ describe('CLI dispatch', () => {
       'allowance',
       'create',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--amount',
       '25',
     ]);
     expect(client.functions.createAllowance).toHaveBeenCalledWith({
-      playbook_id: 123,
+      playbook_id: 'playbook_0abc',
       amount: 25,
     });
   });
@@ -2452,7 +2454,7 @@ describe('CLI dispatch', () => {
         'allowance',
         'create',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--amount',
         '0',
       ])
@@ -2468,10 +2470,10 @@ describe('CLI dispatch', () => {
       'allowance',
       'revoke',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
     ]);
     expect(client.functions.revokeAllowance).toHaveBeenCalledWith({
-      playbook_id: 123,
+      playbook_id: 'playbook_0abc',
     });
   });
 
@@ -3023,7 +3025,7 @@ components: {}
         'functions',
         'register',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--function-name',
         'analyze',
         '--entry-script-path',

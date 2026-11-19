@@ -360,175 +360,243 @@ describe('RunResource', () => {
 });
 
 describe('FunctionsResource', () => {
-  it('register() sends POST /api/v1/service/functions', async () => {
-    const client = makeClient();
-    const functions = new FunctionsResource(client);
-    await functions.register({
-      playbook_id: 123,
+  const FN = {
+    id: 'playbook_function_0analyze',
+    playbookId: 'playbook_0abc',
+    name: 'analyze',
+    entryScriptPath: '/alva/home/alice/playbooks/p/udf/analyze.js',
+    paramsSchema: null,
+    allowCharges: false,
+    disabled: false,
+    runAsAccountId: null,
+    createdAt: '2026-06-05T00:00:00.000Z',
+    updatedAt: '2026-06-06T00:00:00.000Z',
+  };
+  const ALLOWANCE = {
+    id: 'allowance_0a',
+    playbookId: 'playbook_0abc',
+    amount: '25',
+    used: '5',
+    remaining: '20',
+    createdAt: '2023-11-14T22:13:20.000Z',
+    updatedAt: '2023-11-14T22:13:21.000Z',
+  };
+  const page = (items: unknown[], nextPageToken: string | null = null) => ({
+    items,
+    nextPageToken,
+  });
+  let fake: ReturnType<typeof fakeV2> | undefined;
+  afterEach(() => fake?.restore());
+  const functions = () =>
+    new FunctionsResource(new AlvaClient({ apiKey: 'key' }));
+
+  it('register() posts the function to its Playbook and rebuilds the v1 shape', async () => {
+    fake = fakeV2({
+      'POST /playbooks/playbook_0abc/functions': () => ({
+        ...FN,
+        paramsSchema: '{"type":"object"}',
+        allowCharges: true,
+        runAsAccountId: 'account_0sa',
+      }),
+    });
+
+    const result = await functions().register({
+      playbook_id: 'playbook_0abc',
       function_name: 'analyze',
-      entry_script_path:
-        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      entry_script_path: FN.entryScriptPath,
       params_schema: '{"type":"object"}',
-      allow_charges: false,
+      allow_charges: true,
+      run_as_user_id: 'account_0sa',
     });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/service/functions',
-      {
-        body: {
-          playbook_id: 123,
-          function_name: 'analyze',
-          entry_script_path:
-            '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-          params_schema: '{"type":"object"}',
-          allow_charges: false,
-        },
-      }
-    );
-  });
 
-  it('list() sends GET /api/v1/service/functions', async () => {
-    const client = makeClient();
-    const functions = new FunctionsResource(client);
-    await functions.list({ playbook_id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/service/functions',
-      {
-        query: { playbook_id: 123 },
-      }
-    );
-  });
-
-  it('delete() sends DELETE /api/v1/service/functions', async () => {
-    const client = makeClient();
-    const functions = new FunctionsResource(client);
-    await functions.delete({ playbook_id: 123, function_name: 'analyze' });
-    expect(client._request).toHaveBeenCalledWith(
-      'DELETE',
-      '/api/v1/service/functions',
-      {
-        query: { playbook_id: 123, function_name: 'analyze' },
-      }
-    );
-  });
-
-  it('invoke() sends POST /api/v1/service/invoke and parses result JSON', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      result: '{"ok":true}',
-      logs: '',
-      credits_used_total: 0,
-      credits_charged_owner: 0,
-      credits_charged_consumer: 0,
+    expect(fake.calls[0].body).toEqual({
+      name: 'analyze',
+      entryScriptPath: FN.entryScriptPath,
+      paramsSchema: '{"type":"object"}',
+      allowCharges: true,
+      runAsAccountId: 'account_0sa',
     });
-    const functions = new FunctionsResource(client);
-    const result = await functions.invoke({
-      playbook_id: 123,
+    expect(result).toEqual({
+      function: {
+        id: 'playbook_function_0analyze',
+        playbook_id: 'playbook_0abc',
+        function_name: 'analyze',
+        entry_script_path: FN.entryScriptPath,
+        created_at: '2026-06-05T00:00:00.000Z',
+        updated_at: '2026-06-06T00:00:00.000Z',
+        disabled: false,
+        params_schema: '{"type":"object"}',
+        allow_charges: true,
+        run_as_user_id: 'account_0sa',
+      },
+    });
+  });
+
+  it('register() refuses the v1 "0" that cleared run_as before any request', async () => {
+    fake = fakeV2({});
+    await expect(
+      functions().register({
+        playbook_id: 'playbook_0abc',
+        function_name: 'analyze',
+        entry_script_path: FN.entryScriptPath,
+        run_as_user_id: '0',
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', status: 400 });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('list() reads every page of the Playbook functions', async () => {
+    fake = fakeV2({
+      'GET /playbooks/playbook_0abc/functions': [
+        () => page([FN], 'p2'),
+        () => page([{ ...FN, id: 'playbook_function_0b', name: 'b' }]),
+      ],
+    });
+
+    const result = await functions().list({ playbook_id: 'playbook_0abc' });
+
+    expect(
+      result.functions.map((f) => [f.function_name, f.params_schema])
+    ).toEqual([
+      ['analyze', ''],
+      ['b', ''],
+    ]);
+    expect(result.functions[0]).not.toHaveProperty('run_as_user_id');
+    expect(fake.calls[1].query.get('pageToken')).toBe('p2');
+  });
+
+  it('delete() finds the function by name and deletes it by ID', async () => {
+    fake = fakeV2({
+      'GET /playbooks/playbook_0abc/functions': () => page([FN]),
+      'DELETE /functions/playbook_function_0analyze': () =>
+        new Response(null, { status: 204 }),
+    });
+
+    await functions().delete({
+      playbook_id: 'playbook_0abc',
+      function_name: 'analyze',
+    });
+
+    expect(fake.calls[0].query.get('name')).toBe('analyze');
+    expect(fake.calls.map((c) => c.method)).toEqual(['GET', 'DELETE']);
+  });
+
+  it('delete() reports a missing function as NOT_FOUND', async () => {
+    fake = fakeV2({
+      'GET /playbooks/playbook_0abc/functions': () => page([]),
+    });
+
+    await expect(
+      functions().delete({ playbook_id: 'playbook_0abc', function_name: 'x' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it('invoke() looks the function up once, sends parametersJson and parses the result', async () => {
+    const invocation = () => ({
+      resultJson: '{"ok":true}',
+      logs: 'log',
+      creditsUsedTotal: '3',
+      creditsChargedOwner: '1',
+      creditsChargedConsumer: '2',
+    });
+    fake = fakeV2({
+      'GET /playbooks/playbook_0abc/functions': () => page([FN]),
+      'POST /functions/playbook_function_0analyze/invocations': [
+        invocation,
+        invocation,
+      ],
+    });
+    const resource = functions();
+    const params = {
+      playbook_id: 'playbook_0abc',
       function_name: 'analyze',
       parameters: { ticker: 'AAPL' },
-    });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/service/invoke',
-      {
-        body: {
-          playbook_id: 123,
-          function_name: 'analyze',
-          parameters_json: '{"ticker":"AAPL"}',
-        },
-      }
-    );
-    expect(result.result).toEqual({ ok: true });
-  });
-
-  it('getAllowance() sends GET /api/v1/service/allowance and normalizes timestamps', async () => {
-    const allowance = {
-      id: '1',
-      consumer_uid: '42',
-      playbook_id: '123',
-      amount: 25,
-      used: 0,
-      remaining: 25,
-      created_at: { seconds: '1700000000', nanos: 123000000 },
-      updated_at_ms: 1700000001000,
     };
-    const client = makeClient();
-    client._request.mockResolvedValue({ allowance });
-    const functions = new FunctionsResource(client);
-    const result = await functions.getAllowance({ playbook_id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/service/allowance',
-      {
-        query: { playbook_id: 123 },
-      }
-    );
+
+    const result = await resource.invoke(params);
+    await resource.invoke(params);
+
     expect(result).toEqual({
-      id: '1',
-      consumer_uid: '42',
-      playbook_id: '123',
+      result: { ok: true },
+      logs: 'log',
+      credits_used_total: 3,
+      credits_charged_owner: 1,
+      credits_charged_consumer: 2,
+    });
+    expect(fake.calls.map((c) => c.method)).toEqual(['GET', 'POST', 'POST']);
+    expect(fake.calls[1].body).toEqual({ parametersJson: '{"ticker":"AAPL"}' });
+  });
+
+  it('getAllowance() reads the allowance of one Playbook, or null', async () => {
+    fake = fakeV2({
+      'GET /me/allowances': [() => page([ALLOWANCE]), () => page([])],
+    });
+    const resource = functions();
+
+    await expect(
+      resource.getAllowance({ playbook_id: 'playbook_0abc' })
+    ).resolves.toEqual({
+      id: 'allowance_0a',
+      playbook_id: 'playbook_0abc',
       amount: 25,
-      used: 0,
-      remaining: 25,
-      created_at_ms: 1700000000123,
+      used: 5,
+      remaining: 20,
+      created_at_ms: 1700000000000,
       updated_at_ms: 1700000001000,
     });
+    await expect(
+      resource.getAllowance({ playbook_id: 'playbook_0abc' })
+    ).resolves.toBeNull();
+    expect(fake.calls[0].query.get('playbookId')).toBe('playbook_0abc');
   });
 
-  it('listAllowances() sends GET /api/v1/service/allowances', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({ allowances: [] });
-    const functions = new FunctionsResource(client);
-    const result = await functions.listAllowances();
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/service/allowances'
-    );
-    expect(result).toEqual({ allowances: [] });
+  it('listAllowances() reads every page', async () => {
+    fake = fakeV2({
+      'GET /me/allowances': [
+        () => page([ALLOWANCE], 'p2'),
+        () => page([{ ...ALLOWANCE, id: 'allowance_0b' }]),
+      ],
+    });
+
+    const result = await functions().listAllowances();
+
+    expect(result.allowances.map((a) => a.id)).toEqual([
+      'allowance_0a',
+      'allowance_0b',
+    ]);
   });
 
-  it('createAllowance() sends POST /api/v1/service/allowance', async () => {
-    const allowance = {
-      id: '1',
-      consumer_uid: '42',
-      playbook_id: '123',
-      amount: 25,
-      used: 0,
-      remaining: 25,
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    };
-    const client = makeClient();
-    client._request.mockResolvedValue({ allowance });
-    const functions = new FunctionsResource(client);
-    const result = await functions.createAllowance({
-      playbook_id: 123,
+  it('createAllowance() sets the cap in whole credits', async () => {
+    fake = fakeV2({ 'POST /me/allowances': () => ALLOWANCE });
+
+    const result = await functions().createAllowance({
+      playbook_id: 'playbook_0abc',
       amount: 25,
     });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/service/allowance',
-      {
-        body: { playbook_id: 123, amount: 25 },
-      }
-    );
-    expect(result).toEqual({ allowance });
+
+    expect(fake.calls[0].body).toEqual({
+      playbookId: 'playbook_0abc',
+      credits: '25',
+    });
+    expect(result.allowance.remaining).toBe(20);
   });
 
-  it('revokeAllowance() sends DELETE /api/v1/service/allowance', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({});
-    const functions = new FunctionsResource(client);
-    const result = await functions.revokeAllowance({ playbook_id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'DELETE',
-      '/api/v1/service/allowance',
-      {
-        query: { playbook_id: 123 },
-      }
-    );
-    expect(result).toEqual({ ok: true });
+  it('revokeAllowance() deletes the Playbook allowance by ID, and is done when there is none', async () => {
+    fake = fakeV2({
+      'GET /me/allowances': [() => page([ALLOWANCE]), () => page([])],
+      'DELETE /me/allowances/allowance_0a': () =>
+        new Response(null, { status: 204 }),
+    });
+    const resource = functions();
+
+    await expect(
+      resource.revokeAllowance({ playbook_id: 'playbook_0abc' })
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      resource.revokeAllowance({ playbook_id: 'playbook_0abc' })
+    ).resolves.toEqual({ ok: true });
+    expect(fake.calls.map((c) => c.method)).toEqual(['GET', 'DELETE', 'GET']);
   });
 });
 
