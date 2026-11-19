@@ -104,7 +104,8 @@ export interface CreditWalletItemsResponse extends CreditWallet {
 export type SubscriptionTier =
   | 'SUBSCRIPTION_TIER_UNSPECIFIED'
   | 'SUBSCRIPTION_TIER_FREE'
-  | 'SUBSCRIPTION_TIER_PRO';
+  | 'SUBSCRIPTION_TIER_PRO'
+  | 'SUBSCRIPTION_TIER_MAX';
 
 export interface EnsureArraysJwtResponse {
   expires_at: number;
@@ -242,7 +243,7 @@ export interface RunRequest {
    */
   max_heap_size_mb?: number;
   /**
-   * Client-side HTTP timeout for waiting on POST /api/v1/run, in
+   * Client-side HTTP timeout for waiting on POST /api/v2/runs, in
    * milliseconds. This is not sent to the server.
    */
   timeout_ms?: number;
@@ -251,9 +252,18 @@ export interface RunRequest {
 export interface RunResponse {
   result: string;
   logs: string;
-  stats: { duration_ms: number };
+  stats: { credits_used: number; duration_ms: number };
   status: 'completed' | 'failed';
-  error?: string;
+  /** The script's failure; null when it succeeded. */
+  error?: string | null;
+  /** Set when the run failed because it needs a higher plan. */
+  reject_reason?: 'SUBSCRIPTION_ENTITLEMENT_REQUIRED';
+  upgrade_url?: string;
+  entitlement_failure?: {
+    resource: string;
+    category: string;
+    required_tier: string;
+  };
 }
 
 // --- Deploy (Cronjobs) ---

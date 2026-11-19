@@ -106,6 +106,7 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
   - `companyNews.create`: `feed_id` and `cronjob_id` are Automation and
     Cronjob IDs.
   - `x`: X accounts and posts have Alva IDs; posts add `url`.
+  - `run`, `arraysJwt`: same results.
 
 ## CLI Quick Start
 

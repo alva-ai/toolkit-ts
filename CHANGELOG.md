@@ -88,6 +88,13 @@ Releases before 1.0.0 are listed under the repository's tags.
   Alva IDs (were X snowflakes); posts add `url`, which keeps the X post
   readable. Every edge's `cursor` is the page's next token. A malformed
   response is `INVALID_RESPONSE` (was `GRAPHQL_INVALID_RESPONSE`).
+- `run.execute` posts `/api/v2/runs` and returns the same result;
+  `working_dir` is sent only with `code` (with `entry_path` the server
+  ignored it). `RunResponse` now declares what v1 already returned:
+  `stats.credits_used`, `error: null` and, for a run that needs a higher
+  plan, `reject_reason`, `upgrade_url` and `entitlement_failure`.
+- `arraysJwt.status` and `ensure` read `/api/v2/me/data-skills-token`;
+  `tier` may be `SUBSCRIPTION_TIER_MAX`.
 
 ### Added
 

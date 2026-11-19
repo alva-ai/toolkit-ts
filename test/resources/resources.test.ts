@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { RunResource } from '../../src/resources/run.js';
 import { AlertsResource } from '../../src/resources/alerts.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
@@ -7,6 +7,7 @@ import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
+import { fakeV2 } from '../fakeV2.js';
 
 function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
@@ -112,58 +113,100 @@ describe('CreditsResource', () => {
 });
 
 describe('RunResource', () => {
-  it('execute() with code sends POST /api/v1/run', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
-    await run.execute({ code: '1+1' });
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
-      body: {
-        code: '1+1',
-        entry_path: undefined,
-        working_dir: undefined,
-        args: undefined,
-        max_heap_size_mb: undefined,
-      },
-      timeoutMs: undefined,
+  const RUN = {
+    status: 'SUCCEEDED',
+    returnValue: '2',
+    logs: 'log line',
+    error: null,
+    durationMs: 12,
+    creditsUsed: '3',
+    subscriptionRequired: false,
+    entitlementFailure: null,
+  };
+  let fake: ReturnType<typeof fakeV2>;
+  beforeEach(() => {
+    fake = fakeV2({ 'POST /runs': () => RUN });
+  });
+  afterEach(() => fake.restore());
+  const run = () => new RunResource(new AlvaClient({ apiKey: 'key' }));
+  const sent = () => fake.calls[0]?.body;
+
+  it('execute() with code sends POST /api/v2/runs and rebuilds the v1 result', async () => {
+    await expect(run().execute({ code: '1+1' })).resolves.toEqual({
+      result: '2',
+      logs: 'log line',
+      stats: { credits_used: 3, duration_ms: 12 },
+      status: 'completed',
+      error: null,
     });
+    expect(sent()).toEqual({ code: '1+1' });
   });
 
-  it('execute() with entry_path sends POST /api/v1/run', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
-    await run.execute({ entry_path: '~/s.js' });
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
-      body: {
-        code: undefined,
-        entry_path: '~/s.js',
-        working_dir: undefined,
-        args: undefined,
-        max_heap_size_mb: undefined,
+  it('execute() with entry_path drops working_dir, which /api/v2 refuses with it', async () => {
+    await run().execute({ entry_path: '~/s.js', working_dir: '~/w' });
+    expect(sent()).toEqual({ entryPath: '~/s.js' });
+    fake.calls.length = 0;
+    await run().execute({ code: '1', working_dir: '~/w' });
+    expect(sent()).toEqual({ code: '1', workingDir: '~/w' });
+  });
+
+  it('execute() reports a failed run that needs a higher plan', async () => {
+    fake.restore();
+    fake = fakeV2({
+      'POST /runs': () => ({
+        ...RUN,
+        status: 'FAILED',
+        error: 'needs pro',
+        subscriptionRequired: true,
+        entitlementFailure: {
+          resource: '@alva/data',
+          category: 'market',
+          requiredTier: 'PRO',
+        },
+      }),
+    });
+    await expect(run().execute({ code: '1' })).resolves.toMatchObject({
+      status: 'failed',
+      error: 'needs pro',
+      reject_reason: 'SUBSCRIPTION_ENTITLEMENT_REQUIRED',
+      upgrade_url: 'https://alva.ai/pricing',
+      entitlement_failure: {
+        resource: '@alva/data',
+        category: 'market',
+        required_tier: 'PRO',
       },
-      timeoutMs: undefined,
     });
   });
 
   it('execute() preserves serialized string IDs supplied by the CLI', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
-    await run._executeSerializedArgs(
+    await run()._executeSerializedArgs(
       { code: '1+1' },
       '{"channel_id":"2087608331744604161"}'
     );
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
-      jsonBody: '{"code":"1+1","args":{"channel_id":"2087608331744604161"}}',
+    expect(sent()).toEqual({
+      code: '1+1',
+      args: { channel_id: '2087608331744604161' },
+    });
+  });
+
+  it('execute() sends the serialized args byte for byte', async () => {
+    const c = new AlvaClient({ apiKey: 'key' });
+    const request = vi.spyOn(c, '_v2Request').mockResolvedValue(RUN);
+    await new RunResource(c)._executeSerializedArgs(
+      { code: '1+1' },
+      '{"fraction":1000000000000000.1}'
+    );
+    expect(request).toHaveBeenCalledWith('POST', '/runs', {
+      jsonBody: '{"code":"1+1","args":{"fraction":1000000000000000.1}}',
       timeoutMs: undefined,
     });
   });
 
   it('execute() rejects malformed serialized args before sending', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
     await expect(
-      run._executeSerializedArgs({ code: '1+1' }, '{"broken":')
+      run()._executeSerializedArgs({ code: '1+1' }, '{"broken":')
     ).rejects.toThrow();
-    expect(client._request).not.toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(0);
   });
 
   it.each([
@@ -190,15 +233,13 @@ describe('RunResource', () => {
   ])(
     'execute() rejects $name from the structured SDK API',
     async ({ args }) => {
-      const client = makeClient();
-      const run = new RunResource(client);
       await expect(
-        run.execute({
+        run().execute({
           code: '1+1',
           args: args as Record<string, unknown>,
         })
       ).rejects.toThrow();
-      expect(client._request).not.toHaveBeenCalled();
+      expect(fake.calls).toHaveLength(0);
     }
   );
 
@@ -210,12 +251,10 @@ describe('RunResource', () => {
     '[]',
     '1',
   ])('execute() rejects unsafe serialized args: %s', async (args) => {
-    const client = makeClient();
-    const run = new RunResource(client);
     await expect(
-      run._executeSerializedArgs({ code: '1+1' }, args)
+      run()._executeSerializedArgs({ code: '1+1' }, args)
     ).rejects.toThrow();
-    expect(client._request).not.toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(0);
   });
 
   it.each([
@@ -226,40 +265,27 @@ describe('RunResource', () => {
   ])(
     'execute() accepts serialized numbers within the safe range: %s',
     async (args) => {
-      const client = makeClient();
-      const run = new RunResource(client);
-      await run._executeSerializedArgs({ code: '1+1' }, args);
-      expect(client._request).toHaveBeenCalled();
+      await run()._executeSerializedArgs({ code: '1+1' }, args);
+      expect(fake.calls).toHaveLength(1);
     }
   );
 
   it('execute() forwards max_heap_size_mb when provided', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
-    await run.execute({ code: '1+1', max_heap_size_mb: 512 });
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
-      body: {
-        code: '1+1',
-        entry_path: undefined,
-        working_dir: undefined,
-        args: undefined,
-        max_heap_size_mb: 512,
-      },
-      timeoutMs: undefined,
-    });
+    await run().execute({ code: '1+1', max_heap_size_mb: 512 });
+    expect(sent()).toEqual({ code: '1+1', maxHeapSizeMb: 512 });
   });
 
   it('execute() forwards timeout_ms as client timeout only', async () => {
-    const client = makeClient();
-    const run = new RunResource(client);
-    await run.execute({ code: '1+1', timeout_ms: 900000 });
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/run', {
+    const c = new AlvaClient({ apiKey: 'key' });
+    const request = vi.spyOn(c, '_v2Request').mockResolvedValue(RUN);
+    await new RunResource(c).execute({ code: '1+1', timeout_ms: 900000 });
+    expect(request).toHaveBeenCalledWith('POST', '/runs', {
       body: {
         code: '1+1',
-        entry_path: undefined,
-        working_dir: undefined,
+        entryPath: undefined,
+        workingDir: undefined,
         args: undefined,
-        max_heap_size_mb: undefined,
+        maxHeapSizeMb: undefined,
       },
       timeoutMs: 900000,
     });

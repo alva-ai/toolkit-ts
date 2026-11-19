@@ -1,78 +1,97 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { AlvaClient } from '../src/client.js';
 import { AlvaError } from '../src/error.js';
 import { ArraysJwtResource } from '../src/resources/arraysJwt.js';
+import { fakeV2 } from './fakeV2.js';
+
+let restore = () => {};
+afterEach(() => restore());
+
+function resource(config = { apiKey: 'alva_test' }) {
+  return new ArraysJwtResource(new AlvaClient(config));
+}
 
 describe('ArraysJwtResource.ensure', () => {
-  it('posts to correct path and returns passthrough', async () => {
-    const client = new AlvaClient({ apiKey: 'alva_test' });
-    const mockResponse = {
-      expires_at: 123,
-      tier: 'SUBSCRIPTION_TIER_PRO' as const,
+  it('refreshes the data-skills token and rebuilds Unix seconds and the tier name', async () => {
+    const fake = fakeV2({
+      'POST /me/data-skills-token/refresh': () => ({
+        expiresAt: '2026-12-01T00:00:00.000Z',
+        tier: 'PRO',
+        renewed: true,
+      }),
+    });
+    restore = fake.restore;
+
+    await expect(resource().ensure()).resolves.toEqual({
+      expires_at: Date.UTC(2026, 11, 1) / 1000,
+      tier: 'SUBSCRIPTION_TIER_PRO',
       renewed: true,
-    };
-    const requestSpy = vi.fn().mockResolvedValue(mockResponse);
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
-
-    const result = await resource.ensure();
-
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    const callArgs = requestSpy.mock.calls[0];
-    expect(callArgs[0]).toBe('POST');
-    expect(callArgs[1]).toBe('/api/v1/arrays-jwt/ensure');
-    expect(result).toEqual(mockResponse);
+    });
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0].body).toBeUndefined();
   });
 
-  it('requires auth — throws UNAUTHENTICATED before hitting _request', async () => {
+  it('requires auth — throws UNAUTHENTICATED before any request', async () => {
     const client = new AlvaClient({});
-    const requestSpy = vi.fn();
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
+    const requestSpy = vi.spyOn(client, '_v2Request');
+    const r = new ArraysJwtResource(client);
 
-    await expect(resource.ensure()).rejects.toMatchObject({
+    await expect(r.ensure()).rejects.toMatchObject({
       name: 'AlvaError',
       code: 'UNAUTHENTICATED',
     });
-    // Ensure the thrown error is an AlvaError instance.
-    await expect(resource.ensure()).rejects.toBeInstanceOf(AlvaError);
+    await expect(r.ensure()).rejects.toBeInstanceOf(AlvaError);
     expect(requestSpy).not.toHaveBeenCalled();
   });
 });
 
 describe('ArraysJwtResource.status', () => {
-  it('gets to correct path and returns passthrough', async () => {
-    const client = new AlvaClient({ apiKey: 'alva_test' });
-    const mockResponse = {
+  it('reads the data-skills token state', async () => {
+    restore = fakeV2({
+      'GET /me/data-skills-token': () => ({
+        exists: true,
+        expiresAt: '1970-01-01T00:07:36.900Z',
+        tier: 'MAX',
+        renewalNeeded: false,
+      }),
+    }).restore;
+
+    await expect(resource().status()).resolves.toEqual({
       exists: true,
       expires_at: 456,
-      tier: 'SUBSCRIPTION_TIER_FREE' as const,
+      tier: 'SUBSCRIPTION_TIER_MAX',
       renewal_needed: false,
-    };
-    const requestSpy = vi.fn().mockResolvedValue(mockResponse);
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
-
-    const result = await resource.status();
-
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    const callArgs = requestSpy.mock.calls[0];
-    expect(callArgs[0]).toBe('GET');
-    expect(callArgs[1]).toBe('/api/v1/arrays-jwt/status');
-    expect(result).toEqual(mockResponse);
+    });
   });
 
-  it('requires auth — throws UNAUTHENTICATED before hitting _request', async () => {
-    const client = new AlvaClient({});
-    const requestSpy = vi.fn();
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
+  it('reads a missing token as expiry 0 and an unspecified tier', async () => {
+    restore = fakeV2({
+      'GET /me/data-skills-token': () => ({
+        exists: false,
+        expiresAt: null,
+        tier: null,
+        renewalNeeded: true,
+      }),
+    }).restore;
 
-    await expect(resource.status()).rejects.toMatchObject({
+    await expect(resource().status()).resolves.toEqual({
+      exists: false,
+      expires_at: 0,
+      tier: 'SUBSCRIPTION_TIER_UNSPECIFIED',
+      renewal_needed: true,
+    });
+  });
+
+  it('requires auth — throws UNAUTHENTICATED before any request', async () => {
+    const client = new AlvaClient({});
+    const requestSpy = vi.spyOn(client, '_v2Request');
+    const r = new ArraysJwtResource(client);
+
+    await expect(r.status()).rejects.toMatchObject({
       name: 'AlvaError',
       code: 'UNAUTHENTICATED',
     });
-    await expect(resource.status()).rejects.toBeInstanceOf(AlvaError);
+    await expect(r.status()).rejects.toBeInstanceOf(AlvaError);
     expect(requestSpy).not.toHaveBeenCalled();
   });
 });
