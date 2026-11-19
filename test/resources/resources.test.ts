@@ -528,6 +528,58 @@ describe('FunctionsResource', () => {
     expect(fake.calls[1].body).toEqual({ parametersJson: '{"ticker":"AAPL"}' });
   });
 
+  const NEW_FN = { ...FN, id: 'playbook_function_0new' };
+  const emptyInvocation = () => ({
+    resultJson: 'null',
+    logs: '',
+    creditsUsedTotal: '0',
+    creditsChargedOwner: '0',
+    creditsChargedConsumer: '0',
+  });
+  const analyze = { playbook_id: 'playbook_0abc', function_name: 'analyze' };
+
+  it('register() keeps the returned ID for the calls by name', async () => {
+    fake = fakeV2({
+      'POST /playbooks/playbook_0abc/functions': () => NEW_FN,
+      'POST /functions/playbook_function_0new/invocations': emptyInvocation,
+    });
+    const resource = functions();
+
+    await resource.register({
+      ...analyze,
+      entry_script_path: FN.entryScriptPath,
+    });
+    await resource.invoke(analyze);
+
+    expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'POST /playbooks/playbook_0abc/functions',
+      'POST /functions/playbook_function_0new/invocations',
+    ]);
+  });
+
+  it('delete() forgets the ID, so the next call looks the name up again', async () => {
+    fake = fakeV2({
+      'GET /playbooks/playbook_0abc/functions': [
+        () => page([FN]),
+        () => page([NEW_FN]),
+      ],
+      'DELETE /functions/playbook_function_0analyze': () =>
+        new Response(null, { status: 204 }),
+      'POST /functions/playbook_function_0new/invocations': emptyInvocation,
+    });
+    const resource = functions();
+
+    await resource.delete(analyze);
+    await resource.invoke(analyze);
+
+    expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'GET /playbooks/playbook_0abc/functions',
+      'DELETE /functions/playbook_function_0analyze',
+      'GET /playbooks/playbook_0abc/functions',
+      'POST /functions/playbook_function_0new/invocations',
+    ]);
+  });
+
   it('getAllowance() reads the allowance of one Playbook, or null', async () => {
     fake = fakeV2({
       'GET /me/allowances': [() => page([ALLOWANCE]), () => page([])],

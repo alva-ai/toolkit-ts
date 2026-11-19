@@ -164,7 +164,7 @@ function toAllowance(a: WireAllowance): CreditAllowance {
  * creator and invoked by released playbook UI through the browser UDF runtime.
  */
 export class FunctionsResource {
-  /** Function IDs by Playbook and name; an ID never changes. */
+  /** Function IDs by Playbook and name, as last registered or looked up. */
   private functionIds = new Map<string, Promise<AlvaId>>();
 
   constructor(private client: AlvaClient) {}
@@ -194,6 +194,10 @@ export class FunctionsResource {
         },
       }
     );
+    this.functionIds.set(
+      functionKey(params.playbook_id, params.function_name),
+      Promise.resolve(fn.id)
+    );
     return { function: toFunction(fn) };
   }
 
@@ -212,6 +216,9 @@ export class FunctionsResource {
     this.client._requireAuth();
     const id = await this.functionId(params.playbook_id, params.function_name);
     await this.client._v2Request('DELETE', v2Path`/functions/${id}`);
+    this.functionIds.delete(
+      functionKey(params.playbook_id, params.function_name)
+    );
   }
 
   async invoke<TResult = unknown>(
@@ -294,7 +301,7 @@ export class FunctionsResource {
 
   /** The ID of a Playbook's function, looked up by name once. */
   private functionId(playbookId: AlvaId, name: string): Promise<AlvaId> {
-    const key = JSON.stringify([playbookId, name]);
+    const key = functionKey(playbookId, name);
     let id = this.functionIds.get(key);
     if (id === undefined) {
       id = this.client
@@ -317,6 +324,10 @@ export class FunctionsResource {
     }
     return id;
   }
+}
+
+function functionKey(playbookId: AlvaId, name: string): string {
+  return JSON.stringify([playbookId, name]);
 }
 
 function parseResultPayload<TResult>(result: unknown): TResult {
