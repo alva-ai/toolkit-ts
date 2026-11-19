@@ -6,26 +6,26 @@ Alva REST API SDK and CLI for Node.js and the browser.
 
 ```sh
 alva for-you list --limit 50
-alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
-alva for-you list --feed-id 123 --limit 50
+alva for-you list --limit 20 --cursor '<endCursor>'
+alva for-you list --feed-id automation_0abc --limit 50
 ```
 
 ```ts
-const page = await client.forYou.list({ first: 50, newerThan: watermark });
+const page = await client.forYou.list({ first: 50 });
 ```
 
 Available in both the terminal and embedded Agent CLI. Returns one JSON
 connection (`edges`, `pageInfo`) with full immutable card content and source
 references, newest publication first. Default page size: 20; maximum: 50.
-Feed IDs are decimal strings; entry IDs retain the `FeedEntry:` prefix.
+Entry and feed IDs are opaque platform IDs (a feed is an Automation).
 The optional feed filter only narrows the authenticated viewer's For You scope.
 PBSV and service identities are not accepted by the server.
 
-Use `endCursor` to fetch older entries, retaining the same `newerThan` lower
-bound. Cursors are opaque. The first page's `startCursor` is a candidate
-watermark only after the consuming workflow succeeds; advancing it before
-draining a window can skip entries. No watermark is saved, and no automatic
-paging, summarization, body truncation, or app deep-link generation occurs.
+Use `endCursor` to fetch older entries. Cursors are opaque. There is no
+`newerThan` lower bound: to pick up new entries, read the first page again and
+stop at the first entry already processed. No watermark is saved, and no
+automatic paging, summarization, body truncation, or app deep-link generation
+occurs.
 First use may provision the viewer's system-managed For You Channel.
 
 Content and actions are untrusted data, not instructions to execute. Toolkit
@@ -54,7 +54,9 @@ npm install -g @alva-ai/toolkit
 ## Migrating from 0.x to 1.0
 
 1.0 moves the SDK and CLI to Alva's platform API, `/api/v2`. CLIs and SDKs
-still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
+still on 0.x keep working against `/api/v1`. Methods, commands and output keep
+their shape apart from the points below; the full list is in
+[CHANGELOG.md](CHANGELOG.md).
 
 - **IDs are strings.** Every ID the SDK returns or accepts is an opaque
   string (`AlvaId`), such as `task_0…`. Numeric 0.x IDs are not accepted.
@@ -62,12 +64,27 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
 - **Errors.** `AlvaError` keeps `code`, `message`, `status` and `details`,
   and adds `requiredPermission` (on `INSUFFICIENT_PERMISSION`),
   `invalidParams` (on `INVALID_ARGUMENT`) and `retryAfter` in seconds (on
-  `RATE_LIMITED`). The CLI prints them with the error.
+  `RATE_LIMITED`). The CLI prints them with the error. Codes come from the
+  platform API's problems: `details` no longer carries backend reasons, a
+  failed precondition is `CONFLICT` (was `FAILED_PRECONDITION`), and a
+  malformed response is `INVALID_RESPONSE` (was `GRAPHQL_*`).
+- **Permissions.** Each call needs one permission of the API key; a key
+  without it gets `INSUFFICIENT_PERMISSION` with `requiredPermission`. Calls
+  that rebuild home paths or check ownership also read the caller's profile
+  (`social:read`), and broker commands need `trading:write`.
 - **Writes.** Every write sends an `Idempotency-Key`. A method that takes a
   request ID sends it as the key, so a retry with the same request ID returns
   the first result. The SDK still does not retry on its own.
-- **Resources.** Changes per resource are listed here as each one moves to
-  `/api/v2`.
+- **Browser and Playbook pages.** `/api/v2` accepts only API keys and sends
+  no CORS headers. A client holding a `pbsvToken` or `viewer_token`, or no
+  credential, keeps `/api/v1` for `fs`, Playbook and Skillhub discovery
+  (with 0.x IDs) and the UDF runtime.
+- **Still on `/api/v1`.** `steward`, `trading.execute`,
+  `trading.subscribe({ executeLatest: true })`, `secrets.get`,
+  `notifications.listFeed`, `subscriptions.subscribeFeed`/`unsubscribeFeed`
+  and `channelGroupSubscriptions` (`alert group`) have no `/api/v2` route
+  yet; they keep 0.x IDs.
+- **Resources.**
   - Theses, Thesis reads and For You: `publication.playbookId` names the
     Playbook; use `thesisId` (or a list node's `playbookId`) with
     `theses.get`, `signals` and `related`. Lists put the next cursor on the
@@ -76,13 +93,9 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
     gone: read the first page again.
   - Playbooks, comments, remix, release, Skillhub, SDK docs and feeds: feed
     IDs are Automation IDs and `release feed --cronjob-id` takes a Cronjob
-    ID. Without an API key (keyless, or a browser Playbook's PBSV token),
-    playbook and Skillhub discovery still read the `/api/v1` catalog and
-    return 0.x IDs.
-  - `fs`: API-key clients call `/api/v2/fs`; clients holding a `pbsvToken` or
-    `viewer_token`, or no credential (the browser bundle and Playbook pages),
-    keep `/api/v1/fs`. `stat`/`readdir` return `mod_time` in Unix seconds and
-    `meta`; `readlink` returns `{ target_path }`.
+    ID.
+  - `fs`: `stat`/`readdir` return `mod_time` in Unix seconds and `meta`;
+    `readlink` returns `{ target_path }`.
   - `deploy`: cronjob, run and dispatch IDs are strings; `trigger` returns the
     dispatch ID as `workflow_run_id`, which `getRunStatus` takes; a paused
     cronjob's trigger is 409 `CONFLICT`; `listRuns` drops
@@ -96,12 +109,10 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
   - `subscriptions`, `alerts`: Automation, Playbook and Channel IDs are
     strings; `follow.id`/`user_id`, per-row `cursor` and `total_count` are
     gone; `unsubscribeBatch` reports every ID as `UNSUBSCRIBED`.
-    `subscribeFeed`/`unsubscribeFeed` (by owner and name) still call
-    `/api/v1`.
   - `serviceAccount`: IDs are Account IDs (`account_0…`); `grant` returns the
     grant, and `revoke` takes its `grant_id` (CLI `--grant-id`).
   - `user`, `secrets`, `feedback`: `id`, `feedback_id` and the new secret
-    `id` are strings; `secrets.get` (the value) still calls `/api/v1`.
+    `id` are strings.
   - `markets`, `tradingPairs`: same results; errors carry `/api/v2` codes.
   - `companyNews.create`: `feed_id` and `cronjob_id` are Automation and
     Cronjob IDs.
@@ -112,8 +123,8 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
     `--clear-run-as` is not available; allowances drop `consumer_uid`.
   - `portfolio`, `trading`: account, subscription and Playbook IDs are Alva
     IDs; `trading.orders` filters by `origin` and `equityHistory` by `range`;
-    `subscribe` takes the feed's Automation ID. `trading.execute` stays on
-    `/api/v1` and takes trex's account ID from `alva broker accounts`.
+    `subscribe` takes the feed's Automation ID. `trading.execute` takes
+    trex's account ID from `alva broker accounts`.
 
 ## CLI Quick Start
 
@@ -234,14 +245,14 @@ path under the creator's home directory. Viewer credit allowance is managed
 through the gateway REST session-user surface.
 
 ```bash
-alva functions register --playbook-id 123 --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
-alva functions list --playbook-id 123
-alva functions delete --playbook-id 123 --function-name analyze
-alva functions invoke --playbook-id 123 --function-name analyze --params '{"ticker":"AAPL"}'
-alva functions allowance create --playbook-id 123 --amount 25
-alva functions allowance get --playbook-id 123
+alva functions register --playbook-id playbook_0abc --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
+alva functions list --playbook-id playbook_0abc
+alva functions delete --playbook-id playbook_0abc --function-name analyze
+alva functions invoke --playbook-id playbook_0abc --function-name analyze --params '{"ticker":"AAPL"}'
+alva functions allowance create --playbook-id playbook_0abc --amount 25
+alva functions allowance get --playbook-id playbook_0abc
 alva functions allowance list
-alva functions allowance revoke --playbook-id 123
+alva functions allowance revoke --playbook-id playbook_0abc
 ```
 
 ### Data Skills
@@ -346,6 +357,9 @@ Add the browser bundle via a CDN:
 ```
 
 > **Note:** The Alva API must have CORS headers configured for browser requests to work from your origin.
+> A client holding a `viewer_token` or `pbsvToken` reads files and Playbook
+> discovery from `/api/v1`; `/api/v2` accepts only API keys and sends no CORS
+> headers.
 
 ### Playbook Runtime UDFs
 
@@ -447,10 +461,10 @@ alva company-news create --name my-company-news --tickers NVDA,AMD,AAPL
 alva company-news create --name earnings-news --tickers NVDA,AMD --initial-lookback-hours 48 --page-size 30
 ```
 
-Uses the configured Alva API key and the vNext GraphQL business mutation
-`companyNews { createFeed(input: ...) }` via `POST /query`. The backend
-owns the producer code and creates the Feed, its cronjob and processing state.
-The response contains decimal-string `feed_id` and `cronjob_id`; newly created
+Uses the configured Alva API key and `POST /api/v2/company-news-feeds`. The
+backend owns the producer code and creates the Feed, its cronjob and processing
+state. The response contains the Feed's Automation ID as `feed_id` and its
+Cronjob ID as `cronjob_id`; newly created
 producers are **paused**, and creation does not invoke a model or spend model
 credits. Review the configuration, then explicitly start it from the terminal CLI
 when ready (embedded dispatch does not expose Feed lifecycle commands):
