@@ -128,9 +128,9 @@ Releases before 1.0.0 are listed under the repository's tags.
 - `trading.subscribe` takes `signalSourceId` (the feed's Automation ID; CLI
   `--signal-source-id`). Without it, `sourceUsername`/`sourceFeed` must name
   one of the caller's own feeds.
-- `trading.updateRiskRules` sends a merge patch; a credential that may only
-  tighten limits gets `INSUFFICIENT_PERMISSION` with `requiredPermission:
-"trading_limits:write"`.
+- `trading.updateRiskRules` sends a merge patch; raising or lifting a limit
+  with a credential that may only tighten it fails with
+  `INSUFFICIENT_PERMISSION`, `requiredPermission` `trading_limits:write`.
 - The broker CLI (`alva broker`, `alva trading broker`) posts
   `/api/v2/broker/invocations`, which needs `trading:write`; envelopes and
   exit codes are unchanged.
