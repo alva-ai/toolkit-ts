@@ -57,8 +57,8 @@ export interface CreditWalletItemsParams {
   startAtMs: number;
   /** Exclusive UTC upper bound, Unix milliseconds. */
   endAtMs: number;
-  /** Optional chat/session id to filter consumption records. */
-  sessionId?: string;
+  /** Optional Session ID to filter consumption records. */
+  sessionId?: AlvaId;
   /** Page size, defaulted and capped by the gateway. */
   first?: number;
   /** Opaque cursor from a previous page's `pageInfo.endCursor`. */
@@ -66,14 +66,16 @@ export interface CreditWalletItemsParams {
 }
 
 export interface CreditWalletItem {
-  id: string;
-  sessionId: string | null;
-  playbookId: string | null;
-  feedId: string | null;
-  op: string;
+  id: AlvaId;
+  sessionId: AlvaId | null;
+  playbookId: AlvaId | null;
+  /** The Automation ID of the feed the entry belongs to. */
+  feedId: AlvaId | null;
+  op: 'credit' | 'debit';
   source: string;
   amount: number;
-  extras?: unknown;
+  /** What the entry was for, as the wallet shows it. */
+  title?: string;
   /** Creation timestamp, Unix milliseconds. */
   createdAtMs: number;
 }

@@ -390,7 +390,7 @@ Items window flags (choose exactly one):
   --start <time> --end <time>  Explicit UTC window; accepts ISO, YYYY-MM-DD, or Unix ms
 
 Items optional flags:
-  --session-id <id>         Filter to one chat/session
+  --session-id <id>         Filter to one chat/session (a Session ID)
   --first <n>               Page size (1-500)
   --after <cursor>          Opaque cursor from pageInfo.endCursor
 
@@ -401,7 +401,7 @@ Notes:
 Examples:
   alva credits wallet
   alva credits items --today --first 20
-  alva credits items --last 7d --session-id 2069373335591239680
+  alva credits items --last 7d --session-id session_0abc
   alva credits items --start 2026-06-23 --end 2026-06-24`,
 
   fs: `Usage: alva fs <subcommand> [options]

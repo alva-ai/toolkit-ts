@@ -7,7 +7,7 @@ import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
-import { fakeV2 } from '../fakeV2.js';
+import { fakeV2, problem } from '../fakeV2.js';
 
 function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
@@ -18,96 +18,163 @@ function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
 }
 
 describe('CreditsResource', () => {
-  it('wallet() sends a viewer-scoped POST /query request', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      data: {
-        viewer: {
-          creditWallet: { balance: 100, totalRemaining: 100, todayUsed: 3 },
-        },
-      },
-    });
-    const credits = new CreditsResource(client);
+  const WALLET = {
+    balance: '100',
+    todayUsed: '3',
+    balances: [{ kind: 'DAILY', remaining: '100', expiresAt: null }],
+  };
+  let fake: ReturnType<typeof fakeV2> | undefined;
+  afterEach(() => fake?.restore());
+  const credits = () => new CreditsResource(new AlvaClient({ apiKey: 'key' }));
 
-    const result = await credits.wallet();
+  it('wallet() reads GET /api/v2/me/wallet and keeps the v1 totals', async () => {
+    fake = fakeV2({ 'GET /me/wallet': () => WALLET });
 
-    expect(result).toEqual({ balance: 100, totalRemaining: 100, todayUsed: 3 });
-    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
-      body: {
-        query: expect.stringContaining('viewer'),
-      },
+    await expect(credits().wallet()).resolves.toEqual({
+      balance: 100,
+      totalRemaining: 100,
+      todayUsed: 3,
     });
-    const body = client._request.mock.calls[0][2]?.body as {
-      query: string;
-    };
-    expect(body.query).toContain('creditWallet');
-    expect(body.query).not.toContain('userId');
   });
 
-  it('items() sends time-window, session, and pagination input to viewer.creditWallet.items', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      data: {
-        viewer: {
-          creditWallet: {
-            balance: 100,
-            totalRemaining: 100,
-            todayUsed: 3,
-            items: {
-              pageInfo: {
-                hasNextPage: false,
-                hasPreviousPage: false,
-                startCursor: null,
-                endCursor: null,
-              },
-              edges: [],
-            },
+  it('items() sends the window, session and page, and rebuilds the v1 connection', async () => {
+    fake = fakeV2({
+      'GET /me/wallet': () => WALLET,
+      'GET /me/credit-entries': () => ({
+        items: [
+          {
+            id: 'credit_entry_0a',
+            amount: '-5',
+            reason: 'CHAT',
+            title: 'Ask',
+            grantKind: null,
+            sessionId: 'session_0a',
+            playbookId: null,
+            automationId: null,
+            occurredAt: '2026-06-23T01:00:00.000Z',
           },
-        },
-      },
+          {
+            id: 'credit_entry_0b',
+            amount: '200',
+            reason: 'DAILY_GRANT',
+            title: null,
+            grantKind: 'DAILY',
+            sessionId: null,
+            playbookId: 'playbook_0p',
+            automationId: 'automation_0f',
+            occurredAt: '2026-06-23T00:00:00.000Z',
+          },
+          {
+            id: 'credit_entry_0c',
+            amount: '-1',
+            reason: 'OTHER',
+            title: null,
+            grantKind: null,
+            sessionId: null,
+            playbookId: null,
+            automationId: null,
+            occurredAt: '2026-06-22T23:00:00.000Z',
+          },
+        ],
+        nextPageToken: 'page-2',
+      }),
     });
-    const credits = new CreditsResource(client);
 
-    await credits.items({
+    const result = await credits().items({
       startAtMs: 1782172800000,
       endAtMs: 1782259200000,
-      sessionId: '2069373335591239680',
+      sessionId: 'session_0a',
       first: 10,
-      after: 'cursor-1',
+      after: 'page-1',
     });
 
-    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
-      body: {
-        query: expect.stringContaining('CreditWalletItemConnectionInput'),
-        variables: {
-          input: {
-            startAtMs: 1782172800000,
-            endAtMs: 1782259200000,
-            sessionId: '2069373335591239680',
-            first: 10,
-            after: 'cursor-1',
-          },
+    const entries = fake.calls.find((c) => c.path === '/me/credit-entries');
+    expect(Object.fromEntries(entries!.query)).toEqual({
+      from: '2026-06-23T00:00:00.000Z',
+      to: '2026-06-24T00:00:00.000Z',
+      sessionId: 'session_0a',
+      pageSize: '10',
+      pageToken: 'page-1',
+    });
+    expect(result).toEqual({
+      balance: 100,
+      totalRemaining: 100,
+      todayUsed: 3,
+      items: {
+        pageInfo: {
+          hasNextPage: true,
+          hasPreviousPage: false,
+          startCursor: null,
+          endCursor: 'page-2',
         },
+        edges: [
+          {
+            cursor: '',
+            node: {
+              id: 'credit_entry_0a',
+              sessionId: 'session_0a',
+              playbookId: null,
+              feedId: null,
+              op: 'debit',
+              source: 'ask',
+              amount: 5,
+              title: 'Ask',
+              createdAtMs: Date.UTC(2026, 5, 23, 1),
+            },
+          },
+          {
+            cursor: '',
+            node: {
+              id: 'credit_entry_0b',
+              sessionId: null,
+              playbookId: 'playbook_0p',
+              feedId: 'automation_0f',
+              op: 'credit',
+              source: 'daily_reset',
+              amount: 200,
+              createdAtMs: Date.UTC(2026, 5, 23),
+            },
+          },
+          {
+            cursor: 'page-2',
+            node: expect.objectContaining({ op: 'debit', source: 'other' }),
+          },
+        ],
       },
     });
-    const body = client._request.mock.calls[0][2]?.body as {
-      query: string;
-    };
-    expect(body.query).toContain('items(input: $input)');
-    expect(body.query).not.toContain('userId');
   });
 
-  it('surfaces GraphQL errors as AlvaError', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      errors: [{ message: 'endAtMs must be greater than startAtMs' }],
+  it('items() ends the list on a null next token', async () => {
+    fake = fakeV2({
+      'GET /me/wallet': () => WALLET,
+      'GET /me/credit-entries': () => ({ items: [], nextPageToken: null }),
     });
-    const credits = new CreditsResource(client);
 
-    await expect(credits.wallet()).rejects.toMatchObject({
+    const result = await credits().items({ startAtMs: 0, endAtMs: 1 });
+
+    expect(result.items).toEqual({
+      pageInfo: {
+        hasNextPage: false,
+        hasPreviousPage: false,
+        startCursor: null,
+        endCursor: null,
+      },
+      edges: [],
+    });
+  });
+
+  it('surfaces problems as AlvaError', async () => {
+    fake = fakeV2({
+      'GET /me/wallet': () =>
+        problem(403, 'INSUFFICIENT_PERMISSION', {
+          requiredPermission: 'billing:read',
+        }),
+    });
+
+    await expect(credits().wallet()).rejects.toMatchObject({
       name: 'AlvaError',
-      code: 'GRAPHQL_ERROR',
-      message: 'endAtMs must be greater than startAtMs',
+      code: 'INSUFFICIENT_PERMISSION',
+      requiredPermission: 'billing:read',
     });
   });
 });

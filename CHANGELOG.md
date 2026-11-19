@@ -95,6 +95,12 @@ Releases before 1.0.0 are listed under the repository's tags.
   plan, `reject_reason`, `upgrade_url` and `entitlement_failure`.
 - `arraysJwt.status` and `ensure` read `/api/v2/me/data-skills-token`;
   `tier` may be `SUBSCRIPTION_TIER_MAX`.
+- `credits.wallet` and `items` read `/api/v2/me/wallet` and
+  `/api/v2/me/credit-entries`. Entry `id`, `sessionId`, `playbookId` and
+  `feedId` (the feed's Automation) are Alva IDs, and `sessionId` filters by a
+  Session ID. `extras` is gone; entries add `title`. Entries have no cursor of
+  their own: the last edge carries the page's `endCursor`, the others `''`.
+  `source` is `other` for reasons v1 had no name for.
 
 ### Added
 

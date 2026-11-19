@@ -1,88 +1,74 @@
 import type { AlvaClient } from '../client.js';
-import { AlvaError } from '../error.js';
+import type { Page } from '../platformApi.js';
 import type {
+  AlvaId,
   CreditWallet,
+  CreditWalletItem,
   CreditWalletItemsParams,
   CreditWalletItemsResponse,
 } from '../types.js';
 
-const CREDIT_WALLET_QUERY = `
-query ToolkitCreditWallet {
-  viewer {
-    creditWallet {
-      balance
-      totalRemaining
-      todayUsed
-    }
-  }
-}
-`.trim();
-
-const CREDIT_WALLET_ITEMS_QUERY = `
-query ToolkitCreditWalletItems($input: CreditWalletItemConnectionInput!) {
-  viewer {
-    creditWallet {
-      balance
-      totalRemaining
-      todayUsed
-      items(input: $input) {
-        pageInfo {
-          hasNextPage
-          hasPreviousPage
-          startCursor
-          endCursor
-        }
-        edges {
-          cursor
-          node {
-            id
-            sessionId
-            playbookId
-            feedId
-            op
-            source
-            amount
-            extras
-            createdAtMs
-          }
-        }
-      }
-    }
-  }
-}
-`.trim();
-
-interface GraphQLErrorPayload {
-  message?: unknown;
-  [key: string]: unknown;
+// The wallet and the credit ledger on /api/v2 (alva-gateway
+// pkg/v2/api/billing). Amounts are Decimal strings of whole credits.
+interface WireWallet {
+  balance: string;
+  todayUsed: string;
 }
 
-interface GraphQLResponse<T> {
-  data?: T | null;
-  errors?: GraphQLErrorPayload[];
+interface WireCreditEntry {
+  id: AlvaId;
+  amount: string;
+  reason: string;
+  title: string | null;
+  sessionId: AlvaId | null;
+  playbookId: AlvaId | null;
+  automationId: AlvaId | null;
+  occurredAt: string;
 }
 
-interface CreditWalletQueryData {
-  viewer?: {
-    creditWallet?: CreditWallet | null;
-  } | null;
+/** v1's credit source for each v2 reason. */
+const SOURCE_OF_REASON: Readonly<Record<string, string>> = {
+  CHAT: 'ask',
+  STRATEGY: 'strategy',
+  DASHBOARD: 'dashboard',
+  PLAYBOOK: 'playbook',
+  SERVICE_CALL: 'service',
+  IMAGE_GENERATION: 'image_generation',
+  SPEECH_TRANSCRIPTION: 'speech_transcription',
+  X_FEED_DATA: 'arrays_x_feed',
+  EARNINGS_INTERPRETATION: 'earnings_interpretation',
+  CREDIT_PACK: 'credit_pack',
+  RECHARGE: 'recharge',
+  DAILY_GRANT: 'daily_reset',
+  MONTHLY_GRANT: 'monthly_reset',
+  SIGN_UP_BONUS: 'sign_up_bonus',
+  INVITE_BONUS: 'bind_invite_code',
+  REFERRAL_BONUS: 'referral',
+  PROMOTION: 'operation_promotion',
+};
+
+function toWallet(w: WireWallet): CreditWallet {
+  const balance = Number(w.balance);
+  return {
+    balance,
+    totalRemaining: balance,
+    todayUsed: Number(w.todayUsed),
+  };
 }
 
-interface CreditWalletItemsQueryData {
-  viewer?: {
-    creditWallet?: CreditWalletItemsResponse | null;
-  } | null;
-}
-
-function graphQLErrorMessage(errors: GraphQLErrorPayload[]): string {
-  const messages = errors
-    .map((error) =>
-      typeof error.message === 'string' && error.message
-        ? error.message
-        : undefined
-    )
-    .filter((message): message is string => Boolean(message));
-  return messages.length > 0 ? messages.join('; ') : 'GraphQL request failed';
+function toItem(e: WireCreditEntry): CreditWalletItem {
+  const item: CreditWalletItem = {
+    id: e.id,
+    sessionId: e.sessionId,
+    playbookId: e.playbookId,
+    feedId: e.automationId,
+    op: e.amount.startsWith('-') ? 'debit' : 'credit',
+    source: SOURCE_OF_REASON[e.reason] ?? 'other',
+    amount: Math.abs(Number(e.amount)),
+    createdAtMs: Date.parse(e.occurredAt),
+  };
+  if (e.title !== null) item.title = e.title;
+  return item;
 }
 
 export class CreditsResource {
@@ -90,68 +76,48 @@ export class CreditsResource {
 
   async wallet(): Promise<CreditWallet> {
     this.client._requireAuth();
-    const data = await this.graphql<CreditWalletQueryData>(CREDIT_WALLET_QUERY);
-    const wallet = data.viewer?.creditWallet;
-    if (!wallet) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include viewer.creditWallet',
-        502
-      );
-    }
-    return wallet;
+    return toWallet(
+      await this.client._v2Request<WireWallet>('GET', '/me/wallet')
+    );
   }
 
   async items(
     params: CreditWalletItemsParams
   ): Promise<CreditWalletItemsResponse> {
     this.client._requireAuth();
-    const data = await this.graphql<CreditWalletItemsQueryData>(
-      CREDIT_WALLET_ITEMS_QUERY,
-      {
-        input: {
-          startAtMs: params.startAtMs,
-          endAtMs: params.endAtMs,
-          sessionId: params.sessionId,
-          first: params.first,
-          after: params.after,
+    const [wallet, page] = await Promise.all([
+      this.client._v2Request<WireWallet>('GET', '/me/wallet'),
+      this.client._v2Request<Page<WireCreditEntry>>(
+        'GET',
+        '/me/credit-entries',
+        {
+          query: {
+            from: new Date(params.startAtMs).toISOString(),
+            to: new Date(params.endAtMs).toISOString(),
+            sessionId: params.sessionId,
+            pageSize: params.first,
+            pageToken: params.after,
+          },
+        }
+      ),
+    ]);
+    const next = page.nextPageToken;
+    const edges = page.items.map((entry, i) => ({
+      // Rows have no cursor of their own; the last one carries the page's.
+      cursor: i === page.items.length - 1 ? (next ?? '') : '',
+      node: toItem(entry),
+    }));
+    return {
+      ...toWallet(wallet),
+      items: {
+        pageInfo: {
+          hasNextPage: next !== null,
+          hasPreviousPage: false,
+          startCursor: null,
+          endCursor: next,
         },
-      }
-    );
-    const wallet = data.viewer?.creditWallet;
-    if (!wallet) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include viewer.creditWallet.items',
-        502
-      );
-    }
-    return wallet;
-  }
-
-  private async graphql<T>(
-    query: string,
-    variables?: Record<string, unknown>
-  ): Promise<T> {
-    const response = (await this.client._request('POST', '/query', {
-      body: variables === undefined ? { query } : { query, variables },
-    })) as GraphQLResponse<T>;
-
-    if (response.errors && response.errors.length > 0) {
-      throw new AlvaError(
-        'GRAPHQL_ERROR',
-        graphQLErrorMessage(response.errors),
-        400,
-        { errors: response.errors }
-      );
-    }
-    if (!response.data) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include data',
-        502
-      );
-    }
-    return response.data;
+        edges,
+      },
+    };
   }
 }

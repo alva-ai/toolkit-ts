@@ -1339,7 +1339,7 @@ describe('CLI dispatch', () => {
       '--end',
       '2026-06-24T00:00:00Z',
       '--session-id',
-      '2069373335591239680',
+      'session_0abc',
       '--first',
       '10',
       '--after',
@@ -1348,7 +1348,7 @@ describe('CLI dispatch', () => {
     expect(client.credits.items).toHaveBeenCalledWith({
       startAtMs: 1782172800000,
       endAtMs: 1782259200000,
-      sessionId: '2069373335591239680',
+      sessionId: 'session_0abc',
       first: 10,
       after: 'cursor-1',
     });
