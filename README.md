@@ -51,6 +51,24 @@ Or install globally for the CLI:
 npm install -g @alva-ai/toolkit
 ```
 
+## Migrating from 0.x to 1.0
+
+1.0 moves the SDK and CLI to Alva's platform API, `/api/v2`. CLIs and SDKs
+still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
+
+- **IDs are strings.** Every ID the SDK returns or accepts is an opaque
+  string (`AlvaId`), such as `task_0…`. Numeric 0.x IDs are not accepted.
+  Store and pass IDs unchanged; never parse them or turn them into numbers.
+- **Errors.** `AlvaError` keeps `code`, `message`, `status` and `details`,
+  and adds `requiredPermission` (on `INSUFFICIENT_PERMISSION`),
+  `invalidParams` (on `INVALID_ARGUMENT`) and `retryAfter` in seconds (on
+  `RATE_LIMITED`). The CLI prints them with the error.
+- **Writes.** Every write sends an `Idempotency-Key`. A method that takes a
+  request ID sends it as the key, so a retry with the same request ID returns
+  the first result. The SDK still does not retry on its own.
+- **Resources.** Changes per resource are listed here as each one moves to
+  `/api/v2`.
+
 ## CLI Quick Start
 
 Sign in with your Alva account (opens a browser, falls back to a paste-code
@@ -366,6 +384,9 @@ try {
     console.error(err.code); // 'NOT_FOUND'
     console.error(err.status); // 404
     console.error(err.message); // 'File not found'
+    console.error(err.requiredPermission); // on INSUFFICIENT_PERMISSION
+    console.error(err.invalidParams); // on INVALID_ARGUMENT: [{ name, reason }]
+    console.error(err.retryAfter); // on RATE_LIMITED: seconds
   }
 }
 ```
