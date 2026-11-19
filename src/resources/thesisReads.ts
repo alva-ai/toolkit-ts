@@ -1,11 +1,17 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { v2Path, type Page } from '../platformApi.js';
+import type { AlvaId } from '../types.js';
 import {
-  THESIS_PUBLICATION_FIELDS,
-  isPositiveInt64,
-  isThesisPublication,
+  epochMs,
+  invalidThesisResponse,
+  isWireThesis,
+  nonempty,
+  publicationSummary,
+  publishedThesis,
   record,
   type ThesisPublicationSummary,
+  type WireThesis,
 } from './thesisPublication.js';
 
 export interface ThesisPageParams {
@@ -22,9 +28,10 @@ export interface ListThesesParams extends ThesisPageParams {
   personName?: string;
   /** Exact PublicUser username, e.g. a publisher's `username`; not a display name. */
   user?: string;
-  /** Catalog ticker or alias; resolves only a unique entity. */
+  /** Catalog ticker or alias. */
   ticker?: string;
-  entityId?: string;
+  /** Asset ID. */
+  entityId?: AlvaId;
   /** Author lists only; omitted means ACTIVE. */
   status?: 'ACTIVE' | 'ARCHIVED';
 }
@@ -32,21 +39,24 @@ export interface ListThesesParams extends ThesisPageParams {
 export type ThesisReadScope =
   | {
       __typename: 'Person';
-      id: string;
+      /** Profile ID. */
+      id: AlvaId;
       slug: string;
       displayName: string;
       bio: string;
     }
   | {
       __typename: 'PublicUser';
-      id: string;
+      /** Profile ID. */
+      id: AlvaId;
       username: string;
       displayName: string;
       bio: string;
     }
   | {
       __typename: 'Entity';
-      id: string;
+      /** Asset ID. */
+      id: AlvaId;
       ticker: string;
       name: string;
       kind: string;
@@ -61,11 +71,12 @@ export type ThesisReadScope =
 export interface ThesisListPage {
   scope: ThesisReadScope;
   edges: {
+    /** The page's `nextCursor` on the last edge; empty on the others. */
     cursor: string;
     node: {
-      /** Internal ID accepted by get/version/signals/related. */
-      playbookId: string;
-      /** Null when the author list has no readable publication snapshot. */
+      /** Thesis ID, accepted by get/version/signals/related. */
+      playbookId: AlvaId;
+      /** Always set: a Thesis without a readable publication is not listed. */
       publication: ThesisPublicationSummary | null;
     };
   }[];
@@ -74,9 +85,14 @@ export interface ThesisListPage {
 
 /** Related publications of the source's current version. */
 export interface RelatedThesesPage {
-  /** GENERATING and FAILED carry no matches; READY with no edges means none. */
+  /**
+   * GENERATING carries no matches (ask again later); READY with no edges
+   * means none. FAILED is no longer returned: a failed preparation reads as
+   * READY with no edges.
+   */
   state: 'GENERATING' | 'READY' | 'FAILED';
   edges: {
+    /** The page's `nextCursor` on the last edge; empty on the others. */
     cursor: string;
     node: {
       itemKey: string;
@@ -88,49 +104,23 @@ export interface RelatedThesesPage {
   nextCursor: string | null;
 }
 
-type Edge = { cursor: string; node: Record<string, unknown> };
-type ListNode = ThesisListPage['edges'][number]['node'];
-type ScopeOf<K extends ThesisReadScope['__typename']> = Extract<
-  ThesisReadScope,
-  { __typename: K }
->;
+/** A public profile as the /api/v2 profile search returns it. */
+interface WireProfileMatch {
+  id: AlvaId;
+  kind: 'USER' | 'PERSON';
+  handle: string;
+  displayName: string;
+}
 
-const PAGE = 'pageInfo { endCursor hasNextPage }';
-const PERSON = '__typename id slug displayName bio';
-const USER = '__typename id username displayName bio';
-const ENTITY = '__typename id ticker name kind assetClass venue { id name }';
-const AUTHOR_THESES = `theses(input: $input) {
-  edges { cursor node { id latestRelease { thesisPublication { ${THESIS_PUBLICATION_FIELDS} } } } }
-  ${PAGE}
-}`;
-const PERSON_QUERY = `query ToolkitPersonTheses($slug: String!, $input: ProfileThesisConnectionInput) {
-  scope: person(slug: $slug) { ${PERSON} ${AUTHOR_THESES} }
-}`;
-const USER_QUERY = `query ToolkitUserTheses($username: String!, $input: ProfileThesisConnectionInput) {
-  scope: publicUser(username: $username) { ${USER} ${AUTHOR_THESES} }
-}`;
-const ENTITY_QUERY = `query ToolkitEntityTheses($id: ID!, $input: EntityThesisConnectionInput) {
-  market { scope: entity(input: { id: $id }) { ${ENTITY}
-    theses(input: $input) { edges { cursor node { ${THESIS_PUBLICATION_FIELDS} } } ${PAGE} }
-  } }
-}`;
-const PEOPLE_QUERY = `query ToolkitThesisPeople($query: String!) {
-  search: people(input: { query: $query, first: 50 }) {
-    edges { node { ${PERSON} } } pageInfo { hasNextPage }
-  }
-}`;
-/** `byPrefix: false` is an exact catalog alias match, not a fuzzy search. */
-const ENTITIES_QUERY = `query ToolkitThesisEntities($query: String!) {
-  market { search: entities(input: { query: $query, first: 50, byPrefix: false }) {
-    edges { node { ${ENTITY} } } pageInfo { hasNextPage }
-  } }
-}`;
-const RELATED_QUERY = `query ToolkitRelatedTheses($id: ID!, $input: RelatedThesisInput) {
-  node(id: $id) { ... on Playbook { relatedTheses(input: $input) {
-    state nextCursor
-    edges { cursor node { itemKey score publication { ${THESIS_PUBLICATION_FIELDS} } } }
-  } } }
-}`;
+/** An asset as /api/v2 returns it. */
+interface WireAsset {
+  id: AlvaId;
+  symbol: string;
+  name: string;
+  kind: string;
+  assetClass: string | null;
+  venue: { code: string; name: string } | null;
+}
 
 const SELECTORS = [
   'person',
@@ -166,9 +156,6 @@ export function validateListThesesParams(params: ListThesesParams): void {
   }
   if (!nonempty(params[chosen[0]]))
     throw argument(`${chosen[0]} must be non-empty`);
-  if (params.entityId !== undefined && !isPositiveInt64(params.entityId)) {
-    throw argument('entityId must be a positive int64 string');
-  }
   if (
     params.status !== undefined &&
     params.status !== 'ACTIVE' &&
@@ -191,123 +178,181 @@ export async function listTheses(
 ): Promise<ThesisListPage> {
   validateListThesesParams(params);
   client._requireAuth();
-  const input = { first: params.first ?? 10, after: params.cursor };
-  const entityId =
-    params.ticker === undefined
-      ? params.entityId
-      : (await resolveUnique(client, ENTITIES_QUERY, params.ticker, 'Entity'))
-          .id;
-  if (entityId !== undefined) {
-    const data = await graphql(client, ENTITY_QUERY, { id: entityId, input });
-    if (!record(data.market)) throw invalid();
-    return thesisPage(data.market.scope, (node) =>
-      isThesisPublication(node)
-        ? { playbookId: node.playbookId, publication: node }
-        : undefined
+  const query = { pageSize: params.first ?? 10, pageToken: params.cursor };
+  if (params.ticker !== undefined || params.entityId !== undefined) {
+    const asset = await client._v2Request<WireAsset>(
+      'GET',
+      params.ticker !== undefined
+        ? v2Path`/assets/by-symbol/${params.ticker}`
+        : v2Path`/assets/${params.entityId as string}`
+    );
+    const page = await client._v2Request<Page<WireThesis>>(
+      'GET',
+      v2Path`/assets/${asset.id}/theses`,
+      { query }
+    );
+    return thesisPage(
+      {
+        __typename: 'Entity',
+        id: asset.id,
+        ticker: asset.symbol,
+        name: asset.name,
+        kind: asset.kind,
+        assetClass: asset.assetClass ?? '',
+        venue: asset.venue && { id: asset.venue.code, name: asset.venue.name },
+      },
+      page
     );
   }
-  const profileInput = { ...input, status: params.status };
-  const slug =
-    params.personName === undefined
-      ? params.person
-      : (await resolveUnique(client, PEOPLE_QUERY, params.personName, 'Person'))
-          .slug;
-  const data =
-    slug === undefined
-      ? await graphql(client, USER_QUERY, {
-          username: params.user,
-          input: profileInput,
-        })
-      : await graphql(client, PERSON_QUERY, { slug, input: profileInput });
-  return thesisPage(data.scope, (node) => {
-    if (!isPositiveInt64(node.id)) return undefined;
-    const release = node.latestRelease;
-    if (release === null) return { playbookId: node.id, publication: null };
-    if (!record(release)) return undefined;
-    const publication = release.thesisPublication;
-    if (publication !== null && !isThesisPublication(publication))
-      return undefined;
-    return { playbookId: node.id, publication };
-  });
+  const profile =
+    params.personName !== undefined
+      ? await uniquePerson(client, params.personName)
+      : await exactProfile(
+          client,
+          params.person === undefined ? 'USER' : 'PERSON',
+          (params.person ?? params.user) as string
+        );
+  const page = await client._v2Request<Page<WireThesis>>(
+    'GET',
+    v2Path`/profiles/${profile.id}/theses`,
+    { query: { ...query, archived: params.status === 'ARCHIVED' } }
+  );
+  // Profile search carries no bio; the author of a listed Thesis does.
+  const bio =
+    pageItems(page)
+      .filter(isWireThesis)
+      .find((t) => t.author?.id === profile.id)?.author?.bio ?? '';
+  return thesisPage(
+    profile.kind === 'PERSON'
+      ? {
+          __typename: 'Person',
+          id: profile.id,
+          slug: profile.handle,
+          displayName: profile.displayName,
+          bio,
+        }
+      : {
+          __typename: 'PublicUser',
+          id: profile.id,
+          username: profile.handle,
+          displayName: profile.displayName,
+          bio,
+        },
+    page
+  );
 }
 
 /** One page of related current publications; never polls a GENERATING state. */
 export async function relatedTheses(
   client: AlvaClient,
-  id: string,
+  id: AlvaId,
   params: ThesisPageParams = {}
 ): Promise<RelatedThesesPage> {
   validateThesisPageParams(params);
-  if (!isPositiveInt64(id))
-    throw argument('id must be an internal positive int64 Playbook ID');
+  if (!nonempty(id)) throw argument('id must be a Thesis ID');
   client._requireAuth();
-  const data = await graphql(client, RELATED_QUERY, {
-    id: `Playbook:${id}`,
-    input: { first: params.first ?? 10, after: params.cursor },
-  });
-  if (data.node === null) throw notFound();
-  if (!record(data.node)) throw invalid();
-  const value = data.node.relatedTheses;
-  if (
-    !record(value) ||
-    !['GENERATING', 'READY', 'FAILED'].includes(value.state as string) ||
-    (value.nextCursor !== null && !nonempty(value.nextCursor))
-  )
-    throw invalid();
-  for (const edge of edges(value)) {
-    if (
-      !nonempty(edge.node.itemKey) ||
-      typeof edge.node.score !== 'number' ||
-      !isThesisPublication(edge.node.publication)
-    )
-      throw invalid();
+  let page: Page<{ itemId: string; score: number; thesis: unknown }>;
+  try {
+    page = await client._v2Request('GET', v2Path`/theses/${id}/related`, {
+      query: { pageSize: params.first ?? 10, pageToken: params.cursor },
+    });
+  } catch (err) {
+    // 503: the related Theses of this version are being prepared.
+    if (err instanceof AlvaError && err.code === 'UNAVAILABLE') {
+      return { state: 'GENERATING', edges: [], nextCursor: null };
+    }
+    throw err;
   }
+  const items = pageItems(page).map((item) => {
+    if (
+      !record(item) ||
+      !nonempty(item.itemId) ||
+      typeof item.score !== 'number'
+    )
+      throw invalidThesisResponse();
+    return {
+      itemKey: item.itemId,
+      score: item.score,
+      publication: publicationSummary(
+        publishedThesis(item.thesis),
+        item.itemId
+      ),
+    };
+  });
   return {
-    state: value.state as RelatedThesesPage['state'],
-    edges: value.edges as RelatedThesesPage['edges'],
-    nextCursor: value.nextCursor as string | null,
+    state: 'READY',
+    edges: pageEdges(items, page.nextPageToken),
+    nextCursor: page.nextPageToken,
   };
 }
 
 function thesisPage(
-  value: unknown,
-  readNode: (node: Record<string, unknown>) => ListNode | undefined
+  scope: ThesisReadScope,
+  page: Page<WireThesis>
 ): ThesisListPage {
-  if (value === null) throw notFound();
-  const scope = readScope(value);
-  if (!record(value) || !record(value.theses)) throw invalid();
-  const page = value.theses;
-  const items = edges(page).map((edge) => {
-    const node = readNode(edge.node);
-    if (node === undefined) throw invalid();
-    return { cursor: edge.cursor, node };
+  const nodes = pageItems(page).map((value) => {
+    const thesis = publishedThesis(value);
+    return {
+      playbookId: thesis.id,
+      publication: publicationSummary(thesis, thesis.id),
+    };
   });
-  return { scope, edges: items, nextCursor: nextCursor(page) };
+  return {
+    scope,
+    edges: pageEdges(nodes, page.nextPageToken),
+    nextCursor: page.nextPageToken,
+  };
 }
 
-/** Name/alias search used only to choose one exact identity, never a fallback. */
-async function resolveUnique<K extends 'Person' | 'Entity'>(
-  client: AlvaClient,
-  document: string,
-  text: string,
-  kind: K
-): Promise<ScopeOf<K>> {
-  const data = await graphql(client, document, { query: text });
-  const search = record(data.market) ? data.market.search : data.search;
+function pageItems(page: unknown): unknown[] {
   if (
-    !record(search) ||
-    !Array.isArray(search.edges) ||
-    !record(search.pageInfo)
+    !record(page) ||
+    !Array.isArray(page.items) ||
+    !(page.nextPageToken === null || nonempty(page.nextPageToken))
   )
-    throw invalid();
-  const candidates = search.edges.map((edge) =>
-    readScope(record(edge) ? edge.node : undefined)
-  );
-  if (!candidates.every((c): c is ScopeOf<K> => c.__typename === kind))
-    throw invalid();
-  const more = search.pageInfo.hasNextPage === true;
-  if (candidates.length === 1 && !more) return candidates[0];
-  if (candidates.length === 0 && !more) throw notFound();
+    throw invalidThesisResponse();
+  return page.items;
+}
+
+/** Edges of one page: the page token rides on the last edge. */
+function pageEdges<T>(
+  nodes: T[],
+  nextPageToken: string | null
+): { cursor: string; node: T }[] {
+  return nodes.map((node, i) => ({
+    cursor: i === nodes.length - 1 ? (nextPageToken ?? '') : '',
+    node,
+  }));
+}
+
+/** The profile whose handle is exactly `handle`, among the search matches. */
+async function exactProfile(
+  client: AlvaClient,
+  kind: 'USER' | 'PERSON',
+  handle: string
+): Promise<WireProfileMatch> {
+  const page = await profileSearch(client, kind, handle);
+  const wanted = handle.toLowerCase();
+  const hit = page.items.find((p) => p.handle.toLowerCase() === wanted);
+  if (!hit) throw notFound();
+  return hit;
+}
+
+/** Name search used only to choose one exact identity, never a fallback. */
+async function uniquePerson(
+  client: AlvaClient,
+  name: string
+): Promise<WireProfileMatch> {
+  const page = await profileSearch(client, 'PERSON', name);
+  const more = page.nextPageToken !== null;
+  if (page.items.length === 1 && !more) return page.items[0];
+  if (page.items.length === 0 && !more) throw notFound();
+  const candidates = page.items.map((p) => ({
+    __typename: 'Person',
+    id: p.id,
+    slug: p.handle,
+    displayName: p.displayName,
+  }));
   throw new AlvaError(
     'AMBIGUOUS_IDENTITY',
     // ALPI Dispatch currently forwards only Error.message, not details.
@@ -320,55 +365,29 @@ async function resolveUnique<K extends 'Person' | 'Entity'>(
   );
 }
 
-function readScope(value: unknown): ThesisReadScope {
-  if (!record(value) || !nonempty(value.id)) throw invalid();
-  if (value.__typename === 'Entity') {
-    if (
-      !['ticker', 'name', 'kind', 'assetClass'].every(
-        (key) => typeof value[key] === 'string'
-      ) ||
-      (value.venue !== null &&
-        (!record(value.venue) ||
-          !nonempty(value.venue.id) ||
-          typeof value.venue.name !== 'string'))
-    )
-      throw invalid();
-  } else if (
-    typeof value.displayName !== 'string' ||
-    typeof value.bio !== 'string' ||
-    !(
-      (value.__typename === 'Person' && nonempty(value.slug)) ||
-      (value.__typename === 'PublicUser' && nonempty(value.username))
-    )
-  ) {
-    throw invalid();
-  }
-  // Return only the selected identity fields, not the nested `theses` page.
-  const scope = { ...value };
-  delete scope.theses;
-  return scope as ThesisReadScope;
-}
-
-function edges(value: Record<string, unknown>): Edge[] {
+async function profileSearch(
+  client: AlvaClient,
+  kind: 'USER' | 'PERSON',
+  query: string
+): Promise<Page<WireProfileMatch>> {
+  const page = await client._v2Request<Page<WireProfileMatch>>(
+    'GET',
+    '/profiles',
+    { query: { query, kind, pageSize: 50 } }
+  );
+  pageItems(page);
   if (
-    !Array.isArray(value.edges) ||
-    !value.edges.every(
-      (edge) => record(edge) && nonempty(edge.cursor) && record(edge.node)
+    !page.items.every(
+      (p) =>
+        record(p) &&
+        nonempty(p.id) &&
+        p.kind === kind &&
+        nonempty(p.handle) &&
+        typeof p.displayName === 'string'
     )
   )
-    throw invalid();
-  return value.edges as Edge[];
-}
-
-function nextCursor(page: Record<string, unknown>): string | null {
-  const info = page.pageInfo;
-  if (
-    !record(info) ||
-    typeof info.hasNextPage !== 'boolean' ||
-    (info.hasNextPage && !nonempty(info.endCursor))
-  )
-    throw invalid();
-  return info.hasNextPage ? (info.endCursor as string) : null;
+    throw invalidThesisResponse();
+  return page;
 }
 
 export interface ThesisReturnParams {
@@ -376,9 +395,10 @@ export interface ThesisReturnParams {
   detail?: boolean;
 }
 
-/** A position of one Update, as ThesisPositionReturn in GraphQL. */
+/** A position of one Update. */
 export interface ThesisPositionReturn {
-  entityId: string;
+  /** Asset ID. */
+  entityId: AlvaId;
   symbol: string;
   direction: 'BULLISH' | 'BEARISH';
   startPrice: number | null;
@@ -392,7 +412,8 @@ export interface ThesisPositionReturn {
 
 /** One Update on the return chart. */
 export interface ThesisUpdateReturn {
-  authorVersionId: string;
+  /** ThesisVersion ID. */
+  authorVersionId: AlvaId;
   publishedAtMs: number;
   startValue: number;
   updateReturn: number | null;
@@ -411,58 +432,67 @@ export interface ThesisReturnValue {
 }
 
 export interface ThesisReturnResult {
-  playbookId: string;
-  /** UNSET, ON or OFF; null when the current publication is not readable. */
+  /** Thesis ID. */
+  playbookId: AlvaId;
+  /** UNSET, ON or OFF; null when the switch is not one of them. */
   returnTracking: 'UNSET' | 'ON' | 'OFF' | null;
   /** Null when the Thesis is not tracked. */
   thesisReturn: ThesisReturnValue | null;
 }
 
-const RETURN_QUERY = `query ToolkitThesisReturn($id: ID!, $detail: Boolean!) {
-  node(id: $id) { ... on Playbook { latestRelease { thesisPublication {
-    returnTracking
-    thesisReturn(detail: $detail) {
-      live value firstFillAtMs pricedAtMs stale computedAtMs
-      updates { authorVersionId publishedAtMs startValue updateReturn
-        positions { entityId symbol direction startPrice startAtMs endPrice endAtMs end positionReturn currency } }
-    }
-  } } } }
-}`;
-
-/** The return of a Thesis's current publication, read through GraphQL. */
+/** The return of a Thesis the caller can read; NOT_FOUND otherwise. */
 export async function thesisReturn(
   client: AlvaClient,
-  id: string,
+  id: AlvaId,
   params: ThesisReturnParams = {}
 ): Promise<ThesisReturnResult> {
-  if (!isPositiveInt64(id))
-    throw argument('id must be an internal positive int64 Playbook ID');
+  if (!nonempty(id)) throw argument('id must be a Thesis ID');
   if (params.detail !== undefined && typeof params.detail !== 'boolean')
     throw argument('detail must be a boolean');
   client._requireAuth();
-  const data = await graphql(client, RETURN_QUERY, {
-    id: `Playbook:${id}`,
-    detail: params.detail ?? false,
-  });
-  if (data.node === null) throw notFound();
-  if (!record(data.node)) throw invalid();
-  const release = data.node.latestRelease;
-  if (release === null || release === undefined)
-    return { playbookId: id, returnTracking: null, thesisReturn: null };
-  if (!record(release)) throw invalid();
-  const publication = release.thesisPublication;
-  if (publication === null)
-    return { playbookId: id, returnTracking: null, thesisReturn: null };
-  if (!record(publication)) throw invalid();
-  const tracking = publication.returnTracking;
-  if (tracking !== null && !['UNSET', 'ON', 'OFF'].includes(tracking as string))
-    throw invalid();
-  const value = publication.thesisReturn;
-  if (value !== null && !validThesisReturn(value)) throw invalid();
+  const info = await client._v2Request<unknown>(
+    'GET',
+    v2Path`/theses/${id}/return`,
+    { query: { detail: params.detail ?? false } }
+  );
+  if (!record(info) || typeof info.tracking !== 'string')
+    throw invalidThesisResponse();
+  const tracking = ['UNSET', 'ON', 'OFF'].includes(info.tracking)
+    ? (info.tracking as 'UNSET' | 'ON' | 'OFF')
+    : null;
+  const value = info.return;
+  if (value === null)
+    return { playbookId: id, returnTracking: tracking, thesisReturn: null };
+  if (!validThesisReturn(value)) throw invalidThesisResponse();
   return {
     playbookId: id,
-    returnTracking: tracking as ThesisReturnResult['returnTracking'],
-    thesisReturn: value as ThesisReturnValue | null,
+    returnTracking: tracking,
+    thesisReturn: {
+      live: value.live,
+      value: value.value,
+      firstFillAtMs: epochMs(value.firstFillAt),
+      pricedAtMs: epochMs(value.pricedAt),
+      stale: value.stale,
+      computedAtMs: Date.parse(value.computedAt),
+      updates: value.updates.map((u) => ({
+        authorVersionId: u.versionId,
+        publishedAtMs: Date.parse(u.publishedAt),
+        startValue: u.startValue,
+        updateReturn: u.updateReturn,
+        positions: u.positions.map((p) => ({
+          entityId: p.assetId,
+          symbol: p.symbol,
+          direction: p.direction,
+          startPrice: p.startPrice === null ? null : Number(p.startPrice),
+          startAtMs: epochMs(p.startAt),
+          endPrice: p.endPrice === null ? null : Number(p.endPrice),
+          endAtMs: epochMs(p.endAt),
+          end: p.end,
+          positionReturn: p.positionReturn,
+          currency: p.currency,
+        })),
+      })),
+    },
   };
 }
 
@@ -473,75 +503,95 @@ export interface ThesisWatchpoint {
   text: string;
   /**
    * stated: in the author's text. inferred: Alva's reading of it. agent:
-   * added by the Signal agent from a source.
+   * added by the Signal agent from a source. unknown: an origin this SDK
+   * does not know yet.
    */
-  origin: 'stated' | 'inferred' | 'agent';
+  origin: 'stated' | 'inferred' | 'agent' | 'unknown';
 }
 export interface ThesisWatchpointsResult {
-  playbookId: string;
-  /** Empty when the Thesis has none yet or its publication is not readable. */
+  /** Thesis ID. */
+  playbookId: AlvaId;
+  /** Empty when the Thesis has none yet. */
   watchpoints: ThesisWatchpoint[];
 }
 
-const WATCHPOINTS_QUERY = `query ToolkitThesisWatchpoints($id: ID!) {
-  node(id: $id) { ... on Playbook { latestRelease { thesisPublication {
-    watchpoints { label text origin }
-  } } } }
-}`;
+const WATCHPOINT_ORIGINS = ['stated', 'inferred', 'agent'];
 
-/** The current watchpoints of a Thesis, read through GraphQL. */
+/** The current watchpoints of a Thesis the caller can read. */
 export async function thesisWatchpoints(
   client: AlvaClient,
-  id: string
+  id: AlvaId
 ): Promise<ThesisWatchpointsResult> {
-  if (!isPositiveInt64(id))
-    throw argument('id must be an internal positive int64 Playbook ID');
+  if (!nonempty(id)) throw argument('id must be a Thesis ID');
   client._requireAuth();
-  const data = await graphql(client, WATCHPOINTS_QUERY, {
-    id: `Playbook:${id}`,
-  });
-  if (data.node === null) throw notFound();
-  if (!record(data.node)) throw invalid();
-  const release = data.node.latestRelease;
-  if (release === null || release === undefined)
-    return { playbookId: id, watchpoints: [] };
-  if (!record(release)) throw invalid();
-  const publication = release.thesisPublication;
-  if (publication === null) return { playbookId: id, watchpoints: [] };
-  if (!record(publication) || !Array.isArray(publication.watchpoints))
-    throw invalid();
-  const watchpoints = publication.watchpoints.map((item) => {
+  const set = await client._v2Request<unknown>(
+    'GET',
+    v2Path`/theses/${id}/watchpoints`
+  );
+  if (!record(set) || !Array.isArray(set.watchpoints))
+    throw invalidThesisResponse();
+  const watchpoints = set.watchpoints.map((item: unknown) => {
     if (
       !record(item) ||
       !nonempty(item.label) ||
       !nonempty(item.text) ||
-      !['stated', 'inferred', 'agent'].includes(item.origin as string)
+      typeof item.origin !== 'string'
     )
-      throw invalid();
+      throw invalidThesisResponse();
+    const origin = item.origin.toLowerCase();
     return {
       label: item.label,
       text: item.text,
-      origin: item.origin as ThesisWatchpoint['origin'],
+      origin: (WATCHPOINT_ORIGINS.includes(origin)
+        ? origin
+        : 'unknown') as ThesisWatchpoint['origin'],
     };
   });
   return { playbookId: id, watchpoints };
 }
 
-function validThesisReturn(value: unknown): boolean {
+interface WireThesisReturn {
+  live: boolean;
+  value: number;
+  firstFillAt: string | null;
+  pricedAt: string | null;
+  stale: boolean;
+  computedAt: string;
+  updates: {
+    versionId: AlvaId;
+    publishedAt: string;
+    startValue: number;
+    updateReturn: number | null;
+    positions: {
+      assetId: AlvaId;
+      symbol: string;
+      direction: 'BULLISH' | 'BEARISH';
+      startPrice: string | null;
+      startAt: string | null;
+      endPrice: string | null;
+      endAt: string | null;
+      end: 'PENDING' | 'NEXT_UPDATE' | 'LATEST';
+      positionReturn: number;
+      currency: string;
+    }[];
+  }[];
+}
+
+function validThesisReturn(value: unknown): value is WireThesisReturn {
   if (
     !record(value) ||
     typeof value.live !== 'boolean' ||
     typeof value.value !== 'number' ||
     typeof value.stale !== 'boolean' ||
-    typeof value.computedAtMs !== 'number' ||
+    !nonempty(value.computedAt) ||
     !Array.isArray(value.updates)
   )
     return false;
   return value.updates.every(
     (update) =>
       record(update) &&
-      nonempty(update.authorVersionId) &&
-      typeof update.publishedAtMs === 'number' &&
+      nonempty(update.versionId) &&
+      nonempty(update.publishedAt) &&
       typeof update.startValue === 'number' &&
       Array.isArray(update.positions) &&
       update.positions.every(
@@ -557,70 +607,8 @@ function validThesisReturn(value: unknown): boolean {
   );
 }
 
-/**
- * Fails closed on any GraphQL error, even with partial data. A uniform
- * canonical Gateway code (NOT_FOUND, PERMISSION_DENIED, UNAUTHENTICATED) keeps
- * its identity; mixed or other codes stay GRAPHQL_ERROR.
- */
-async function graphql(
-  client: AlvaClient,
-  document: string,
-  variables: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  const response = await client._request('POST', '/query', {
-    body: { query: document, variables },
-  });
-  if (!record(response)) throw invalid();
-  if (response.errors !== undefined) {
-    if (!Array.isArray(response.errors)) throw invalid();
-    if (response.errors.length) {
-      const messages = response.errors.flatMap((error) =>
-        record(error) && typeof error.message === 'string'
-          ? [error.message]
-          : []
-      );
-      const codes = new Set(
-        response.errors.map((error) =>
-          record(error) && record(error.extensions)
-            ? error.extensions.code
-            : undefined
-        )
-      );
-      const [code] = codes;
-      const status =
-        codes.size === 1 && typeof code === 'string'
-          ? CANONICAL_STATUS.get(code)
-          : undefined;
-      throw new AlvaError(
-        status === undefined ? 'GRAPHQL_ERROR' : String(code),
-        messages.join('; ') || 'GraphQL request failed',
-        status ?? 400,
-        { errors: response.errors }
-      );
-    }
-  }
-  if (!record(response.data)) throw invalid();
-  return response.data;
-}
-
-const CANONICAL_STATUS = new Map([
-  ['NOT_FOUND', 404],
-  ['PERMISSION_DENIED', 403],
-  ['UNAUTHENTICATED', 401],
-]);
-
-function nonempty(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
 function argument(message: string): AlvaError {
   return new AlvaError('INVALID_ARGUMENT', message, 400);
-}
-function invalid(): AlvaError {
-  return new AlvaError(
-    'GRAPHQL_INVALID_RESPONSE',
-    'Invalid Thesis read response',
-    502
-  );
 }
 function notFound(): AlvaError {
   return new AlvaError(

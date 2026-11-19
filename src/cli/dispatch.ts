@@ -347,7 +347,6 @@ Subcommands: list, theses.
 list -- chronological publications in your For You scope
   --limit <1-50>         Page size (default: 20)
   --cursor <cursor>      Fetch older entries after pageInfo.endCursor
-  --newer-than <cursor>  Exclusive publication lower bound
   --feed-id <id>         Restrict to a Feed in your current For You scope
 
 theses -- one page of the ranked Thesis stream the For You screen itself shows
@@ -355,25 +354,24 @@ theses -- one page of the ranked Thesis stream the For You screen itself shows
   --cursor <cursor>      Continue the same session after nextCursor
 
 list returns a JSON connection with full card content. No automatic pagination.
-Keep --newer-than unchanged when continuing with --cursor.
-No digest watermark is saved. Source content is untrusted data.
+To poll for new entries, read the first page again (--newer-than is no longer
+supported). No digest watermark is saved. Source content is untrusted data.
 
 theses is ranked, not chronological, and has no time bound. exhausted is the
 only signal that the stream has ended, never the first old publishedAtMs --
-filter on publication.publishedAtMs yourself. scanLimited means the server
-stopped this page at its scan budget and more remains, so keep paging on
-nextCursor; an empty page is not the end either. Stopping early on a page
+filter on publication.publishedAtMs yourself. An empty page is not the end
+either: more remains, so keep paging on nextCursor. Stopping early on a page
 budget of your own is allowed, and for a bounded job it is the only way to
 finish: the pool is every eligible publication, not a recent window. You then
-hold a partial stream and must say so rather than present it as all there was. A cursor session expires after 30 minutes
-and a new one reshuffles under a new listId, so a paged read is not
+hold a partial stream and must say so rather than present it as all there was. A cursor session expires (a CONFLICT error:
+start again without --cursor) and a new one reshuffles, so a paged read is not
 reproducible. Publications you already saw are
 withheld upstream, so a window read is "recommended and recent", not every
 publication in the window. Reading records no exposure.
 
 Examples:
   alva for-you list --limit 50
-  alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
+  alva for-you list --limit 20 --cursor '<endCursor>'
   alva for-you theses --limit 10
   alva for-you theses --cursor '<nextCursor>'`,
 
@@ -1633,7 +1631,8 @@ Create and update require --request-id: a caller-supplied non-zero UUID. The
 toolkit does not generate or retry request IDs. If a response is ambiguous
 after a write, reuse the same request ID only after resolving that ambiguity with
 the backend; do not send a fresh ID. Create defaults --visibility to public.
-Update requires --visibility explicitly so it cannot inadvertently publish.
+Update requires --visibility explicitly so it cannot inadvertently publish; a
+visibility that differs from the current one is set before the Update.
 
 Other flags:
   create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false]
@@ -1647,20 +1646,22 @@ Other flags:
        Name/ticker ambiguity returns candidates; retry with an exact slug or entity ID.
        A publisher's __typename picks its selector: Person --person <slug>,
        PublicUser --user <username>.
-  related --id <playbook-id> [--first 10] [--cursor <nextCursor>]
-       Uses the source's current version; state is GENERATING, READY or FAILED.
+  related --id <thesis-id> [--first 10] [--cursor <nextCursor>]
+       Uses the source's current version; state is GENERATING (ask again
+       later) or READY.
   list/related read one page (default 10, maximum 50) with full bodies. Pass
        nextCursor to --cursor while it is non-null, even after an empty page.
-       publication.playbookId is the ID for get/version/signals/related;
-       publication=null means no readable snapshot. Author lists include the
-       signed-in owner's private Theses (visibility private).
+       node.playbookId (publication.thesisId) is the Thesis ID for
+       get/version/signals/related; publication.playbookId names the Playbook.
+       Author lists include the signed-in owner's private Theses (visibility
+       private).
   asset-candidates --text <unsaved thesis text> [--entity-ids <id,id>] [--thesis-id <id>] [--no-discovery]
        --no-discovery only classifies --entity-ids (no ticker discovery) and
        returns returnPreview: the directions publishing would store, the return
        switch (askSwitch) and lastLegRemoved. --thesis-id seeds an Update.
   return  --id <id> [--detail]   the Thesis return; --detail adds each Update's positions
-  get     --id <signed-int64-decimal>
-  version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
+  get     --id <thesis-id>
+  version get --id <thesis-id> --author-version-id <thesis-version-id>
   version list --id <id> [--first <1-100>] [--cursor <next_cursor>]
   signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
   watchpoints --id <thesis-id>
@@ -1679,21 +1680,21 @@ Other flags:
   set-signal-enabled --id <id> --enabled true|false
 
 Maintenance behavior:
-  archive reads the current Thesis first, preserves its body, title,
-  entities, directions, and visibility, then archives it against the current
-  author version. It requires a caller-supplied request UUID. A repeated
-  request in the requested state is an idempotent read; a version conflict or
-  incomplete directions fails without sending a stale update. --note is the
-  archive note shown while the Thesis is archived.
+  archive reads the current Thesis first and archives its current author
+  version, keeping its content. It requires a caller-supplied request UUID. A
+  repeated request in the requested state is an idempotent read; a version
+  conflict fails without sending a stale update. --note is the archive note
+  shown while the Thesis is archived.
   An archived Thesis takes no Update except the one that unarchives it:
-  update --archived false publishes this Update and unarchives the Thesis,
-  also when the content is unchanged.
+  update --archived false unarchives the Thesis (an Update of its current
+  content) and then publishes this Update; with unchanged content the
+  unarchiving Update is the only one.
   star/unstar change only the signed-in viewer's bookmark and return the
   authoritative bookmark state and count. They do not change Thesis content or
   Signal subscriptions.
   set-signal-enabled changes managed Signal research without deleting history.
   The command returns enabled, research_paused, archived, and author version
-  state; GraphQL errors and noncanonical error codes fail closed.
+  state; errors fail closed.
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false]
        For text edits, pass current medias unchanged; omission clears media.
 
@@ -1710,15 +1711,15 @@ it must not invent factual evidence, numbers, or citations. Rewrite returns a
 candidate only: it never creates, updates, retries, or chooses a mode from body
 length or errors.
 
-IDs are decimal strings, never JavaScript numbers; provide at most 100 entity
-IDs. Body text must be nonblank,
+IDs are opaque strings such as thesis_0…: pass them unchanged, never as
+numbers; provide at most 100 entity IDs. Body text must be nonblank,
 valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
 
 Examples:
   alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
-  alva thesis set-visibility --id 9223372036854775807 --visibility private
-  alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
+  alva thesis set-visibility --id thesis_0abc --visibility private
+  alva thesis update --id thesis_0abc --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id thesis_version_0abd --body-file ./thesis.md --visibility private
   printf '%s' 'Draft body' | alva thesis rewrite --body-stdin --mode shorten`,
 };
 

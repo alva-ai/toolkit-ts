@@ -2,56 +2,89 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { dispatch as terminal } from '../../src/cli/index.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
+import {
+  REQUEST_ID,
+  THESIS,
+  VERSION,
+  problem,
+  v2Fetch,
+  wireThesis,
+  type V2Call,
+} from '../contentV2.js';
 
-const REQUEST_ID = '123e4567-e89b-42d3-a456-426614174000';
+const SMH = 'asset_0smh';
 const original = {
-  id: '33116',
-  author_version_id: '133997',
-  material_version_id: '133997',
+  id: THESIS,
+  author_version_id: VERSION,
   title: 'Semiconductors',
-  body: 'Bearish on SMH',
-  entity_ids: ['508176'],
-  entity_stances: [{ entity_id: '508176', stance: 'bearish' as const }],
+  entity_ids: [SMH],
+  entity_stances: [{ entity_id: SMH, stance: 'bearish' as const }],
   visibility: 'private' as const,
-  closed: false,
-  archived: false,
-  closing_note: '',
-  author_kind: 'user',
-  author_ref: 'author',
 };
+const current = wireThesis(
+  { visibility: 'PRIVATE' },
+  {
+    title: 'Semiconductors',
+    body: 'Bearish on SMH',
+    assets: [
+      {
+        assetId: SMH,
+        stance: 'BEARISH',
+        symbol: 'SMH',
+        name: 'VanEck Semiconductor ETF',
+        logoUrl: null,
+        kind: 'ETF',
+      },
+    ],
+  }
+);
+
+/** The published Update stores the assets the request sent. */
+function published(call: V2Call) {
+  const body = call.body as {
+    title: string;
+    body: string;
+    assets: { assetId: string; stance: string }[];
+  };
+  return wireThesis(
+    { visibility: 'PRIVATE' },
+    {
+      id: 'thesis_version_0next',
+      title: body.title,
+      body: body.body,
+      assets: body.assets.map((a) => ({
+        ...a,
+        symbol: null,
+        name: null,
+        logoUrl: null,
+        kind: null,
+      })),
+    }
+  );
+}
 
 function fixture() {
-  const fetcher = vi
-    .fn()
-    .mockImplementation(async (_url: string, init: RequestInit) => {
-      const payload = init.body ? JSON.parse(init.body as string) : {};
-      return new Response(
-        JSON.stringify({
-          thesis: { ...original, ...payload, author_version_id: '133998' },
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-    });
-  vi.stubGlobal('fetch', fetcher);
+  const { fetcher, calls } = v2Fetch({
+    [`GET /theses/${THESIS}`]: current,
+    [`POST /theses/${THESIS}/updates`]: published,
+  });
   return {
     client: new AlvaClient({ apiKey: 'fixture', baseUrl: 'https://api.test' }),
     fetcher,
+    calls,
   };
 }
 
-function argv(stances: string, ids = '508176') {
+function argv(stances: string, ids = SMH) {
   return [
     'thesis',
     'update',
     '--id',
-    '33116',
+    THESIS,
     '--request-id',
     REQUEST_ID,
     '--expected-author-version-id',
-    '133997',
+    VERSION,
     '--body',
     'Edited body',
     '--title',
@@ -75,45 +108,49 @@ for (const [name, dispatch] of [
     it.each(['bearish', 'bullish', 'unknown'] as const)(
       'sends explicit %s through to HTTP and readback',
       async (stance) => {
-        const { client, fetcher } = fixture();
-        const stances = [{ entity_id: '508176', stance }];
+        const { client, calls } = fixture();
+        const stances = [{ entity_id: SMH, stance }];
         const result = await dispatch(client, argv(JSON.stringify(stances)));
-        expect(result).toMatchObject({ thesis: { entity_stances: stances } });
-        expect(fetcher).toHaveBeenCalledTimes(1);
-        const [url, init] = fetcher.mock.calls[0];
-        expect(url).toBe('https://api.test/api/v1/theses/33116');
-        expect(init.method).toBe('PUT');
-        expect(JSON.parse(init.body)).toEqual({
-          request_id: REQUEST_ID,
-          expected_author_version_id: '133997',
+        expect(result).toMatchObject({
+          thesis: { entity_stances: stances },
+          unchanged: false,
+        });
+        expect(calls).toHaveLength(2);
+        expect(calls[1].method).toBe('POST');
+        expect(calls[1].path).toBe(`/theses/${THESIS}/updates`);
+        expect(calls[1].headers['Idempotency-Key']).toBe(REQUEST_ID);
+        expect(calls[1].body).toEqual({
+          expectedVersionId: VERSION,
           body: 'Edited body',
           title: 'Semiconductors',
-          entity_ids: ['508176'],
-          entity_stances: stances,
-          visibility: 'private',
+          assets: [{ assetId: SMH, stance: stance.toUpperCase() }],
+          // No --medias: the Update clears them, as a full replacement.
+          media: [],
         });
       }
     );
 
     it('keeps directions keyed to the submitted entities after an asset change', async () => {
-      const { client, fetcher } = fixture();
+      const { client, calls } = fixture();
       const stances = [
-        { entity_id: '42', stance: 'bullish' },
-        { entity_id: '508176', stance: 'bearish' },
+        { entity_id: 'asset_042', stance: 'bullish' },
+        { entity_id: SMH, stance: 'bearish' },
       ];
-      await dispatch(client, argv(JSON.stringify(stances), '508176,42'));
-      expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({
-        entity_ids: ['508176', '42'],
-        entity_stances: stances,
+      await dispatch(client, argv(JSON.stringify(stances), `${SMH},asset_042`));
+      expect(calls[1].body).toMatchObject({
+        assets: [
+          { assetId: SMH, stance: 'BEARISH' },
+          { assetId: 'asset_042', stance: 'BULLISH' },
+        ],
       });
     });
 
     it.each([
       'not-json',
       '{}',
-      '[{"entity_id":"42","stance":"bearish"}]',
-      '[{"entity_id":"508176","stance":"mixed"}]',
-      '[{"entity_id":"508176","stance":"bearish"},{"entity_id":"508176","stance":"bullish"}]',
+      '[{"entity_id":"asset_042","stance":"bearish"}]',
+      `[{"entity_id":"${SMH}","stance":"mixed"}]`,
+      `[{"entity_id":"${SMH}","stance":"bearish"},{"entity_id":"${SMH}","stance":"bullish"}]`,
       '[{"entity_id":508176,"stance":"bearish"}]',
     ])('rejects invalid bindings before HTTP: %s', async (stances) => {
       const { client, fetcher } = fixture();
@@ -122,19 +159,22 @@ for (const [name, dispatch] of [
     });
 
     it('propagates a version conflict without retrying or removing directions', async () => {
-      const { client, fetcher } = fixture();
-      fetcher.mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            error: { code: 'CONFLICT', message: 'version conflict' },
-          }),
-          { status: 409 }
-        )
-      );
+      const client = new AlvaClient({
+        apiKey: 'fixture',
+        baseUrl: 'https://api.test',
+      });
+      const { calls } = v2Fetch({
+        [`GET /theses/${THESIS}`]: current,
+        [`POST /theses/${THESIS}/updates`]: problem(
+          409,
+          'CONFLICT',
+          'version conflict'
+        ),
+      });
       await expect(
         dispatch(client, argv(JSON.stringify(original.entity_stances)))
-      ).rejects.toMatchObject({ status: 409 });
-      expect(fetcher).toHaveBeenCalledTimes(1);
+      ).rejects.toMatchObject({ status: 409, code: 'CONFLICT' });
+      expect(calls).toHaveLength(2);
     });
 
     it('documents update direction replacement and preservation', async () => {
@@ -151,7 +191,7 @@ for (const [name, dispatch] of [
 
 describe('SDK update direction serialization', () => {
   it('carries the read direction when only the body changes', async () => {
-    const { client, fetcher } = fixture();
+    const { client, calls } = fixture();
     await client.theses.update(original.id, {
       request_id: REQUEST_ID,
       expected_author_version_id: original.author_version_id,
@@ -161,8 +201,8 @@ describe('SDK update direction serialization', () => {
       entity_stances: original.entity_stances,
       visibility: original.visibility,
     });
-    expect(JSON.parse(fetcher.mock.calls[0][1].body).entity_stances).toEqual(
-      original.entity_stances
-    );
+    expect((calls[1].body as { assets: unknown }).assets).toEqual([
+      { assetId: SMH, stance: 'BEARISH' },
+    ]);
   });
 });

@@ -1,9 +1,12 @@
 import type { AlvaClient } from '../client.js';
-import { AlvaError } from '../error.js';
+import type { Page } from '../platformApi.js';
+import type { AlvaId } from '../types.js';
 import {
-  THESIS_PUBLICATION_FIELDS,
-  isPositiveInt64,
-  isThesisPublication,
+  epochMs,
+  invalidThesisResponse,
+  nonempty,
+  publicationSummary,
+  publishedThesis,
   record,
   type ThesisPublicationSummary,
 } from './thesisPublication.js';
@@ -17,15 +20,20 @@ export type {
 export interface ForYouListParams {
   first?: number;
   after?: string;
+  /** Not served by /api/v2: passing it is INVALID_ARGUMENT. Re-read the first page instead. */
   newerThan?: string;
-  feedId?: string;
+  /** Automation ID of one feed in the caller's For You. */
+  feedId?: AlvaId;
 }
 
 /** The immutable publication selection, not the full mutable Feed object. */
 export interface ForYouEntry {
-  id: string;
-  feed: { id: string };
-  major: { id: string; feedId: string; number: number };
+  /** Feed post or Signal ID. */
+  id: AlvaId;
+  /** Automation ID of the feed. */
+  feed: { id: AlvaId };
+  /** `id` is empty: a major has no ID of its own. */
+  major: { id: string; feedId: AlvaId; number: number };
   displayName: string | null;
   source: string;
   eventTimeMs: number;
@@ -33,7 +41,12 @@ export interface ForYouEntry {
   title: string;
   body: string;
   actions: {
-    type: 'OPEN_URL' | 'SEND_PROMPT' | 'CONNECT_PORTFOLIO' | 'CONNECT_IM';
+    type:
+      | 'OPEN_URL'
+      | 'SEND_PROMPT'
+      | 'CONNECT_PORTFOLIO'
+      | 'CONNECT_IM'
+      | 'UNKNOWN';
     label: string;
     url: string | null;
     prompt: string | null;
@@ -47,6 +60,7 @@ export interface ForYouEntry {
       fields: { label: string; value: string; inline: boolean }[];
     } | null;
   } | null;
+  /** `logoUrl` is empty and `sentiment` null: /api/v2 entries carry the symbol only. */
   tickers: {
     symbol: string;
     logoUrl: string;
@@ -66,7 +80,9 @@ export interface ForYouEntry {
       | 'PODCAST'
       | 'EARNINGS'
       | 'FILING'
-      | 'WEB';
+      | 'WEB'
+      | 'MARKET_DATA'
+      | 'UNKNOWN';
     url: string | null;
     iconUrl: string | null;
     title: string;
@@ -77,6 +93,7 @@ export interface ForYouEntry {
 }
 
 export interface ForYouConnection {
+  /** The page's `pageInfo.endCursor` rides on the last edge; the others are empty. */
   edges: { cursor: string; node: ForYouEntry }[];
   pageInfo: {
     startCursor: string;
@@ -85,35 +102,6 @@ export interface ForYouConnection {
     hasPreviousPage: boolean;
   };
 }
-
-const FOR_YOU_QUERY = `
-query ToolkitForYou($input: FeedEntryConnectionInput) {
-  viewer {
-    forYou(input: $input) {
-      edges {
-        cursor
-        node {
-          id
-          feed { id }
-          major { id feedId number }
-          displayName source eventTimeMs publishedAtMs title body
-          actions { type label url prompt }
-          presentation {
-            card {
-              accentColor url thumbnailUrl footer
-              fields { label value inline }
-            }
-          }
-          tickers { symbol logoUrl sentiment }
-          media { type coverUrl url }
-          sources { type url iconUrl title subtitle description publishedAtMs }
-        }
-      }
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-}
-`.trim();
 
 /** Shared by the SDK and CLI so invalid windows never become unbounded reads. */
 export function validateForYouListParams(params: ForYouListParams): void {
@@ -133,69 +121,78 @@ export function validateForYouListParams(params: ForYouListParams): void {
       throw new Error(`${field} must be a non-empty cursor`);
     }
   }
-  if (params.feedId !== undefined && !isPositiveInt64(params.feedId)) {
-    throw new Error('feedId must be a positive decimal int64 string');
+  if (params.newerThan !== undefined) {
+    throw new Error(
+      'newerThan is not supported; read the first page again instead'
+    );
+  }
+  if (params.feedId !== undefined && !nonempty(params.feedId)) {
+    throw new Error('feedId must be a feed (Automation) ID');
   }
 }
 
-function invalidResponse(): never {
-  throw new AlvaError(
-    'GRAPHQL_INVALID_RESPONSE',
-    'GraphQL returned an invalid For You connection',
-    502
-  );
+/** A For You feed entry as /api/v2 returns it. */
+interface WireFeedEntry {
+  id: AlvaId;
+  automationId: AlvaId;
+  majorVersion: number;
+  displayName: string | null;
+  source: string;
+  eventAt: string | null;
+  publishedAt: string;
+  title: string;
+  body: string;
+  actions: ForYouEntry['actions'];
+  card: NonNullable<ForYouEntry['presentation']>['card'];
+  tickers: { symbol: string }[];
+  media: ForYouEntry['media'];
+  sources: (Omit<ForYouEntry['sources'][number], 'publishedAtMs'> & {
+    publishedAt: string | null;
+  })[];
 }
 
-function connection(value: unknown): ForYouConnection {
+function forYouEntry(value: unknown): ForYouEntry {
   if (
     !record(value) ||
-    !Array.isArray(value.edges) ||
-    !record(value.pageInfo)
+    !nonempty(value.id) ||
+    !nonempty(value.automationId) ||
+    typeof value.majorVersion !== 'number' ||
+    !nonempty(value.publishedAt) ||
+    typeof value.title !== 'string' ||
+    typeof value.body !== 'string' ||
+    !Array.isArray(value.actions) ||
+    !Array.isArray(value.tickers) ||
+    !Array.isArray(value.media) ||
+    !Array.isArray(value.sources)
   ) {
-    return invalidResponse();
+    throw invalidThesisResponse();
   }
-  const page = value.pageInfo;
-  if (
-    typeof page.startCursor !== 'string' ||
-    typeof page.endCursor !== 'string' ||
-    typeof page.hasNextPage !== 'boolean' ||
-    typeof page.hasPreviousPage !== 'boolean'
-  ) {
-    return invalidResponse();
-  }
-  for (const edge of value.edges) {
-    if (
-      !record(edge) ||
-      typeof edge.cursor !== 'string' ||
-      !edge.cursor.trim() ||
-      !record(edge.node)
-    )
-      return invalidResponse();
-    const node = edge.node;
-    if (
-      typeof node.id !== 'string' ||
-      !node.id.startsWith('FeedEntry:') ||
-      !isPositiveInt64(node.id.slice('FeedEntry:'.length)) ||
-      !record(node.feed) ||
-      !isPositiveInt64(node.feed.id) ||
-      !record(node.major) ||
-      typeof node.major.id !== 'string' ||
-      !isPositiveInt64(node.major.feedId) ||
-      typeof node.title !== 'string' ||
-      typeof node.body !== 'string'
-    ) {
-      return invalidResponse();
-    }
-  }
-  const first = value.edges[0];
-  const last = value.edges[value.edges.length - 1];
-  if (
-    page.startCursor !== (first?.cursor ?? '') ||
-    page.endCursor !== (last?.cursor ?? '') ||
-    (value.edges.length === 0 && page.hasNextPage)
-  )
-    return invalidResponse();
-  return value as unknown as ForYouConnection;
+  const e = value as unknown as WireFeedEntry;
+  const publishedAtMs = Date.parse(e.publishedAt);
+  return {
+    id: e.id,
+    feed: { id: e.automationId },
+    major: { id: '', feedId: e.automationId, number: e.majorVersion },
+    displayName: e.displayName,
+    source: e.source,
+    // An entry without an event time read 0, as the backend stores it.
+    eventTimeMs: epochMs(e.eventAt) ?? 0,
+    publishedAtMs,
+    title: e.title,
+    body: e.body,
+    actions: e.actions,
+    presentation: e.card ? { card: e.card } : null,
+    tickers: e.tickers.map((t) => ({
+      symbol: t.symbol,
+      logoUrl: '',
+      sentiment: null,
+    })),
+    media: e.media,
+    sources: e.sources.map(({ publishedAt, ...source }) => ({
+      ...source,
+      publishedAtMs: epochMs(publishedAt) ?? 0,
+    })),
+  };
 }
 
 export interface ForYouThesesParams {
@@ -210,53 +207,30 @@ export interface ThesisRecommendation {
 
 /**
  * A ranked page, not a chronological one. `exhausted` is the only end of the
- * candidate pool; `scanLimited` means this page stopped at its scan budget and
- * more remains. A page may be empty while `hasNextPage` is still true, because
- * `endCursor` advances past scanned references that current visibility hides.
- *
- * `edges` is the only carrier. Gateway also returns an `items` list built from
- * the same nodes, but selecting it would put every publication body on the
- * wire twice for no extra information, so this read does not request it.
+ * candidate pool. A page may be empty while `hasNextPage` is still true,
+ * because the list advances past scanned references that current visibility
+ * hides. A `CONFLICT` error means the list behind `after` expired: start
+ * again without it.
  */
 export interface ThesisRecommendationPage {
+  /** The page's `nextCursor` rides on the last edge; the others are empty. */
   edges: { cursor: string; node: ThesisRecommendation }[];
   pageInfo: {
+    /** The cursor this page was read with; empty for the first page. */
     startCursor: string;
     endCursor: string;
     hasNextPage: boolean;
     hasPreviousPage: boolean;
   };
+  /** @deprecated Always empty: /api/v2 has no list ID. */
   listId: string;
+  /** The cursor this page was read with; empty for the first page. */
   pageCursor: string;
   nextCursor: string | null;
   exhausted: boolean;
+  /** @deprecated Always false: /api/v2 does not report a scan budget. */
   scanLimited: boolean;
 }
-
-/**
- * Selects no exposure input. `pendingEvents` and `seenItemKeys` are the only
- * way this read records that the viewer saw a publication, so the SDK never
- * sends them: a Toolkit read must not consume the reader's own feed.
- */
-const THESIS_RECOMMENDATION_QUERY = `
-query ToolkitForYouTheses($input: ThesisRecommendationInput) {
-  viewer {
-    thesisRecommendations(input: $input) {
-      listId pageCursor nextCursor exhausted scanLimited
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges {
-        cursor
-        node {
-          itemKey
-          publication {
-            ${THESIS_PUBLICATION_FIELDS}
-          }
-        }
-      }
-    }
-  }
-}
-`.trim();
 
 /** Shared by the SDK and CLI. Gateway caps the page at 10; reject earlier. */
 export function validateForYouThesesParams(params: ForYouThesesParams): void {
@@ -278,102 +252,27 @@ export function validateForYouThesesParams(params: ForYouThesesParams): void {
   }
 }
 
-/**
- * Shared GraphQL envelope handling. A partial `errors` array fails closed even
- * when `data` is present, and an absent viewer field is a 502 rather than an
- * empty result, so a caller never mistakes a broken read for "nothing new".
- */
-function graphqlViewerField(response: unknown, field: string): unknown {
-  if (!record(response)) {
-    throw new AlvaError(
-      'GRAPHQL_INVALID_RESPONSE',
-      `GraphQL returned an invalid viewer.${field} response`,
-      502
-    );
-  }
-  if (response.errors !== undefined) {
-    if (!Array.isArray(response.errors)) {
-      throw new AlvaError(
-        'GRAPHQL_INVALID_RESPONSE',
-        `GraphQL returned an invalid viewer.${field} response`,
-        502
-      );
-    }
-    if (response.errors.length > 0) {
-      const messages = response.errors.flatMap((error: unknown) =>
-        record(error) && typeof error.message === 'string'
-          ? [error.message]
-          : []
-      );
-      throw new AlvaError(
-        'GRAPHQL_ERROR',
-        messages.join('; ') || 'GraphQL request failed',
-        400,
-        { errors: response.errors }
-      );
-    }
-  }
+/** Checks a page and returns its items with the page token on the last edge. */
+function edges<T>(
+  page: unknown,
+  map: (item: unknown) => T
+): { edges: { cursor: string; node: T }[]; next: string | null } {
   if (
-    !record(response.data) ||
-    !record(response.data.viewer) ||
-    response.data.viewer[field] == null
+    !record(page) ||
+    !Array.isArray(page.items) ||
+    !(page.nextPageToken === null || nonempty(page.nextPageToken))
   ) {
-    throw new AlvaError(
-      'GRAPHQL_EMPTY_RESPONSE',
-      `GraphQL response did not include viewer.${field}`,
-      502
-    );
+    throw invalidThesisResponse();
   }
-  return response.data.viewer[field];
-}
-
-function invalidPage(): never {
-  throw new AlvaError(
-    'GRAPHQL_INVALID_RESPONSE',
-    'GraphQL returned an invalid Thesis recommendation page',
-    502
-  );
-}
-
-function recommendationPage(value: unknown): ThesisRecommendationPage {
-  if (
-    !record(value) ||
-    !Array.isArray(value.edges) ||
-    !record(value.pageInfo) ||
-    typeof value.listId !== 'string' ||
-    typeof value.pageCursor !== 'string' ||
-    typeof value.exhausted !== 'boolean' ||
-    typeof value.scanLimited !== 'boolean' ||
-    (value.nextCursor !== null && typeof value.nextCursor !== 'string')
-  ) {
-    return invalidPage();
-  }
-  const page = value.pageInfo;
-  if (
-    typeof page.startCursor !== 'string' ||
-    typeof page.endCursor !== 'string' ||
-    typeof page.hasNextPage !== 'boolean' ||
-    typeof page.hasPreviousPage !== 'boolean' ||
-    page.hasNextPage !== (value.nextCursor !== null)
-  ) {
-    return invalidPage();
-  }
-  for (const edge of value.edges) {
-    if (
-      !record(edge) ||
-      typeof edge.cursor !== 'string' ||
-      !edge.cursor.trim() ||
-      !record(edge.node) ||
-      typeof edge.node.itemKey !== 'string' ||
-      !edge.node.itemKey.trim() ||
-      !isThesisPublication(edge.node.publication)
-    ) {
-      return invalidPage();
-    }
-  }
-  const first = value.edges[0];
-  if (page.startCursor !== (first?.cursor ?? '')) return invalidPage();
-  return value as unknown as ThesisRecommendationPage;
+  const next = page.nextPageToken as string | null;
+  const nodes = page.items.map(map);
+  return {
+    edges: nodes.map((node, i) => ({
+      cursor: i === nodes.length - 1 ? (next ?? '') : '',
+      node,
+    })),
+    next,
+  };
 }
 
 export class ForYouResource {
@@ -383,20 +282,27 @@ export class ForYouResource {
   async list(params: ForYouListParams = {}): Promise<ForYouConnection> {
     validateForYouListParams(params);
     this.client._requireAuth();
-    const response = await this.client._request('POST', '/query', {
-      body: {
-        query: FOR_YOU_QUERY,
-        variables: {
-          input: {
-            first: params.first ?? 20,
-            after: params.after,
-            newerThan: params.newerThan,
-            feedId: params.feedId,
-          },
+    const page = await this.client._v2Request<Page<unknown>>(
+      'GET',
+      '/me/for-you-entries',
+      {
+        query: {
+          pageSize: params.first ?? 20,
+          pageToken: params.after,
+          automationId: params.feedId,
         },
+      }
+    );
+    const { edges: items, next } = edges(page, forYouEntry);
+    return {
+      edges: items,
+      pageInfo: {
+        startCursor: params.after ?? '',
+        endCursor: next ?? '',
+        hasNextPage: next !== null,
+        hasPreviousPage: params.after !== undefined,
       },
-    });
-    return connection(graphqlViewerField(response, 'forYou'));
+    };
   }
 
   /**
@@ -405,22 +311,52 @@ export class ForYouResource {
    * on `publication.publishedAtMs` yourself; the order is slot-mixed, so a time
    * bound is never a reason to stop paging. Publications the viewer already saw
    * are withheld by an upstream cooldown, so a window read is "recommended and
-   * recent", not every publication in the window.
+   * recent", not every publication in the window. Reading records no
+   * impression: a Toolkit read must not consume the reader's own feed.
    */
   async theses(
     params: ForYouThesesParams = {}
   ): Promise<ThesisRecommendationPage> {
     validateForYouThesesParams(params);
     this.client._requireAuth();
-    const response = await this.client._request('POST', '/query', {
-      body: {
-        query: THESIS_RECOMMENDATION_QUERY,
-        variables: {
-          input: { first: params.first ?? 10, after: params.after },
+    const page = await this.client._v2Request<Page<unknown>>(
+      'GET',
+      '/me/for-you',
+      {
+        query: {
+          ranking: 'THESIS_ONLY',
+          pageSize: params.first ?? 10,
+          pageToken: params.after,
         },
-      },
+      }
+    );
+    const { edges: items, next } = edges(page, (item) => {
+      if (!record(item) || !nonempty(item.id) || !nonempty(item.itemId)) {
+        throw invalidThesisResponse();
+      }
+      return {
+        itemKey: item.itemId,
+        publication: publicationSummary(
+          publishedThesis(item.thesis),
+          item.itemId,
+          item.id
+        ),
+      };
     });
-    const field = graphqlViewerField(response, 'thesisRecommendations');
-    return recommendationPage(field);
+    const start = params.after ?? '';
+    return {
+      edges: items,
+      pageInfo: {
+        startCursor: start,
+        endCursor: next ?? '',
+        hasNextPage: next !== null,
+        hasPreviousPage: params.after !== undefined,
+      },
+      listId: '',
+      pageCursor: start,
+      nextCursor: next,
+      exhausted: next === null,
+      scanLimited: false,
+    };
   }
 }

@@ -1,59 +1,114 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { dispatch as terminal } from '../../src/cli/index.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 import type { ListThesesParams } from '../../src/resources/thesisReads.js';
-const id = '9223372036854775807';
+import {
+  ASSET,
+  MATERIAL,
+  PLAYBOOK,
+  THESIS,
+  VERSION,
+  problem,
+  v2Fetch,
+  wireProfile,
+  wireThesis,
+} from '../contentV2.js';
+
+const ADA = 'profile_0ada';
+const adaProfile = wireProfile({
+  id: ADA,
+  kind: 'PERSON',
+  handle: 'ada',
+  displayName: 'Ada',
+  bio: 'Investor',
+  followerCount: 1,
+});
+const adaMatch = {
+  id: ADA,
+  kind: 'PERSON',
+  handle: 'ada',
+  displayName: 'Ada',
+  avatarUrl: null,
+  followerCount: 1,
+  viewerState: { following: null },
+  xHandle: null,
+};
 const person = {
   __typename: 'Person',
-  id: '21',
+  id: ADA,
   slug: 'ada',
   displayName: 'Ada',
   bio: 'Investor',
 };
-const user = {
-  __typename: 'PublicUser',
-  id: '22',
-  username: 'ada-user',
-  displayName: 'Ada',
-  bio: 'Trader',
-};
 const entity = {
   __typename: 'Entity',
-  id: '23',
+  id: ASSET,
   ticker: 'NVDA',
   name: 'NVIDIA',
   kind: 'STOCK',
-  assetClass: 'US_STOCK_SPOT',
+  assetClass: 'US_STOCK',
   venue: { id: 'nasdaq', name: 'NASDAQ' },
 };
-function publication(body = 'Original\r\n**view**') {
+const wireAsset = {
+  id: ASSET,
+  symbol: 'NVDA',
+  name: 'NVIDIA',
+  kind: 'STOCK',
+  assetClass: 'US_STOCK',
+  logo: null,
+  venue: { code: 'nasdaq', name: 'NASDAQ', logo: null },
+  quote: null,
+};
+
+function thesisBy(body = 'Original\r\n**view**') {
+  return wireThesis(
+    { author: adaProfile },
+    {
+      body,
+      title: 'View',
+      sources: [
+        {
+          title: 'Source',
+          kind: 'WEB',
+          contentKey: '34',
+          url: 'https://example.com/source',
+          publishedAt: null,
+          locator: null,
+        },
+      ],
+    }
+  );
+}
+
+/** The publication summary of thesisBy(). */
+function publication(body = 'Original\r\n**view**', itemKey = THESIS) {
   return {
-    playbookId: id,
-    thesisId: id,
-    authorVersionId: '32',
-    materialVersionId: '33',
-    itemKey: `thesis:${id}:33`,
+    thesisId: THESIS,
+    playbookId: PLAYBOOK,
+    authorVersionId: VERSION,
+    materialVersionId: MATERIAL,
+    itemKey,
     title: 'View',
     body,
-    publishedAtMs: 1790000000000,
-    changeKind: 'CREATE',
-    visibility: 'PUBLIC',
+    publishedAtMs: Date.parse('2026-11-01T10:00:00.000Z'),
+    changeKind: 'material',
+    visibility: 'public',
     closed: false,
     archived: false,
     note: '',
     closingNote: '',
     researchPaused: false,
-    entityIds: ['23'],
+    entityIds: [ASSET],
     categoryIds: [],
-    entityStances: [{ entityId: '23', stance: 'BULLISH' }],
-    entities: [{ id: '23', ticker: 'NVDA', name: 'NVIDIA' }],
+    entityStances: [{ entityId: ASSET, stance: 'BULLISH' }],
+    entities: [{ id: ASSET, ticker: 'NVDA', name: 'NVIDIA Corporation' }],
     publisher: {
       __typename: 'Person',
-      id: '21',
+      id: ADA,
       slug: 'ada',
       displayName: 'Ada',
-      avatarUrl: '',
+      avatarUrl: 'https://example.com/alice.png',
       bio: 'Investor',
       followersCount: 1,
       viewerState: { following: null },
@@ -61,10 +116,10 @@ function publication(body = 'Original\r\n**view**') {
     medias: [],
     signalFeed: null,
     snapshotRelease: {
-      versionId: '32',
-      materialVersionId: '33',
-      publishedAtMs: 1790000000000,
-      changeKind: 'CREATE',
+      versionId: VERSION,
+      materialVersionId: MATERIAL,
+      publishedAtMs: Date.parse('2026-11-01T10:00:00.000Z'),
+      changeKind: 'material',
       sourceRefs: [
         {
           title: 'Source',
@@ -78,112 +133,111 @@ function publication(body = 'Original\r\n**view**') {
     },
   };
 }
-function page(nodes: unknown[] = [], hasNextPage = false) {
-  const edges = nodes.map((node, i) => ({ cursor: `cursor:${i}`, node }));
-  return {
-    edges,
-    pageInfo: { endCursor: edges.at(-1)?.cursor ?? '', hasNextPage },
-  };
+
+const search = (items: unknown[], nextPageToken: string | null = null) => ({
+  items,
+  nextPageToken,
+});
+
+function client() {
+  return new AlvaClient({ apiKey: 'test-key', baseUrl: 'https://api.test' });
 }
-function authorData(scope: object = person, pub: unknown = publication()) {
-  return {
-    scope: {
-      ...scope,
-      theses: page([{ id, latestRelease: { thesisPublication: pub } }]),
-    },
-  };
-}
-function relatedData(state = 'READY', nextCursor: string | null = null) {
-  const nodes =
-    state === 'READY'
-      ? [
-          {
-            itemKey: `thesis:${id}:33`,
-            score: 0.72,
-            publication: publication(),
-          },
-        ]
-      : [];
-  return {
-    node: {
-      relatedTheses: { state, nextCursor, edges: page(nodes).edges },
-    },
-  };
-}
-function setup(...responses: unknown[]) {
-  const client = new AlvaClient({ apiKey: 'test-key' });
-  const request = vi.spyOn(client, '_request');
-  for (const data of responses) request.mockResolvedValueOnce({ data });
-  return { client, request };
-}
-function body(request: ReturnType<typeof setup>['request'], index = 0) {
-  return request.mock.calls[index][2]?.body as {
-    query: string;
-    variables: Record<string, unknown>;
-  };
-}
+
+afterEach(() => vi.unstubAllGlobals());
+
 for (const [label, dispatch] of [
   ['SDK', null],
   ['terminal', terminal],
   ['embedded', embedded],
 ] as const) {
   describe(`${label} Thesis reads`, () => {
-    it('preserves a large author body and identities in one read', async () => {
+    it('resolves the author and preserves a large body and identities', async () => {
       const text = '观点\r\n**original**\n'.repeat(4000);
-      const { client, request } = setup(authorData(person, publication(text)));
+      const { calls } = v2Fetch({
+        'GET /profiles': search([adaMatch]),
+        [`GET /profiles/${ADA}/theses`]: search([thesisBy(text)]),
+      });
+      const c = client();
       const result = dispatch
-        ? await dispatch(client, ['thesis', 'list', '--person', 'ada'])
-        : await client.theses.list({ person: 'ada' });
+        ? await dispatch(c, ['thesis', 'list', '--person', 'ada'])
+        : await c.theses.list({ person: 'ada' });
       expect(result).toEqual({
         scope: person,
         edges: [
           {
-            cursor: 'cursor:0',
-            node: { playbookId: id, publication: publication(text) },
+            cursor: '',
+            node: { playbookId: THESIS, publication: publication(text) },
           },
         ],
         nextCursor: null,
       });
-      expect(request).toHaveBeenCalledTimes(1);
-      expect(body(request).variables).toEqual({
-        slug: 'ada',
-        input: { first: 10 },
+      expect(calls.map((call) => call.path)).toEqual([
+        '/profiles',
+        `/profiles/${ADA}/theses`,
+      ]);
+      expect(Object.fromEntries(calls[0].query)).toEqual({
+        query: 'ada',
+        kind: 'PERSON',
+        pageSize: '50',
       });
-      expect(request.mock.calls[0].slice(0, 2)).toEqual(['POST', '/query']);
-      expect(body(request).query).not.toMatch(
-        /mutation|pendingEvents|seenItemKeys|assetCandidates/
-      );
+      expect(Object.fromEntries(calls[1].query)).toEqual({
+        pageSize: '10',
+        archived: 'false',
+      });
     });
-    it('uses internal ID and forwards one Related continuation cursor', async () => {
-      const { client, request } = setup(relatedData('READY', 'opaque:after'));
+    it('forwards one Related continuation cursor', async () => {
+      const { calls } = v2Fetch({
+        [`GET /theses/${THESIS}/related`]: {
+          items: [
+            {
+              id: THESIS,
+              itemId: 'thesis:42:33',
+              score: 0.72,
+              thesis: thesisBy(),
+            },
+          ],
+          nextPageToken: 'opaque:after',
+        },
+      });
+      const c = client();
       const result = dispatch
-        ? await dispatch(client, [
+        ? await dispatch(c, [
             'thesis',
             'related',
             '--id',
-            id,
+            THESIS,
             '--first',
             '50',
             '--cursor',
             'opaque:next',
           ])
-        : await client.theses.related(id, { first: 50, cursor: 'opaque:next' });
+        : await c.theses.related(THESIS, { first: 50, cursor: 'opaque:next' });
       expect(result).toEqual({
         state: 'READY',
-        edges: relatedData().node.relatedTheses.edges,
+        edges: [
+          {
+            cursor: 'opaque:after',
+            node: {
+              itemKey: 'thesis:42:33',
+              score: 0.72,
+              publication: publication(undefined, 'thesis:42:33'),
+            },
+          },
+        ],
         nextCursor: 'opaque:after',
       });
-      expect(body(request).variables).toEqual({
-        id: `Playbook:${id}`,
-        input: { first: 50, after: 'opaque:next' },
+      expect(Object.fromEntries(calls[0].query)).toEqual({
+        pageSize: '50',
+        pageToken: 'opaque:next',
       });
-      expect(request).toHaveBeenCalledTimes(1);
+      expect(calls).toHaveLength(1);
     });
     it('rejects conflicting selectors and invalid pagination before requests', async () => {
-      const { client, request } = setup();
+      const { fetcher } = v2Fetch({});
+      const c = client();
       await expect(
         dispatch
-          ? dispatch(client, [
+          ? dispatch(c, [
               'thesis',
               'list',
               '--person',
@@ -191,259 +245,275 @@ for (const [label, dispatch] of [
               '--ticker',
               'NVDA',
             ])
-          : client.theses.list({ person: 'ada', ticker: 'NVDA' })
+          : c.theses.list({ person: 'ada', ticker: 'NVDA' })
       ).rejects.toThrow('exactly one');
       await expect(
         dispatch
-          ? dispatch(client, ['thesis', 'related', '--id', id, '--first', '51'])
-          : client.theses.related(id, { first: 51 })
+          ? dispatch(c, ['thesis', 'related', '--id', THESIS, '--first', '51'])
+          : c.theses.related(THESIS, { first: 51 })
       ).rejects.toThrow('between 1 and 50');
-      expect(request).not.toHaveBeenCalled();
+      expect(fetcher).not.toHaveBeenCalled();
     });
   });
 }
+
 describe('Thesis read contracts', () => {
-  it('reads a username directly with ARCHIVED and cursor', async () => {
-    const { client, request } = setup(authorData(user));
+  it('reads a username exactly with ARCHIVED and cursor', async () => {
+    const user = {
+      ...adaMatch,
+      id: 'profile_0user',
+      kind: 'USER',
+      handle: 'Ada-User',
+    };
+    const { calls } = v2Fetch({
+      'GET /profiles': search([
+        { ...user, id: 'profile_0near', handle: 'ada-user-2' },
+        user,
+      ]),
+      'GET /profiles/profile_0user/theses': search([]),
+    });
     expect(
       (
-        await client.theses.list({
+        await client().theses.list({
           user: 'ada-user',
           status: 'ARCHIVED',
           cursor: 'previous',
         })
       ).scope
-    ).toEqual(user);
-    expect(body(request).variables).toEqual({
-      username: 'ada-user',
-      input: { first: 10, after: 'previous', status: 'ARCHIVED' },
+    ).toEqual({
+      __typename: 'PublicUser',
+      id: 'profile_0user',
+      username: 'Ada-User',
+      displayName: 'Ada',
+      bio: '',
     });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(calls[0].query.get('kind')).toBe('USER');
+    expect(Object.fromEntries(calls[1].query)).toEqual({
+      pageSize: '10',
+      pageToken: 'previous',
+      archived: 'true',
+    });
   });
   it('names the exact author selector on every publisher', async () => {
-    const { client } = setup(authorData());
-    const [edge] = (await client.theses.list({ person: 'ada' })).edges;
+    v2Fetch({
+      'GET /profiles': search([adaMatch]),
+      [`GET /profiles/${ADA}/theses`]: search([thesisBy()]),
+    });
+    const [edge] = (await client().theses.list({ person: 'ada' })).edges;
     expect(edge.node.publication?.publisher).toMatchObject({
       __typename: 'Person',
       slug: 'ada',
     });
   });
-  it('resolves a unique name then retrieves its exact slug', async () => {
-    const { client, request } = setup({ search: page([person]) }, authorData());
-    expect((await client.theses.list({ personName: 'Ada' })).scope).toEqual(
+  it('resolves a unique name to its profile', async () => {
+    const { calls } = v2Fetch({
+      'GET /profiles': search([adaMatch]),
+      [`GET /profiles/${ADA}/theses`]: search([thesisBy()]),
+    });
+    expect((await client().theses.list({ personName: 'Ada' })).scope).toEqual(
       person
     );
-    expect(body(request).variables).toEqual({ query: 'Ada' });
-    expect(body(request, 1).variables).toMatchObject({ slug: 'ada' });
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(calls[0].query.get('query')).toBe('Ada');
+    expect(calls).toHaveLength(2);
   });
   it('returns readable duplicate-name candidates without selecting one', async () => {
-    const other = { ...person, id: '24', slug: 'ada-other', bio: 'Economist' };
-    const { client, request } = setup({ search: page([person, other]) });
+    const other = { ...adaMatch, id: 'profile_0other', handle: 'ada-other' };
+    const { calls } = v2Fetch({ 'GET /profiles': search([adaMatch, other]) });
+    const candidates = [
+      { __typename: 'Person', id: ADA, slug: 'ada', displayName: 'Ada' },
+      {
+        __typename: 'Person',
+        id: 'profile_0other',
+        slug: 'ada-other',
+        displayName: 'Ada',
+      },
+    ];
     await expect(
-      client.theses.list({ personName: 'Ada' })
+      client().theses.list({ personName: 'Ada' })
     ).rejects.toMatchObject({
       code: 'AMBIGUOUS_IDENTITY',
-      details: { candidates: [person, other] },
+      details: { candidates, more: false },
     });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
   });
   it('does not accept a unique candidate on an incomplete search page', async () => {
-    const { client } = setup({ search: page([person], true) });
+    v2Fetch({ 'GET /profiles': search([adaMatch], 'more') });
     await expect(
-      client.theses.list({ personName: 'Ada' })
+      client().theses.list({ personName: 'Ada' })
     ).rejects.toMatchObject({ code: 'AMBIGUOUS_IDENTITY' });
   });
-  it('resolves a unique ticker and fetches its exact entity', async () => {
-    const { client, request } = setup(
-      { market: { search: page([entity]) } },
-      { market: { scope: { ...entity, theses: page([publication()]) } } }
-    );
-    const result = await client.theses.list({ ticker: 'NVDA' });
-    expect(result.scope).toEqual(entity);
+  it('resolves a ticker to its asset and lists its Theses', async () => {
+    const { calls } = v2Fetch({
+      'GET /assets/by-symbol/BRK.B': { ...wireAsset, symbol: 'BRK.B' },
+      [`GET /assets/${ASSET}/theses`]: search([thesisBy()]),
+    });
+    const result = await client().theses.list({ ticker: 'BRK.B' });
+    expect(result.scope).toEqual({ ...entity, ticker: 'BRK.B' });
     expect(result.edges[0].node).toEqual({
-      playbookId: id,
+      playbookId: THESIS,
       publication: publication(),
     });
-    expect(body(request, 1).variables).toEqual({
-      id: '23',
-      input: { first: 10 },
-    });
-    expect(request).toHaveBeenCalledTimes(2);
-  });
-  it('preserves market and asset class for ambiguous tickers', async () => {
-    const crypto = {
-      ...entity,
-      id: '24',
-      kind: 'CRYPTO',
-      assetClass: 'BINANCE_SPOT',
-      venue: { id: 'binance', name: 'Binance' },
-    };
-    const { client, request } = setup({
-      market: { search: page([entity, crypto]) },
-    });
-    await expect(client.theses.list({ ticker: 'NVDA' })).rejects.toMatchObject({
-      code: 'AMBIGUOUS_IDENTITY',
-      details: { candidates: [entity, crypto] },
-    });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(2);
   });
   it('continues through an empty page while nextCursor is set', async () => {
-    const empty = page([], true);
-    empty.pageInfo.endCursor = 'scan:next';
-    const { client, request } = setup({
-      market: { scope: { ...entity, theses: empty } },
+    const { calls } = v2Fetch({
+      [`GET /assets/${ASSET}`]: { ...wireAsset, venue: null, assetClass: null },
+      [`GET /assets/${ASSET}/theses`]: search([], 'scan:next'),
     });
     expect(
-      await client.theses.list({ entityId: '23', cursor: 'scan:prev' })
-    ).toEqual({ scope: entity, edges: [], nextCursor: 'scan:next' });
-    expect(body(request).variables).toEqual({
-      id: '23',
-      input: { first: 10, after: 'scan:prev' },
+      await client().theses.list({ entityId: ASSET, cursor: 'scan:prev' })
+    ).toEqual({
+      scope: { ...entity, venue: null, assetClass: '' },
+      edges: [],
+      nextCursor: 'scan:next',
     });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(calls[1].query.get('pageToken')).toBe('scan:prev');
   });
   it.each([{ person: 'missing' }, { user: 'missing' }])(
     'never fuzzy-fallbacks for %o',
     async (params) => {
-      const { client, request } = setup({ scope: null });
-      await expect(client.theses.list(params)).rejects.toMatchObject({
+      const { calls } = v2Fetch({
+        'GET /profiles': (call) =>
+          search([
+            {
+              ...adaMatch,
+              kind: call.query.get('kind'),
+              handle: 'missing-not',
+            },
+          ]),
+      });
+      await expect(client().theses.list(params)).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
-      expect(request).toHaveBeenCalledTimes(1);
+      expect(calls).toHaveLength(1);
     }
   );
   it('distinguishes no name match from an empty thesis list', async () => {
-    const { client } = setup(
-      { search: page() },
-      { scope: { ...person, theses: page() } }
-    );
+    v2Fetch({
+      'GET /profiles': (call) =>
+        call.query.get('query') === 'missing' ? search([]) : search([adaMatch]),
+      [`GET /profiles/${ADA}/theses`]: search([]),
+    });
     await expect(
-      client.theses.list({ personName: 'missing' })
+      client().theses.list({ personName: 'missing' })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    expect(await client.theses.list({ person: 'ada' })).toEqual({
-      scope: person,
+    expect(await client().theses.list({ person: 'ada' })).toEqual({
+      scope: { ...person, bio: '' },
       edges: [],
       nextCursor: null,
     });
   });
-  it('preserves null publication without per-item fetches', async () => {
-    const { client, request } = setup(authorData(person, null));
-    expect((await client.theses.list({ person: 'ada' })).edges[0].node).toEqual(
-      { playbookId: id, publication: null }
-    );
-    expect(request).toHaveBeenCalledTimes(1);
+  it('keeps a missing ticker NOT_FOUND', async () => {
+    v2Fetch({
+      'GET /assets/by-symbol/NOPE': problem(404, 'NOT_FOUND', 'no asset'),
+    });
+    await expect(
+      client().theses.list({ ticker: 'NOPE' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
-  it.each(['GENERATING', 'FAILED', 'READY'])(
-    'preserves empty %s without polling',
-    async (state) => {
-      const data = relatedData(state);
-      data.node.relatedTheses.edges = [];
-      const { client, request } = setup(data);
-      expect(await client.theses.related(id)).toEqual({
-        state,
-        edges: [],
-        nextCursor: null,
+  it('reads a Related page that is being prepared as GENERATING without polling', async () => {
+    const { calls } = v2Fetch({
+      [`GET /theses/${THESIS}/related`]: problem(
+        503,
+        'UNAVAILABLE',
+        'related Theses are being prepared; retry later',
+        { retryAfter: 30 }
+      ),
+    });
+    expect(await client().theses.related(THESIS)).toEqual({
+      state: 'GENERATING',
+      edges: [],
+      nextCursor: null,
+    });
+    expect(calls).toHaveLength(1);
+  });
+  it('reads an empty Related page as READY and a missing source as NOT_FOUND', async () => {
+    v2Fetch({
+      [`GET /theses/${THESIS}/related`]: search([]),
+      'GET /theses/thesis_0missing/related': problem(404, 'NOT_FOUND'),
+    });
+    expect(await client().theses.related(THESIS)).toEqual({
+      state: 'READY',
+      edges: [],
+      nextCursor: null,
+    });
+    await expect(
+      client().theses.related('thesis_0missing')
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+  it.each([null, {}, { items: {} }, { items: [], nextPageToken: '' }])(
+    'rejects malformed page %o',
+    async (page) => {
+      v2Fetch({
+        'GET /profiles': search([adaMatch]),
+        [`GET /profiles/${ADA}/theses`]: page,
       });
-      expect(body(request).variables).toEqual({
-        id: `Playbook:${id}`,
-        input: { first: 10 },
-      });
-      expect(request).toHaveBeenCalledTimes(1);
+      await expect(
+        client().theses.list({ person: 'ada' })
+      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
     }
   );
-  it('keeps source absence distinct from a ready empty Related page', async () => {
-    const { client } = setup({ node: null });
-    await expect(client.theses.related(id)).rejects.toMatchObject({
-      code: 'NOT_FOUND',
+  it.each(['id', 'playbookId', 'currentVersion', 'research', 'visibility'])(
+    'rejects a listed Thesis without %s',
+    async (field) => {
+      const thesis: Record<string, unknown> = thesisBy();
+      delete thesis[field];
+      v2Fetch({
+        'GET /profiles': search([adaMatch]),
+        [`GET /profiles/${ADA}/theses`]: search([thesis]),
+      });
+      await expect(
+        client().theses.list({ person: 'ada' })
+      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    }
+  );
+  it('rejects a listed Thesis whose author cannot be read', async () => {
+    v2Fetch({
+      'GET /profiles': search([adaMatch]),
+      [`GET /profiles/${ADA}/theses`]: search([wireThesis({ author: null })]),
     });
-  });
-  it('fails closed on errors with partial data', async () => {
-    const { client, request } = setup();
-    request.mockResolvedValue({
-      data: authorData(),
-      errors: [
-        { message: 'permission denied', extensions: { code: 'FORBIDDEN' } },
-      ],
-    });
-    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-      message: 'permission denied',
-    });
-    await expect(client.theses.related(id)).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-    });
-  });
-  it.each([
-    null,
-    {},
-    { errors: {} },
-    { data: { scope: {} } },
-    { data: { scope: { ...person, theses: { edges: [] } } } },
-  ])('rejects malformed response %o', async (response) => {
-    const { client, request } = setup();
-    request.mockResolvedValue(response);
-    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
-    });
-  });
-  it.each([
-    'playbookId',
-    'authorVersionId',
-    'body',
-    'publisher',
-    'snapshotRelease',
-  ])('rejects absent publication %s', async (field) => {
-    const pub: Record<string, unknown> = publication();
-    delete pub[field];
-    const { client } = setup(authorData(person, pub));
-    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
-    });
-  });
-  it('rejects a publisher without an author kind', async () => {
-    const pub = publication();
-    const publisher: Record<string, unknown> = { ...pub.publisher };
-    delete publisher.__typename;
-    const { client } = setup(authorData(person, { ...pub, publisher }));
-    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
-    });
+    await expect(client().theses.list({ person: 'ada' })).rejects.toMatchObject(
+      {
+        code: 'INVALID_RESPONSE',
+      }
+    );
   });
   it.each([
     {},
     { person: '' },
     { personId: '21' },
-    { entityId: '0' },
-    { entityId: '9223372036854775808' },
+    { entityId: ' ' },
     { ticker: 'NVDA', status: 'ARCHIVED' },
     { user: 'ada', first: 0 },
     { user: 'ada', first: 1.5 },
     { user: 'ada', first: null },
     { user: 'ada', cursor: '' },
   ])('rejects SDK parameters %o', async (params) => {
-    const { client, request } = setup();
+    const { fetcher } = v2Fetch({});
     await expect(
-      client.theses.list(params as ListThesesParams)
+      client().theses.list(params as ListThesesParams)
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 
 it('keeps ambiguity candidates visible through message-only embedded adapters', async () => {
-  const other = { ...person, id: '24', slug: 'ada-other', bio: 'Economist' };
-  const { client, request } = setup({ search: page([person, other]) });
+  const other = { ...adaMatch, id: 'profile_0other', handle: 'ada-other' };
+  const { calls } = v2Fetch({ 'GET /profiles': search([adaMatch, other]) });
   let message = '';
   try {
-    await embedded(client, ['thesis', 'list', '--person-name', 'Ada']);
+    await embedded(client(), ['thesis', 'list', '--person-name', 'Ada']);
   } catch (error) {
     // sdk-monorepo's DispatchReply currently serializes only Error.message.
     message = error instanceof Error ? error.message : String(error);
   }
   expect(message).toContain('Choose an exact identity');
   const candidates = JSON.parse(message.split('Candidates: ')[1]);
-  expect(candidates).toEqual([person, other]);
-  expect(request).toHaveBeenCalledTimes(1);
+  expect(candidates.map((c: { id: string }) => c.id)).toEqual([
+    ADA,
+    'profile_0other',
+  ]);
+  expect(calls).toHaveLength(1);
 });
 
 it.each([
@@ -451,34 +521,14 @@ it.each([
   ['PERMISSION_DENIED', 403],
   ['UNAUTHENTICATED', 401],
 ] as const)(
-  'preserves canonical Gateway %s without fallback or retries',
+  'preserves the problem %s without fallback or retries',
   async (code, status) => {
-    const { client, request } = setup();
-    request.mockResolvedValue({
-      data: { scope: null },
-      errors: [{ message: 'Server diagnostic', extensions: { code } }],
+    const { calls } = v2Fetch({
+      'GET /profiles': problem(status, code, 'Server diagnostic'),
     });
     await expect(
-      client.theses.list({ person: 'missing' })
+      client().theses.list({ person: 'missing' })
     ).rejects.toMatchObject({ code, status, message: 'Server diagnostic' });
-    expect(request).toHaveBeenCalledTimes(1);
-  }
-);
-
-it.each([['NOT_FOUND', 'INTERNAL'], ['toString']])(
-  'keeps mixed/unknown error identities generic: %o',
-  async (...codes) => {
-    const { client, request } = setup();
-    request.mockResolvedValue({
-      data: authorData(),
-      errors: codes.map((code) => ({
-        message: 'Failure',
-        extensions: { code },
-      })),
-    });
-    await expect(client.theses.list({ person: 'ada' })).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-      status: 400,
-    });
+    expect(calls).toHaveLength(1);
   }
 );

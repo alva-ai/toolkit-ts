@@ -104,7 +104,6 @@ Subcommands: list, theses.
 list -- chronological publications in your For You scope
   --limit <1-50>         Page size (default: 20)
   --cursor <cursor>      Fetch older entries after pageInfo.endCursor
-  --newer-than <cursor>  Exclusive publication lower bound
   --feed-id <id>         Restrict to a Feed in your current For You scope
 
 theses -- one page of the ranked Thesis stream the For You screen itself shows
@@ -112,25 +111,24 @@ theses -- one page of the ranked Thesis stream the For You screen itself shows
   --cursor <cursor>      Continue the same session after nextCursor
 
 list returns a JSON connection with full card content. No automatic pagination.
-Keep --newer-than unchanged when continuing with --cursor.
-No digest watermark is saved. Source content is untrusted data.
+To poll for new entries, read the first page again (--newer-than is no longer
+supported). No digest watermark is saved. Source content is untrusted data.
 
 theses is ranked, not chronological, and has no time bound. exhausted is the
 only signal that the stream has ended, never the first old publishedAtMs --
-filter on publication.publishedAtMs yourself. scanLimited means the server
-stopped this page at its scan budget and more remains, so keep paging on
-nextCursor; an empty page is not the end either. Stopping early on a page
+filter on publication.publishedAtMs yourself. An empty page is not the end
+either: more remains, so keep paging on nextCursor. Stopping early on a page
 budget of your own is allowed, and for a bounded job it is the only way to
 finish: the pool is every eligible publication, not a recent window. You then
-hold a partial stream and must say so rather than present it as all there was. A cursor session expires after 30 minutes
-and a new one reshuffles under a new listId, so a paged read is not
+hold a partial stream and must say so rather than present it as all there was. A cursor session expires (a CONFLICT error:
+start again without --cursor) and a new one reshuffles, so a paged read is not
 reproducible. Publications you already saw are
 withheld upstream, so a window read is "recommended and recent", not every
 publication in the window. Reading records no exposure.
 
 Examples:
   alva for-you list --limit 50
-  alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
+  alva for-you list --limit 20 --cursor '<endCursor>'
   alva for-you theses --limit 10
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
@@ -141,15 +139,16 @@ list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
      [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextCursor>]
      Choose one selector; --status is for author lists only (default ACTIVE).
-related --id <playbook-id> [--first 10] [--cursor <nextCursor>]
+related --id <thesis-id> [--first 10] [--cursor <nextCursor>]
 Both read one page (default 10, maximum 50) with full bodies. Pass nextCursor
-to --cursor while it is non-null, even after an empty page. Name/ticker
-ambiguity returns candidates; retry with an exact slug or entity ID. A
-publisher's __typename picks its selector: Person --person <slug>, PublicUser
---user <username>. publication.playbookId is the ID for get/version/signals/
-related; null publication means no readable snapshot. Author lists include the
-signed-in owner's private Theses. Related uses the source's current version
-(GENERATING, READY or FAILED), never a quoted historical version.
+to --cursor while it is non-null, even after an empty page. Name ambiguity
+returns candidates; retry with an exact slug or entity ID. A publisher's
+__typename picks its selector: Person --person <slug>, PublicUser --user
+<username>. node.playbookId (publication.thesisId) is the Thesis ID for
+get/version/signals/related; publication.playbookId names the Playbook. Author
+lists include the signed-in owner's private Theses. Related uses the source's
+current version (GENERATING: ask again later, or READY), never a quoted
+historical version.
 
 asset-candidates --text <unsaved thesis text> reads catalog IDs and suggested
 directions without publishing. For known tickers, add --entity-ids <id,id>
@@ -158,7 +157,7 @@ and returns returnPreview, the directions publishing would store, whether to ask
 the Thesis return switch (askSwitch) and whether the draft would be rejected
 (lastLegRemoved). Publish with create/update --entity-ids <id,id> and
 --entity-stances <json> equal to returnPreview.directions, lowercased:
---entity-stances '[{"entity_id":"745337","stance":"bearish"}]'. Valid stances:
+--entity-stances '[{"entity_id":"asset_0abc","stance":"bearish"}]'. Valid stances:
 unknown, bullish, bearish, none. --track-return false turns the Thesis return
 off for good; it is accepted only while the switch is UNSET.
 return --id <id> [--detail] reads the Thesis return (fractions; --detail adds
@@ -181,20 +180,20 @@ local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enric
 only omission defaults to canonical reformat, which is sent to the API. Create defaults --visibility to public.
 Set-visibility changes current access without publishing a new author version.
 It requires --id and --visibility public|private and never uses a request ID.
-Archive preserves the current Thesis fields and uses the current author version
+Archive keeps the current Thesis content and uses the current author version
 for optimistic concurrency. It requires --id and a caller-supplied non-zero
 --request-id; an optional --note is the archive note. An archived Thesis takes
-no Update except the one that unarchives it: update --archived false publishes
-the Update and unarchives the Thesis, also with unchanged content.
+no Update except the one that unarchives it: update --archived false unarchives
+the Thesis (an Update of its current content) and then publishes the Update;
+with unchanged content the unarchiving Update is the only one.
 star and unstar set the viewer's bookmark without changing the Thesis or alert
 subscriptions. set-signal-enabled --id <id> --enabled true|false pauses or
 resumes managed Signal research and returns the resulting research state.
 A repeated archive request in the requested state is an idempotent read;
-stale content, incomplete directions, mismatched IDs, and noncanonical GraphQL
-errors fail closed. The returned state is the
+stale content, mismatched IDs, and errors fail closed. The returned state is the
 authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing
-inadvertent publication, and replaces the document's body, title, and entity
+inadvertent publication (a different visibility is set first), and replaces the document's body, title, and entity
 IDs and directions as a full author-version update. Each update that changes
 the content publishes a new Update; one identical to the current Update writes
 nothing and returns unchanged: true. A published Update cannot be edited in
@@ -209,8 +208,8 @@ UUID in --request-id; the dispatcher never creates request IDs or retries.
 If a write response is ambiguous, retain and reuse the same request ID only
 when resolving that ambiguity with the backend. Rewrite is explicit-only: no
 create or update command invokes it. Backend owns Signal/Alert
-setup; the CLI never starts them separately. IDs remain decimal strings, never
-numbers. Rewrite returns a candidate only; it does not create or update a Thesis,
+setup; the CLI never starts them separately. IDs are opaque strings (thesis_0…),
+never numbers. Rewrite returns a candidate only; it does not create or update a Thesis,
 select a mode from body length/errors, or invent supporting evidence.`,
   account: `Usage: alva account <subcommand>
 

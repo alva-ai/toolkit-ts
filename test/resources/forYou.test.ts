@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import type {
   ForYouListParams,
@@ -7,222 +7,237 @@ import type {
 import { dispatch as terminal } from '../../src/cli/index.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 import { CliUsageError } from '../../src/error.js';
+import {
+  ASSET,
+  MATERIAL,
+  PLAYBOOK,
+  PROFILE,
+  THESIS,
+  VERSION,
+  problem,
+  v2Fetch,
+  wireThesis,
+} from '../contentV2.js';
 
-const id = '9223372036854775807';
-function page(body = 'Full **card** content') {
+const FEED = 'automation_0feed';
+const ENTRY = 'feed_post_0entry';
+
+function wireEntry(overrides: Record<string, unknown> = {}) {
   return {
-    edges: [
+    id: ENTRY,
+    automationId: FEED,
+    majorVersion: 1,
+    displayName: null,
+    source: 'company-events',
+    eventAt: '2026-09-06T10:33:20.000Z',
+    publishedAt: '2026-09-06T10:35:00.000Z',
+    title: 'Compute commitments',
+    body: 'Full **card** content',
+    actions: [
       {
-        cursor: 'opaque:newest',
-        node: {
-          id: `FeedEntry:${id}`,
-          feed: { id },
-          major: { id: `${id}:1`, feedId: id, number: 1 },
-          displayName: null,
-          source: 'company-events',
-          title: 'Compute commitments',
-          body,
-          eventTimeMs: 1788710000000,
-          publishedAtMs: 1788710100000,
-          actions: [
-            {
-              type: 'OPEN_URL',
-              label: 'Source',
-              url: 'https://example.com',
-              prompt: null,
-            },
-          ],
-          presentation: null,
-          tickers: [],
-          media: [],
-          sources: [
-            {
-              type: 'WEB',
-              title: 'Primary source',
-              url: 'https://example.com',
-              iconUrl: null,
-              subtitle: null,
-              description: null,
-              publishedAtMs: 1788710000000,
-            },
-          ],
-        },
+        type: 'OPEN_URL',
+        label: 'Source',
+        url: 'https://example.com',
+        prompt: null,
       },
     ],
-    pageInfo: {
-      startCursor: 'opaque:newest',
-      endCursor: 'opaque:newest',
-      hasNextPage: false,
-      hasPreviousPage: false,
-    },
+    card: null,
+    tickers: [{ symbol: 'NVDA' }],
+    media: [],
+    sources: [
+      {
+        type: 'WEB',
+        url: 'https://example.com',
+        iconUrl: null,
+        title: 'Primary source',
+        subtitle: null,
+        description: null,
+        publishedAt: '2026-09-06T10:33:20.000Z',
+      },
+    ],
+    ...overrides,
   };
 }
-function setup(result: unknown = page()) {
-  const client = new AlvaClient({ apiKey: 'test-key' });
-  const request = vi.spyOn(client, '_request').mockResolvedValue({
-    data: { viewer: { forYou: result } },
-  });
-  return { client, request };
+
+/** The 0.x For You entry of wireEntry(). */
+function entry(body = 'Full **card** content') {
+  return {
+    id: ENTRY,
+    feed: { id: FEED },
+    major: { id: '', feedId: FEED, number: 1 },
+    displayName: null,
+    source: 'company-events',
+    eventTimeMs: Date.parse('2026-09-06T10:33:20.000Z'),
+    publishedAtMs: Date.parse('2026-09-06T10:35:00.000Z'),
+    title: 'Compute commitments',
+    body,
+    actions: [
+      {
+        type: 'OPEN_URL',
+        label: 'Source',
+        url: 'https://example.com',
+        prompt: null,
+      },
+    ],
+    presentation: null,
+    tickers: [{ symbol: 'NVDA', logoUrl: '', sentiment: null }],
+    media: [],
+    sources: [
+      {
+        type: 'WEB',
+        url: 'https://example.com',
+        iconUrl: null,
+        title: 'Primary source',
+        subtitle: null,
+        description: null,
+        publishedAtMs: Date.parse('2026-09-06T10:33:20.000Z'),
+      },
+    ],
+  };
 }
+
+function client() {
+  return new AlvaClient({ apiKey: 'test-key', baseUrl: 'https://api.test' });
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('ForYouResource', () => {
   it('requests a single default page and preserves the full publication', async () => {
-    const expected = page('x'.repeat(70000));
-    const { client, request } = setup(expected);
-    expect(client.forYou).toBe(client.forYou);
-    expect(await client.forYou.list()).toEqual(expected);
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith('POST', '/query', {
-      body: {
-        query: expect.stringContaining('query ToolkitForYou'),
-        variables: { input: { first: 20 } },
+    const body = 'x'.repeat(70000);
+    const { calls } = v2Fetch({
+      'GET /me/for-you-entries': {
+        items: [wireEntry({ body })],
+        nextPageToken: null,
       },
     });
-    const query = request.mock.calls[0][2]?.body as { query: string };
-    for (const field of [
-      'title body',
-      'sources',
-      'presentation',
-      'tickers',
-      'major',
-      'actions',
-    ]) {
-      expect(query.query).toContain(field);
-    }
-  });
-
-  it('passes opaque bounds together and keeps int64 IDs as strings', async () => {
-    const { client, request } = setup();
-    const input = {
-      first: 50,
-      after: 'opaque:older',
-      newerThan: 'opaque:lower',
-      feedId: id,
-    };
-    await client.forYou.list(input);
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input },
-    });
-  });
-
-  it('accepts valid empty and intermediate pages', async () => {
-    const empty = {
-      edges: [],
+    const c = client();
+    expect(c.forYou).toBe(c.forYou);
+    expect(await c.forYou.list()).toEqual({
+      edges: [{ cursor: '', node: entry(body) }],
       pageInfo: {
         startCursor: '',
         endCursor: '',
         hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(Object.fromEntries(calls[0].query)).toEqual({ pageSize: '20' });
+  });
+
+  it('passes the page and feed, and puts the next page token on the last edge', async () => {
+    const card = {
+      accentColor: '#FF0000',
+      url: null,
+      thumbnailUrl: null,
+      footer: 'f',
+      fields: [{ label: 'a', value: 'b', inline: true }],
+    };
+    const { calls } = v2Fetch({
+      'GET /me/for-you-entries': {
+        items: [
+          wireEntry({ id: 'signal_01', eventAt: null, card }),
+          wireEntry(),
+        ],
+        nextPageToken: 'older',
+      },
+    });
+    const got = await client().forYou.list({
+      first: 50,
+      after: 'opaque:older',
+      feedId: FEED,
+    });
+    expect(Object.fromEntries(calls[0].query)).toEqual({
+      pageSize: '50',
+      pageToken: 'opaque:older',
+      automationId: FEED,
+    });
+    expect(got.edges.map((e) => e.cursor)).toEqual(['', 'older']);
+    expect(got.edges[0].node).toMatchObject({
+      id: 'signal_01',
+      eventTimeMs: 0,
+      presentation: { card },
+    });
+    expect(got.pageInfo).toEqual({
+      startCursor: 'opaque:older',
+      endCursor: 'older',
+      hasNextPage: true,
+      hasPreviousPage: true,
+    });
+  });
+
+  it('accepts an empty page', async () => {
+    v2Fetch({
+      'GET /me/for-you-entries': { items: [], nextPageToken: null },
+    });
+    expect(await client().forYou.list({ after: 'opaque' })).toEqual({
+      edges: [],
+      pageInfo: {
+        startCursor: 'opaque',
+        endCursor: '',
+        hasNextPage: false,
         hasPreviousPage: true,
       },
-    };
-    const { client, request } = setup(empty);
-    expect(await client.forYou.list()).toEqual(empty);
-    const next = page();
-    next.pageInfo.hasNextPage = true;
-    next.pageInfo.hasPreviousPage = true;
-    request.mockResolvedValue({ data: { viewer: { forYou: next } } });
-    expect(await client.forYou.list({ after: 'opaque' })).toEqual(next);
+    });
   });
 
   it.each([
     ...[0, 51, -1, 1.5, Infinity, NaN, null, '20'].map((first) => ({ first })),
     ...['', ' ', null, 42].map((after) => ({ after })),
-    ...['', ' ', null].map((newerThan) => ({ newerThan })),
-    ...[
-      '',
-      '0',
-      '-1',
-      '+1',
-      '1.5',
-      '1e3',
-      ' 1',
-      '9223372036854775808',
-      123,
-      null,
-    ].map((feedId) => ({ feedId })),
+    ...['', ' ', null, 'opaque:lower'].map((newerThan) => ({ newerThan })),
+    ...['', ' ', 123, null].map((feedId) => ({ feedId })),
   ])('rejects invalid SDK input before I/O: %j', async (input) => {
-    const { client, request } = setup();
+    const { fetcher } = v2Fetch({});
     await expect(
-      client.forYou.list(input as ForYouListParams)
+      client().forYou.list(input as ForYouListParams)
     ).rejects.toThrow();
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('requires authentication without attempting the request', async () => {
-    const client = new AlvaClient({});
-    const request = vi.spyOn(client, '_request');
-    await expect(client.forYou.list()).rejects.toMatchObject({
+    const { fetcher } = v2Fetch({});
+    await expect(new AlvaClient({}).forYou.list()).rejects.toMatchObject({
       code: 'UNAUTHENTICATED',
     });
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('fails closed on partial GraphQL errors and preserves error details', async () => {
-    const { client, request } = setup();
-    const errors = [
-      { message: 'full login required', extensions: { code: 'FORBIDDEN' } },
-    ];
-    request.mockResolvedValue({ data: { viewer: { forYou: page() } }, errors });
-    await expect(client.forYou.list()).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
+  it('keeps a problem and its message', async () => {
+    v2Fetch({
+      'GET /me/for-you-entries': problem(
+        403,
+        'PERMISSION_DENIED',
+        'full login required'
+      ),
+    });
+    await expect(client().forYou.list()).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
       message: 'full login required',
     });
   });
 
-  it('propagates transport failures unchanged', async () => {
-    const { client, request } = setup();
-    const error = new Error('network unavailable');
-    request.mockRejectedValue(error);
-    await expect(client.forYou.list()).rejects.toBe(error);
+  it('propagates transport failures as a network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    await expect(client().forYou.list()).rejects.toMatchObject({
+      message: expect.stringContaining('offline'),
+    });
   });
 
   it.each([
     null,
     {},
-    { data: null },
-    { data: { viewer: null } },
-    { data: { viewer: { forYou: null } } },
-    { errors: 'invalid' },
-  ])('rejects missing or malformed GraphQL envelope: %j', async (response) => {
-    const { client, request } = setup();
-    request.mockResolvedValue(response);
-    await expect(client.forYou.list()).rejects.toThrow();
-  });
-
-  it.each([
-    { edges: null, pageInfo: {} },
-    { ...page(), pageInfo: { ...page().pageInfo, endCursor: 'wrong' } },
-    { ...page(), pageInfo: { ...page().pageInfo, startCursor: null } },
-    { ...page(), edges: [] },
-    {
-      edges: [],
-      pageInfo: {
-        startCursor: '',
-        endCursor: '',
-        hasNextPage: true,
-        hasPreviousPage: false,
-      },
-    },
-    { ...page(), edges: [{ ...page().edges[0], cursor: '' }] },
-    {
-      ...page(),
-      edges: [
-        { cursor: 'opaque:newest', node: { ...page().edges[0].node, id: 123 } },
-      ],
-    },
-    {
-      ...page(),
-      edges: [
-        {
-          cursor: 'opaque:newest',
-          node: { ...page().edges[0].node, body: null },
-        },
-      ],
-    },
-  ])('rejects inconsistent connections: %j', async (invalid) => {
-    const { client } = setup(invalid);
-    await expect(client.forYou.list()).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
+    { items: null, nextPageToken: null },
+    { items: [], nextPageToken: '' },
+    { items: [wireEntry({ id: '' })], nextPageToken: null },
+    { items: [wireEntry({ id: 123 })], nextPageToken: null },
+    { items: [wireEntry({ body: null })], nextPageToken: null },
+    { items: [wireEntry({ publishedAt: null })], nextPageToken: null },
+    { items: [wireEntry({ tickers: null })], nextPageToken: null },
+  ])('rejects inconsistent pages: %j', async (invalid) => {
+    v2Fetch({ 'GET /me/for-you-entries': invalid });
+    await expect(client().forYou.list()).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
     });
   });
 });
@@ -232,26 +247,28 @@ describe.each([
   ['embedded', embedded],
 ] as const)('%s For You command', (_name, dispatch) => {
   it('returns full JSON and maps every flag to the shared resource', async () => {
-    const result = page('x'.repeat(70000));
-    const { client, request } = setup(result);
+    const { calls } = v2Fetch({
+      'GET /me/for-you-entries': {
+        items: [wireEntry()],
+        nextPageToken: null,
+      },
+    });
     expect(
-      await dispatch(client, [
+      await dispatch(client(), [
         'for-you',
         'list',
         '--limit',
         '50',
         '--cursor',
         'older',
-        '--newer-than',
-        'lower',
         '--feed-id',
-        id,
+        FEED,
       ])
-    ).toEqual(result);
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: {
-        input: { first: 50, after: 'older', newerThan: 'lower', feedId: id },
-      },
+    ).toMatchObject({ edges: [{ node: entry() }] });
+    expect(Object.fromEntries(calls[0].query)).toEqual({
+      pageSize: '50',
+      pageToken: 'older',
+      automationId: FEED,
     });
   });
 
@@ -261,12 +278,12 @@ describe.each([
       ['for-you', 'list', '--help'],
     ].map((argv) => ({ argv }))
   )('serves help without I/O: %j', async ({ argv }) => {
-    const { client, request } = setup();
-    expect(await dispatch(client, argv)).toMatchObject({
+    const { fetcher } = v2Fetch({});
+    expect(await dispatch(client(), argv)).toMatchObject({
       _help: true,
-      text: expect.stringContaining('--newer-than'),
+      text: expect.stringContaining('--feed-id'),
     });
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it.each(
@@ -276,8 +293,8 @@ describe.each([
       ['--limit', '51'],
       ['--limit', '0'],
       ['--cursor', ''],
-      ['--newer-than', ' '],
-      ['--feed-id', '9223372036854775808'],
+      ['--newer-than', 'lower'],
+      ['--feed-id', ' '],
       ['--user-id', '1'],
       ['--channel-id', '1'],
       ['--bogus'],
@@ -285,415 +302,251 @@ describe.each([
       ['--cursor'],
     ].map((flags) => ({ flags }))
   )('rejects invalid argv before I/O: %j', async ({ flags }) => {
-    const { client, request } = setup();
+    const { fetcher } = v2Fetch({});
     await expect(
-      dispatch(client, ['for-you', 'list', ...flags])
+      dispatch(client(), ['for-you', 'list', ...flags])
     ).rejects.toBeInstanceOf(CliUsageError);
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 
 it('keeps host-owned auth overrides out of the embedded profile', async () => {
-  const { client, request } = setup();
+  const { fetcher } = v2Fetch({});
   await expect(
-    embedded(client, ['for-you', 'list', '--api-key', 'other'])
+    embedded(client(), ['for-you', 'list', '--api-key', 'other'])
   ).rejects.toBeInstanceOf(CliUsageError);
-  expect(request).not.toHaveBeenCalled();
+  expect(fetcher).not.toHaveBeenCalled();
 });
 
-const thesisId = '7100000000000000001';
-const materialVersionId = '7100000000000000004';
-const entityId = '7100000000000000010';
+const ITEM_KEY = 'thesis:42:33';
+const LISTED = 'thesis_version_0listed';
+
+/** The publication summary of wireThesis() as a recommendation. */
 function publication() {
   return {
-    thesisId,
-    playbookId: '7100000000000000002',
-    authorVersionId: '7100000000000000003',
-    materialVersionId,
-    itemKey: `thesis:${thesisId}:${materialVersionId}`,
-    title: 'Compute capex is under-modelled',
-    body: 'Full **thesis** body',
-    publishedAtMs: 1788710100000,
-    changeKind: 'UPDATE',
-    visibility: 'PUBLIC',
+    thesisId: THESIS,
+    playbookId: PLAYBOOK,
+    authorVersionId: LISTED,
+    materialVersionId: MATERIAL,
+    itemKey: ITEM_KEY,
+    title: 'Thesis',
+    body: 'line one\r\nline two',
+    publishedAtMs: Date.parse('2026-11-01T10:00:00.000Z'),
+    changeKind: 'material',
+    visibility: 'public',
     closed: false,
     archived: false,
     note: '',
     closingNote: '',
     researchPaused: false,
-    entityIds: [entityId],
-    categoryIds: ['7100000000000000011'],
-    entityStances: [{ entityId, stance: 'BULLISH' }],
-    entities: [{ id: entityId, ticker: 'NVDA', name: 'NVIDIA' }],
+    entityIds: [ASSET],
+    categoryIds: [],
+    entityStances: [{ entityId: ASSET, stance: 'BULLISH' }],
+    entities: [{ id: ASSET, ticker: 'NVDA', name: 'NVIDIA Corporation' }],
     publisher: {
       __typename: 'PublicUser',
-      id: '7100000000000000020',
-      username: 'ada',
-      displayName: 'Ada',
-      avatarUrl: '',
-      bio: '',
-      followersCount: 12,
+      id: PROFILE,
+      username: 'alice',
+      displayName: 'Alice',
+      avatarUrl: 'https://example.com/alice.png',
+      bio: 'Investor',
+      followersCount: 3,
       viewerState: { following: null },
     },
-    medias: [
-      { type: 'PRICE_CHART', coverUrl: 'https://example.com/c.png', url: null },
-    ],
+    medias: [],
     signalFeed: null,
     snapshotRelease: {
-      versionId: '7100000000000000003',
-      materialVersionId,
-      publishedAtMs: 1788710100000,
-      changeKind: 'UPDATE',
-      sourceRefs: [
-        {
-          title: null,
-          sourceKind: 'WEB',
-          sourceContentId: '7100000000000000030',
-          publicUrl: 'https://example.com',
-          sourceTimeMs: null,
-          locator: '',
-        },
-      ],
+      versionId: VERSION,
+      materialVersionId: MATERIAL,
+      publishedAtMs: Date.parse('2026-11-01T10:00:00.000Z'),
+      changeKind: 'material',
+      sourceRefs: [],
     },
   };
 }
-function thesisPage(overrides: Record<string, unknown> = {}) {
-  const node = { itemKey: publication().itemKey, publication: publication() };
-  return {
-    edges: [{ cursor: 'signed:1', node }],
-    pageInfo: {
-      startCursor: 'signed:1',
-      endCursor: 'signed:1',
-      hasNextPage: false,
-      hasPreviousPage: false,
-    },
-    listId: 'for-you:v7',
-    pageCursor: 'signed:page',
-    nextCursor: null,
-    exhausted: true,
-    scanLimited: false,
-    ...overrides,
-  };
-}
-function setupTheses(result: unknown = thesisPage()) {
-  const client = new AlvaClient({ apiKey: 'test-key' });
-  const request = vi.spyOn(client, '_request').mockResolvedValue({
-    data: { viewer: { thesisRecommendations: result } },
-  });
-  return { client, request };
-}
+
+const card = (thesis: unknown = wireThesis()) => ({
+  id: LISTED,
+  itemId: ITEM_KEY,
+  kind: 'THESIS',
+  thesis,
+});
 
 describe('ForYouResource.theses', () => {
-  it('reads one ranked page without recording exposure', async () => {
-    const result = thesisPage();
-    const { client, request } = setupTheses(result);
-    expect(await client.forYou.theses()).toEqual(result);
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith('POST', '/query', {
-      body: {
-        query: expect.stringContaining('query ToolkitForYouTheses'),
-        variables: { input: { first: 10 } },
-      },
+  it('reads one Thesis-only ranked page and rebuilds the 0.x page', async () => {
+    const { calls } = v2Fetch({
+      'GET /me/for-you': { items: [card()], nextPageToken: null },
     });
-    const { query } = request.mock.calls[0][2]?.body as { query: string };
-    for (const field of [
-      'listId pageCursor nextCursor exhausted scanLimited',
-      'publishedAtMs',
-      'entityStances { entityId stance }',
-      'snapshotRelease',
-      'sourceRefs',
-      'publisher',
-    ]) {
-      expect(query).toContain(field);
-    }
-    // Exposure is caller-supplied; the SDK must never let a read consume the
-    // reader's own feed, and must never offer the feedback mutation.
-    for (const forbidden of [
-      'pendingEvents',
-      'seenItemKeys',
-      'recordContentFeedback',
-      'isRead',
-    ]) {
-      expect(query).not.toContain(forbidden);
-    }
-    // Gateway's `items` list holds the same nodes as `edges`; selecting it
-    // would put every publication body on the wire twice.
-    expect(query).not.toMatch(/\bitems\b/);
+    expect(await client().forYou.theses()).toEqual({
+      edges: [
+        { cursor: '', node: { itemKey: ITEM_KEY, publication: publication() } },
+      ],
+      pageInfo: {
+        startCursor: '',
+        endCursor: '',
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+      listId: '',
+      pageCursor: '',
+      nextCursor: null,
+      exhausted: true,
+      scanLimited: false,
+    });
+    expect(calls).toHaveLength(1);
+    // Reading records no impression: no refresh, no feedback.
+    expect(Object.fromEntries(calls[0].query)).toEqual({
+      ranking: 'THESIS_ONLY',
+      pageSize: '10',
+    });
   });
 
-  it('continues an existing list session with the signed cursor', async () => {
-    const { client, request } = setupTheses();
-    await client.forYou.theses({ first: 3, after: 'signed:next' });
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input: { first: 3, after: 'signed:next' } },
+  it('continues a list with its cursor', async () => {
+    const { calls } = v2Fetch({
+      'GET /me/for-you': {
+        items: [card(), card()],
+        nextPageToken: 'signed:next',
+      },
+    });
+    const got = await client().forYou.theses({
+      first: 3,
+      after: 'signed:prev',
+    });
+    expect(Object.fromEntries(calls[0].query)).toMatchObject({
+      pageSize: '3',
+      pageToken: 'signed:prev',
+    });
+    expect(got.edges.map((e) => e.cursor)).toEqual(['', 'signed:next']);
+    expect(got).toMatchObject({
+      pageInfo: {
+        startCursor: 'signed:prev',
+        endCursor: 'signed:next',
+        hasNextPage: true,
+        hasPreviousPage: true,
+      },
+      pageCursor: 'signed:prev',
+      nextCursor: 'signed:next',
+      exhausted: false,
     });
   });
 
   it('accepts an empty page whose cursor still advances', async () => {
-    // Legitimate here, unlike `list`: endCursor advances past scanned
-    // references that current visibility hides, so a mid-session page can be
-    // empty while more remains.
-    const empty = thesisPage({
+    v2Fetch({
+      'GET /me/for-you': { items: [], nextPageToken: 'signed:next' },
+    });
+    expect(await client().forYou.theses()).toMatchObject({
       edges: [],
-      pageInfo: {
-        startCursor: '',
-        endCursor: 'signed:advanced',
-        hasNextPage: true,
-        hasPreviousPage: false,
-      },
       nextCursor: 'signed:next',
       exhausted: false,
-      scanLimited: true,
+      pageInfo: { hasNextPage: true },
     });
-    const { client } = setupTheses(empty);
-    expect(await client.forYou.theses()).toEqual(empty);
+  });
+
+  it('keeps an expired list as CONFLICT', async () => {
+    v2Fetch({
+      'GET /me/for-you': problem(
+        409,
+        'CONFLICT',
+        'the list behind pageToken expired; start again without it'
+      ),
+    });
+    await expect(
+      client().forYou.theses({ after: 'signed:old' })
+    ).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
   });
 
   it.each([
     ...[0, 11, -1, 1.5, Infinity, NaN, null, '10'].map((first) => ({ first })),
     ...['', ' ', null, 42].map((after) => ({ after })),
   ])('rejects invalid SDK input before I/O: %j', async (input) => {
-    const { client, request } = setupTheses();
+    const { fetcher } = v2Fetch({});
     await expect(
-      client.forYou.theses(input as ForYouThesesParams)
+      client().forYou.theses(input as ForYouThesesParams)
     ).rejects.toThrow();
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('requires authentication without attempting the request', async () => {
-    const client = new AlvaClient({});
-    const request = vi.spyOn(client, '_request');
-    await expect(client.forYou.theses()).rejects.toMatchObject({
+    const { fetcher } = v2Fetch({});
+    await expect(new AlvaClient({}).forYou.theses()).rejects.toMatchObject({
       code: 'UNAUTHENTICATED',
     });
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it('fails closed on partial GraphQL errors', async () => {
-    const { client, request } = setupTheses();
-    request.mockResolvedValue({
-      data: { viewer: { thesisRecommendations: thesisPage() } },
-      errors: [{ message: 'refresh the expired list' }],
-    });
-    await expect(client.forYou.theses()).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-      message: 'refresh the expired list',
-    });
-  });
-
-  it('names the absent field instead of returning an empty page', async () => {
-    const { client, request } = setupTheses();
-    request.mockResolvedValue({
-      data: { viewer: { thesisRecommendations: null } },
-    });
-    await expect(client.forYou.theses()).rejects.toMatchObject({
-      code: 'GRAPHQL_EMPTY_RESPONSE',
-      message: 'GraphQL response did not include viewer.thesisRecommendations',
-    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it.each([
     null,
     {},
-    { data: null },
-    { data: { viewer: null } },
-    { errors: 'invalid' },
-  ])('rejects missing or malformed GraphQL envelope: %j', async (response) => {
-    const { client, request } = setupTheses();
-    request.mockResolvedValue(response);
-    await expect(client.forYou.theses()).rejects.toThrow();
-  });
-
-  it.each([
-    thesisPage({ edges: null }),
-    thesisPage({ listId: null }),
-    thesisPage({ exhausted: 'true' }),
-    thesisPage({ scanLimited: null }),
-    thesisPage({ nextCursor: 42 }),
-    // hasNextPage and nextCursor are one fact; disagreement means a broken read.
-    thesisPage({ nextCursor: 'signed:next' }),
-    thesisPage({
-      pageInfo: {
-        startCursor: 'wrong',
-        endCursor: 'signed:1',
-        hasNextPage: false,
-        hasPreviousPage: false,
-      },
-    }),
-    thesisPage({ edges: [{ cursor: '', node: thesisPage().edges[0].node }] }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: { itemKey: '', publication: publication() },
-        },
+    { items: null, nextPageToken: null },
+    { items: [card()], nextPageToken: 42 },
+    { items: [{ ...card(), itemId: '' }], nextPageToken: null },
+    { items: [{ ...card(), id: '' }], nextPageToken: null },
+    { items: [card(null)], nextPageToken: null },
+    { items: [card(wireThesis({ author: null }))], nextPageToken: null },
+    {
+      items: [card(wireThesis({}, { publishedAt: null }))],
+      nextPageToken: null,
+    },
+    {
+      items: [
+        card(wireThesis({}, { assets: [{ assetId: '', stance: 'BULLISH' }] })),
       ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), publishedAtMs: null },
-          },
-        },
+      nextPageToken: null,
+    },
+    {
+      items: [card(wireThesis({}, { categoryIds: [''] }))],
+      nextPageToken: null,
+    },
+    {
+      items: [card(wireThesis({}, { sources: [{ kind: 'WEB' }] }))],
+      nextPageToken: null,
+    },
+    {
+      items: [
+        card(
+          wireThesis({}, { media: [{ type: '', coverUrl: '', url: null }] })
+        ),
       ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), entityIds: ['0'] },
-          },
-        },
+      nextPageToken: null,
+    },
+    {
+      items: [
+        card(
+          wireThesis({
+            author: { ...wireThesis().author, followerCount: null },
+          })
+        ),
       ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), snapshotRelease: null },
-          },
-        },
+      nextPageToken: null,
+    },
+    {
+      items: [
+        card(
+          wireThesis({ author: { ...wireThesis().author, viewerState: null } })
+        ),
       ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), snapshotRelease: {} },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: {
-              ...publication(),
-              snapshotRelease: {
-                ...publication().snapshotRelease,
-                sourceRefs: [{ sourceKind: 'WEB' }],
-              },
-            },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), categoryIds: ['0'] },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: {
-              ...publication(),
-              entities: [{ id: '', ticker: 'NVDA', name: 'NVIDIA' }],
-            },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: {
-              ...publication(),
-              medias: [{ type: '', coverUrl: '', url: null }],
-            },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: {
-              ...publication(),
-              publisher: { ...publication().publisher, followersCount: null },
-            },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: {
-              ...publication(),
-              publisher: { ...publication().publisher, viewerState: null },
-            },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), signalFeed: { id: '0' } },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), note: null },
-          },
-        },
-      ],
-    }),
-    thesisPage({
-      edges: [
-        {
-          cursor: 'signed:1',
-          node: {
-            itemKey: publication().itemKey,
-            publication: { ...publication(), changeKind: '' },
-          },
-        },
-      ],
-    }),
+      nextPageToken: null,
+    },
+    {
+      items: [card(wireThesis({ signalAutomationId: '' }))],
+      nextPageToken: null,
+    },
+    {
+      items: [card(wireThesis({}, { note: 42 }))],
+      nextPageToken: null,
+    },
+    {
+      items: [card(wireThesis({}, { changeKind: '' }))],
+      nextPageToken: null,
+    },
+    {
+      items: [card(wireThesis({}, { thesisId: 'thesis_0other' }))],
+      nextPageToken: null,
+    },
   ])('rejects inconsistent recommendation pages: %#', async (invalid) => {
-    const { client } = setupTheses(invalid);
-    await expect(client.forYou.theses()).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
+    v2Fetch({ 'GET /me/for-you': invalid });
+    await expect(client().forYou.theses()).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
     });
   });
 });
@@ -703,10 +556,11 @@ describe.each([
   ['embedded', embedded],
 ] as const)('%s For You theses command', (_name, dispatch) => {
   it('returns full JSON and maps every flag to the shared resource', async () => {
-    const result = thesisPage();
-    const { client, request } = setupTheses(result);
+    const { calls } = v2Fetch({
+      'GET /me/for-you': { items: [card()], nextPageToken: null },
+    });
     expect(
-      await dispatch(client, [
+      await dispatch(client(), [
         'for-you',
         'theses',
         '--limit',
@@ -714,38 +568,33 @@ describe.each([
         '--cursor',
         'signed:next',
       ])
-    ).toEqual(result);
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input: { first: 5, after: 'signed:next' } },
+    ).toMatchObject({ edges: [{ node: { publication: publication() } }] });
+    expect(Object.fromEntries(calls[0].query)).toEqual({
+      ranking: 'THESIS_ONLY',
+      pageSize: '5',
+      pageToken: 'signed:next',
     });
   });
 
   it('documents the ranked stop condition in help without I/O', async () => {
-    const { client, request } = setupTheses();
-    // The command help carries the semantics; the subcommand help is generated
-    // from the flag table in embedded mode, so assert each where it lives.
+    const { fetcher } = v2Fetch({});
     // The two profiles serve two separate strings -- terminal reads dispatch's
     // COMMAND_HELP, embedded reads AGENT_COMMAND_HELP -- so running this under
     // both is what keeps the pair from drifting.
-    const help = (await dispatch(client, ['for-you', '--help'])) as {
+    const help = (await dispatch(client(), ['for-you', '--help'])) as {
       _help: boolean;
       text: string;
     };
     expect(help._help).toBe(true);
-    // `scanLimited` means the server stopped at its scan budget and more
-    // remains, so it must never be offered as a second end-of-stream signal
-    // beside `exhausted`: a reader that stops there silently drops
-    // recommendations. A caller's own page budget is a different thing -- it
-    // ends the read without claiming the stream ended -- and the help has to
-    // permit it, or a bounded job has no compliant way to finish.
     expect(help.text).toContain('only signal that the stream has ended');
     expect(help.text).toContain('more remains, so keep paging');
     expect(help.text).toContain('budget of your own is allowed');
     expect(help.text).toContain('hold a partial stream and must say so');
+    expect(help.text).not.toContain('scanLimited');
     expect(
-      await dispatch(client, ['for-you', 'theses', '--help'])
+      await dispatch(client(), ['for-you', 'theses', '--help'])
     ).toMatchObject({ _help: true, text: expect.stringContaining('--cursor') });
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it.each(
@@ -761,18 +610,18 @@ describe.each([
       ['unexpected'],
     ].map((flags) => ({ flags }))
   )('rejects invalid argv before I/O: %j', async ({ flags }) => {
-    const { client, request } = setupTheses();
+    const { fetcher } = v2Fetch({});
     await expect(
-      dispatch(client, ['for-you', 'theses', ...flags])
+      dispatch(client(), ['for-you', 'theses', ...flags])
     ).rejects.toBeInstanceOf(CliUsageError);
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown for-you subcommand', async () => {
-    const { client, request } = setupTheses();
+    const { fetcher } = v2Fetch({});
     await expect(
-      dispatch(client, ['for-you', 'recommendations'])
+      dispatch(client(), ['for-you', 'recommendations'])
     ).rejects.toBeInstanceOf(CliUsageError);
-    expect(request).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
