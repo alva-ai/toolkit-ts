@@ -430,7 +430,8 @@ export interface CronjobTriggerResponse {
 export interface FeedReleaseRequest {
   name: string;
   version: string;
-  cronjob_id: number;
+  /** Cronjob ID of the producer. */
+  cronjob_id: AlvaId;
   view_json?: Record<string, unknown>;
   description?: string;
   changelog?: string;
@@ -445,7 +446,8 @@ export interface FeedReleaseRequest {
 }
 
 export interface FeedReleaseResponse {
-  feed_id: number;
+  /** Automation ID of the feed. */
+  feed_id: AlvaId;
   name: string;
   feed_major: number;
   /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
@@ -453,8 +455,8 @@ export interface FeedReleaseResponse {
 }
 
 export interface FeedDeleteRequest {
-  /** Positive decimal feed id. String form preserves int64 precision. */
-  id: number | string;
+  /** Feed (Automation) ID. */
+  id: AlvaId;
 }
 
 export type FeedListStatus = 'active' | 'paused' | 'all';
@@ -469,8 +471,8 @@ export interface FeedListParams {
 }
 
 export interface FeedListItem {
-  /** Numeric feed id encoded as a string, matching the gateway response. */
-  id: string;
+  /** Feed (Automation) ID. */
+  id: AlvaId;
   name: string;
   /** Feed runtime status. */
   status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
@@ -577,35 +579,35 @@ export interface AutomationAlertDeliveryUpdateResponse {
 }
 
 export interface FeedStatusUpdateRequest {
-  /** Positive decimal feed id. String form preserves int64 precision. */
-  id: number | string;
+  /** Feed (Automation) ID. */
+  id: AlvaId;
 }
 
 export interface FeedStatusUpdateResponse {
-  /** Echoed feed id (string form, matching gateway response). */
-  id: string;
+  /** Echoed feed (Automation) ID. */
+  id: AlvaId;
   /** Feed runtime status after the update. */
   status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
 }
 
 export interface FeedDeleteResponse {
-  /** Echoed feed id (string form, matching gateway response). */
-  id: string;
+  /** Echoed feed (Automation) ID. */
+  id: AlvaId;
 }
 
 /** Feed visibility: 'public' publishes the feed, 'private' unpublishes it. */
 export type FeedVisibility = 'public' | 'private';
 
 export interface FeedSetVisibilityRequest {
-  /** Positive decimal feed id. String form preserves int64 precision. */
-  id: number | string;
+  /** Feed (Automation) ID. */
+  id: AlvaId;
   /** Target visibility. */
   visibility: FeedVisibility;
 }
 
 export interface FeedSetVisibilityResponse {
-  /** Echoed feed id (string form, matching gateway response). */
-  id: string;
+  /** Echoed feed (Automation) ID. */
+  id: AlvaId;
   /** Feed visibility after the update. */
   visibility: FeedVisibility;
 }
@@ -614,7 +616,8 @@ export interface PlaybookDraftRequest {
   name: string;
   display_name: string;
   description?: string;
-  feeds: Array<{ feed_id: number; feed_major?: number }>;
+  /** Bundled feeds by Automation ID. */
+  feeds: Array<{ feed_id: AlvaId; feed_major?: number }>;
   trading_symbols?: string[];
   /**
    * Optional source-skill reference in "username/name" form (e.g.
@@ -634,8 +637,9 @@ export interface PlaybookDraftRequest {
 }
 
 export interface PlaybookDraftResponse {
-  playbook_id: number;
-  playbook_version_id: number;
+  playbook_id: AlvaId;
+  /** Draft ID of this draft. */
+  playbook_version_id: AlvaId;
   /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
   playbook_path: string;
 }
@@ -645,7 +649,8 @@ export interface PlaybookReleaseRequest {
   confirm_bundled_feed_exposure?: boolean;
   name: string;
   version: string;
-  feeds: Array<{ feed_id: number; feed_major?: number }>;
+  /** Bundled feeds by Automation ID. */
+  feeds: Array<{ feed_id: AlvaId; feed_major?: number }>;
   changelog: string;
   /**
    * Owner-attested README location. Server validates the value is one of:
@@ -658,7 +663,7 @@ export interface PlaybookReleaseRequest {
 }
 
 export interface PlaybookReleaseResponse {
-  playbook_id: number;
+  playbook_id: AlvaId;
   version: string;
   published_url: string;
   /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
@@ -709,18 +714,20 @@ export interface CreateCommentRequest {
   username: string;
   name: string;
   content: string;
-  parent_id?: number;
+  /** Comment ID of the comment this replies to. */
+  parent_id?: AlvaId;
 }
 
 export interface Comment {
-  id: number;
-  playbook_id: number;
+  id: AlvaId;
+  playbook_id: AlvaId;
   content: string;
   pin_at: number | null;
   created_at: number;
   updated_at: number;
   creator?: {
-    id: string;
+    /** Profile ID of the author. */
+    id: AlvaId;
     name: string;
     avatar: string;
   };

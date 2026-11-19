@@ -829,7 +829,7 @@ Subcommands:
   set-visibility  Publish or unpublish a feed (--visibility public|private)
 
 Flags:
-  --id <feed_id>       Numeric feed id (required for stop/resume/delete/set-visibility)
+  --id <feed_id>       Feed (automation) ID (required for stop/resume/delete/set-visibility)
   --visibility <level> public | private (required for set-visibility)
 
 List flags:
@@ -871,7 +871,7 @@ Subcommands:
   set-visibility  Set a playbook's visibility (requires auth)
 
 Get flags:
-  --id <n>               Single numeric playbook id
+  --id <id>              Single playbook ID (playbook_0…)
   --ids <a,b>            Comma-separated ids (max 100); ids you cannot see
                          — and DELETED playbooks — return no row
   --ref <owner/name>     Resolve by handle
@@ -1069,13 +1069,13 @@ Display name conventions:
   Bad:  "My Dashboard", "Test V2", "Stock Dashboard"
 
 Examples:
-  alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
-  alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
-  alva release feed --name market-pulse --version 1.0.0 --cronjob-id 44 --agent-type alpi
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --skill-id alva/screener
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --tags '["btc","macro"]'
-  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release" --readme-url "/alva/home/<username>/playbooks/btc-dashboard/README.md"`,
+  alva release feed --name btc-ema --version 1.0.0 --cronjob-id cronjob_0abc
+  alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id cronjob_0abd --description "NVDA insider trading activity"
+  alva release feed --name market-pulse --version 1.0.0 --cronjob-id cronjob_0abe --agent-type alpi
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":"automation_0abc"}]' --trading-symbols '["BTC"]'
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":"automation_0abc"}]' --skill-id alva/screener
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":"automation_0abc"}]' --tags '["btc","macro"]'
+  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":"automation_0abc"}]' --changelog "Initial release" --readme-url "/alva/home/<username>/playbooks/btc-dashboard/README.md"`,
 
   lint: `Usage: alva lint <subcommand> [options]
 
@@ -1232,9 +1232,9 @@ Pin/Unpin flags:
 
 Examples:
   alva comments create --username alice --name btc-dashboard --content "Great analysis!"
-  alva comments create --username alice --name btc-dashboard --content "Thanks!" --parent-id 5
-  alva comments pin --comment-id 12
-  alva comments unpin --comment-id 12`,
+  alva comments create --username alice --name btc-dashboard --content "Thanks!" --parent-id comment_0abc
+  alva comments pin --comment-id comment_0abc
+  alva comments unpin --comment-id comment_0abc`,
 
   'notification-history': `Usage: alva notification-history <subcommand> [options]
 
@@ -1868,16 +1868,9 @@ function requireFeedIDFlag(
   flags: Record<string, string>,
   command: string
 ): string {
-  const value = requirePositiveIntegerStringFlag(flags, 'id', command);
-  if (
-    value.length > 19 ||
-    value.trim() !== value ||
-    BigInt(value) > 9223372036854775807n
-  ) {
-    throw new CliUsageError(
-      `--id must be a positive decimal int64 for '${command}'`,
-      'feed'
-    );
+  const value = requireFlag(flags, 'id', command);
+  if (!value || value.trim() !== value) {
+    throw new CliUsageError(`--id must be a feed ID for '${command}'`, 'feed');
   }
   return value;
 }
@@ -2301,7 +2294,7 @@ function feedReleaseParams(flags: Record<string, string>, command: string) {
   return {
     name: requireFlag(flags, 'name', command),
     version: requireFlag(flags, 'version', command),
-    cronjob_id: requireNumericFlag(flags, 'cronjob-id', command),
+    cronjob_id: requireFlag(flags, 'cronjob-id', command),
     view_json: jsonParse(flags['view-json']) as
       | Record<string, unknown>
       | undefined,
@@ -4121,15 +4114,15 @@ export async function executeParsedCommand(
         }
         case 'stop':
           return client.automation.stop({
-            id: requireNumericFlag(flags, 'id', 'automation stop'),
+            id: requireFlag(flags, 'id', 'automation stop'),
           });
         case 'resume':
           return client.automation.resume({
-            id: requireNumericFlag(flags, 'id', 'automation resume'),
+            id: requireFlag(flags, 'id', 'automation resume'),
           });
         case 'delete':
           return client.automation.delete({
-            id: requireNumericFlag(flags, 'id', 'automation delete'),
+            id: requireFlag(flags, 'id', 'automation delete'),
           });
         default:
           throw new CliUsageError(
@@ -4320,8 +4313,8 @@ export async function executeParsedCommand(
               });
         }
         case 'mine': {
-          // Owner-scoped list (GET /api/v1/playbook) — includes YOUR drafts,
-          // unlike `list --owner me` (public discovery, drafts hidden).
+          // Owner-scoped list (GET /api/v2/me/playbooks) — includes YOUR
+          // drafts, unlike `list --owner me` (public discovery, drafts hidden).
           const filter = ownedPlaybookFilter(flags['filter']);
           const limit = num(flags['limit']);
           if (boolFlag(flags['all']) ?? false) {
@@ -4332,9 +4325,7 @@ export async function executeParsedCommand(
             });
             const items = first.playbooks;
             let hasNext = first.has_next;
-            let cursor = items.length
-              ? items[items.length - 1].cursor
-              : undefined;
+            let cursor = first.next_cursor;
             while (hasNext && cursor) {
               const page = await client.playbooks.listOwn({
                 filter,
@@ -4343,9 +4334,7 @@ export async function executeParsedCommand(
               });
               items.push(...page.playbooks);
               hasNext = page.has_next;
-              cursor = page.playbooks.length
-                ? page.playbooks[page.playbooks.length - 1].cursor
-                : undefined;
+              cursor = page.next_cursor;
             }
             return asJson
               ? { playbooks: items, has_next: false }
@@ -4510,7 +4499,7 @@ export async function executeParsedCommand(
             feeds: jsonParse(
               requireFlag(flags, 'feeds', 'release playbook-draft')
             ) as Array<{
-              feed_id: number;
+              feed_id: string;
               feed_major?: number;
             }>,
             trading_symbols: flags['trading-symbols']
@@ -4551,7 +4540,7 @@ export async function executeParsedCommand(
             name,
             version,
             feeds: jsonParse(feedsRaw) as Array<{
-              feed_id: number;
+              feed_id: string;
               feed_major?: number;
             }>,
             changelog,
@@ -4731,19 +4720,15 @@ export async function executeParsedCommand(
             username: requireFlag(flags, 'username', 'comments create'),
             name: requireFlag(flags, 'name', 'comments create'),
             content: requireFlag(flags, 'content', 'comments create'),
-            parent_id: num(flags['parent-id']),
+            parent_id: flags['parent-id'] || undefined,
           });
         case 'pin':
           return client.comments.pin({
-            comment_id: requireNumericFlag(flags, 'comment-id', 'comments pin'),
+            comment_id: requireFlag(flags, 'comment-id', 'comments pin'),
           });
         case 'unpin':
           return client.comments.unpin({
-            comment_id: requireNumericFlag(
-              flags,
-              'comment-id',
-              'comments unpin'
-            ),
+            comment_id: requireFlag(flags, 'comment-id', 'comments unpin'),
           });
         default:
           throw new CliUsageError(

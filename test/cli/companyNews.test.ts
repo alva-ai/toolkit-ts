@@ -10,11 +10,16 @@ for (const [surface, dispatch] of [
 ] as const) {
   describe(`company-news ${surface} dispatch`, () => {
     if (surface === 'terminal') {
-      it.each(['stop', 'resume', 'delete', 'set-visibility'] as const)(
-        'preserves decimal int64 feed IDs for %s',
-        async (operation) => {
+      it.each([
+        ['stop', 'POST', '/pause'],
+        ['resume', 'POST', '/resume'],
+        ['delete', 'DELETE', ''],
+        ['set-visibility', 'POST', '/unpublish'],
+      ] as const)(
+        'sends the feed ID unchanged on the automation route for %s',
+        async (operation, method, suffix) => {
           const fetch = vi.fn().mockResolvedValue(
-            new Response('{}', {
+            new Response('{"visibility":"PRIVATE"}', {
               headers: { 'Content-Type': 'application/json' },
             })
           );
@@ -25,22 +30,23 @@ for (const [surface, dispatch] of [
               'feed',
               operation,
               '--id',
-              '9223372036854775807',
+              'automation_0abc',
               ...(operation === 'set-visibility'
                 ? ['--visibility', 'private']
                 : []),
             ]);
             expect(fetch).toHaveBeenCalledTimes(1);
-            expect(fetch.mock.calls[0][0]).toContain(
-              '/feed/9223372036854775807'
+            expect(fetch.mock.calls[0][0]).toMatch(
+              new RegExp(`/api/v2/automations/automation_0abc${suffix}$`)
             );
+            expect(fetch.mock.calls[0][1].method).toBe(method);
           } finally {
             vi.unstubAllGlobals();
           }
         }
       );
-      it.each(['0', '-1', '1.5', '1e3', '01', '9223372036854775808', '42\n'])(
-        'rejects invalid feed IDs without calling resume: %s',
+      it.each(['', ' automation_0abc', 'automation_0abc\n'])(
+        'rejects invalid feed IDs without calling resume: %j',
         async (id) => {
           const client = new AlvaClient({ apiKey: 'key' });
           const resume = vi

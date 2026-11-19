@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { v2Path, type Page } from '../platformApi.js';
+import type { AlvaId } from '../types.js';
 
 /** Playbook visibility states understood by the gateway. */
 export type PlaybookVisibility = 'public' | 'private' | 'paid';
@@ -11,14 +13,14 @@ export const PLAYBOOK_VISIBILITIES: readonly PlaybookVisibility[] = [
 ];
 
 export interface SetVisibilityParams {
-  /** URL-safe playbook name. The owner is derived server-side from auth. */
+  /** URL-safe name of one of the caller's playbooks. */
   name: string;
   /** Target visibility: public, private, or paid. */
   visibility: PlaybookVisibility;
 }
 
 export interface SetVisibilityResponse {
-  /** ALFS-style "<owner>/<name>" path echoed back by the gateway. */
+  /** The playbook's ALFS directory. */
   playbook_path: string;
 }
 
@@ -43,8 +45,8 @@ export interface TrendingPlaybooksParams {
 }
 
 export interface TrendingPlaybookItem {
-  /** Numeric playbook id encoded as a string. */
-  id: string;
+  /** Playbook ID. */
+  id: AlvaId;
   /** Stable "owner/name" handle, useful for follow-up tool calls. */
   ref: string;
   /** Owner username. */
@@ -61,7 +63,10 @@ export interface TrendingPlaybookItem {
   url: string;
   /** README ALFS path when available. */
   readme?: string;
-  /** Cursor to pass as `cursor` / `current` for pagination. */
+  /**
+   * Cursor to pass as `cursor` / `current` for the next page: set on the
+   * last item of a page that has one, empty on the others.
+   */
   cursor: string;
 }
 
@@ -93,8 +98,8 @@ interface RawTrendingPlaybook {
  */
 /** Compact discovery record returned by getByIds / listByOwner / get. */
 export interface PlaybookDiscoveryItem {
-  /** Numeric playbook id encoded as a string. */
-  id: string;
+  /** Playbook ID. */
+  id: AlvaId;
   /** Owner username (empty when not resolvable). */
   owner_username: string;
   /** URL-safe playbook name. */
@@ -103,7 +108,7 @@ export interface PlaybookDiscoveryItem {
   visibility: string;
   /** Stable "owner/name" handle for name-addressed operations. */
   ref?: string;
-  /** Present on listByOwner rows. */
+  /** Present on listByOwner rows; set on the last row of a page that has a next page. */
   cursor?: string;
 }
 
@@ -124,7 +129,7 @@ export interface ListByOwnerResponse {
   next_cursor?: string;
 }
 
-/** Lifecycle filters for the owner-scoped list (GET /api/v1/playbook). */
+/** Lifecycle filters for the owner-scoped list (GET /api/v2/me/playbooks). */
 export const OWNED_PLAYBOOK_FILTERS = ['draft', 'running', 'paused'] as const;
 
 export type OwnedPlaybookFilter = (typeof OWNED_PLAYBOOK_FILTERS)[number];
@@ -137,23 +142,25 @@ export interface ListOwnParams {
   cursor?: string;
 }
 
-/** One row from the owner-scoped list (GET /api/v1/playbook). */
+/** One row from the owner-scoped list (GET /api/v2/me/playbooks). */
 export interface OwnedPlaybookItem {
-  /** Numeric playbook id encoded as a string. */
-  id: string;
+  /** Playbook ID. */
+  id: AlvaId;
   /** URL-safe playbook name. */
   name: string;
   display_name?: string;
   visibility?: string;
   created_at?: string;
   updated_at?: string;
-  /** Cursor to pass as `cursor` for the next page. */
+  /** Cursor to pass as `cursor` for the next page; set on the last row of a page that has one. */
   cursor?: string;
 }
 
 export interface ListOwnResponse {
   playbooks: OwnedPlaybookItem[];
   has_next: boolean;
+  /** The next page's cursor; absent on the last page. */
+  next_cursor?: string;
 }
 
 export class PlaybooksResource {
@@ -164,16 +171,24 @@ export class PlaybooksResource {
    * Visibility-gated server-side; ids the caller cannot see — and DELETED
    * playbook ids — return no row. Treat a missing id as "deleted or not
    * visible" (the subscriptions list's `target_status` distinguishes ghosts).
-   * Ids are strings (snowflake-safe). Max 100 per call.
+   * Max 100 per call.
    *
-   * Auth is optional (like `trending`): with an API key, private/paid
+   * Auth is optional (like `trending`): with a credential, private/paid
    * visibility is evaluated for the caller; without one, only public
-   * playbooks resolve. The server decides — no client-side gate.
+   * playbooks resolve, from the keyless /api/v1 catalog (0.x IDs).
    */
-  async getByIds(ids: string[]): Promise<DiscoveryByIDsResponse> {
-    return (await this.client._request('GET', '/api/v1/playbooks', {
-      query: { ids: ids.join(',') },
-    })) as DiscoveryByIDsResponse;
+  async getByIds(ids: AlvaId[]): Promise<DiscoveryByIDsResponse> {
+    if (!hasCredential(this.client)) {
+      return (await this.client._request('GET', '/api/v1/playbooks', {
+        query: { ids: ids.join(',') },
+      })) as DiscoveryByIDsResponse;
+    }
+    const page = await this.client._v2Request<Page<WirePlaybook>>(
+      'GET',
+      '/playbooks',
+      { query: { ids, pageSize: 100 } }
+    );
+    return { items: page.items.map(discoveryItem) };
   }
 
   /**
@@ -183,48 +198,92 @@ export class PlaybooksResource {
    * playbooks are listed.
    */
   async listByOwner(params: ListByOwnerParams): Promise<ListByOwnerResponse> {
-    const query: Record<string, string> = { owner: params.owner };
-    if (params.limit !== undefined && params.limit > 0) {
-      query.limit = String(params.limit);
+    if (!hasCredential(this.client)) {
+      const query: Record<string, string> = { owner: params.owner };
+      if (params.limit !== undefined && params.limit > 0) {
+        query.limit = String(params.limit);
+      }
+      if (params.cursor) query.cursor = params.cursor;
+      return (await this.client._request('GET', '/api/v1/playbooks', {
+        query,
+      })) as ListByOwnerResponse;
     }
-    if (params.cursor) query.cursor = params.cursor;
-    return (await this.client._request('GET', '/api/v1/playbooks', {
-      query,
-    })) as ListByOwnerResponse;
+    const page = await this.client._v2Request<Page<WirePlaybook>>(
+      'GET',
+      '/playbooks',
+      {
+        query: {
+          owner: params.owner,
+          pageSize: pageSize(params.limit),
+          pageToken: params.cursor || undefined,
+        },
+      }
+    );
+    return {
+      items: withPageCursor(page, discoveryItem),
+      has_next: page.nextPageToken !== null,
+      ...(page.nextPageToken === null
+        ? {}
+        : { next_cursor: page.nextPageToken }),
+    };
   }
 
   /**
-   * List the authenticated user's OWN playbooks via GET /api/v1/playbook —
-   * the owner-scoped surface that INCLUDES drafts. Unlike `listByOwner` (the
+   * List the authenticated user's OWN playbooks via GET /api/v2/me/playbooks
+   * — the owner-scoped surface that INCLUDES drafts. Unlike `listByOwner` (the
    * public discovery view, which requires at least one release and therefore
    * hides drafts), this shows work-in-progress playbooks you created but
-   * never released. Requires an API key: the owner is derived from auth, not
-   * a username argument. Optional `filter` narrows to draft | running |
+   * never released. Requires a credential: the owner is derived from auth,
+   * not a username argument. Optional `filter` narrows to draft | running |
    * paused.
    */
   async listOwn(params: ListOwnParams = {}): Promise<ListOwnResponse> {
-    const query: Record<string, string> = {};
-    if (params.filter) query.filter = params.filter;
-    if (params.limit !== undefined && params.limit > 0) {
-      query.limit = String(params.limit);
-    }
-    if (params.cursor) query.cursor = params.cursor;
-    return (await this.client._request('GET', '/api/v1/playbook', {
-      query,
-    })) as ListOwnResponse;
+    const page = await this.client._v2Request<Page<WirePlaybook>>(
+      'GET',
+      '/me/playbooks',
+      {
+        query: {
+          status: params.filter?.toUpperCase(),
+          pageSize: pageSize(params.limit),
+          pageToken: params.cursor || undefined,
+        },
+      }
+    );
+    return {
+      playbooks: withPageCursor(page, (p) => ({
+        id: p.id,
+        name: p.slug,
+        display_name: p.title,
+        visibility: p.visibility.toLowerCase(),
+        created_at: p.createdAt,
+        updated_at: p.updatedAt,
+      })),
+      has_next: page.nextPageToken !== null,
+      ...(page.nextPageToken === null
+        ? {}
+        : { next_cursor: page.nextPageToken }),
+    };
   }
 
   /**
-   * Get one playbook by numeric id or by "owner/name" ref. Returns null when
-   * not found / not visible / deleted.
+   * Get one playbook by id or by "owner/name" ref. Returns null when not
+   * found / not visible / deleted.
    */
   async get(params: {
-    id?: string;
+    id?: AlvaId;
     ref?: string;
   }): Promise<PlaybookDiscoveryItem | null> {
     if (params.id) {
-      const resp = await this.getByIds([params.id]);
-      return resp.items[0] ?? null;
+      if (!hasCredential(this.client)) {
+        const resp = await this.getByIds([params.id]);
+        return resp.items[0] ?? null;
+      }
+      return orNull(
+        this.client._v2Request<WirePlaybook>(
+          'GET',
+          v2Path`/playbooks/${params.id}`
+        )
+      );
     }
     if (params.ref) {
       const slash = params.ref.indexOf('/');
@@ -237,6 +296,9 @@ export class PlaybooksResource {
       }
       const owner = params.ref.slice(0, slash);
       const name = params.ref.slice(slash + 1);
+      if (hasCredential(this.client)) {
+        return orNull(playbookBySlug(this.client, owner, name));
+      }
       let cursor: string | undefined;
       // Paginate the owner's playbooks until the name matches (bounded by
       // the server-side page cap; owner catalogs are small).
@@ -252,49 +314,101 @@ export class PlaybooksResource {
   }
 
   /**
-   * List trending / searchable playbooks. Auth is optional: when the client
-   * has an API key it is forwarded, otherwise this uses the public surface.
+   * List trending / searchable playbooks. Auth is optional: with a credential
+   * this reads /api/v2, otherwise the keyless /api/v1 surface (0.x IDs).
    *
-   * The gateway returns a frontend-oriented preview payload; this SDK projects
-   * it into a smaller, agent-friendly shape.
+   * The SDK projects the catalog into a smaller, agent-friendly shape.
    */
   async trending(
     params: TrendingPlaybooksParams = {}
   ): Promise<TrendingPlaybooksResponse> {
-    const query: Record<string, string | number> = {};
-    if (params.cursor) query.cursor = params.cursor;
-    if (params.current) query.current = params.current;
-    if (params.limit !== undefined) query.limit = params.limit;
-    if (params.dir) query.dir = params.dir;
-    if (params.sort) query.sort = params.sort;
-    if (params.keyword) query.keyword = params.keyword;
-    if (params.tags && params.tags.length > 0) {
-      query.tags = params.tags.join(',');
+    const webOrigin = webOriginFromApiBase(this.client.baseUrl);
+    if (!hasCredential(this.client)) {
+      const query: Record<string, string | number> = {};
+      if (params.cursor) query.cursor = params.cursor;
+      if (params.current) query.current = params.current;
+      if (params.limit !== undefined) query.limit = params.limit;
+      if (params.dir) query.dir = params.dir;
+      if (params.sort) query.sort = params.sort;
+      if (params.keyword) query.keyword = params.keyword;
+      if (params.tags && params.tags.length > 0) {
+        query.tags = params.tags.join(',');
+      }
+      const raw = (await this.client._request(
+        'GET',
+        '/api/v1/playbooks/trending',
+        { query }
+      )) as RawTrendingPlaybooksResponse;
+      return {
+        playbooks: (raw.playbooks ?? []).map((p) =>
+          toAgentPlaybook(p, webOrigin)
+        ),
+        has_next: raw.has_next ?? false,
+      };
     }
 
-    const raw = (await this.client._request(
+    if (params.dir === 'BACKWARD') {
+      throw new AlvaError(
+        'INVALID_ARGUMENT',
+        'backward pagination is not supported for trending playbooks',
+        400
+      );
+    }
+    if (params.dir !== undefined && params.dir !== 'FORWARD') {
+      throw new AlvaError(
+        'INVALID_ARGUMENT',
+        'dir must be one of: FORWARD, BACKWARD',
+        400
+      );
+    }
+    if (params.sort !== undefined && !(params.sort in TRENDING_ORDER)) {
+      throw new AlvaError(
+        'INVALID_ARGUMENT',
+        'sort must be one of: FOLLOWS, RECENT',
+        400
+      );
+    }
+    const page = await this.client._v2Request<Page<WirePlaybook>>(
       'GET',
-      '/api/v1/playbooks/trending',
-      { query }
-    )) as RawTrendingPlaybooksResponse;
-
-    const webOrigin = webOriginFromApiBase(this.client.baseUrl);
+      '/playbooks',
+      {
+        query: {
+          orderBy: params.sort && TRENDING_ORDER[params.sort],
+          tags: params.tags?.length ? params.tags : undefined,
+          query: params.keyword || undefined,
+          pageSize: params.limit,
+          pageToken: params.cursor || params.current || undefined,
+        },
+      }
+    );
     return {
-      playbooks: (raw.playbooks ?? []).map((p) =>
-        toAgentPlaybook(p, webOrigin)
+      playbooks: withPageCursor(page, (p) =>
+        toAgentPlaybook(
+          {
+            id: p.id,
+            name: p.slug,
+            display_name: p.title,
+            description: p.description,
+            creator: { name: p.owner?.handle },
+            tags: p.tags,
+            follow_count: p.followerCount,
+            readme: p.readmePath ?? undefined,
+          },
+          webOrigin
+        )
       ),
-      has_next: raw.has_next ?? false,
+      has_next: page.nextPageToken !== null,
     };
   }
 
   /**
-   * Set a playbook's visibility. Requires authentication; the owner is
-   * resolved server-side from the authenticated user, so only the playbook
-   * `name` is needed.
+   * Set a playbook's visibility. Requires authentication; the playbook is the
+   * caller's own, named by `name`.
    *
    * Note: `private` and `paid` are paid-tier capabilities. A free-tier user
    * receives a `PERMISSION_DENIED` error from the gateway, which is surfaced
-   * here unchanged.
+   * here unchanged. Leaving `paid` while subscriptions renew is refused with
+   * `CONFLICT`.
    */
   async setVisibility(
     params: SetVisibilityParams
@@ -307,11 +421,129 @@ export class PlaybooksResource {
       );
     }
     this.client._requireAuth();
-    return (await this.client._request(
-      'POST',
-      `/api/v1/playbook/${encodeURIComponent(params.name)}/visibility`,
-      { body: { visibility: params.visibility } }
-    )) as SetVisibilityResponse;
+    const playbook = await ownPlaybook(this.client, params.name);
+    const updated = await this.client._v2Request<WirePlaybook>(
+      'PATCH',
+      v2Path`/playbooks/${playbook.id}`,
+      {
+        // v1 always confirmed the exposure of bundled feeds.
+        body: {
+          visibility: params.visibility.toUpperCase(),
+          confirmBundledFeedExposure: true,
+        },
+      }
+    );
+    return { playbook_path: updated.path ?? '' };
+  }
+}
+
+/** A Playbook as /api/v2 returns it. */
+export interface WirePlaybook {
+  id: AlvaId;
+  slug: string;
+  title: string;
+  description: string;
+  visibility: string;
+  tags: string[];
+  path: string | null;
+  readmePath: string | null;
+  followerCount: number;
+  owner: { id: AlvaId | null; handle: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const TRENDING_ORDER: Record<TrendingPlaybooksSort, string> = {
+  FOLLOWS: 'MOST_FOLLOWED',
+  RECENT: 'NEWEST',
+};
+
+/**
+ * Whether the client carries a credential. Keyless discovery reads stay on
+ * /api/v1, where they need none; every /api/v2 read needs one.
+ */
+export function hasCredential(client: AlvaClient): boolean {
+  return Boolean(client.apiKey || client.pbsvToken || client.viewer_token);
+}
+
+const callerUsernames = new WeakMap<AlvaClient, Promise<string>>();
+
+/** The caller's username (GET /api/v2/me), read once per client. */
+export function callerUsername(client: AlvaClient): Promise<string> {
+  let username = callerUsernames.get(client);
+  if (!username) {
+    username = client
+      ._v2Request<{ username: string }>('GET', '/me')
+      .then((me) => me.username);
+    callerUsernames.set(client, username);
+    username.catch(() => callerUsernames.delete(client));
+  }
+  return username;
+}
+
+/** A Playbook by its owner's username and its slug. */
+export function playbookBySlug(
+  client: AlvaClient,
+  owner: string,
+  slug: string
+): Promise<WirePlaybook> {
+  return client._v2Request<WirePlaybook>(
+    'GET',
+    v2Path`/playbooks/by-slug/${owner}/${slug}`
+  );
+}
+
+/** One of the caller's own Playbooks, by slug. */
+export async function ownPlaybook(
+  client: AlvaClient,
+  slug: string
+): Promise<WirePlaybook> {
+  return playbookBySlug(client, await callerUsername(client), slug);
+}
+
+function discoveryItem(p: WirePlaybook): PlaybookDiscoveryItem {
+  const owner = p.owner?.handle ?? '';
+  return {
+    id: p.id,
+    owner_username: owner,
+    name: p.slug,
+    display_name: p.title,
+    visibility: p.visibility.toLowerCase(),
+    ...(owner && p.slug ? { ref: `${owner}/${p.slug}` } : {}),
+  };
+}
+
+/**
+ * Maps a page whose rows carry a cursor. /api/v2 has one token per page, so
+ * the last row carries it and the others an empty cursor.
+ */
+function withPageCursor<T>(
+  page: Page<WirePlaybook>,
+  map: (p: WirePlaybook) => T
+): (T & { cursor: string })[] {
+  return page.items.map((p, i) => ({
+    ...map(p),
+    cursor:
+      i === page.items.length - 1 && page.nextPageToken !== null
+        ? page.nextPageToken
+        : '',
+  }));
+}
+
+function pageSize(limit: number | undefined): number | undefined {
+  return limit !== undefined && limit > 0 ? limit : undefined;
+}
+
+/** A Playbook the caller cannot see (404 or 403) is null. */
+async function orNull(
+  read: Promise<WirePlaybook>
+): Promise<PlaybookDiscoveryItem | null> {
+  try {
+    return discoveryItem(await read);
+  } catch (err) {
+    if (err instanceof AlvaError && (err.status === 404 || err.status === 403))
+      return null;
+    throw err;
   }
 }
 

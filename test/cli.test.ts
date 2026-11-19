@@ -1882,13 +1882,13 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('feed delete rejects non-numeric --id', async () => {
+  it('feed delete passes an opaque --id and rejects a padded one', async () => {
     const client = makeClient();
+    await dispatch(client, ['feed', 'delete', '--id', 'automation_0abc']);
+    expect(client.feed.delete).toHaveBeenCalledWith({ id: 'automation_0abc' });
     await expect(
-      dispatch(client, ['feed', 'delete', '--id', 'abc'])
-    ).rejects.toThrow(
-      "--id must be a positive integer for 'feed delete', got 'abc'"
-    );
+      dispatch(client, ['feed', 'delete', '--id', ' automation_0abc'])
+    ).rejects.toThrow("--id must be a feed ID for 'feed delete'");
   });
 
   it('dispatches feed set-visibility public', async () => {
@@ -2047,7 +2047,7 @@ describe('CLI dispatch', () => {
       '--version',
       '1.0',
       '--cronjob-id',
-      '5',
+      'cronjob_05',
       '--view-json',
       '{"chart":"line"}',
       '--description',
@@ -2061,7 +2061,7 @@ describe('CLI dispatch', () => {
     expect(client.automation.publish).toHaveBeenCalledWith({
       name: 'btc',
       version: '1.0',
-      cronjob_id: 5,
+      cronjob_id: 'cronjob_05',
       view_json: { chart: 'line' },
       description: 'BTC signal',
       changelog: 'Initial',
@@ -2191,12 +2191,18 @@ describe('CLI dispatch', () => {
 
   it('dispatches automation lifecycle commands', async () => {
     const client = makeClient();
-    await dispatch(client, ['automation', 'stop', '--id', '42']);
-    await dispatch(client, ['automation', 'resume', '--id', '43']);
-    await dispatch(client, ['automation', 'delete', '--id', '44']);
-    expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
-    expect(client.automation.resume).toHaveBeenCalledWith({ id: 43 });
-    expect(client.automation.delete).toHaveBeenCalledWith({ id: 44 });
+    await dispatch(client, ['automation', 'stop', '--id', 'automation_0a']);
+    await dispatch(client, ['automation', 'resume', '--id', 'automation_0b']);
+    await dispatch(client, ['automation', 'delete', '--id', 'automation_0c']);
+    expect(client.automation.stop).toHaveBeenCalledWith({
+      id: 'automation_0a',
+    });
+    expect(client.automation.resume).toHaveBeenCalledWith({
+      id: 'automation_0b',
+    });
+    expect(client.automation.delete).toHaveBeenCalledWith({
+      id: 'automation_0c',
+    });
   });
 
   it('dispatches playbooks trending with agent-friendly filters', async () => {
@@ -2486,14 +2492,14 @@ describe('CLI dispatch', () => {
       '--version',
       '1.0',
       '--cronjob-id',
-      '5',
+      'cronjob_05',
       '--skip-auto-trigger',
     ]);
     expect(client.release.feed).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'btc',
         version: '1.0',
-        cronjob_id: 5,
+        cronjob_id: 'cronjob_05',
         skip_auto_trigger: true,
       })
     );
@@ -5294,16 +5300,22 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     });
   });
 
-  it('auto-paginates playbooks mine --all using the last row cursor', async () => {
+  it('auto-paginates playbooks mine --all with the page cursor, past an empty page', async () => {
     const client = makeClient();
     client.playbooks.listOwn = vi
       .fn()
       .mockResolvedValueOnce({
-        playbooks: [{ id: '1', name: 'a', cursor: 'c1' }],
+        playbooks: [{ id: 'playbook_01', name: 'a', cursor: 'c1' }],
         has_next: true,
+        next_cursor: 'c1',
       })
       .mockResolvedValueOnce({
-        playbooks: [{ id: '2', name: 'b', cursor: 'c2' }],
+        playbooks: [],
+        has_next: true,
+        next_cursor: 'c2',
+      })
+      .mockResolvedValueOnce({
+        playbooks: [{ id: 'playbook_02', name: 'b', cursor: '' }],
         has_next: false,
       });
     const out = await dispatch(client, [
@@ -5312,16 +5324,16 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--all',
       '--json',
     ]);
-    expect(client.playbooks.listOwn).toHaveBeenCalledTimes(2);
+    expect(client.playbooks.listOwn).toHaveBeenCalledTimes(3);
     expect(client.playbooks.listOwn).toHaveBeenLastCalledWith({
       filter: undefined,
       limit: undefined,
-      cursor: 'c1',
+      cursor: 'c2',
     });
     expect(out).toEqual({
       playbooks: [
-        { id: '1', name: 'a', cursor: 'c1' },
-        { id: '2', name: 'b', cursor: 'c2' },
+        { id: 'playbook_01', name: 'a', cursor: 'c1' },
+        { id: 'playbook_02', name: 'b', cursor: '' },
       ],
       has_next: false,
     });
@@ -5530,7 +5542,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       expect.objectContaining({
         name: 'pulse',
         version: '1.0.0',
-        cronjob_id: 1,
+        cronjob_id: '1',
         description: 'Market pulse',
       })
     );
