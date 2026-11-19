@@ -195,12 +195,14 @@ errors fail closed. The returned state is the
 authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing
 inadvertent publication, and replaces the document's body, title, and entity
-IDs and directions as a full author-version update. Each update publishes a new
-Update; a published Update cannot be edited in place. Update accepts --entity-stances <json>.
+IDs and directions as a full author-version update. Each update that changes
+the content publishes a new Update; one identical to the current Update writes
+nothing and returns unchanged: true. A published Update cannot be edited in
+place. Update accepts --entity-stances <json>.
 Only editing the body? Resubmit the existing entity IDs, directions, and medias.
 Pass current medias unchanged with --medias; omission clears attachments.
 On an Update, an omitted or unknown direction of a carried ticker keeps its
-previous direction; none is an exit.
+previous direction; none is an exit, also for the last long or short.
 Create and update require a caller-supplied non-zero
 UUID in --request-id; the dispatcher never creates request IDs or retries.
 

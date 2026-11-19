@@ -283,6 +283,41 @@ describe('thesis terminal dispatch', () => {
     expect(calls.setArchived).not.toHaveBeenCalled();
   });
 
+  it('says when an Update changed nothing', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+    const update = [
+      'thesis',
+      'update',
+      '--id',
+      THESIS.thesis.id,
+      '--request-id',
+      REQUEST_ID,
+      '--expected-author-version-id',
+      THESIS.thesis.author_version_id,
+      '--body',
+      'draft',
+      '--visibility',
+      'public',
+    ];
+
+    // The Backend returns the current Update when nothing changed.
+    await expect(dispatchTerminal(value, update)).resolves.toMatchObject({
+      thesis: { author_version_id: THESIS.thesis.author_version_id },
+      unchanged: true,
+    });
+
+    const published = {
+      ...THESIS,
+      thesis: { ...THESIS.thesis, author_version_id: '9223372036854775807' },
+    };
+    calls.update.mockResolvedValue(published);
+    await expect(dispatchEmbedded(value, update)).resolves.toMatchObject({
+      thesis: { author_version_id: published.thesis.author_version_id },
+      unchanged: false,
+    });
+  });
+
   it('requires update visibility and one body transport before resource calls', async () => {
     const value = client();
     const calls = mockLifecycle(value);

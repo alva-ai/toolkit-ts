@@ -1699,7 +1699,8 @@ Maintenance behavior:
 
   Only editing the body? Resubmit the existing entity IDs and directions.
   On an Update, an omitted or unknown direction of a carried ticker keeps its
-  previous direction; none is an exit.
+  previous direction; none is an exit, also for the last long or short. An
+  Update identical to the current one writes nothing: unchanged is true.
   rewrite --body ... [--mode reformat|shorten|enrich]
 
 Rewrite mode defaults only when omitted, and the toolkit always sends the
@@ -3934,28 +3935,36 @@ export async function executeParsedCommand(
             requireFlag(flags, 'id', 'thesis set-signal-enabled'),
             thesisBooleanFlag(flags.enabled, 'thesis set-signal-enabled')
           );
-        case 'update':
-          return client.theses.update(
-            requireFlag(flags, 'id', 'thesis update'),
-            {
-              request_id: requireFlag(flags, 'request-id', 'thesis update'),
-              expected_author_version_id: requireFlag(
-                flags,
-                'expected-author-version-id',
-                'thesis update'
-              ),
-              body: await thesisBodyFromFlags(flags, 'thesis update', deps),
-              title: flags.title ?? '',
-              entity_ids: thesisEntityIDs(flags),
-              entity_stances: thesisEntityStances(flags),
-              medias: thesisMedias(flags),
-              visibility: thesisVisibility(
-                requireFlag(flags, 'visibility', 'thesis update')
-              ),
-              track_return: thesisTrackReturn(flags, 'thesis update'),
-              archived: thesisUnarchive(flags, 'thesis update'),
-            }
-          );
+        case 'update': {
+          const id = requireFlag(flags, 'id', 'thesis update');
+          const params = {
+            request_id: requireFlag(flags, 'request-id', 'thesis update'),
+            expected_author_version_id: requireFlag(
+              flags,
+              'expected-author-version-id',
+              'thesis update'
+            ),
+            body: await thesisBodyFromFlags(flags, 'thesis update', deps),
+            title: flags.title ?? '',
+            entity_ids: thesisEntityIDs(flags),
+            entity_stances: thesisEntityStances(flags),
+            medias: thesisMedias(flags),
+            visibility: thesisVisibility(
+              requireFlag(flags, 'visibility', 'thesis update')
+            ),
+            track_return: thesisTrackReturn(flags, 'thesis update'),
+            archived: thesisUnarchive(flags, 'thesis update'),
+          };
+          const response = await client.theses.update(id, params);
+          // An Update identical to the current one writes nothing and returns
+          // that Update; say so rather than look saved (alva-backend#3809).
+          return {
+            ...response,
+            unchanged:
+              response.thesis.author_version_id ===
+              params.expected_author_version_id,
+          };
+        }
         case 'rewrite':
           return client.theses.rewrite({
             body: await thesisBodyFromFlags(flags, 'thesis rewrite', deps),
