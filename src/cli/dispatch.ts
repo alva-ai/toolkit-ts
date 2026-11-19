@@ -1479,7 +1479,7 @@ Subcommands:
   follows unfollow          Unfollow one profile (idempotent)
   follows activity          What the people you follow did on public Theses,
                             Signals and their Watchlists (newest first, up to
-                            200, 7 days)
+                            200, 31 days)
 
 Flags:
   --query <text>            search: name or username prefix (required)

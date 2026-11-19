@@ -520,7 +520,7 @@ alva people follows activity --since 2026-11-12T08:00:00Z
 
 `people follows activity` returns what the users you follow did on public
 Theses (published, updated, bookmarked), Signals they liked and their Watchlists,
-newest first, at most 200 items and seven days back. Pass the previous
+newest first, at most 200 items and 31 days back. Pass the previous
 result's `until` as the next `--since`.
 
 The SDK equivalents live on `client.follows`: `addToWatchlist()`,

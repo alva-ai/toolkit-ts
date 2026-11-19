@@ -677,7 +677,7 @@ export class FollowsResource {
 
   /**
    * What the users the caller follows did on public Theses, their Signals and
-   * their Watchlists after `since`, newest first (at most 200 items, 7 days back).
+   * their Watchlists after `since`, newest first (at most 200 items, 31 days back).
    */
   async activity(
     params: FollowingActivityParams = {}
