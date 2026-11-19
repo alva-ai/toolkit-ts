@@ -19,6 +19,7 @@ for (const [name, dispatch] of [
     it('lists visible Updates with paging', async () => {
       const previous = wireVersion({
         id: 'thesis_version_0prev',
+        number: 1,
         materialVersionId: 'thesis_version_0prev',
         title: '',
         body: 'Previous view',
@@ -52,7 +53,9 @@ for (const [name, dispatch] of [
         versions: [
           {
             id: THESIS,
+            number: 42,
             author_version_id: 'thesis_version_0prev',
+            author_version_number: 1,
             material_version_id: 'thesis_version_0prev',
             title: '',
             body: 'Previous view',

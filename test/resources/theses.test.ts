@@ -24,7 +24,9 @@ const NEXT = 'thesis_version_0next';
 function restThesis(overrides: Record<string, unknown> = {}) {
   return {
     id: THESIS,
+    number: 42,
     author_version_id: VERSION,
+    author_version_number: 2,
     material_version_id: MATERIAL,
     title: 'Thesis',
     body: 'line one\r\nline two',
@@ -361,6 +363,7 @@ describe('ThesesResource', () => {
   it('gets one exact author version with the Thesis state, not the current version', async () => {
     const old = wireVersion({
       id: 'thesis_version_0old',
+      number: 1,
       materialVersionId: 'thesis_version_0old',
       body: 'Old view',
       note: 'first',
@@ -375,6 +378,7 @@ describe('ThesesResource', () => {
     ).toEqual({
       thesis: restThesis({
         author_version_id: 'thesis_version_0old',
+        author_version_number: 1,
         material_version_id: 'thesis_version_0old',
         body: 'Old view',
         note: 'first',
@@ -736,6 +740,19 @@ describe('ThesesResource', () => {
       code: 'INVALID_RESPONSE',
     });
   });
+
+  it.each([
+    ['Thesis', { number: '42' }, {}],
+    ['version', {}, { number: 0 }],
+  ])(
+    'rejects a %s response without a positive number',
+    async (_, thesis, version) => {
+      v2Fetch({ [`GET /theses/${THESIS}`]: wireThesis(thesis, version) });
+      await expect(client().theses.get(THESIS)).rejects.toMatchObject({
+        code: 'INVALID_RESPONSE',
+      });
+    }
+  );
 
   it.each([
     ['blank body', {}, { body: ' \r\n\t' }],

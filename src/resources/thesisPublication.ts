@@ -23,6 +23,7 @@ export interface WireThesisAsset {
 
 export interface WireThesisVersion {
   id: AlvaId;
+  number: number;
   thesisId: AlvaId;
   materialVersionId: AlvaId;
   changeKind: string;
@@ -58,6 +59,7 @@ export interface WireProfile {
 /** A Thesis as /api/v2 returns it. */
 export interface WireThesis {
   id: AlvaId;
+  number: number;
   playbookId: AlvaId;
   author: WireProfile | null;
   visibility: string;
@@ -105,6 +107,8 @@ export interface ThesisSourceReference {
 /** The exact author version this recommendation renders, not the mutable Thesis. */
 export interface ThesisPublicationSummary {
   thesisId: AlvaId;
+  /** The Thesis number: its page is https://alva.ai/thesis/<thesisNumber>. */
+  thesisNumber: number;
   /** Playbook ID of the Playbook that carries the Thesis. */
   playbookId: AlvaId;
   authorVersionId: AlvaId;
@@ -168,6 +172,7 @@ export function publicationSummary(
       : { __typename: 'Person' as const, slug: author.handle };
   return {
     thesisId: thesis.id,
+    thesisNumber: thesis.number,
     playbookId: thesis.playbookId,
     authorVersionId: authorVersionId ?? v.id,
     materialVersionId: v.materialVersionId,
@@ -239,6 +244,7 @@ export function isWireThesisVersion(
   return (
     record(value) &&
     nonempty(value.id) &&
+    positiveInteger(value.number) &&
     nonempty(value.thesisId) &&
     nonempty(value.materialVersionId) &&
     nonempty(value.changeKind) &&
@@ -286,6 +292,7 @@ export function isWireThesis(value: unknown): value is WireThesis {
   if (
     !record(value) ||
     !nonempty(value.id) ||
+    !positiveInteger(value.number) ||
     !nonempty(value.playbookId) ||
     !nonempty(value.visibility) ||
     typeof value.archived !== 'boolean' ||
@@ -344,6 +351,10 @@ export function invalidThesisResponse(): AlvaError {
 
 export function nonempty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function positiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 function nullable(value: unknown, type: 'string' | 'boolean'): boolean {

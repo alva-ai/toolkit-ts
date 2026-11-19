@@ -193,7 +193,10 @@ below. Migration notes: [README](README.md#migrating-from-0x-to-10).
   `ALVA_INSTRUCTION`, `UNKNOWN`), `trading.equityHistory({ range })`
   (`--range`) and `trading.subscribe({ signalSourceId })`
   (`--signal-source-id`, the feed's Automation ID).
-- Fields: `XPost.url`; credit entry `title`; `playbooks.listOwn`
+- Fields: `XPost.url`; Thesis `number` and `author_version_number`, and
+  `publication.thesisNumber` (the numbers that name a Thesis page,
+  `https://alva.ai/thesis/<number>`, and the Alva App's cards; 0.x returned
+  them as the IDs); credit entry `title`; `playbooks.listOwn`
   `next_cursor` (followed by `playbooks mine --all`); alert subscription
   `id`; secret `id`; `FsStat`/`FsEntry` `meta`; `getRunLogs` `error`;
   `RunResponse` declares what 0.x already returned (`stats.credits_used`,

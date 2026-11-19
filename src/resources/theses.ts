@@ -89,7 +89,11 @@ export interface ThesisMedia {
 
 export interface Thesis {
   id: ThesisID;
+  /** The Thesis number: its page is https://alva.ai/thesis/<number>. */
+  number: number;
   author_version_id: ThesisID;
+  /** The number of the author version, as the Alva App's Thesis cards name it. */
+  author_version_number: number;
   material_version_id: ThesisID;
   title: string;
   body: string;
@@ -921,7 +925,9 @@ function thesisOf(value: unknown, version?: WireThesisVersion): Thesis {
   const author = thesis.author;
   return {
     id: thesis.id,
+    number: thesis.number,
     author_version_id: v.id,
+    author_version_number: v.number,
     material_version_id: v.materialVersionId,
     title: responseTitle(v.title),
     body: responseBody(v.body),

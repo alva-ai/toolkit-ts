@@ -87,10 +87,13 @@ their shape apart from the points below; the full list is in
 - **Resources.**
   - Theses, Thesis reads and For You: `publication.playbookId` names the
     Playbook; use `thesisId` (or a list node's `playbookId`) with
-    `theses.get`, `signals` and `related`. Lists put the next cursor on the
-    last edge only. `thesis update --archived false` on an archived Thesis
-    unarchives it, then publishes the Update. `for-you list --newer-than` is
-    gone: read the first page again.
+    `theses.get`, `signals` and `related`. A Thesis's page and the Alva
+    App's Thesis card take its number (`https://alva.ai/thesis/<number>`):
+    `thesis.number` and `publication.thesisNumber` (with
+    `thesis.author_version_number`), which 0.x returned as the ID. Lists put
+    the next cursor on the last edge only. `thesis update --archived false`
+    on an archived Thesis unarchives it, then publishes the Update.
+    `for-you list --newer-than` is gone: read the first page again.
   - Playbooks, comments, remix, release, Skillhub, SDK docs and feeds: feed
     IDs are Automation IDs and `release feed --cronjob-id` takes a Cronjob
     ID.

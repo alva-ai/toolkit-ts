@@ -85,6 +85,7 @@ function thesisBy(body = 'Original\r\n**view**') {
 function publication(body = 'Original\r\n**view**', itemKey = THESIS) {
   return {
     thesisId: THESIS,
+    thesisNumber: 42,
     playbookId: PLAYBOOK,
     authorVersionId: VERSION,
     materialVersionId: MATERIAL,

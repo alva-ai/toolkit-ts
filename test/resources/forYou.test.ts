@@ -325,6 +325,7 @@ const LISTED = 'thesis_version_0listed';
 function publication() {
   return {
     thesisId: THESIS,
+    thesisNumber: 42,
     playbookId: PLAYBOOK,
     authorVersionId: LISTED,
     materialVersionId: MATERIAL,
