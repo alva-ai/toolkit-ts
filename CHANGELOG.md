@@ -74,6 +74,20 @@ Releases before 1.0.0 are listed under the repository's tags.
 - `user.me().id`, `feedback.submit().feedback_id` and secret IDs are strings.
 - CLI: `people follows follow|unfollow` no longer needs `--kind`;
   `--run-as-service-account` takes an Account ID and refuses `0`.
+- `markets.narrative`, `earningsPeriods` and `earnings` read
+  `/api/v2/assets` (a ticker is a US stock listing, else a non-US one).
+  Failures other than the `MARKETS_*` not-found codes carry `/api/v2`
+  problem codes; `GRAPHQL_ERROR` and `GRAPHQL_EMPTY_RESPONSE` are gone.
+- `tradingPairs.search` and `resolve` read `/api/v2/trading-pairs`; the
+  candidates are unchanged.
+- `companyNews.create`: `feed_id` is an Automation ID and `cronjob_id` a
+  Cronjob ID (were decimal int64 strings). Errors carry problem codes, such as
+  `CONFLICT` for an existing name with another configuration (was
+  `ALREADY_EXISTS`).
+- `x.following` and `x.posts`: account and post `id` and `authorId` are
+  Alva IDs (were X snowflakes); posts add `url`, which keeps the X post
+  readable. Every edge's `cursor` is the page's next token. A malformed
+  response is `INVALID_RESPONSE` (was `GRAPHQL_INVALID_RESPONSE`).
 
 ### Added
 

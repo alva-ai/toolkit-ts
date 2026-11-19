@@ -59,11 +59,11 @@ for (const [surface, dispatch] of [
         }
       );
     }
-    it('creates a multi-ticker managed feed with one call and returns lossless IDs', async () => {
+    it('creates a multi-ticker managed feed with one call and returns its IDs unchanged', async () => {
       const client = new AlvaClient({ apiKey: 'key' });
       const result = {
-        feed_id: '9223372036854775807',
-        cronjob_id: '9223372036854775806',
+        feed_id: 'automation_0news',
+        cronjob_id: 'cronjob_0news',
       };
       const create = vi
         .spyOn(client.companyNews, 'create')
@@ -93,7 +93,10 @@ for (const [surface, dispatch] of [
       const client = new AlvaClient({ apiKey: 'key' });
       const create = vi
         .spyOn(client.companyNews, 'create')
-        .mockResolvedValue({ feed_id: '1', cronjob_id: '2' });
+        .mockResolvedValue({
+          feed_id: 'automation_0a',
+          cronjob_id: 'cronjob_0a',
+        });
       await dispatch(client, [
         'company-news',
         'create',

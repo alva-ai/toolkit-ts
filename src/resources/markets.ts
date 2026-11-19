@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { v2Path } from '../platformApi.js';
+import type { AlvaId } from '../types.js';
 
 export type CompanyFiscalQuarter = 'Q1' | 'Q2' | 'Q3' | 'Q4';
 export type CompanyEarningsEvent = 'latest-completed' | 'next-confirmed';
@@ -151,187 +153,173 @@ const EARNINGS_EVENTS: readonly CompanyEarningsEvent[] = [
   'next-confirmed',
 ];
 
-const NARRATIVE_QUERY = `
-query ToolkitCompanyNarrative($ticker: String!) {
-  market {
-    entity(input: { ticker: $ticker, kind: STOCK }) {
-      ticker
-      companyInsight {
-        asOf
-        generatedAtMs
-        narrative
-        peers
-      }
-      companyInsightHistory {
-        snapshots {
-          asOf
-          generatedAtMs
-          narrative
-        }
-        changeLog {
-          asOf
-          generatedAtMs
-          narrativeChangeLog
-        }
-      }
-    }
-  }
+// The /api/v2 wire: an Asset, its company narrative, earnings calendar and
+// earnings report (alva-gateway pkg/v2/api/market).
+interface WireAsset {
+  id: AlvaId;
+  symbol: string;
 }
-`.trim();
 
-const EARNINGS_CATALOG_QUERY = `
-query ToolkitCompanyEarningsCatalog($ticker: String!) {
-  market {
-    entity(input: { ticker: $ticker, kind: STOCK }) {
-      ticker
-      earningsPeriods {
-        unresolvedEventCount
-        defaultPeriod {
-          fiscalYear
-          fiscalQuarter
-          label
-          fiscalDateEnding
-          earningsDate
-          session
-          status
-          isDefault
-        }
-        periods {
-          fiscalYear
-          fiscalQuarter
-          label
-          fiscalDateEnding
-          earningsDate
-          session
-          status
-          isDefault
-        }
-      }
-    }
-  }
+interface WireNarrativeVersion {
+  asOf: string;
+  generatedAt: string;
+  body: string;
+  peers: string | null;
 }
-`.trim();
 
-const EARNINGS_QUERY = `
-query ToolkitCompanyEarnings($ticker: String!, $input: CompanyEarningsInput) {
-  market {
-    entity(input: { ticker: $ticker, kind: STOCK }) {
-      ticker
-      earnings(input: $input) {
-        period {
-          fiscalYear
-          fiscalQuarter
-          label
-          fiscalDateEnding
-          earningsDate
-          session
-          status
-          isDefault
+interface WireNarrative {
+  latest: WireNarrativeVersion | null;
+  history: WireNarrativeVersion[];
+  changes: { asOf: string; generatedAt: string; summary: string | null }[];
+}
+
+interface WireEarningsPeriod {
+  fiscalYear: number;
+  fiscalQuarter: CompanyFiscalQuarter;
+  label: string;
+  periodEnd: string;
+  reportsOn: string;
+  timing: CompanyEarningsSession | null;
+  status: CompanyEarningsStatus;
+  isDefault: boolean;
+}
+
+interface WireEarningsCalendar {
+  periods: WireEarningsPeriod[];
+  defaultPeriod: WireEarningsPeriod | null;
+  unresolvedEventCount: number;
+}
+
+interface WireConsensus {
+  estimateCount: number;
+  observedAt: string | null;
+}
+
+interface WireEarningsReport {
+  period: WireEarningsPeriod;
+  preview: Omit<
+    CompanyPreEarningsAnalysis,
+    'status' | 'consensusN' | 'consensusObservedAt'
+  > & {
+    availability: CompanyEarningsContentStatus;
+    consensus: WireConsensus | null;
+  };
+  release: {
+    availability: CompanyEarningsContentStatus;
+    releasedOn: string | null;
+    url: string | null;
+  };
+  transcript: {
+    availability: CompanyEarningsContentStatus;
+    heldOn: string | null;
+    publishedAt: string | null;
+    sections: CompanyEarningsTranscriptSection[];
+  };
+  recap: Omit<
+    CompanyPostEarningsSummary,
+    'status' | 'evidenceState' | 'consensusN' | 'consensusObservedAt'
+  > & {
+    availability: CompanyEarningsContentStatus;
+    evidence: CompanyPostEarningsSummary['evidenceState'];
+    consensus: WireConsensus | null;
+  };
+}
+
+// v1 looked a ticker up as a stock; an Asset is one listing, so a ticker is
+// tried as a US listing, then a non-US one.
+const STOCK_ASSET_CLASSES = ['US_STOCK', 'NON_US_STOCK'] as const;
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof AlvaError && error.status === 404;
+}
+
+function toPeriod(p: WireEarningsPeriod): CompanyEarningsPeriod {
+  return {
+    fiscalYear: p.fiscalYear,
+    fiscalQuarter: p.fiscalQuarter,
+    label: p.label,
+    fiscalDateEnding: p.periodEnd,
+    earningsDate: p.reportsOn,
+    session: p.timing,
+    status: p.status,
+    isDefault: p.isDefault,
+  };
+}
+
+function toNarrative(
+  n: WireNarrative
+): Omit<CompanyNarrativeContext, 'ticker'> {
+  return {
+    current: n.latest
+      ? {
+          asOf: n.latest.asOf,
+          generatedAtMs: Date.parse(n.latest.generatedAt),
+          narrative: n.latest.body,
+          peers: n.latest.peers ?? '',
         }
-        preEarningsAnalysis {
-          status
-          asOf
-          summary
-          whatWouldChangeView
-          mainQuestion
-          investorFocus
-          consensusAndGuidance
-          stockSetup
-          eventRisk
-          whatWouldDriveUpside
-          bullCase
-          baseCase
-          bearCase
-          keyAsymmetry
-          consensusN
-          consensusObservedAt
-        }
-        earningsRelease {
-          status
-          releaseDate
-          url
-        }
-        earningsTranscript {
-          status
-          date
-          publishedAtMs
-          sections {
-            name
-            entries {
-              speaker
-              title
-              content
-            }
+      : null,
+    history:
+      n.history.length > 0 || n.changes.length > 0
+        ? {
+            snapshots: n.history.map((s) => ({
+              asOf: s.asOf,
+              generatedAtMs: Date.parse(s.generatedAt),
+              narrative: s.body,
+            })),
+            changeLog: n.changes.map((c) => ({
+              asOf: c.asOf,
+              generatedAtMs: Date.parse(c.generatedAt),
+              narrativeChangeLog: c.summary,
+            })),
           }
-        }
-        postEarningsSummary {
-          status
-          asOf
-          reportedCurrency
-          evidenceState
-          openingQuote
-          openingQuoteSpeaker
-          openingQuoteTitle
-          openingQuoteNote
-          buriedSignals
-          whatYouShouldKnow
-          consensusN
-          consensusObservedAt
-        }
-      }
-    }
-  }
-}
-`.trim();
-
-interface GraphQLErrorPayload {
-  message?: unknown;
-  [key: string]: unknown;
+        : null,
+  };
 }
 
-interface GraphQLResponse<T> {
-  data?: T | null;
-  errors?: GraphQLErrorPayload[];
-}
-
-interface NarrativeQueryData {
-  market?: {
-    entity?: {
-      ticker: string;
-      companyInsight: CompanyNarrative | null;
-      companyInsightHistory: CompanyNarrativeHistory | null;
-    } | null;
-  } | null;
-}
-
-interface EarningsCatalogQueryData {
-  market?: {
-    entity?: {
-      ticker: string;
-      earningsPeriods: CompanyEarningsCatalog | null;
-    } | null;
-  } | null;
-}
-
-interface EarningsQueryData {
-  market?: {
-    entity?:
-      | ({ ticker: string } & {
-          earnings: Omit<CompanyEarningsContext, 'ticker'> | null;
-        })
-      | null;
-  } | null;
-}
-
-function graphQLErrorMessage(errors: GraphQLErrorPayload[]): string {
-  const messages = errors
-    .map((error) =>
-      typeof error.message === 'string' && error.message
-        ? error.message
-        : undefined
-    )
-    .filter((message): message is string => Boolean(message));
-  return messages.length > 0 ? messages.join('; ') : 'GraphQL request failed';
+function toEarnings(
+  r: WireEarningsReport
+): Omit<CompanyEarningsContext, 'ticker'> {
+  const {
+    availability: preStatus,
+    consensus: preConsensus,
+    ...pre
+  } = r.preview;
+  const {
+    availability: recapStatus,
+    evidence,
+    consensus: recapConsensus,
+    ...recap
+  } = r.recap;
+  return {
+    period: toPeriod(r.period),
+    preEarningsAnalysis: {
+      ...pre,
+      status: preStatus,
+      consensusN: preConsensus?.estimateCount ?? null,
+      consensusObservedAt: preConsensus?.observedAt ?? null,
+    },
+    earningsRelease: {
+      status: r.release.availability,
+      releaseDate: r.release.releasedOn,
+      url: r.release.url,
+    },
+    earningsTranscript: {
+      status: r.transcript.availability,
+      date: r.transcript.heldOn,
+      publishedAtMs:
+        r.transcript.publishedAt === null
+          ? null
+          : Date.parse(r.transcript.publishedAt),
+      sections: r.transcript.sections,
+    },
+    postEarningsSummary: {
+      ...recap,
+      status: recapStatus,
+      evidenceState: evidence,
+      consensusN: recapConsensus?.estimateCount ?? null,
+      consensusObservedAt: recapConsensus?.observedAt ?? null,
+    },
+  };
 }
 
 function normalizedTicker(ticker: string): string {
@@ -347,41 +335,22 @@ export class MarketsResource {
 
   async narrative(ticker: string): Promise<CompanyNarrativeContext> {
     this.client._requireAuth();
-    const requestedTicker = normalizedTicker(ticker);
-    const data = await this.graphql<NarrativeQueryData>(NARRATIVE_QUERY, {
-      ticker: requestedTicker,
-    });
-    const entity = data.market?.entity;
-    if (!entity) {
-      throw this.notFound(requestedTicker);
+    const asset = await this.stock(normalizedTicker(ticker));
+    try {
+      const narrative = await this.client._v2Request<WireNarrative>(
+        'GET',
+        v2Path`/assets/${asset.id}/narrative`
+      );
+      return { ticker: asset.symbol, ...toNarrative(narrative) };
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+      return { ticker: asset.symbol, current: null, history: null };
     }
-    return {
-      ticker: entity.ticker,
-      current: entity.companyInsight,
-      history: entity.companyInsightHistory,
-    };
   }
 
   async earningsPeriods(ticker: string): Promise<CompanyEarningsCatalog> {
     this.client._requireAuth();
-    const requestedTicker = normalizedTicker(ticker);
-    const data = await this.graphql<EarningsCatalogQueryData>(
-      EARNINGS_CATALOG_QUERY,
-      { ticker: requestedTicker }
-    );
-    const entity = data.market?.entity;
-    if (!entity) {
-      throw this.notFound(requestedTicker);
-    }
-    if (!entity.earningsPeriods) {
-      throw new AlvaError(
-        'MARKETS_EARNINGS_NOT_COVERED',
-        `No earnings periods are available for ${entity.ticker}`,
-        404,
-        { ticker: entity.ticker }
-      );
-    }
-    return entity.earningsPeriods;
+    return this.calendar(await this.stock(normalizedTicker(ticker)));
   }
 
   async earnings(
@@ -443,6 +412,7 @@ export class MarketsResource {
         400
       );
     }
+    const asset = await this.stock(ticker);
     let fiscalYear: number;
     let fiscalQuarter: CompanyFiscalQuarter;
 
@@ -454,29 +424,73 @@ export class MarketsResource {
       fiscalQuarter = requestedFiscalQuarter;
     } else {
       const event = requestedEvent ?? 'latest-completed';
-      const catalog = await this.earningsPeriods(ticker);
-      const period = this.selectPeriod(catalog, event, ticker);
+      const catalog = await this.calendar(asset);
+      const period = this.selectPeriod(catalog, event, asset.symbol);
       fiscalYear = period.fiscalYear;
       fiscalQuarter = period.fiscalQuarter;
     }
 
-    const data = await this.graphql<EarningsQueryData>(EARNINGS_QUERY, {
-      ticker,
-      input: { fiscalYear, fiscalQuarter },
-    });
-    const entity = data.market?.entity;
-    if (!entity) {
-      throw this.notFound(ticker);
-    }
-    if (!entity.earnings) {
+    try {
+      const report = await this.client._v2Request<WireEarningsReport>(
+        'GET',
+        v2Path`/assets/${asset.id}/earnings`,
+        { query: { fiscalYear, fiscalQuarter } }
+      );
+      return { ticker: asset.symbol, ...toEarnings(report) };
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
       throw new AlvaError(
         'MARKETS_EARNINGS_NOT_COVERED',
-        `No earnings content is available for ${entity.ticker} FY${fiscalYear} ${fiscalQuarter}`,
+        `No earnings content is available for ${asset.symbol} FY${fiscalYear} ${fiscalQuarter}`,
         404,
-        { ticker: entity.ticker, fiscalYear, fiscalQuarter }
+        { ticker: asset.symbol, fiscalYear, fiscalQuarter }
       );
     }
-    return { ticker: entity.ticker, ...entity.earnings };
+  }
+
+  private async calendar(asset: WireAsset): Promise<CompanyEarningsCatalog> {
+    try {
+      const calendar = await this.client._v2Request<WireEarningsCalendar>(
+        'GET',
+        v2Path`/assets/${asset.id}/earnings-calendar`
+      );
+      return {
+        periods: calendar.periods.map(toPeriod),
+        defaultPeriod: calendar.defaultPeriod
+          ? toPeriod(calendar.defaultPeriod)
+          : null,
+        unresolvedEventCount: calendar.unresolvedEventCount,
+      };
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+      throw new AlvaError(
+        'MARKETS_EARNINGS_NOT_COVERED',
+        `No earnings periods are available for ${asset.symbol}`,
+        404,
+        { ticker: asset.symbol }
+      );
+    }
+  }
+
+  /** The stock Asset a ticker names, as v1's stock entity lookup found it. */
+  private async stock(ticker: string): Promise<WireAsset> {
+    for (const assetClass of STOCK_ASSET_CLASSES) {
+      try {
+        return await this.client._v2Request<WireAsset>(
+          'GET',
+          v2Path`/assets/by-symbol/${ticker}`,
+          { query: { assetClass } }
+        );
+      } catch (error) {
+        if (!isNotFound(error)) throw error;
+      }
+    }
+    throw new AlvaError(
+      'MARKETS_ENTITY_NOT_FOUND',
+      `No stock entity was found for ${ticker}`,
+      404,
+      { ticker }
+    );
   }
 
   private selectPeriod(
@@ -502,39 +516,5 @@ export class MarketsResource {
       404,
       { ticker, event }
     );
-  }
-
-  private notFound(ticker: string): AlvaError {
-    return new AlvaError(
-      'MARKETS_ENTITY_NOT_FOUND',
-      `No stock entity was found for ${ticker}`,
-      404,
-      { ticker }
-    );
-  }
-
-  private async graphql<T>(
-    query: string,
-    variables: Record<string, unknown>
-  ): Promise<T> {
-    const response = (await this.client._request('POST', '/query', {
-      body: { query, variables },
-    })) as GraphQLResponse<T>;
-    if (response.errors && response.errors.length > 0) {
-      throw new AlvaError(
-        'GRAPHQL_ERROR',
-        graphQLErrorMessage(response.errors),
-        400,
-        { errors: response.errors }
-      );
-    }
-    if (!response.data) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include data',
-        502
-      );
-    }
-    return response.data;
   }
 }

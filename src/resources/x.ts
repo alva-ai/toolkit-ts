@@ -1,5 +1,6 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import type { AlvaId } from '../types.js';
 
 export interface XReadParams {
   first?: number;
@@ -14,16 +15,20 @@ export interface XConnectionStatus {
 }
 
 export interface XAccount {
-  id: string;
+  id: AlvaId;
   username: string;
   name: string;
 }
 
 export interface XPost {
-  id: string;
+  id: AlvaId;
   text: string;
-  authorId: string;
+  /** The author's ID; empty when X did not report one. */
+  authorId: AlvaId;
+  /** RFC 3339 time; empty when X did not report one. */
   createdAt: string;
+  /** The post on x.com. */
+  url: string;
 }
 
 /** One live page. retrievedAt is client retrieval time, not an import timestamp. */
@@ -37,22 +42,6 @@ export interface XReadPage<T> {
   };
   retrievedAt: string;
 }
-
-const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
-  INVALID_ARGUMENT: 400,
-  UNAUTHENTICATED: 401,
-  PERMISSION_DENIED: 403,
-  NOT_FOUND: 404,
-  ALREADY_EXISTS: 409,
-  ABORTED: 409,
-  FAILED_PRECONDITION: 412,
-  RESOURCE_EXHAUSTED: 429,
-  INTERNAL: 500,
-  UNKNOWN: 500,
-  DATA_LOSS: 500,
-  UNAVAILABLE: 503,
-  DEADLINE_EXCEEDED: 504,
-};
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -82,89 +71,56 @@ export function validateXReadParams(params: XReadParams): void {
   }
 }
 
-function invalidResponse(field: string): never {
+function invalidResponse(path: string): never {
   throw new AlvaError(
-    'GRAPHQL_INVALID_RESPONSE',
-    `GraphQL returned an invalid viewer.${field} response`,
+    'INVALID_RESPONSE',
+    `GET /api/v2${path} returned an invalid response`,
     502
   );
 }
 
-function viewerField(response: unknown, field: string): unknown {
-  if (!record(response)) return invalidResponse(field);
-  if (response.errors !== undefined) {
-    if (!Array.isArray(response.errors)) return invalidResponse(field);
-    if (response.errors.length > 0) {
-      const messages = response.errors.flatMap((error: unknown) =>
-        record(error) && typeof error.message === 'string'
-          ? [error.message]
-          : []
-      );
-      const codes = response.errors.map((error: unknown) =>
-        record(error) && record(error.extensions)
-          ? error.extensions.code
-          : undefined
-      );
-      const code =
-        typeof codes[0] === 'string' &&
-        Object.hasOwn(GRAPHQL_STATUS_BY_CODE, codes[0]) &&
-        codes.every((value) => value === codes[0])
-          ? codes[0]
-          : 'GRAPHQL_ERROR';
-      throw new AlvaError(
-        code,
-        messages.join('; ') || 'X read failed',
-        GRAPHQL_STATUS_BY_CODE[code] ?? 502,
-        { errors: response.errors }
-      );
-    }
-  }
-  if (!record(response.data) || !record(response.data.viewer))
-    return invalidResponse(field);
-  return response.data.viewer[field];
-}
+type Field = 'string' | 'string?';
 
+/**
+ * Rebuilds today's connection from one /api/v2 page. A v2 page has one
+ * token, so every edge carries the page's next token as its cursor; a field
+ * marked 'string?' may be null and reads as ''.
+ */
 function readPage<T>(
-  value: unknown,
-  field: string,
-  fields: readonly string[]
+  page: unknown,
+  path: string,
+  params: XReadParams,
+  fields: Record<keyof T & string, Field>
 ): XReadPage<T> {
-  if (!record(value) || !Array.isArray(value.edges) || !record(value.pageInfo))
-    return invalidResponse(field);
-  const page = value.pageInfo;
   if (
-    typeof page.startCursor !== 'string' ||
-    typeof page.endCursor !== 'string' ||
-    typeof page.hasNextPage !== 'boolean' ||
-    typeof page.hasPreviousPage !== 'boolean' ||
-    (page.hasNextPage && !page.endCursor)
+    !record(page) ||
+    !Array.isArray(page.items) ||
+    (page.nextPageToken !== null && typeof page.nextPageToken !== 'string')
   )
-    return invalidResponse(field);
-  for (const edge of value.edges) {
-    if (
-      !record(edge) ||
-      typeof edge.cursor !== 'string' ||
-      !edge.cursor ||
-      !record(edge.node)
-    )
-      return invalidResponse(field);
-    const node = edge.node;
-    if (fields.some((key) => typeof node[key] !== 'string'))
-      return invalidResponse(field);
-    if (!node.id) return invalidResponse(field);
-  }
-  const first = value.edges[0];
-  const last = value.edges[value.edges.length - 1];
-  if (
-    page.startCursor !== (first?.cursor ?? '') ||
-    (last && page.endCursor !== last.cursor)
-  )
-    return invalidResponse(field);
+    return invalidResponse(path);
+  const next = page.nextPageToken ?? '';
+  const edges = page.items.map((item: unknown) => {
+    if (!record(item) || typeof item.id !== 'string' || !item.id)
+      return invalidResponse(path);
+    const node: Record<string, string> = {};
+    for (const [key, kind] of Object.entries<Field>(fields)) {
+      const value = item[key];
+      if (kind === 'string?' && value === null) node[key] = '';
+      else if (typeof value === 'string') node[key] = value;
+      else return invalidResponse(path);
+    }
+    return { cursor: next, node: node as T };
+  });
   return {
-    edges: value.edges,
-    pageInfo: page,
+    edges,
+    pageInfo: {
+      startCursor: params.after ?? '',
+      endCursor: next,
+      hasNextPage: next !== '',
+      hasPreviousPage: params.after !== undefined,
+    },
     retrievedAt: new Date().toISOString(),
-  } as XReadPage<T>;
+  };
 }
 
 /** Read-only access to the current user's connected X account. X tokens stay in Backend. */
@@ -173,44 +129,49 @@ export class XResource {
 
   async status(): Promise<XConnectionStatus> {
     this.client._requireAuth();
-    const response = await this.client._request('POST', '/query', {
-      body: {
-        query:
-          'query ToolkitXStatus { viewer { xConnection { connected canReadFollowing canReadPosts } } }',
-      },
-    });
-    const result = viewerField(response, 'xConnection');
+    const result = await this.client._v2Request('GET', '/me/x-connection');
     if (
       !record(result) ||
-      ['connected', 'canReadFollowing', 'canReadPosts'].some(
-        (key) => typeof result[key] !== 'boolean'
-      )
+      typeof result.connected !== 'boolean' ||
+      typeof result.canReadFollowing !== 'boolean' ||
+      typeof result.canReadPosts !== 'boolean'
     )
-      return invalidResponse('xConnection');
-    return result as unknown as XConnectionStatus;
+      return invalidResponse('/me/x-connection');
+    return {
+      connected: result.connected,
+      canReadFollowing: result.canReadFollowing,
+      canReadPosts: result.canReadPosts,
+    };
   }
 
   async following(params: XReadParams = {}): Promise<XReadPage<XAccount>> {
-    return this.read<XAccount>('xFollowing', 'id username name', params);
+    return this.read<XAccount>('/me/x-following', params, {
+      id: 'string',
+      username: 'string',
+      name: 'string',
+    });
   }
 
   async posts(params: XReadParams = {}): Promise<XReadPage<XPost>> {
-    return this.read<XPost>('xPosts', 'id text authorId createdAt', params);
+    return this.read<XPost>('/me/x-posts', params, {
+      id: 'string',
+      text: 'string',
+      authorId: 'string?',
+      createdAt: 'string?',
+      url: 'string',
+    });
   }
 
   private async read<T>(
-    field: 'xFollowing' | 'xPosts',
-    fields: string,
-    params: XReadParams
+    path: string,
+    params: XReadParams,
+    fields: Record<keyof T & string, Field>
   ): Promise<XReadPage<T>> {
     validateXReadParams(params);
     this.client._requireAuth();
-    const response = await this.client._request('POST', '/query', {
-      body: {
-        query: `query ToolkitXRead($first: Int, $after: String) { viewer { ${field}(first: $first, after: $after) { edges { cursor node { ${fields} } } pageInfo { startCursor endCursor hasNextPage hasPreviousPage } } } }`,
-        variables: { first: params.first ?? 20, after: params.after },
-      },
+    const page = await this.client._v2Request('GET', path, {
+      query: { pageSize: params.first ?? 20, pageToken: params.after },
     });
-    return readPage<T>(viewerField(response, field), field, fields.split(' '));
+    return readPage<T>(page, path, params, fields);
   }
 }

@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { collectAll } from '../platformApi.js';
+import type { AlvaId } from '../types.js';
 
 export interface TradingPairCandidate {
   /** Underlying ticker returned by the market catalog. */
@@ -41,12 +43,6 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
 function upper(value: string | undefined): string | undefined {
   return value === undefined ? undefined : value.trim().toUpperCase();
 }
@@ -72,101 +68,51 @@ function inferUnderlyingType(rawType: string | undefined): string | undefined {
   return prefix && prefix !== rawType.toLowerCase() ? prefix : undefined;
 }
 
-function normalizeCandidate(
-  raw: RawRecord,
-  outerSymbol?: string
-): TradingPairCandidate | undefined {
-  const tradingPair =
-    stringValue(raw.trading_pair) ??
-    stringValue(raw.tradingPair) ??
-    stringValue(raw.symbol);
+// One item of GET /api/v2/trading-pairs (alva-gateway pkg/v2/api/market).
+interface WireTradingPair {
+  id: AlvaId;
+  symbol: string;
+  base: string;
+  quote: string;
+  exchange: string;
+  type: string;
+  feeRate: string;
+  description: string | null;
+  logo: string | null;
+}
+
+function toCandidate(item: WireTradingPair): TradingPairCandidate | undefined {
+  const tradingPair = stringValue(item.symbol);
   if (tradingPair === undefined) return undefined;
 
-  const type = stringValue(raw.type);
+  const type = stringValue(item.type);
   const parts = pairParts(tradingPair);
   const symbol =
-    stringValue(raw.base) ??
-    outerSymbol ??
+    stringValue(item.base) ??
     (parts.length >= 4
       ? parts.slice(2, -1).join('_')
       : parts.length === 3
         ? parts[2]
         : tradingPair);
-  const market =
-    stringValue(raw.market) ?? stringValue(raw.exchange) ?? parts[0] ?? '';
-  const quote = stringValue(raw.quote) ?? parts[parts.length - 1] ?? '';
-  const instrumentType =
-    stringValue(raw.instrument_type) ??
-    stringValue(raw.instrumentType) ??
-    inferInstrumentType(type, tradingPair);
-  const underlyingType =
-    stringValue(raw.underlying_type) ??
-    stringValue(raw.underlyingType) ??
-    inferUnderlyingType(type);
+  const underlyingType = inferUnderlyingType(type);
+  const description = stringValue(item.description);
+  const feeRate = Number(item.feeRate);
+  const symbolIconUrl = stringValue(item.logo);
 
   return {
     symbol,
     tradingPair,
-    market,
-    instrumentType,
+    market: stringValue(item.exchange) ?? parts[0] ?? '',
+    instrumentType: inferInstrumentType(type, tradingPair),
     ...(underlyingType === undefined ? {} : { underlyingType }),
-    quote,
+    quote: stringValue(item.quote) ?? parts[parts.length - 1] ?? '',
     ...(type === undefined ? {} : { type }),
-    ...(stringValue(raw.description) === undefined
-      ? {}
-      : { description: stringValue(raw.description) }),
-    ...(numberValue(raw.fee_rate) === undefined
-      ? numberValue(raw.feeRate) === undefined
-        ? {}
-        : { feeRate: numberValue(raw.feeRate) }
-      : { feeRate: numberValue(raw.fee_rate) }),
-    ...(stringValue(raw.symbol_icon_url) === undefined
-      ? stringValue(raw.symbolIconUrl) === undefined
-        ? {}
-        : { symbolIconUrl: stringValue(raw.symbolIconUrl) }
-      : { symbolIconUrl: stringValue(raw.symbol_icon_url) }),
+    ...(description === undefined ? {} : { description }),
+    ...(typeof item.feeRate === 'string' && Number.isFinite(feeRate)
+      ? { feeRate }
+      : {}),
+    ...(symbolIconUrl === undefined ? {} : { symbolIconUrl }),
   };
-}
-
-function flattenResponse(value: unknown): TradingPairCandidate[] {
-  if (!isRecord(value)) return [];
-
-  const flat = value.trading_pairs;
-  if (Array.isArray(flat)) {
-    return flat.flatMap((item) =>
-      isRecord(item)
-        ? [normalizeCandidate(item)].filter(
-            (candidate): candidate is TradingPairCandidate =>
-              candidate !== undefined
-          )
-        : []
-    );
-  }
-
-  const data = value.data;
-  if (!Array.isArray(data)) return [];
-  const candidates: TradingPairCandidate[] = [];
-  for (const symbolGroup of data) {
-    if (!isRecord(symbolGroup)) continue;
-    const symbol = stringValue(symbolGroup.symbol);
-    const groups = symbolGroup.trading_pairs;
-    if (!Array.isArray(groups)) continue;
-    for (const group of groups) {
-      if (!isRecord(group) || !Array.isArray(group.pairs)) continue;
-      for (const pair of group.pairs) {
-        if (!isRecord(pair)) continue;
-        const candidate = normalizeCandidate(
-          {
-            ...pair,
-            instrument_type: pair.instrument_type ?? group.instrument_type,
-          },
-          symbol
-        );
-        if (candidate !== undefined) candidates.push(candidate);
-      }
-    }
-  }
-  return candidates;
 }
 
 function matchesQuery(candidate: TradingPairCandidate, query: string): boolean {
@@ -253,15 +199,18 @@ export class TradingPairsResource {
     if (!query)
       throw new AlvaError('INVALID_ARGUMENT', 'symbol is required', 400);
 
-    // `strict=true` is part of the canonical-source contract. Older servers
-    // ignore unknown query parameters; the backend must honor it before this
-    // command is enabled for production Agent traffic.
-    const response = await this.client._request(
-      'GET',
-      '/api/v1/trading-pairs/search',
-      { query: { q: query, strict: true } }
+    const pairs = await collectAll(
+      this.client._v2Pages<WireTradingPair>('/trading-pairs', {
+        query: { q: query },
+        pageSize: 500,
+      })
     );
-    const candidates = dedupe(flattenResponse(response))
+    const candidates = dedupe(
+      pairs.flatMap((pair) => {
+        const candidate = toCandidate(pair);
+        return candidate === undefined ? [] : [candidate];
+      })
+    )
       .filter((candidate) => matchesQuery(candidate, query))
       .filter((candidate) => matchesFilter(candidate.market, params.market))
       .filter((candidate) =>

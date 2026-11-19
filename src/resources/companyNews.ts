@@ -1,5 +1,6 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import type { AlvaId } from '../types.js';
 
 export interface CreateCompanyNewsParams {
   name: string;
@@ -9,40 +10,11 @@ export interface CreateCompanyNewsParams {
 }
 
 export interface CreateCompanyNewsResponse {
-  feed_id: string;
-  cronjob_id: string;
+  /** The feed's Automation ID. */
+  feed_id: AlvaId;
+  /** The Cronjob ID of the feed's producer. */
+  cronjob_id: AlvaId;
 }
-
-const CREATE_COMPANY_NEWS = `mutation CreateCompanyNews($input: CompanyNewsFeedInput!) {
-  companyNews {
-    createFeed(input: $input) { id producer { id } }
-  }
-}`;
-
-interface CompanyNewsGraphResponse {
-  data?: {
-    companyNews?: {
-      createFeed?: { id?: unknown; producer?: { id?: unknown } | null } | null;
-    } | null;
-  } | null;
-  errors?: { message?: string; extensions?: { code?: string } }[];
-}
-
-const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
-  INVALID_ARGUMENT: 400,
-  UNAUTHENTICATED: 401,
-  PERMISSION_DENIED: 403,
-  NOT_FOUND: 404,
-  ALREADY_EXISTS: 409,
-  ABORTED: 409,
-  FAILED_PRECONDITION: 412,
-  RESOURCE_EXHAUSTED: 429,
-  INTERNAL: 500,
-  UNKNOWN: 500,
-  DATA_LOSS: 500,
-  UNAVAILABLE: 503,
-  DEADLINE_EXCEEDED: 504,
-};
 
 export function validateCompanyNewsCreateParams(
   params: CreateCompanyNewsParams
@@ -103,59 +75,28 @@ export class CompanyNewsResource {
   ): Promise<CreateCompanyNewsResponse> {
     this.client._requireAuth();
     validateCompanyNewsCreateParams(params);
-    const body = {
-      name: params.name,
-      tickers: params.tickers,
-      ...(params.initial_lookback_hours === undefined
-        ? {}
-        : { initialLookbackHours: params.initial_lookback_hours }),
-      ...(params.page_size === undefined ? {} : { pageSize: params.page_size }),
-    };
-    const graph = (await this.client._request('POST', '/query', {
-      body: { query: CREATE_COMPANY_NEWS, variables: { input: body } },
-    })) as CompanyNewsGraphResponse | null;
-    if (Array.isArray(graph?.errors) && graph.errors.length > 0) {
-      const codes = graph.errors.map((error) => error?.extensions?.code);
-      const code =
-        typeof codes[0] === 'string' &&
-        codes.every((value) => value === codes[0])
-          ? codes[0]
-          : 'GRAPHQL_ERROR';
-      throw new AlvaError(
-        code,
-        graph.errors
-          .map((error) => error?.message)
-          .filter(Boolean)
-          .join('; ') || 'Company News creation failed',
-        GRAPHQL_STATUS_BY_CODE[code] ?? 502,
-        { errors: graph.errors }
-      );
-    }
-    const feed = graph?.data?.companyNews?.createFeed;
-    const response = { feed_id: feed?.id, cronjob_id: feed?.producer?.id };
-    if (
-      typeof response !== 'object' ||
-      response === null ||
-      !('feed_id' in response) ||
-      !validID(response.feed_id) ||
-      !('cronjob_id' in response) ||
-      !validID(response.cronjob_id)
-    ) {
+    const feed = await this.client._v2Request<{
+      id?: unknown;
+      cronjobId?: unknown;
+    } | null>('POST', '/company-news-feeds', {
+      body: {
+        name: params.name,
+        tickers: params.tickers,
+        initialLookbackHours: params.initial_lookback_hours,
+        batchSize: params.page_size,
+      },
+    });
+    if (!validID(feed?.id) || !validID(feed?.cronjobId)) {
       throw new AlvaError(
         'INVALID_RESPONSE',
-        'company news response must contain decimal int64 feed_id and cronjob_id strings',
+        'company news response must contain an id and a cronjobId',
         502
       );
     }
-    return { feed_id: response.feed_id, cronjob_id: response.cronjob_id };
+    return { feed_id: feed.id, cronjob_id: feed.cronjobId };
   }
 }
 
-function validID(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.trim() === value &&
-    /^[1-9]\d{0,18}$/.test(value) &&
-    BigInt(value) <= 9223372036854775807n
-  );
+function validID(value: unknown): value is AlvaId {
+  return typeof value === 'string' && value !== '' && value.trim() === value;
 }

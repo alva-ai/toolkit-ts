@@ -102,6 +102,10 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
     grant, and `revoke` takes its `grant_id` (CLI `--grant-id`).
   - `user`, `secrets`, `feedback`: `id`, `feedback_id` and the new secret
     `id` are strings; `secrets.get` (the value) still calls `/api/v1`.
+  - `markets`, `tradingPairs`: same results; errors carry `/api/v2` codes.
+  - `companyNews.create`: `feed_id` and `cronjob_id` are Automation and
+    Cronjob IDs.
+  - `x`: X accounts and posts have Alva IDs; posts add `url`.
 
 ## CLI Quick Start
 

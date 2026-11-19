@@ -198,7 +198,7 @@ Options:
   --initial-lookback-hours <0-168> Initial history window (default: 24; 0 selects default)
   --page-size <0-100>              Editorial batch size (default: 20; 0 selects default)
 
-New feeds are paused. Returns decimal-string feed_id and cronjob_id.
+New feeds are paused. Returns feed_id (an Automation ID) and cronjob_id.
 Creation does not run the model or resume the producer. After reviewing the
 configuration, use 'alva feed resume --id <feed_id>' to start paid execution.
 Model credits are charged to the authenticated creator, not the platform.
