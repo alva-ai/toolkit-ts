@@ -1617,11 +1617,11 @@ Subcommands:
   watchpoints  List a Thesis's current watchpoints
   set-visibility  Change current access without publishing a version
   archive   Archive the current author version
-  restore   Restore an archived Thesis
   star      Add the Thesis to your bookmarks
   unstar    Remove the Thesis from your bookmarks
   set-signal-enabled  Enable or disable managed Signal research
-  update   Publish a new Update replacing body, title, entities, visibility (all sent in full)
+  update   Publish a new Update replacing body, title, entities, visibility (all sent in full);
+           with --archived false it also unarchives the Thesis
   rewrite  Explicitly request a candidate body rewrite; never called by another command
 
 Body input (create, update, rewrite): choose exactly one:
@@ -1675,29 +1675,32 @@ Other flags:
        Empty when none is stored yet.
   set-visibility --id <id> --visibility public|private
   archive --id <id> --request-id <uuid> [--note <text>]
-  restore --id <id> --request-id <uuid> [--note <text>]
   star|unstar --id <id>
   set-signal-enabled --id <id> --enabled true|false
 
 Maintenance behavior:
-  archive/restore read the current Thesis first, preserve its body, title,
-  entities, directions, and visibility, then publish the state change against
-  the current author version. They require a caller-supplied request UUID.
-  A repeated request in the requested state is an idempotent read; a version
-  conflict or incomplete directions fails without sending a stale update.
-  --note is optional and belongs to the new author version.
+  archive reads the current Thesis first, preserves its body, title,
+  entities, directions, and visibility, then archives it against the current
+  author version. It requires a caller-supplied request UUID. A repeated
+  request in the requested state is an idempotent read; a version conflict or
+  incomplete directions fails without sending a stale update. --note is the
+  archive note shown while the Thesis is archived.
+  An archived Thesis takes no Update except the one that unarchives it:
+  update --archived false publishes this Update and unarchives the Thesis,
+  also when the content is unchanged.
   star/unstar change only the signed-in viewer's bookmark and return the
   authoritative bookmark state and count. They do not change Thesis content or
   Signal subscriptions.
   set-signal-enabled changes managed Signal research without deleting history.
   The command returns enabled, research_paused, archived, and author version
   state; GraphQL errors and noncanonical error codes fail closed.
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false]
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false]
        For text edits, pass current medias unchanged; omission clears media.
 
   Only editing the body? Resubmit the existing entity IDs and directions.
   On an Update, an omitted or unknown direction of a carried ticker keeps its
-  previous direction; none is an exit.
+  previous direction; none is an exit, also for the last long or short. An
+  Update identical to the current one writes nothing: unchanged is true.
   rewrite --body ... [--mode reformat|shorten|enrich]
 
 Rewrite mode defaults only when omitted, and the toolkit always sends the
@@ -2949,6 +2952,22 @@ function thesisTrackReturn(
   return parsed;
 }
 
+// thesisUnarchive reads --archived, which only accepts false: the Update
+// unarchives the Thesis. An archived Thesis takes no other Update; archiving
+// is thesis archive.
+function thesisUnarchive(
+  flags: Record<string, string>,
+  command: string
+): false | undefined {
+  const raw = flags['archived'];
+  if (raw === undefined) return undefined;
+  if (boolFlag(raw) === false) return false;
+  throw new CliUsageError(
+    `--archived only accepts false for ${command} (publish and unarchive); use thesis archive to archive`,
+    'thesis'
+  );
+}
+
 function thesisEntityStances(flags: Record<string, string>):
   | Array<{
       entity_id: string;
@@ -3901,15 +3920,6 @@ export async function executeParsedCommand(
               note: flags.note,
             }
           );
-        case 'restore':
-          return client.theses.setArchived(
-            requireFlag(flags, 'id', 'thesis restore'),
-            {
-              request_id: requireFlag(flags, 'request-id', 'thesis restore'),
-              archived: false,
-              note: flags.note,
-            }
-          );
         case 'star':
           return client.theses.setStarred(
             requireFlag(flags, 'id', 'thesis star'),
@@ -3925,27 +3935,36 @@ export async function executeParsedCommand(
             requireFlag(flags, 'id', 'thesis set-signal-enabled'),
             thesisBooleanFlag(flags.enabled, 'thesis set-signal-enabled')
           );
-        case 'update':
-          return client.theses.update(
-            requireFlag(flags, 'id', 'thesis update'),
-            {
-              request_id: requireFlag(flags, 'request-id', 'thesis update'),
-              expected_author_version_id: requireFlag(
-                flags,
-                'expected-author-version-id',
-                'thesis update'
-              ),
-              body: await thesisBodyFromFlags(flags, 'thesis update', deps),
-              title: flags.title ?? '',
-              entity_ids: thesisEntityIDs(flags),
-              entity_stances: thesisEntityStances(flags),
-              medias: thesisMedias(flags),
-              visibility: thesisVisibility(
-                requireFlag(flags, 'visibility', 'thesis update')
-              ),
-              track_return: thesisTrackReturn(flags, 'thesis update'),
-            }
-          );
+        case 'update': {
+          const id = requireFlag(flags, 'id', 'thesis update');
+          const params = {
+            request_id: requireFlag(flags, 'request-id', 'thesis update'),
+            expected_author_version_id: requireFlag(
+              flags,
+              'expected-author-version-id',
+              'thesis update'
+            ),
+            body: await thesisBodyFromFlags(flags, 'thesis update', deps),
+            title: flags.title ?? '',
+            entity_ids: thesisEntityIDs(flags),
+            entity_stances: thesisEntityStances(flags),
+            medias: thesisMedias(flags),
+            visibility: thesisVisibility(
+              requireFlag(flags, 'visibility', 'thesis update')
+            ),
+            track_return: thesisTrackReturn(flags, 'thesis update'),
+            archived: thesisUnarchive(flags, 'thesis update'),
+          };
+          const response = await client.theses.update(id, params);
+          // An Update identical to the current one writes nothing and returns
+          // that Update; say so rather than look saved (alva-backend#3809).
+          return {
+            ...response,
+            unchanged:
+              response.thesis.author_version_id ===
+              params.expected_author_version_id,
+          };
+        }
         case 'rewrite':
           return client.theses.rewrite({
             body: await thesisBodyFromFlags(flags, 'thesis rewrite', deps),
