@@ -79,6 +79,29 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
     ID. Without an API key (keyless, or a browser Playbook's PBSV token),
     playbook and Skillhub discovery still read the `/api/v1` catalog and
     return 0.x IDs.
+  - `fs`: API-key clients call `/api/v2/fs`; clients holding a `pbsvToken` or
+    `viewer_token`, or no credential (the browser bundle and Playbook pages),
+    keep `/api/v1/fs`. `stat`/`readdir` return `mod_time` in Unix seconds and
+    `meta`; `readlink` returns `{ target_path }`.
+  - `deploy`: cronjob, run and dispatch IDs are strings; `trigger` returns the
+    dispatch ID as `workflow_run_id`, which `getRunStatus` takes; a paused
+    cronjob's trigger is 409 `CONFLICT`; `listRuns` drops
+    `next_cursor_sort_at` (the cursor is one opaque token).
+  - `automation`, `schedules`: Automation, Cronjob and Channel IDs are
+    strings; `delivery.update` still takes `"0"` for the Agent channel.
+  - `follows`: `entityId` is an Asset ID and profile `id` a Profile ID;
+    `followProfile`/`unfollowProfile` take the ID alone. Removing tickers is no
+    longer one atomic batch, and `FAILED_PRECONDITION` (ambiguous symbol) is
+    gone: a symbol resolves to its primary listing.
+  - `subscriptions`, `alerts`: Automation, Playbook and Channel IDs are
+    strings; `follow.id`/`user_id`, per-row `cursor` and `total_count` are
+    gone; `unsubscribeBatch` reports every ID as `UNSUBSCRIBED`.
+    `subscribeFeed`/`unsubscribeFeed` (by owner and name) still call
+    `/api/v1`.
+  - `serviceAccount`: IDs are Account IDs (`account_0…`); `grant` returns the
+    grant, and `revoke` takes its `grant_id` (CLI `--grant-id`).
+  - `user`, `secrets`, `feedback`: `id`, `feedback_id` and the new secret
+    `id` are strings; `secrets.get` (the value) still calls `/api/v1`.
 
 ## CLI Quick Start
 
@@ -495,7 +518,7 @@ alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|
 alva markets watchlist <add|remove> --tickers <A,B:crypto> [--kind <stock|etf|crypto>]
 alva markets watchlist list [--limit <1-100>] [--cursor <endCursor>]
 alva people search --query <text> [--kind <user|person>] [--limit <1-50>]
-alva people follows <follow|unfollow> --kind <user|person> --id <id>
+alva people follows <follow|unfollow> --id <profile-id>
 alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <endCursor>]
 ```
 
@@ -544,22 +567,22 @@ Alva App shows. The user comes from the API key; there is no identity override.
 alva markets watchlist add --tickers NVDA,LMT,BTC:crypto
 alva markets watchlist list --limit 50
 alva people search --query "cathie wood" --kind person
-alva people follows follow --kind person --id 42
+alva people follows follow --id profile_0abc
 alva people follows list
 ```
 
 The SDK equivalents live on `client.follows`: `addToWatchlist()`,
 `removeFromWatchlist()`, `watchlist()`, `searchProfiles()`, `followProfile()`,
 `unfollowProfile()` and `profiles()`. Tickers match exact symbols (1-50 per
-call) and are written in one atomic batch. A `:stock`, `:etf` or `:crypto`
-suffix picks the kind of one symbol (`BTC:crypto`); `--kind` is the default
-for unsuffixed symbols, so one call can mix kinds. Results separate changed,
-`unchanged` and `unresolved` tickers; `FAILED_PRECONDITION` means several
-entities share the symbol, so retry it with a kind suffix. Nothing is written
+call); adding writes them in one atomic batch, removing one at a time. A
+symbol resolves to its primary listing; a `:stock`, `:etf` or `:crypto`
+suffix picks the kind of one symbol (`BTC:crypto`), and `--kind` is the
+default for unsuffixed symbols, so one call can mix kinds. Results separate
+changed, `unchanged` and `unresolved` (`NOT_FOUND`) tickers. Nothing is written
 when no ticker resolves. Removal is recorded even for tickers not in the
 watchlist, so holdings sync does not add them back; adding re-adds a ticker
 the user removed earlier. Profiles are `USER` (Alva user) or `PERSON`
-(curated person), addressed by `kind` + `id` from search or list results. The
+(curated person), addressed by the Profile ID from search or list results. The
 terminal CLI and the embedded agent use the same `alva markets watchlist ...`
 and `alva people ...` paths; the embedded agent needs a Toolkit Dispatch
 artifact that includes these commands.

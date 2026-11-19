@@ -50,6 +50,30 @@ Releases before 1.0.0 are listed under the repository's tags.
   `getByIds`, `listByOwner`, `get`, Skillhub) still reads the `/api/v1`
   catalog, whose IDs are 0.x IDs. Leaving `paid` while subscriptions renew is
   `CONFLICT`.
+- `fs`, `screenshot`: API-key clients call `/api/v2`; a client holding a
+  `pbsvToken` or `viewer_token`, or none, keeps `/api/v1/fs`. `FsStat` and
+  `FsEntry` type `mod_time` as Unix seconds (as the wire always sent it) and
+  carry `meta`; `readlink` is typed `{ target_path }`, as the wire always was.
+- `deploy`: `Cronjob`, `CronjobRun` and their params take string IDs;
+  `workflow_run_id` is the dispatch ID; `getRunStatus` checks that the
+  dispatch belongs to `cronjob_id`; a paused trigger is 409 `CONFLICT`;
+  `CronjobRunsListResponse.next_cursor` is an opaque string and
+  `next_cursor_sort_at` is gone; `getRunLogs` also returns `error`.
+- `automation` (`inspect`, `update`, `delivery`) and `schedules`: string
+  Automation, Cronjob and Channel IDs; `AgentScheduleTarget.channelId` no
+  longer takes a number; schedule response errors are `INVALID_RESPONSE`.
+- `follows`: Asset and Profile IDs; `ProfileRefParams.kind` is optional and
+  deprecated; `removeFromWatchlist` removes one Asset at a time; ambiguous
+  symbols resolve to their primary listing instead of `FAILED_PRECONDITION`.
+- `subscriptions`: string IDs; `PlaybookFollow` loses `id` and `user_id`;
+  `PlaybookFollowItem.cursor`, `PushSubscription.cursor` and
+  `PushSubscriptionListResponse.total_count` are gone; alerts carry their
+  subscription `id`; `unsubscribeBatch` no longer reports `INVALID_ID`.
+- `serviceAccount`: Account IDs; `grant` returns `ServiceAccountGrant`;
+  `revoke` takes `{ id, grant_id }` (CLI `service-account revoke --grant-id`).
+- `user.me().id`, `feedback.submit().feedback_id` and secret IDs are strings.
+- CLI: `people follows follow|unfollow` no longer needs `--kind`;
+  `--run-as-service-account` takes an Account ID and refuses `0`.
 
 ### Added
 
