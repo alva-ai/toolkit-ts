@@ -91,12 +91,10 @@ for (const [surface, dispatch] of [
 
     it('leaves optional limits to the backend', async () => {
       const client = new AlvaClient({ apiKey: 'key' });
-      const create = vi
-        .spyOn(client.companyNews, 'create')
-        .mockResolvedValue({
-          feed_id: 'automation_0a',
-          cronjob_id: 'cronjob_0a',
-        });
+      const create = vi.spyOn(client.companyNews, 'create').mockResolvedValue({
+        feed_id: 'automation_0a',
+        cronjob_id: 'cronjob_0a',
+      });
       await dispatch(client, [
         'company-news',
         'create',
