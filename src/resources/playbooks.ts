@@ -173,12 +173,12 @@ export class PlaybooksResource {
    * visible" (the subscriptions list's `target_status` distinguishes ghosts).
    * Max 100 per call.
    *
-   * Auth is optional (like `trending`): with a credential, private/paid
-   * visibility is evaluated for the caller; without one, only public
-   * playbooks resolve, from the keyless /api/v1 catalog (0.x IDs).
+   * Auth is optional (like `trending`): with an API key, /api/v2 evaluates
+   * private/paid visibility for the caller; without one (see `sendsApiKey`)
+   * the /api/v1 catalog answers as in 0.x, with 0.x IDs.
    */
   async getByIds(ids: AlvaId[]): Promise<DiscoveryByIDsResponse> {
-    if (!hasCredential(this.client)) {
+    if (!sendsApiKey(this.client)) {
       return (await this.client._request('GET', '/api/v1/playbooks', {
         query: { ids: ids.join(',') },
       })) as DiscoveryByIDsResponse;
@@ -198,7 +198,7 @@ export class PlaybooksResource {
    * playbooks are listed.
    */
   async listByOwner(params: ListByOwnerParams): Promise<ListByOwnerResponse> {
-    if (!hasCredential(this.client)) {
+    if (!sendsApiKey(this.client)) {
       const query: Record<string, string> = { owner: params.owner };
       if (params.limit !== undefined && params.limit > 0) {
         query.limit = String(params.limit);
@@ -274,7 +274,7 @@ export class PlaybooksResource {
     ref?: string;
   }): Promise<PlaybookDiscoveryItem | null> {
     if (params.id) {
-      if (!hasCredential(this.client)) {
+      if (!sendsApiKey(this.client)) {
         const resp = await this.getByIds([params.id]);
         return resp.items[0] ?? null;
       }
@@ -296,7 +296,7 @@ export class PlaybooksResource {
       }
       const owner = params.ref.slice(0, slash);
       const name = params.ref.slice(slash + 1);
-      if (hasCredential(this.client)) {
+      if (sendsApiKey(this.client)) {
         return orNull(playbookBySlug(this.client, owner, name));
       }
       let cursor: string | undefined;
@@ -314,8 +314,8 @@ export class PlaybooksResource {
   }
 
   /**
-   * List trending / searchable playbooks. Auth is optional: with a credential
-   * this reads /api/v2, otherwise the keyless /api/v1 surface (0.x IDs).
+   * List trending / searchable playbooks. Auth is optional: with an API key
+   * this reads /api/v2, otherwise the /api/v1 surface (0.x IDs).
    *
    * The SDK projects the catalog into a smaller, agent-friendly shape.
    */
@@ -323,7 +323,7 @@ export class PlaybooksResource {
     params: TrendingPlaybooksParams = {}
   ): Promise<TrendingPlaybooksResponse> {
     const webOrigin = webOriginFromApiBase(this.client.baseUrl);
-    if (!hasCredential(this.client)) {
+    if (!sendsApiKey(this.client)) {
       const query: Record<string, string | number> = {};
       if (params.cursor) query.cursor = params.cursor;
       if (params.current) query.current = params.current;
@@ -459,11 +459,13 @@ const TRENDING_ORDER: Record<TrendingPlaybooksSort, string> = {
 };
 
 /**
- * Whether the client carries a credential. Keyless discovery reads stay on
- * /api/v1, where they need none; every /api/v2 read needs one.
+ * Whether requests carry the client's API key, the credential /api/v2 reads
+ * need. Discovery without one (no credential, or a browser Playbook's PBSV
+ * or viewer token, which take precedence and /api/v2 does not accept) stays
+ * on the public /api/v1 catalog.
  */
-export function hasCredential(client: AlvaClient): boolean {
-  return Boolean(client.apiKey || client.pbsvToken || client.viewer_token);
+export function sendsApiKey(client: AlvaClient): boolean {
+  return Boolean(client.apiKey && !client.pbsvToken && !client.viewer_token);
 }
 
 const callerUsernames = new WeakMap<AlvaClient, Promise<string>>();

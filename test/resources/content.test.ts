@@ -15,6 +15,15 @@ function keyless() {
   return new AlvaClient({ baseUrl: 'https://api.test' });
 }
 
+// A browser Playbook's client: its PBSV token is sent instead of the key.
+function pbsv() {
+  return new AlvaClient({
+    apiKey: 'key',
+    pbsvToken: 'pbsv',
+    baseUrl: 'https://api.test',
+  });
+}
+
 function wirePlaybook(overrides: Record<string, unknown> = {}) {
   return {
     id: PLAYBOOK,
@@ -274,6 +283,11 @@ describe('PlaybooksResource', () => {
       'https://api.test/api/v1/playbooks?owner=alice',
       'https://api.test/api/v1/playbooks?owner=alice&limit=100',
     ]);
+
+    await pbsv().playbooks.trending();
+    expect(String(fetcher.mock.calls[4][0])).toBe(
+      'https://api.test/api/v1/playbooks/trending'
+    );
   });
 });
 
