@@ -111,6 +111,7 @@ export type {
   FsWriteParams,
   FsRawWriteParams,
   FsWriteResponse,
+  FsMeta,
   FsStat,
   FsReaddirParams,
   FsEntry,

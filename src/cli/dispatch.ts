@@ -13,6 +13,7 @@ import {
   type ListThesesParams,
 } from '../resources/thesisReads.js';
 import { AlvaClient } from '../client.js';
+import { encodeBase64 } from '../base64.js';
 import {
   validateForYouListParams,
   validateForYouThesesParams,
@@ -3054,25 +3055,6 @@ function sniffImageMime(bytes: Uint8Array): string {
     return 'image/webp';
   }
   return 'image/png';
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  const alphabet =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let encoded = '';
-  for (let index = 0; index < bytes.length; index += 3) {
-    const first = bytes[index]!;
-    const second = bytes[index + 1];
-    const third = bytes[index + 2];
-    encoded += alphabet[first >> 2];
-    encoded += alphabet[((first & 0x03) << 4) | ((second ?? 0) >> 4)];
-    encoded +=
-      second === undefined
-        ? '='
-        : alphabet[((second & 0x0f) << 2) | ((third ?? 0) >> 6)];
-    encoded += third === undefined ? '=' : alphabet[third & 0x3f];
-  }
-  return encoded;
 }
 
 function writeLocalFileBytes(

@@ -148,12 +148,21 @@ export interface FsWriteResponse {
   bytes_written: number;
 }
 
+/** The meta file ALFS attaches to a virtual path (a feed directory). */
+export interface FsMeta {
+  name: string;
+  type: string;
+  content: Record<string, string>;
+}
+
 export interface FsStat {
   name: string;
   size: number;
   mode: number;
-  mod_time: string;
+  /** Unix seconds; 0 when unknown. */
+  mod_time: number;
   is_dir: boolean;
+  meta: FsMeta | null;
 }
 
 export interface FsReaddirParams {
@@ -165,8 +174,10 @@ export interface FsEntry {
   name: string;
   size: number;
   is_dir: boolean;
-  mod_time?: string;
+  /** Unix seconds; 0 when unknown. */
+  mod_time?: number;
   mode?: number;
+  meta?: FsMeta | null;
 }
 
 export interface FsReaddirResponse {
