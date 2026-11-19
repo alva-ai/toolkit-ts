@@ -480,7 +480,9 @@ export class ThesesResource {
 
   /**
    * Publish an Update. `visibility` is applied first when it differs from the
-   * current one; `archived: false` unarchives an archived Thesis (an Update
+   * current one, unless `expected_author_version_id` is stale or the Thesis
+   * is archived without `archived: false` (`CONFLICT`, nothing written);
+   * `archived: false` unarchives an archived Thesis (an Update
    * of its current content) before this Update. `request_id` is the
    * Idempotency-Key of the Update.
    */
@@ -493,6 +495,16 @@ export class ThesesResource {
     const thesisID = requireID(id, 'id');
     const current = await this.read(thesisID);
     if (current.visibility.toLowerCase() !== visibility) {
+      // The PATCH checks no version: refuse an Update the server would refuse
+      // before its visibility changes.
+      if (body.expectedVersionId !== current.currentVersion.id)
+        throw conflict(
+          'expected_author_version_id is not the current version; read the Thesis again'
+        );
+      if (current.archived && archived !== false)
+        throw conflict(
+          'an archived Thesis takes no Update; send archived: false to unarchive it'
+        );
       await this.client._v2Request('PATCH', v2Path`/theses/${thesisID}`, {
         body: { visibility: visibility.toUpperCase() },
       });
@@ -1233,6 +1245,10 @@ function invalidArgument(message: string): AlvaError {
 
 function invalidResponse(message: string): AlvaError {
   return new AlvaError('INVALID_RESPONSE', message, 502);
+}
+
+function conflict(message: string): AlvaError {
+  return new AlvaError('CONFLICT', message, 409);
 }
 
 function validMedia(item: unknown): item is ThesisMedia {

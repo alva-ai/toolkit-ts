@@ -477,6 +477,61 @@ describe('ThesesResource', () => {
     });
   });
 
+  it.each([
+    [
+      'a stale expected version',
+      wireThesis(),
+      { expected_author_version_id: 'thesis_version_0old' },
+    ],
+    ['an archived Thesis', wireThesis({ archived: true }), {}],
+  ])(
+    'refuses %s before changing the visibility',
+    async (_, thesis, override) => {
+      const { calls } = v2Fetch({ [`GET /theses/${THESIS}`]: thesis });
+      await expect(
+        client().theses.update(THESIS, {
+          request_id: REQUEST_ID,
+          expected_author_version_id: VERSION,
+          body: 'draft',
+          visibility: 'private',
+          ...override,
+        })
+      ).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      expect(calls.map((c) => c.method)).toEqual(['GET']);
+    }
+  );
+
+  it('changes the visibility of an archived Thesis it unarchives', async () => {
+    const { calls } = v2Fetch({
+      [`GET /theses/${THESIS}`]: wireThesis({ archived: true }),
+      [`PATCH /theses/${THESIS}`]: wireThesis({
+        archived: true,
+        visibility: 'PRIVATE',
+      }),
+      [`POST /theses/${THESIS}/unarchive`]: wireThesis(
+        { visibility: 'PRIVATE' },
+        { id: 'thesis_version_0un' }
+      ),
+      [`POST /theses/${THESIS}/updates`]: wireThesis(
+        { visibility: 'PRIVATE' },
+        { id: NEXT }
+      ),
+    });
+    await client().theses.update(THESIS, {
+      request_id: REQUEST_ID,
+      expected_author_version_id: VERSION,
+      body: 'back again',
+      visibility: 'private',
+      archived: false,
+    });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      `GET /theses/${THESIS}`,
+      `PATCH /theses/${THESIS}`,
+      `POST /theses/${THESIS}/unarchive`,
+      `POST /theses/${THESIS}/updates`,
+    ]);
+  });
+
   it('unarchives an archived Thesis, then publishes the Update from the new version', async () => {
     const unarchived = wireThesis({}, { id: 'thesis_version_0un' });
     const { calls } = v2Fetch({

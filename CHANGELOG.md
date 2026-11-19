@@ -44,13 +44,14 @@ below. Migration notes: [README](README.md#migrating-from-0x-to-10).
 - Theses (`client.theses`, `alva thesis`): Thesis, version, asset, Signal and
   profile IDs are platform IDs. `author_ref` is the author's Profile ID;
   `version_archived` is no longer returned. `update` sets a visibility that
-  differs from the current one before the Update; on an archived Thesis,
-  `archived: false` first unarchives it (an Update of its current content),
-  then publishes the Update; `archived: true` is refused (use
-  `setArchived`). Signal entries carry the page's `next_cursor` on the last
-  entry only, `feed_entry_id` is the Signal ID, and evidence excerpts never
-  report omitted text. Asset candidates may have kind `COMMODITY` or
-  `UNKNOWN`.
+  differs from the current one before the Update; it first refuses
+  (`CONFLICT`) a stale `expected_author_version_id`, and an archived Thesis
+  without `archived: false`. On an archived Thesis, `archived: false` first
+  unarchives it (an Update of its current content), then publishes the
+  Update; `archived: true` is refused (use `setArchived`). Signal entries
+  carry the page's `next_cursor` on the last entry only, `feed_entry_id` is
+  the Signal ID, and evidence excerpts never report omitted text. Asset
+  candidates may have kind `COMMODITY` or `UNKNOWN`.
 - Thesis reads (`list`, `related`, `thesisReturn`, `watchpoints`):
   `publication.playbookId` is the Playbook ID and differs from `thesisId`;
   `node.playbookId` and `thesisId` are the Thesis ID. Edges carry the page's
