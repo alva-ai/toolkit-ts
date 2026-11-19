@@ -860,11 +860,11 @@ Notes:
 Examples:
   alva feed list
   alva feed list --status all --limit 20
-  alva feed stop --id 42
-  alva feed resume --id 42
-  alva feed delete --id 42
-  alva feed set-visibility --id 42 --visibility public
-  alva feed set-visibility --id 42 --visibility private`,
+  alva feed stop --id automation_0abc
+  alva feed resume --id automation_0abc
+  alva feed delete --id automation_0abc
+  alva feed set-visibility --id automation_0abc --visibility public
+  alva feed set-visibility --id automation_0abc --visibility private`,
 
   playbooks: `Usage: alva playbooks <subcommand> [options]
 
@@ -922,7 +922,7 @@ JSON response fields:
   playbooks[].description  Short summary
   playbooks[].tags         Discovery tags
   playbooks[].follow_count Social proof signal
-  playbooks[].cursor       Cursor for pagination
+  playbooks[].cursor       Pagination cursor (with an API key, last row only)
   has_next                 Whether another page exists
   playbook_path            "<owner>/<name>" echoed by set-visibility
 
@@ -932,7 +932,7 @@ Notes:
 
 Examples:
   alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
-  alva playbooks get --ids 8009,8010
+  alva playbooks get --ids playbook_0abc,playbook_0abd
   alva playbooks get --ref alice/btc-dashboard
   alva playbooks list --owner alice --all
   alva playbooks mine --filter draft
