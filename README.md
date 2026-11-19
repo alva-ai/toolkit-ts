@@ -110,6 +110,10 @@ still on 0.x keep working against `/api/v1`. See [CHANGELOG.md](CHANGELOG.md).
   - `credits.items`: entries have Alva IDs and `title` instead of `extras`.
   - `functions`: Playbook, function and service-account IDs are Alva IDs;
     `--clear-run-as` is not available; allowances drop `consumer_uid`.
+  - `portfolio`, `trading`: account, subscription and Playbook IDs are Alva
+    IDs; `trading.orders` filters by `origin` and `equityHistory` by `range`;
+    `subscribe` takes the feed's Automation ID. `trading.execute` stays on
+    `/api/v1` and takes trex's account ID from `alva broker accounts`.
 
 ## CLI Quick Start
 

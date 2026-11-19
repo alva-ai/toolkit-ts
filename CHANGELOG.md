@@ -107,6 +107,33 @@ Releases before 1.0.0 are listed under the repository's tags.
   (`"0"`, CLI `--clear-run-as`): `/api/v2` has no way to do so. `delete` and
   `invoke` look the function up by name first (`NOT_FOUND` when there is
   none). Allowances drop `consumer_uid` (always the caller).
+- `portfolio` and `trading` read `/api/v2/me/broker-accounts` and
+  `/api/v2/broker-accounts/{accountId}/…`. Account, subscription, order
+  subscription and Playbook IDs are Alva IDs (were `trex:7`/`snaptrade:10`
+  or decimal strings), and every `accountId` parameter takes them.
+  `trading.execute` and `subscribe({executeLatest: true})` stay on `/api/v1`
+  (no order placement on `/api/v2` yet) and take trex's numeric account ID,
+  which `alva broker accounts` lists.
+- `portfolio.accounts`: `institution` is the broker's name and `exchange` its
+  code; a provider that cannot be read fails the call (`UNAVAILABLE`) instead
+  of returning a partial list. `portfolio.activities`: records have no `id`,
+  and `kind` is the business kind (`TRADE`, `DIVIDEND`, `INTEREST`, `FEE`,
+  `TRANSFER`, `OTHER`; was `ORDER`/`BROKER_ACTIVITY`).
+- `trading.orders`: `origin` (`EXTERNAL`, `ALVA_DIRECT`, `ALVA_INSTRUCTION`,
+  `UNKNOWN`; CLI `--origin`) replaces the `source` filter, which is refused;
+  `source` in the output is the origin, and dry runs are no longer listed.
+- `trading.equityHistory`: `range` (CLI `--range`) selects the window; without
+  it the smallest window holding `sinceMs` is read and points outside
+  `sinceMs`/`untilMs` are dropped. `timeframe` other than `1D` is refused.
+- `trading.subscribe` takes `signalSourceId` (the feed's Automation ID; CLI
+  `--signal-source-id`). Without it, `sourceUsername`/`sourceFeed` must name
+  one of the caller's own feeds.
+- `trading.updateRiskRules` sends a merge patch; a credential that may only
+  tighten limits gets `INSUFFICIENT_PERMISSION` with `requiredPermission:
+"trading_limits:write"`.
+- The broker CLI (`alva broker`, `alva trading broker`) posts
+  `/api/v2/broker/invocations`, which needs `trading:write`; envelopes and
+  exit codes are unchanged.
 
 ### Added
 

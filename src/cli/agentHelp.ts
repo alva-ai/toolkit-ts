@@ -399,6 +399,8 @@ Subcommands:
   'trading signals': `Usage: alva trading signals <subcommand>
 
 Legacy Signal/copy-trading surface. It is separate from Broker.
+Subscriptions take the account ID 'portfolio accounts' lists; execute takes the
+TREX account ID 'trading accounts' lists.
 
 Subcommands:
   subscriptions list|subscribe|unsubscribe

@@ -5918,19 +5918,26 @@ describe('CLI dispatch — Slim Agent profile', () => {
     );
     await dispatchEmbedded(
       client,
-      ['portfolio', 'summary', '--account-id', '42'],
+      ['portfolio', 'summary', '--account-id', 'broker_account_0a'],
       undefined,
       agentDeps
     );
     await dispatchEmbedded(
       client,
-      ['portfolio', 'activities', '--account-id', '42', '--limit', '10'],
+      [
+        'portfolio',
+        'activities',
+        '--account-id',
+        'broker_account_0a',
+        '--limit',
+        '10',
+      ],
       undefined,
       agentDeps
     );
     await dispatchEmbedded(
       client,
-      ['portfolio', 'orders', '--account-id', '42'],
+      ['portfolio', 'orders', '--account-id', 'broker_account_0a'],
       undefined,
       agentDeps
     );
@@ -5940,7 +5947,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'portfolio',
         'equity-history',
         '--account-id',
-        '42',
+        'broker_account_0a',
         '--timeframe',
         '1D',
       ],
@@ -5949,20 +5956,21 @@ describe('CLI dispatch — Slim Agent profile', () => {
     );
 
     expect(client.portfolio.accounts).toHaveBeenCalled();
-    expect(client.portfolio.summary).toHaveBeenCalledWith('42');
+    expect(client.portfolio.summary).toHaveBeenCalledWith('broker_account_0a');
     expect(client.portfolio.activities).toHaveBeenCalledWith({
-      accountId: '42',
+      accountId: 'broker_account_0a',
       limit: 10,
       pageToken: undefined,
     });
     expect(client.trading.orders).toHaveBeenCalledWith({
-      accountId: '42',
-      source: undefined,
+      accountId: 'broker_account_0a',
+      origin: undefined,
       since: undefined,
       limit: undefined,
     });
     expect(client.trading.equityHistory).toHaveBeenCalledWith({
-      accountId: '42',
+      accountId: 'broker_account_0a',
+      range: undefined,
       timeframe: '1D',
       sinceMs: undefined,
       untilMs: undefined,
@@ -6007,12 +6015,21 @@ describe('CLI dispatch — Slim Agent profile', () => {
     client.trading.subscriptions = vi
       .fn()
       .mockResolvedValue({ subscriptions: [] });
-    client.trading.subscribe = vi.fn().mockResolvedValue({ id: 'sub-1' });
+    client.trading.subscribe = vi
+      .fn()
+      .mockResolvedValue({ id: 'trade_subscription_0a' });
     client.trading.unsubscribe = vi.fn().mockResolvedValue({ ok: true });
 
     await dispatchEmbedded(
       client,
-      ['trading', 'signals', 'subscriptions', 'list', '--account-id', '42'],
+      [
+        'trading',
+        'signals',
+        'subscriptions',
+        'list',
+        '--account-id',
+        'broker_account_0a',
+      ],
       undefined,
       agentDeps
     );
@@ -6024,13 +6041,13 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'subscriptions',
         'subscribe',
         '--account-id',
-        '42',
+        'broker_account_0a',
         '--source-username',
         'alice',
         '--source-feed',
         'targets',
         '--playbook-id',
-        '7',
+        'playbook_0p',
         '--playbook-version',
         '1.0.0',
       ],
@@ -6045,17 +6062,24 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'subscriptions',
         'unsubscribe',
         '--subscription-id',
-        'sub-1',
+        'trade_subscription_0a',
       ],
       undefined,
       agentDeps
     );
 
-    expect(client.trading.subscriptions).toHaveBeenCalledWith('42');
-    expect(client.trading.subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ accountId: '42', executeLatest: undefined })
+    expect(client.trading.subscriptions).toHaveBeenCalledWith(
+      'broker_account_0a'
     );
-    expect(client.trading.unsubscribe).toHaveBeenCalledWith('sub-1');
+    expect(client.trading.subscribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'broker_account_0a',
+        executeLatest: undefined,
+      })
+    );
+    expect(client.trading.unsubscribe).toHaveBeenCalledWith(
+      'trade_subscription_0a'
+    );
   });
 });
 
@@ -6065,10 +6089,12 @@ describe('CLI dispatch — broker', () => {
     randomUUID: () => '123e4567-e89b-42d3-a456-426614174000',
   };
 
-  function brokerClient(resp: unknown) {
+  function brokerClient(resp: { envelope: unknown; exit: number }) {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (client as any)._request = vi.fn().mockResolvedValue(resp);
+    (client as any)._v2Request = vi
+      .fn()
+      .mockResolvedValue({ envelope: resp.envelope, exitCode: resp.exit });
     return client;
   }
 
@@ -6130,9 +6156,9 @@ describe('CLI dispatch — broker', () => {
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).toHaveBeenCalledWith(
+    expect((client as any)._v2Request).toHaveBeenCalledWith(
       'POST',
-      '/api/v1/broker/invoke',
+      '/broker/invocations',
       expect.objectContaining({
         body: expect.objectContaining({ argv: ['quote', '--help'] }),
       })
@@ -6154,7 +6180,7 @@ describe('CLI dispatch — broker', () => {
     expect(result._help).toBe(true);
     expect(result.text).toContain('trading broker');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).not.toHaveBeenCalled();
+    expect((client as any)._v2Request).not.toHaveBeenCalled();
   });
 
   it('keeps shared prerequisites out of the Broker subtree', async () => {
@@ -6165,7 +6191,7 @@ describe('CLI dispatch — broker', () => {
       })
     ).rejects.toThrow(/use 'alva trading accounts'/);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).not.toHaveBeenCalled();
+    expect((client as any)._v2Request).not.toHaveBeenCalled();
   });
 
   it.each(['venues', 'help'])(
@@ -6182,7 +6208,7 @@ describe('CLI dispatch — broker', () => {
         )
       ).rejects.toThrow(/not part of the Slim Broker tree/);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((client as any)._request).not.toHaveBeenCalled();
+      expect((client as any)._v2Request).not.toHaveBeenCalled();
     }
   );
 
@@ -6197,11 +6223,11 @@ describe('CLI dispatch — broker', () => {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const request = (client as any)._request;
+    const request = (client as any)._v2Request;
     expect(request).toHaveBeenNthCalledWith(
       1,
       'POST',
-      '/api/v1/broker/invoke',
+      '/broker/invocations',
       expect.objectContaining({
         body: expect.objectContaining({ argv: ['accounts'] }),
       })
@@ -6209,14 +6235,14 @@ describe('CLI dispatch — broker', () => {
     expect(request).toHaveBeenNthCalledWith(
       2,
       'POST',
-      '/api/v1/broker/invoke',
+      '/broker/invocations',
       expect.objectContaining({
         body: expect.objectContaining({ argv: ['risk-rules'] }),
       })
     );
   });
 
-  it('passes argv through verbatim to /api/v1/broker/invoke', async () => {
+  it('passes argv through verbatim to /api/v2/broker/invocations', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
     const env = await dispatchEmbedded(
       client,
@@ -6233,9 +6259,9 @@ describe('CLI dispatch — broker', () => {
       brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).toHaveBeenCalledWith(
+    expect((client as any)._v2Request).toHaveBeenCalledWith(
       'POST',
-      '/api/v1/broker/invoke',
+      '/broker/invocations',
       expect.objectContaining({
         body: expect.objectContaining({
           argv: ['quote', '--venue', 'binance', '--symbol', 'BTC/USDT'],
@@ -6269,7 +6295,7 @@ describe('CLI dispatch — broker', () => {
       brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const call = (client as any)._request.mock.calls[0];
+    const call = (client as any)._v2Request.mock.calls[0];
     const argv: string[] = call[2].body.argv;
     const idx = argv.indexOf('--intent-id');
     expect(idx).toBeGreaterThan(-1);
@@ -6301,7 +6327,8 @@ describe('CLI dispatch — broker', () => {
       { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    const argv: string[] = (client as any)._v2Request.mock.calls[0][2].body
+      .argv;
     expect(argv).not.toContain('--intent-id');
 
     const client2 = brokerClient({ envelope: {}, exit: 0 });
@@ -6329,7 +6356,7 @@ describe('CLI dispatch — broker', () => {
       { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv2: string[] = (client2 as any)._request.mock.calls[0][2].body
+    const argv2: string[] = (client2 as any)._v2Request.mock.calls[0][2].body
       .argv;
     expect(argv2.filter((a) => a === '--intent-id')).toHaveLength(1);
     expect(argv2[argv2.indexOf('--intent-id') + 1]).toBe('mine');
@@ -6360,7 +6387,8 @@ describe('CLI dispatch — broker', () => {
       { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    const argv: string[] = (client as any)._v2Request.mock.calls[0][2].body
+      .argv;
     expect(argv.filter((a) => a.startsWith('--intent-id'))).toHaveLength(1);
     expect(argv).toContain('--intent-id=mine');
   });
@@ -6374,7 +6402,7 @@ describe('CLI dispatch — broker', () => {
     await dispatchBrokerStdin(client, stdin);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = (client as any)._request.mock.calls[0][2].body;
+    const body = (client as any)._v2Request.mock.calls[0][2].body;
     expect(body.argv).toEqual(['order', 'place', '--stdin']);
     expect(body.stdin).toBe(stdin);
   });
@@ -6387,7 +6415,7 @@ describe('CLI dispatch — broker', () => {
     await dispatchBrokerStdin(client, stdin);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const calls = (client as any)._request.mock.calls;
+    const calls = (client as any)._v2Request.mock.calls;
     expect(calls).toHaveLength(2);
     for (const call of calls) {
       expect(call[2].body.argv).toEqual(['order', 'place', '--stdin']);
@@ -6401,7 +6429,7 @@ describe('CLI dispatch — broker', () => {
     await dispatchBrokerStdin(client, stdin);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = (client as any)._request.mock.calls[0][2].body;
+    const body = (client as any)._v2Request.mock.calls[0][2].body;
     const idx = body.argv.indexOf('--intent-id');
     expect(idx).toBeGreaterThan(-1);
     expect(body.argv[idx + 1]).toMatch(/^[0-9a-f-]{36}$/);
@@ -6415,7 +6443,7 @@ describe('CLI dispatch — broker', () => {
       await dispatchBrokerStdin(client, stdin);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const body = (client as any)._request.mock.calls[0][2].body;
+      const body = (client as any)._v2Request.mock.calls[0][2].body;
       expect(body.argv).toEqual(['order', 'place', '--stdin']);
       expect(body.stdin).toBe(stdin);
     }
@@ -6443,7 +6471,8 @@ describe('CLI dispatch — broker', () => {
     );
     expect(env).toEqual({ status: 'ok' });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    const argv: string[] = (client as any)._v2Request.mock.calls[0][2].body
+      .argv;
     expect(argv).toContain('--open');
   });
 
@@ -6466,7 +6495,7 @@ describe('CLI dispatch — broker', () => {
   it('synthesizes a network error envelope on transport failure', async () => {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (client as any)._request = vi
+    (client as any)._v2Request = vi
       .fn()
       .mockRejectedValue(new Error('econnrefused'));
     const env = (await dispatchEmbedded(

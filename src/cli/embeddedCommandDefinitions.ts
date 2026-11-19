@@ -571,10 +571,10 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['account-id', 'limit', 'page-token'],
     }),
     route('portfolio orders', 'trading orders', {
-      values: ['account-id', 'source', 'since', 'limit'],
+      values: ['account-id', 'origin', 'source', 'since', 'limit'],
     }),
     route('portfolio equity-history', 'trading equity-history', {
-      values: ['account-id', 'timeframe', 'since-ms', 'until-ms'],
+      values: ['account-id', 'range', 'timeframe', 'since-ms', 'until-ms'],
     }),
     route('trading accounts', 'broker accounts'),
     route('trading risk-rules', 'broker risk-rules'),
@@ -586,6 +586,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'account-id',
         'source-username',
         'source-feed',
+        'signal-source-id',
         'playbook-id',
         'playbook-version',
       ],

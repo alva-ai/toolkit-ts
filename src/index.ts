@@ -251,6 +251,8 @@ export {
   type XReadPage,
 } from './resources/x.js';
 
+export type { OrderOrigin, EquityRange } from './resources/trading.js';
+
 export {
   FollowsResource,
   type WatchlistTickerKind,

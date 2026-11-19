@@ -612,11 +612,11 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('trading accounts'),
   command('trading portfolio', { values: ['account-id'] }),
   command('trading orders', {
-    values: ['account-id', 'source', 'since', 'limit'],
+    values: ['account-id', 'origin', 'source', 'since', 'limit'],
   }),
   command('trading subscriptions', { values: ['account-id'] }),
   command('trading equity-history', {
-    values: ['account-id', 'timeframe', 'since-ms', 'until-ms'],
+    values: ['account-id', 'range', 'timeframe', 'since-ms', 'until-ms'],
   }),
   command('trading risk-rules'),
   command('trading subscribe', {
@@ -624,6 +624,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'account-id',
       'source-username',
       'source-feed',
+      'signal-source-id',
       'playbook-id',
       'playbook-version',
     ],

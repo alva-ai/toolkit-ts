@@ -1402,7 +1402,7 @@ Subcommands:
   activities   List recent activity for an account
 
 Summary/Activities flags:
-  --account-id <id>    Account ID with provider prefix, e.g. trex:123 or snaptrade:456 (required)
+  --account-id <id>    Account ID from 'alva portfolio accounts' (required)
 
 Activities optional flags:
   --limit <n>          Max results (default 50, max 200)
@@ -1410,8 +1410,8 @@ Activities optional flags:
 
 Examples:
   alva portfolio accounts
-  alva portfolio summary --account-id trex:123
-  alva portfolio activities --account-id snaptrade:456 --limit 20`,
+  alva portfolio summary --account-id broker_account_0abc
+  alva portfolio activities --account-id broker_account_0abc --limit 20`,
 
   markets: `Usage: alva markets <subcommand> [options]
 
@@ -1545,31 +1545,36 @@ Subcommands:
   update-risk-rules    Update risk rules
 
 Portfolio/Orders/Subscriptions/Equity-history flags:
-  --account-id <id>    Trading account ID (required)
+  --account-id <id>    Account ID from 'alva trading accounts' (required)
 
 Orders optional flags:
-  --limit <n>          Max results
-  --source <source>    Filter by source
-  --since <timestamp>  Filter orders since timestamp
+  --limit <n>          Max results (max 200)
+  --origin <origin>    EXTERNAL, ALVA_DIRECT, ALVA_INSTRUCTION or UNKNOWN
+  --since <seconds>    Orders placed at or after this Unix time
 
 Equity-history optional flags:
-  --timeframe <tf>     Timeframe (e.g. "1d", "1h")
-  --since-ms <ms>      Start timestamp in ms
-  --until-ms <ms>      End timestamp in ms
+  --range <range>      ONE_DAY, ONE_WEEK, ONE_MONTH, THREE_MONTHS, YEAR_TO_DATE,
+                       ONE_YEAR or ALL (default: the smallest holding --since-ms, else ALL)
+  --timeframe <tf>     Only 1D (daily points)
+  --since-ms <ms>      Keep points from this time
+  --until-ms <ms>      Keep points up to this time
 
 Subscribe flags:
   --account-id <id>            Account ID (required)
-  --source-username <user>     Source username (required)
-  --source-feed <feed>         Source feed (required)
+  --signal-source-id <id>      The feed's Automation ID
+  --source-username <user>     Feed owner (required without --signal-source-id;
+                               then only your own feeds are found by name)
+  --source-feed <feed>         Feed name (required without --signal-source-id)
   --playbook-id <id>           Playbook ID (required)
   --playbook-version <ver>     Playbook version (required)
-  --execute-latest             Execute latest signal on subscribe
+  --execute-latest             Execute latest signal on subscribe (v1 API: takes
+                               the numeric IDs 'alva broker accounts' lists)
 
 Unsubscribe flags:
   --subscription-id <id>       Subscription ID (required)
 
 Execute flags:
-  --account-id <id>            Account ID (required)
+  --account-id <id>            TREX account ID from 'alva broker accounts' (required)
   --signal <json>              Signal JSON (required)
   --dry-run                    Dry run mode
   --source-username <user>     Source username (optional)
@@ -1585,14 +1590,14 @@ Update-risk-rules flags:
 
 Examples:
   alva trading accounts
-  alva trading portfolio --account-id acc_123
-  alva trading orders --account-id acc_123 --limit 10
-  alva trading subscriptions --account-id acc_123
-  alva trading equity-history --account-id acc_123 --timeframe 1d
+  alva trading portfolio --account-id broker_account_0abc
+  alva trading orders --account-id broker_account_0abc --limit 10 --origin ALVA_INSTRUCTION
+  alva trading subscriptions --account-id broker_account_0abc
+  alva trading equity-history --account-id broker_account_0abc --range ONE_MONTH
   alva trading risk-rules
-  alva trading subscribe --account-id acc_123 --source-username alice --source-feed btc-signals --playbook-id pb_1 --playbook-version v1.0.0
-  alva trading unsubscribe --subscription-id sub_456
-  alva trading execute --account-id acc_123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
+  alva trading subscribe --account-id broker_account_0abc --signal-source-id automation_0abc --playbook-id playbook_0abc --playbook-version v1.0.0
+  alva trading unsubscribe --subscription-id trade_subscription_0abc
+  alva trading execute --account-id 123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
   alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
 
   arrays: `Usage: alva arrays token <subcommand>
@@ -2798,6 +2803,25 @@ function functionRunAsFlag(
   return raw;
 }
 
+// An optional /api/v2 enum flag of the trading commands, upper-cased.
+function tradingEnumFlag<T extends string>(
+  flags: Record<string, string>,
+  name: string,
+  values: readonly T[],
+  command: string
+): T | undefined {
+  const raw = flags[name];
+  if (raw === undefined) return undefined;
+  const value = raw.toUpperCase() as T;
+  if (!values.includes(value)) {
+    throw new CliUsageError(
+      `--${name} must be one of ${values.join(', ')} for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return value;
+}
+
 function localFileUnsupported(command: string, flag: string): CliUsageError {
   return new CliUsageError(
     `--${flag} reads or writes a local file, which is unavailable in jagent. ` +
@@ -3170,11 +3194,12 @@ export async function handleBroker(
   let envelope: unknown;
   let exit = 2;
   try {
-    const resp = (await client._request('POST', '/api/v1/broker/invoke', {
-      body: { argv, stdin },
-    })) as { envelope: unknown; exit: number };
+    const resp = await client._v2Request<{
+      envelope: unknown;
+      exitCode: number;
+    }>('POST', '/broker/invocations', { body: { argv, stdin } });
     envelope = resp.envelope;
-    exit = resp.exit ?? 2;
+    exit = resp.exitCode ?? 2;
   } catch (e) {
     // Transport failure: synthesize a contract-shaped error envelope so the
     // agent's stdout parse never breaks; exit 2 = unknown outcome.
@@ -5345,9 +5370,20 @@ export async function executeParsedCommand(
             requireFlag(flags, 'account-id', 'trading portfolio')
           );
         case 'orders':
+          if (flags['source'] !== undefined) {
+            throw new CliUsageError(
+              "--source is no longer a filter for 'trading orders'; use --origin",
+              'trading'
+            );
+          }
           return client.trading.orders({
             accountId: requireFlag(flags, 'account-id', 'trading orders'),
-            source: flags['source'],
+            origin: tradingEnumFlag(
+              flags,
+              'origin',
+              ['EXTERNAL', 'ALVA_DIRECT', 'ALVA_INSTRUCTION', 'UNKNOWN'],
+              'trading orders'
+            ),
             since: num(flags['since']),
             limit: num(flags['limit']),
           });
@@ -5362,29 +5398,48 @@ export async function executeParsedCommand(
               'account-id',
               'trading equity-history'
             ),
+            range: tradingEnumFlag(
+              flags,
+              'range',
+              [
+                'ONE_DAY',
+                'ONE_WEEK',
+                'ONE_MONTH',
+                'THREE_MONTHS',
+                'YEAR_TO_DATE',
+                'ONE_YEAR',
+                'ALL',
+              ],
+              'trading equity-history'
+            ),
             timeframe: flags['timeframe'],
             sinceMs: num(flags['since-ms']),
             untilMs: num(flags['until-ms']),
           });
         case 'risk-rules':
           return client.trading.riskRules();
-        case 'subscribe':
+        case 'subscribe': {
+          // A feed is named by its Automation ID, or by owner and name.
+          const signalSourceId = flags['signal-source-id'];
+          const byName = signalSourceId === undefined;
           return client.trading.subscribe({
             accountId: requireFlag(flags, 'account-id', 'trading subscribe'),
-            sourceUsername: requireFlag(
-              flags,
-              'source-username',
-              'trading subscribe'
-            ),
-            sourceFeed: requireFlag(flags, 'source-feed', 'trading subscribe'),
+            sourceUsername: byName
+              ? requireFlag(flags, 'source-username', 'trading subscribe')
+              : (flags['source-username'] ?? ''),
+            sourceFeed: byName
+              ? requireFlag(flags, 'source-feed', 'trading subscribe')
+              : (flags['source-feed'] ?? ''),
             playbookId: requireFlag(flags, 'playbook-id', 'trading subscribe'),
             playbookVersion: requireFlag(
               flags,
               'playbook-version',
               'trading subscribe'
             ),
+            signalSourceId,
             executeLatest: boolFlag(flags['execute-latest']),
           });
+        }
         case 'unsubscribe':
           return client.trading.unsubscribe(
             requireFlag(flags, 'subscription-id', 'trading unsubscribe')

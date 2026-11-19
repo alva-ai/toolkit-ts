@@ -790,7 +790,7 @@ export interface ScreenshotParams {
 // Trading
 
 export interface TradingAccount {
-  id: string;
+  id: AlvaId;
   name: string;
   exchange: string;
   paper: boolean;
@@ -800,28 +800,29 @@ export interface TradingAccount {
 }
 
 export interface AccountSubscription {
-  id: string;
+  id: AlvaId;
   sourceUsername: string;
   sourceFeed: string;
-  playbookId: string;
+  playbookId: AlvaId;
   playbookName: string;
   active: boolean;
 }
 
 export interface TradingSubscription {
-  id: string;
-  accountId: string;
+  id: AlvaId;
+  accountId: AlvaId;
   sourceUsername: string;
   sourceFeed: string;
   active: boolean;
   deactivateReason?: string;
-  playbookId: string;
+  playbookId: AlvaId;
   playbookVersion: string;
   createdAtMs: number;
   watermark: number;
 }
 
 export interface TradingOrder {
+  /** The provider's order ID. */
   orderId: string;
   symbol: string;
   side: string;
@@ -830,9 +831,11 @@ export interface TradingOrder {
   price: number;
   status: string;
   rejectReason?: string;
+  /** Where the order came from: EXTERNAL, ALVA_DIRECT, ALVA_INSTRUCTION or UNKNOWN. */
   source: string;
   sourcePlaybook: string;
-  subscriptionId?: string;
+  subscriptionId?: AlvaId;
+  /** Always false: dry runs are not stored. */
   dryRun: boolean;
   createdAtMs: number;
 }
@@ -857,9 +860,11 @@ export interface TradingPortfolio {
 }
 
 export interface EquityPoint {
+  /** Start of the point's bucket, Unix seconds. */
   timestamp: number;
   equity: number;
   pnl: number;
+  /** Change against the previous point, a fraction (0.0123 is 1.23%). */
   pnlPct: number;
 }
 
@@ -896,7 +901,7 @@ export interface ExecuteSignalResult {
 // --- Portfolio (connected accounts across TREX + SnapTrade) ---
 
 export interface PortfolioAccount {
-  id: string;
+  id: AlvaId;
   provider: 'TREX' | 'SNAPTRADE';
   name: string;
   institution: string;
@@ -909,18 +914,19 @@ export interface PortfolioAccount {
   status?: string;
   statusReason?: string;
   lastSyncedAtMs?: number;
-  connectionId?: string;
+  connectionId?: AlvaId;
 }
 
 export interface PortfolioAccountSubscription {
-  id: string;
+  id: AlvaId;
   sourceUsername: string;
   sourceFeed: string;
-  playbookId: string;
+  playbookId: AlvaId;
   playbookName: string;
   playbookVersion: string;
   active: boolean;
   deactivateReason?: string;
+  /** Unix seconds. */
   createdAt: number;
   watermark: number;
 }
@@ -951,7 +957,7 @@ export interface PortfolioSummary {
 }
 
 export interface PortfolioActivity {
-  id: string;
+  /** TRADE, DIVIDEND, INTEREST, FEE, TRANSFER or OTHER. */
   kind: string;
   type: string;
   occurredAtMs?: number;
