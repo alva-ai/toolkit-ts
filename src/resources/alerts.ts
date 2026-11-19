@@ -20,8 +20,8 @@ import type {
 } from '../types.js';
 
 /**
- * Product-facing alert API. The current transport still calls the legacy
- * subscription and notification-history endpoints.
+ * Product-facing alert API: delegates to the subscriptions, notifications and
+ * notification preferences resources.
  */
 export class AlertsResource {
   constructor(private client: AlvaClient) {}

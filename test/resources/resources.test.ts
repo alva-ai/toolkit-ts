@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { RunResource } from '../../src/resources/run.js';
 import { AlertsResource } from '../../src/resources/alerts.js';
-import { SubscriptionsResource } from '../../src/resources/subscriptions.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
 import { NotificationsResource } from '../../src/resources/notifications.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
@@ -530,80 +529,6 @@ describe('ChannelGroupSubscriptionsResource', () => {
       })
     ).rejects.toBeInstanceOf(AlvaError);
     expect(client._request).not.toHaveBeenCalled();
-  });
-});
-
-describe('SubscriptionsResource — agent surface (mono-meta#584 W3)', () => {
-  it('followPlaybook() and unfollowPlaybook() use follow-only playbook routes', async () => {
-    const client = makeClient();
-    const subs = new SubscriptionsResource(client);
-    await subs.followPlaybook({ username: 'alice', name: 'btc-dashboard' });
-    await subs.unfollowPlaybook({ username: 'alice', name: 'btc-dashboard' });
-    expect(client._request).toHaveBeenNthCalledWith(
-      1,
-      'POST',
-      '/api/v1/follows/playbook/alice/btc-dashboard'
-    );
-    expect(client._request).toHaveBeenNthCalledWith(
-      2,
-      'DELETE',
-      '/api/v1/follows/playbook/alice/btc-dashboard'
-    );
-  });
-
-  it('follows() sends GET /api/v1/me/follows with pagination', async () => {
-    const client = makeClient();
-    const subs = new SubscriptionsResource(client);
-    await subs.follows({ limit: 20, cursor: 'c1' });
-    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/me/follows', {
-      query: { limit: '20', cursor: 'c1' },
-    });
-  });
-
-  it('subscribeFeed() posts an explicit channel id and preserves empty-body compatibility', async () => {
-    const client = makeClient();
-    const subs = new SubscriptionsResource(client);
-
-    await subs.subscribeFeed({
-      username: 'alice',
-      name: 'btc-ema',
-      channelId: '42',
-    });
-    await subs.subscribeFeed({ username: 'alice', name: 'btc-ema' });
-
-    expect(client._request).toHaveBeenNthCalledWith(
-      1,
-      'POST',
-      '/api/v1/subscriptions/feed/alice/btc-ema',
-      { body: { channel_id: '42' } }
-    );
-    expect(client._request).toHaveBeenNthCalledWith(
-      2,
-      'POST',
-      '/api/v1/subscriptions/feed/alice/btc-ema'
-    );
-  });
-
-  it('subscribeBatch() posts feed ids and channel id', async () => {
-    const client = makeClient();
-    const subs = new SubscriptionsResource(client);
-    await subs.subscribeBatch({ feedIds: ['13292'], channelId: '42' });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/subscriptions/subscribe-batch',
-      { body: { feed_ids: ['13292'], channel_id: '42' } }
-    );
-  });
-
-  it('unsubscribeBatch() posts feed ids to unsubscribe-batch', async () => {
-    const client = makeClient();
-    const subs = new SubscriptionsResource(client);
-    await subs.unsubscribeBatch({ feedIds: ['13292'] });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/subscriptions/unsubscribe-batch',
-      { body: { feed_ids: ['13292'] } }
-    );
   });
 });
 

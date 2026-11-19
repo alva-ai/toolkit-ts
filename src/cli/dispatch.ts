@@ -786,7 +786,10 @@ Target flags (choose one):
   --automation-ids <a,b>     Comma-separated automation target ids
 
 Enable routing:
-  --channel-id <id>          Alva channel ID for name or id targets (optional)
+  --channel-id <id>          Alva channel ID (optional; omit or 0 for your Agent
+                             channel). With --automation-ids it is a channel_0…
+                             ID; --automation still takes the numeric channel id
+                             of the v1 API
 
 Group subcommands:
   alva alert group list
@@ -815,8 +818,8 @@ Examples:
   alva alert follows --limit 20
   alva alert enable --automation alice/btc-ema
   alva alert disable --automation alice/btc-ema
-  alva alert enable --automation-ids 13292,13293
-  alva alert disable --automation-ids 13292
+  alva alert enable --automation-ids automation_0abc,automation_0abd
+  alva alert disable --automation-ids automation_0abc
   alva alert group enable --automation-ids 13292
   alva alert history --automation alice/btc-ema --status sent
   alva alert preferences`,
@@ -1325,12 +1328,12 @@ Name-addressed flags:
   --name <name>          URL-safe playbook or feed name (required)
 
 Batch flags:
-  --feed-ids <a,b>       Comma-separated feed target ids
+  --feed-ids <a,b>       Comma-separated automation ids (automation_0…)
   --channel-id <id>      Alva channel ID for subscribe (optional)
 
 List flags:
-  --first <n>            Optional page size (response carries total_count —
-                         when items < total_count, keep paginating)
+  --first <n>            Optional page size (a non-empty next_cursor means
+                         more pages: keep paginating)
   --cursor <token>       Optional cursor from the previous page
 
 Follows flags:
@@ -1344,8 +1347,8 @@ List response notes:
 Examples:
   alva subscriptions follow-playbook    --username alice --name btc-dashboard
   alva subscriptions subscribe-feed     --username alice --name btc-ema-cross
-  alva subscriptions subscribe   --feed-ids 13292,13293
-  alva subscriptions unsubscribe --feed-ids 13292,13293
+  alva subscriptions subscribe   --feed-ids automation_0abc,automation_0abd
+  alva subscriptions unsubscribe --feed-ids automation_0abc,automation_0abd
   alva subscriptions list --first 200
   alva subscriptions follows`,
 
@@ -1442,10 +1445,12 @@ Watchlist flags:
   --limit <1-100>               list: page size (default 20)
   --cursor <endCursor>          list: pageInfo.endCursor of the previous page
 
-  add/remove write every resolved symbol in one atomic batch. Result groups:
-  added|removed (written now), unchanged (already in that state), unresolved
-  (NOT_FOUND, or FAILED_PRECONDITION = several entities share the symbol:
-  retry it with a kind suffix). Nothing is written when no symbol resolves.
+  add writes every resolved symbol in one atomic batch; remove removes them one
+  by one, and a failed removal leaves the earlier ones removed. A symbol
+  resolves to its primary listing, or with a kind to that kind's listing.
+  Result groups: added|removed (written now), unchanged (already in that
+  state), unresolved (NOT_FOUND: retry it with another kind suffix or none).
+  Nothing is written when no symbol resolves.
   remove is recorded even for symbols not in the watchlist, so holdings sync
   does not add them back; add re-adds a symbol the user removed earlier.
 
@@ -1483,15 +1488,15 @@ Subcommands:
 
 Flags:
   --query <text>            search: name or username prefix (required)
-  --kind <user|person>      search/list: optional filter; follow/unfollow:
-                            required, from a search or list result
-  --id <id>                 follow/unfollow: profile id (required)
+  --kind <user|person>      search/list: optional filter
+  --id <id>                 follow/unfollow: profile id from a search or list
+                            result (required)
   --limit <1-50>            search/list: page size
   --cursor <endCursor>      list: pageInfo.endCursor of the previous page
 
 Examples:
   alva people search --query "cathie wood" --kind person
-  alva people follows follow --kind person --id 42
+  alva people follows follow --id profile_0abc
   alva people follows list`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
@@ -2215,9 +2220,7 @@ function dispatchPeople(
     case 'follows unfollow': {
       const params = usageChecked(command, () =>
         validateProfileRef({
-          kind: upperFlag(
-            requireFlag(flags, 'kind', command)
-          ) as FollowProfileKind,
+          kind: upperFlag(flags['kind']) as FollowProfileKind | undefined,
           id: requireFlag(flags, 'id', command),
         })
       );
@@ -4864,11 +4867,7 @@ export async function executeParsedCommand(
             channelId:
               flags['channel-id'] === undefined
                 ? undefined
-                : requirePositiveIntegerStringFlag(
-                    flags,
-                    'channel-id',
-                    'subscriptions subscribe'
-                  ),
+                : requireIdFlag(flags, 'channel-id', 'subscriptions subscribe'),
           });
         }
         case 'unsubscribe': {
@@ -4923,11 +4922,7 @@ export async function executeParsedCommand(
               channelId:
                 flags['channel-id'] === undefined
                   ? undefined
-                  : requirePositiveIntegerStringFlag(
-                      flags,
-                      'channel-id',
-                      'alert enable'
-                    ),
+                  : requireIdFlag(flags, 'channel-id', 'alert enable'),
             });
           }
           const target = requireAutomationAlertTarget(flags, 'alert enable');

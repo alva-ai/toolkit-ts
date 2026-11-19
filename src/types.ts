@@ -1057,18 +1057,18 @@ export type PushTargetType = 'FEED';
 
 export interface PushTarget {
   type: PushTargetType;
-  /** Numeric id encoded as a string (matches the rest of the SDK). */
-  id: string;
+  /** Automation ID. */
+  id: AlvaId;
 }
 
 export interface PushSubscription {
+  /** Subscription ID; absent on `subscribeFeed`, which still uses /api/v1. */
+  id?: AlvaId;
   target: PushTarget;
   created_at_ms: number;
   updated_at_ms: number;
-  /** Alva delivery channel id. "0" denotes the agent/home channel. */
+  /** Alva delivery Channel ID. "0" denotes the agent/home channel. */
   channel_id?: string;
-  /** Present on list responses. */
-  cursor?: string;
   /** Feed metadata is present for FEED targets when available. */
   feed_name?: string;
   feed_status?: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | string;
@@ -1092,7 +1092,7 @@ export interface PushSubscription {
 }
 
 export interface PushSubscriptionUsedBy {
-  playbook_id: string;
+  playbook_id: AlvaId;
   owner_username: string;
   playbook_name: string;
   display_name: string;
@@ -1123,13 +1123,8 @@ export interface PushSubscriptionListParams {
 
 export interface PushSubscriptionListResponse {
   items: PushSubscription[];
-  /** Empty when there is no next page. */
+  /** Empty when there is no next page; otherwise the page is truncated. */
   next_cursor?: string;
-  /**
-   * Total active subscription rows independent of pagination — when
-   * items.length < total_count, the page is truncated; keep paginating.
-   */
-  total_count?: number;
 }
 
 export interface FollowsListParams {
@@ -1140,12 +1135,11 @@ export interface FollowsListParams {
 }
 
 export interface PlaybookFollowItem {
-  playbook_id: string;
+  playbook_id: AlvaId;
   owner_username: string;
   name: string;
   display_name: string;
   followed_at_ms: number;
-  cursor: string;
 }
 
 export interface FollowsListResponse {
@@ -1155,15 +1149,15 @@ export interface FollowsListResponse {
 }
 
 export interface UnsubscribeBatchParams {
-  /** Feed target ids (strings — snowflake ids exceed JS safe integers). */
-  feedIds: string[];
+  /** Automation IDs. */
+  feedIds: AlvaId[];
 }
 
 export interface SubscribeBatchParams {
-  /** Feed target ids (strings — snowflake ids exceed JS safe integers). */
-  feedIds: string[];
-  /** Delivery channel id. Omit for the user's agent/home channel. */
-  channelId?: string;
+  /** Automation IDs. */
+  feedIds: AlvaId[];
+  /** Delivery Channel ID. Omit (or "0") for the user's agent/home channel. */
+  channelId?: AlvaId;
 }
 
 export interface SubscribeBatchResponse {
@@ -1171,10 +1165,10 @@ export interface SubscribeBatchResponse {
 }
 
 export interface UnsubscribeBatchResult {
-  id: string;
+  id: AlvaId;
   kind: 'FEED';
   ok: boolean;
-  status: 'UNSUBSCRIBED' | 'INVALID_ID' | string;
+  status: 'UNSUBSCRIBED' | string;
 }
 
 export interface UnsubscribeBatchResponse {
@@ -1183,18 +1177,17 @@ export interface UnsubscribeBatchResponse {
 }
 
 export interface PlaybookFollow {
-  id: string;
-  user_id: string;
-  playbook_id: string;
+  playbook_id: AlvaId;
   created_at_ms: number;
   updated_at_ms: number;
 }
 
 export interface FollowPlaybookResponse {
-  /** The social follow row created or confirmed by this operation. */
+  /** The social follow created or confirmed by this operation. */
   follow: PlaybookFollow;
   /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
   playbook_path: string;
+  playbook_id: AlvaId;
 }
 
 export interface UnfollowPlaybookResponse {
@@ -1277,9 +1270,9 @@ export interface ChannelGroupHistoryParams {
   channel: string;
   /** Platform group/channel id. */
   remote_chat_id: string;
-  /** Window start, message-origin timestamp in microseconds (inclusive). */
+  /** Window start, message-origin timestamp in microseconds (inclusive, read at millisecond precision). */
   from_micros: number | string;
-  /** Window end, message-origin timestamp in microseconds (inclusive). */
+  /** Window end, message-origin timestamp in microseconds (inclusive, read at millisecond precision). */
   to_micros: number | string;
 }
 

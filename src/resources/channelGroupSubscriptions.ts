@@ -13,6 +13,10 @@ import type {
 /**
  * Group push subscriptions for an external channel session.
  *
+ * The subscription calls keep /api/v1/channel/group-subscriptions: they name
+ * the group by the numeric origin session the sandbox holds, and /api/v2
+ * takes a Session ID. The group history reads /api/v2.
+ *
  * These APIs subscribe the Telegram/Discord group attached to `session_id`
  * to feed push events the group admin may read. Mutations are idempotent no-ops
  * unless the authenticated caller is that group's Alva admin.
@@ -69,21 +73,54 @@ export class ChannelGroupSubscriptionsResource {
    * digest automation. Admin-gated: the authenticated caller must be that
    * group's Alva admin (a digest feed runs as that admin). Each message carries
    * a `permalink` deep-link back to the original message for "jump to original".
-   * `from_micros`/`to_micros` are message-origin timestamps in microseconds.
+   * `from_micros`/`to_micros` are message-origin timestamps in microseconds;
+   * the window is read at millisecond precision.
    */
   async getGroupChatHistory(
     params: ChannelGroupHistoryParams
   ): Promise<ChannelGroupHistoryResponse> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/channel/group-history', {
+    const history = await this.client._v2Request<{
+      messages: {
+        senderName: string;
+        content: string;
+        mediaSummary: string | null;
+        sentAt: string;
+        permalink: string | null;
+        role: string;
+      }[];
+    }>('GET', '/group-chat-history', {
       query: {
-        channel: params.channel,
-        remote_chat_id: params.remote_chat_id,
-        from_micros: String(params.from_micros),
-        to_micros: String(params.to_micros),
+        app: params.channel.toUpperCase(),
+        remoteChat: params.remote_chat_id,
+        from: microsInstant(params.from_micros, 'from_micros'),
+        to: microsInstant(params.to_micros, 'to_micros'),
       },
-    }) as Promise<ChannelGroupHistoryResponse>;
+    });
+    return {
+      messages: history.messages.map((m) => ({
+        sender_username: m.senderName,
+        content: m.content,
+        media_summary: m.mediaSummary ?? '',
+        ts_micros: Date.parse(m.sentAt) * 1000,
+        permalink: m.permalink ?? '',
+        role: m.role.toLowerCase(),
+      })),
+    };
   }
+}
+
+/** The RFC 3339 instant of a microsecond timestamp, truncated to milliseconds. */
+function microsInstant(value: number | string, name: string): string {
+  const instant = new Date(Number(value) / 1000);
+  if (Number.isNaN(instant.getTime())) {
+    throw new AlvaError(
+      'INVALID_ARGUMENT',
+      `${name} must be a timestamp in microseconds`,
+      400
+    );
+  }
+  return instant.toISOString();
 }
 
 function mutationBody(params: ChannelGroupSubscriptionMutationParams): string {

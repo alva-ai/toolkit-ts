@@ -256,11 +256,11 @@ Subcommands:
 The user's ticker watchlist in the Alva App. Act only when the user asks to
 add or remove tickers. add/remove take --tickers <A,B> (1-50 exact symbols;
 suffix one with :stock, :etf, or :crypto to pick its kind, e.g. BTC:crypto)
-and optional --kind stock|etf|crypto as the default kind; one atomic write.
-Report every group: added|removed (written now), unchanged (already in that
-state), unresolved (NOT_FOUND, or FAILED_PRECONDITION = ambiguous symbol: ask
-the user or retry with a kind suffix). Nothing is written when no ticker
-resolves. add re-adds a ticker the user removed earlier. list takes
+and optional --kind stock|etf|crypto as the default kind; add is one atomic
+write. A symbol resolves to its primary listing, or with a kind to that kind's
+listing. Report every group: added|removed (written now), unchanged (already
+in that state), unresolved (NOT_FOUND: ask the user or retry with another
+kind suffix). Nothing is written when no ticker resolves. add re-adds a ticker the user removed earlier. list takes
 --limit <1-100> and --cursor <pageInfo.endCursor>.`,
 
   people: `Usage: alva people <subcommand> [options]
@@ -270,7 +270,7 @@ Subcommands:
   follows list|follow|unfollow
 
 USER is an Alva user; PERSON is a curated person (KOL). follow/unfollow take
---kind and --id from search or list results. Search is a prefix match on
+--id from search or list results. Search is a prefix match on
 name, username, or slug. Follow only an exact match; when several profiles
 match, ask the user which one. Act only when the user asks to follow or
 unfollow.`,
@@ -278,7 +278,7 @@ unfollow.`,
   'people follows': `Usage: alva people follows <list|follow|unfollow> [options]
 
 list: [--kind user|person] [--limit <1-50>] [--cursor <pageInfo.endCursor>]
-follow|unfollow: --kind user|person --id <profile id>`,
+follow|unfollow: --id <profile id>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand>
 

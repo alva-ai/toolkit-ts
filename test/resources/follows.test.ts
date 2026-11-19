@@ -1,219 +1,248 @@
-import { describe, expect, it, vi } from 'vitest';
-import { AlvaClient } from '../../src/client.js';
+import { describe, expect, it } from 'vitest';
 import { AlvaError } from '../../src/error.js';
+import type { V2RequestOptions } from '../../src/platformApi.js';
+import { v2Client } from '../helpers/v2Client.js';
 
-interface GraphQLBody {
-  query: string;
-  variables?: Record<string, unknown>;
+function asset(id: string, symbol: string, kind = 'STOCK') {
+  return { id, symbol, name: `${symbol} Inc.`, kind };
 }
 
-type Entity = { id: string; ticker: string; isFollowed: boolean };
+const notFound = () => {
+  throw new AlvaError('NOT_FOUND', 'no asset has the symbol', 404);
+};
 
-function graphqlError(code: string, message: string) {
-  return { data: null, errors: [{ message, extensions: { code } }] };
+/** Routes by-symbol lookups ("SYMBOL" or "SYMBOL@CLASS") and the follow writes. */
+function tickerClient(
+  assets: Record<string, ReturnType<typeof asset> | (() => never)>,
+  writes: Record<string, unknown> = {}
+) {
+  const routes: Record<string, unknown> = { ...writes };
+  for (const [key, answer] of Object.entries(assets)) {
+    const symbol = key.split('@')[0];
+    const path = `GET /assets/by-symbol/${encodeURIComponent(symbol)}`;
+    const previous = routes[path] as
+      | ((o: V2RequestOptions) => unknown)
+      | undefined;
+    routes[path] = (o: V2RequestOptions) => {
+      const wanted = o.query?.assetClass
+        ? `${symbol}@${o.query.assetClass}`
+        : symbol;
+      if (wanted !== key) {
+        if (previous) return previous(o);
+        return notFound();
+      }
+      return typeof answer === 'function' ? answer() : answer;
+    };
+  }
+  return v2Client(routes);
 }
 
-function entityResponse(entity: Entity) {
+function followResult(changes: [ReturnType<typeof asset>, boolean][]) {
   return {
-    data: {
-      market: {
-        entity: {
-          id: entity.id,
-          ticker: entity.ticker,
-          name: `${entity.ticker} Inc.`,
-          kind: 'STOCK',
-          viewerState: { isFollowed: entity.isFollowed },
-        },
-      },
-    },
+    assets: changes.map(([a, changed]) => ({
+      asset: a,
+      following: true,
+      changed,
+    })),
   };
 }
 
-/** Routes ticker lookups by symbol and records mutation bodies. */
-function tickerClient(lookups: Record<string, unknown>, mutation?: unknown) {
-  const client = new AlvaClient({ apiKey: 'test-key' });
-  const mutations: GraphQLBody[] = [];
-  const request = vi
-    .spyOn(client, '_request')
-    .mockImplementation(async (_method, _path, options) => {
-      const body = options?.body as GraphQLBody;
-      if (body.query.includes('ToolkitTickerLookup')) {
-        const input = body.variables?.input as { ticker: string };
-        const response = lookups[input.ticker];
-        if (response === undefined)
-          throw new Error(`unexpected ${input.ticker}`);
-        return response;
-      }
-      mutations.push(body);
-      return (
-        mutation ?? {
-          data: {
-            followTickers: { entities: [] },
-            unfollowTickers: { entities: [] },
-          },
-        }
-      );
-    });
-  return { client, request, mutations };
-}
+const writes = (v2: ReturnType<typeof v2Client>['v2']) =>
+  v2.mock.calls.filter(([method]) => method !== 'GET');
 
 describe('ticker watchlist', () => {
-  it('normalizes input, groups outcomes, and writes only the changed tickers once', async () => {
-    const { client, mutations } = tickerClient({
-      NVDA: entityResponse({ id: '11', ticker: 'NVDA', isFollowed: false }),
-      LMT: entityResponse({ id: '12', ticker: 'LMT', isFollowed: true }),
-      ZZZZ: graphqlError('NOT_FOUND', 'no entity found for ticker: ZZZZ'),
-      CRCL: graphqlError(
-        'FAILED_PRECONDITION',
-        'multiple entities found for ticker CRCL; specify an entity id or kind'
-      ),
-    });
+  it('normalizes input, follows the resolved Assets once and reports their outcome', async () => {
+    const nvda = asset('asset_0n', 'NVDA');
+    const lmt = asset('asset_0l', 'LMT');
+    const { client, v2 } = tickerClient(
+      { NVDA: nvda, LMT: lmt, ZZZZ: notFound },
+      {
+        'POST /me/followed-assets': followResult([
+          [nvda, true],
+          [lmt, false],
+        ]),
+      }
+    );
     const result = await client.follows.addToWatchlist({
-      tickers: [' nvda', 'NVDA', 'lmt', 'ZZZZ', 'crcl'],
+      tickers: [' nvda', 'NVDA', 'lmt', 'ZZZZ'],
     });
-    expect(result.added.map((t) => [t.input, t.entityId])).toEqual([
-      ['NVDA', '11'],
+    expect(result).toEqual({
+      added: [
+        {
+          input: 'NVDA',
+          entityId: 'asset_0n',
+          ticker: 'NVDA',
+          name: 'NVDA Inc.',
+          kind: 'STOCK',
+        },
+      ],
+      unchanged: [
+        expect.objectContaining({ input: 'LMT', entityId: 'asset_0l' }),
+      ],
+      unresolved: [
+        {
+          input: 'ZZZZ',
+          code: 'NOT_FOUND',
+          message: 'no entity found for ticker: ZZZZ',
+        },
+      ],
+    });
+    expect(writes(v2)).toEqual([
+      [
+        'POST',
+        '/me/followed-assets',
+        { body: { assetIds: ['asset_0n', 'asset_0l'] } },
+      ],
     ]);
-    expect(result.unchanged.map((t) => t.input)).toEqual(['LMT']);
-    expect(result.unresolved).toEqual([
-      expect.objectContaining({ input: 'ZZZZ', code: 'NOT_FOUND' }),
-      expect.objectContaining({ input: 'CRCL', code: 'FAILED_PRECONDITION' }),
-    ]);
-    expect(mutations).toHaveLength(1);
-    expect(mutations[0].query).toContain('followTickers(input: $input)');
-    expect(mutations[0].variables).toEqual({ input: { entityIds: ['11'] } });
   });
 
-  it('writes nothing when no ticker resolves or every ticker is unchanged', async () => {
-    const { client, mutations } = tickerClient({
-      ZZZZ: graphqlError('NOT_FOUND', 'missing'),
-      LMT: entityResponse({ id: '12', ticker: 'LMT', isFollowed: true }),
-    });
-    const missing = await client.follows.addToWatchlist({ tickers: ['ZZZZ'] });
-    expect(missing.added).toEqual([]);
-    expect(missing.unresolved).toHaveLength(1);
-    const unchanged = await client.follows.addToWatchlist({ tickers: ['LMT'] });
-    expect(unchanged.unchanged).toHaveLength(1);
-    expect(mutations).toHaveLength(0);
+  it('writes nothing when no ticker resolves', async () => {
+    const { client, v2 } = tickerClient({ ZZZZ: notFound });
+    const result = await client.follows.addToWatchlist({ tickers: ['ZZZZ'] });
+    expect(result.added).toEqual([]);
+    expect(result.unresolved).toHaveLength(1);
+    expect(writes(v2)).toEqual([]);
   });
 
-  it('writes one entity once when two spellings resolve to it', async () => {
-    const { client, mutations } = tickerClient({
-      'BRK.B': entityResponse({ id: '30', ticker: 'BRK.B', isFollowed: false }),
-      'BRK-B': entityResponse({ id: '30', ticker: 'BRK.B', isFollowed: false }),
-    });
+  it('writes one Asset once when two spellings resolve to it, in input order', async () => {
+    const brk = asset('asset_0b', 'BRK-B');
+    const amd = asset('asset_0a', 'AMD');
+    const { client, v2 } = tickerClient(
+      { 'BRK.B': brk, AMD: amd, 'BRK-B': brk },
+      {
+        'POST /me/followed-assets': followResult([
+          [brk, true],
+          [amd, true],
+        ]),
+      }
+    );
     const result = await client.follows.addToWatchlist({
-      tickers: ['BRK.B', 'BRK-B'],
+      tickers: ['BRK.B', 'AMD', 'BRK-B'],
     });
-    // Both inputs report the entity's real outcome; neither is "unchanged".
-    expect(result.added.map((t) => t.input)).toEqual(['BRK.B', 'BRK-B']);
+    // Both spellings report the Asset's real outcome; neither is "unchanged".
+    expect(result.added.map((t) => t.input)).toEqual(['BRK.B', 'AMD', 'BRK-B']);
     expect(result.unchanged).toEqual([]);
-    expect(mutations[0].variables).toEqual({ input: { entityIds: ['30'] } });
+    expect(writes(v2)[0][2]).toEqual({
+      body: { assetIds: ['asset_0b', 'asset_0a'] },
+    });
   });
 
-  it('names the kind when a kind-restricted lookup misses', async () => {
-    const { client, mutations } = tickerClient({
-      BTC: { data: { market: { entity: null } } },
-    });
+  it('looks a kind up in its listing markets and names the kind on a miss', async () => {
+    const btcCoin = asset('asset_0c', 'BTC', 'CRYPTO');
+    const btcFund = asset('asset_0f', 'BTC', 'ETF');
+    const { client, v2 } = tickerClient(
+      { 'BTC@US_STOCK': btcFund, 'BTC@BINANCE_SPOT': btcCoin },
+      { 'POST /me/followed-assets': followResult([[btcCoin, true]]) }
+    );
     const result = await client.follows.addToWatchlist({
-      tickers: [{ ticker: 'BTC', kind: 'STOCK' }],
+      tickers: [
+        { ticker: 'BTC', kind: 'STOCK' },
+        { ticker: 'btc', kind: 'CRYPTO' },
+      ],
     });
-    expect(result.unresolved).toEqual([
+    expect(result.added).toEqual([
       expect.objectContaining({
+        input: 'BTC',
+        entityId: 'asset_0c',
+        kind: 'CRYPTO',
+      }),
+    ]);
+    expect(result.unresolved).toEqual([
+      {
         input: 'BTC',
         kind: 'STOCK',
         code: 'NOT_FOUND',
         message: expect.stringContaining(
           'no STOCK entity found for ticker BTC'
         ),
-      }),
+      },
     ]);
-    expect(mutations).toEqual([]);
+    expect(
+      v2.mock.calls
+        .filter(([, path]) => path.startsWith('/assets/'))
+        .map(([, , o]) => o?.query?.assetClass)
+        .sort()
+    ).toEqual(['BINANCE_SPOT', 'NON_US_STOCK', 'US_STOCK']);
   });
 
-  it('lets a per-ticker kind override the default and dedupes by ticker and kind', async () => {
-    const { client, request } = tickerClient({
-      NVDA: entityResponse({ id: '11', ticker: 'NVDA', isFollowed: false }),
-      BTC: entityResponse({ id: '21', ticker: 'BTC', isFollowed: false }),
-    });
-    await client.follows.addToWatchlist({
-      tickers: ['nvda', { ticker: 'btc', kind: 'CRYPTO' }, 'NVDA'],
-      kind: 'STOCK',
-    });
-    const lookups = request.mock.calls
-      .map((call) => call[2]?.body as { variables: { input: unknown } })
-      .filter((body) => JSON.stringify(body).includes('ToolkitTickerLookup'))
-      .map((body) => body.variables.input);
-    expect(lookups).toEqual([
-      { ticker: 'NVDA', kind: 'STOCK' },
-      { ticker: 'BTC', kind: 'CRYPTO' },
+  it('resolves a symbol without a kind to its primary listing', async () => {
+    const { client, v2 } = tickerClient(
+      { NVDA: asset('asset_0n', 'NVDA') },
+      {
+        'POST /me/followed-assets': followResult([
+          [asset('asset_0n', 'NVDA'), true],
+        ]),
+      }
+    );
+    await client.follows.addToWatchlist({ tickers: ['NVDA'] });
+    expect(v2.mock.calls[0]).toEqual([
+      'GET',
+      '/assets/by-symbol/NVDA',
+      { query: { assetClass: undefined } },
     ]);
   });
 
-  it('records removal for every resolved ticker and forwards the kind filter', async () => {
-    const { client, request, mutations } = tickerClient({
-      NVDA: entityResponse({ id: '11', ticker: 'NVDA', isFollowed: true }),
-      AMD: entityResponse({ id: '13', ticker: 'AMD', isFollowed: false }),
-    });
+  it('removes each resolved Asset, also those not in the watchlist', async () => {
+    const { client, v2 } = tickerClient(
+      { NVDA: asset('asset_0n', 'NVDA'), AMD: asset('asset_0a', 'AMD') },
+      {
+        'DELETE /me/followed-assets/asset_0n': {
+          asset: asset('asset_0n', 'NVDA'),
+          following: false,
+          changed: true,
+        },
+        'DELETE /me/followed-assets/asset_0a': {
+          asset: asset('asset_0a', 'AMD'),
+          following: false,
+          changed: false,
+        },
+      }
+    );
     const result = await client.follows.removeFromWatchlist({
       tickers: ['NVDA', 'AMD'],
-      kind: 'STOCK',
     });
     expect(result.removed.map((t) => t.input)).toEqual(['NVDA']);
     expect(result.unchanged.map((t) => t.input)).toEqual(['AMD']);
-    expect(mutations[0].query).toContain('unfollowTickers(input: $input)');
     // AMD is not in the watchlist, but its removal still blocks holdings sync.
-    expect(mutations[0].variables).toEqual({
-      input: { entityIds: ['11', '13'] },
-    });
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input: { kind: 'STOCK' } },
-    });
+    expect(
+      writes(v2)
+        .map(([m, p]) => `${m} ${p}`)
+        .sort()
+    ).toEqual([
+      'DELETE /me/followed-assets/asset_0a',
+      'DELETE /me/followed-assets/asset_0n',
+    ]);
   });
 
   it('fails the whole command on a non-lookup error and never writes', async () => {
-    const { client, mutations } = tickerClient({
-      NVDA: entityResponse({ id: '11', ticker: 'NVDA', isFollowed: false }),
-      AMD: graphqlError('UNAVAILABLE', 'data API unavailable'),
+    const { client, v2 } = tickerClient({
+      NVDA: asset('asset_0n', 'NVDA'),
+      AMD: () => {
+        throw new AlvaError('UNAVAILABLE', 'data API unavailable', 503);
+      },
     });
-    const error = await client.follows
-      .addToWatchlist({ tickers: ['NVDA', 'AMD'] })
-      .catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(AlvaError);
-    expect(error).toMatchObject({ code: 'UNAVAILABLE', status: 503 });
-    expect(mutations).toHaveLength(0);
+    await expect(
+      client.follows.addToWatchlist({ tickers: ['NVDA', 'AMD'] })
+    ).rejects.toMatchObject({ code: 'UNAVAILABLE', status: 503 });
+    expect(writes(v2)).toEqual([]);
   });
 
-  it.each(['add', 'remove'] as const)(
-    'fails before writing when the %s lookup cannot read watchlist state',
-    async (direction) => {
-      const hidden = entityResponse({
-        id: '11',
-        ticker: 'NVDA',
-        isFollowed: false,
-      });
-      hidden.data.market.entity.viewerState = null as never;
-      const { client, mutations } = tickerClient({ NVDA: hidden });
-      const call =
-        direction === 'add'
-          ? client.follows.addToWatchlist({ tickers: ['NVDA'] })
-          : client.follows.removeFromWatchlist({ tickers: ['NVDA'] });
-      await expect(call).rejects.toMatchObject({
-        code: 'PERMISSION_DENIED',
-        status: 403,
-      });
-      expect(mutations).toHaveLength(0);
-    }
-  );
-
-  it('propagates a rejected write as a typed error', async () => {
+  it('propagates a refused write as a typed error', async () => {
     const { client } = tickerClient(
-      { NVDA: entityResponse({ id: '11', ticker: 'NVDA', isFollowed: false }) },
-      graphqlError('PERMISSION_DENIED', 'group guests cannot follow')
+      { NVDA: asset('asset_0n', 'NVDA') },
+      {
+        'POST /me/followed-assets': () => {
+          throw new AlvaError(
+            'INSUFFICIENT_PERMISSION',
+            'group guests cannot follow',
+            403
+          );
+        },
+      }
     );
     await expect(
       client.follows.addToWatchlist({ tickers: ['NVDA'] })
-    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', status: 403 });
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_PERMISSION', status: 403 });
   });
 
   it.each([
@@ -223,203 +252,165 @@ describe('ticker watchlist', () => {
     [{ tickers: Array.from({ length: 51 }, (_, i) => `T${i}`) }],
     [{ tickers: ['NVDA'], kind: 'BOND' }],
   ])('rejects invalid input %j before any request', async (params) => {
-    const { client, request } = tickerClient({});
+    const { client, v2 } = v2Client({});
     await expect(
       client.follows.addToWatchlist(params as never)
     ).rejects.toThrow();
-    expect(request).not.toHaveBeenCalled();
+    expect(v2).not.toHaveBeenCalled();
   });
 
-  it('reads one page of the watchlist', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const request = vi.spyOn(client, '_request').mockResolvedValue({
-      data: {
-        viewer: {
-          marketWatchlist: {
-            totalCount: 3,
-            edges: [
-              {
-                cursor: '9',
-                followedAtMs: 1762250000000,
-                node: {
-                  id: '11',
-                  ticker: 'NVDA',
-                  name: 'NVIDIA',
-                  kind: 'STOCK',
-                },
-              },
-            ],
-            pageInfo: { endCursor: '9', hasNextPage: true },
+  it('reads one page of the watchlist with its total', async () => {
+    const { client, v2 } = v2Client({
+      'GET /me/followed-assets': {
+        items: [
+          {
+            ...asset('asset_0n', 'NVDA'),
+            followedAt: '2026-11-01T00:00:00.000Z',
           },
-        },
+          { ...asset('asset_0b', 'BTC', 'CRYPTO'), followedAt: null },
+        ],
+        nextPageToken: 'next',
       },
+      'GET /me/follow-counts': { assetCount: 3 },
     });
-    const page = await client.follows.watchlist({ first: 1, after: '20' });
-    expect(page).toEqual({
+    expect(await client.follows.watchlist({ first: 2, after: 'cur' })).toEqual({
       totalCount: 3,
       tickers: [
         {
-          entityId: '11',
+          entityId: 'asset_0n',
           ticker: 'NVDA',
-          name: 'NVIDIA',
+          name: 'NVDA Inc.',
           kind: 'STOCK',
-          addedAtMs: 1762250000000,
+          addedAtMs: Date.parse('2026-11-01T00:00:00.000Z'),
+        },
+        {
+          entityId: 'asset_0b',
+          ticker: 'BTC',
+          name: 'BTC Inc.',
+          kind: 'CRYPTO',
+          addedAtMs: 0,
         },
       ],
-      pageInfo: { endCursor: '9', hasNextPage: true },
+      pageInfo: { endCursor: 'next', hasNextPage: true },
     });
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input: { first: 1, after: '20' } },
+    expect(v2).toHaveBeenCalledWith('GET', '/me/followed-assets', {
+      query: { pageSize: 2, pageToken: 'cur' },
+    });
+  });
+
+  it('ends the watchlist without a next page', async () => {
+    const { client } = v2Client({
+      'GET /me/followed-assets': { items: [], nextPageToken: null },
+      'GET /me/follow-counts': { assetCount: 0 },
+    });
+    await expect(client.follows.watchlist()).resolves.toEqual({
+      totalCount: 0,
+      tickers: [],
+      pageInfo: { endCursor: '', hasNextPage: false },
     });
   });
 });
 
-const userNode = {
-  __typename: 'PublicUser',
-  id: '7',
+const USER = {
+  id: 'profile_0u',
+  kind: 'USER',
   displayName: 'Alice',
-  username: 'alice',
-  followersCount: 3,
-  viewerState: { following: false },
-};
-const personNode = {
-  __typename: 'Person',
-  id: '42',
-  displayName: 'Cathie Wood',
-  slug: 'cathie-wood',
-  xHandle: 'cathiedwood',
-  followersCount: 900,
+  handle: 'alice',
+  xHandle: null,
+  avatarUrl: null,
+  followerCount: 3,
   viewerState: { following: true },
+};
+const PERSON = {
+  id: 'profile_0p',
+  kind: 'PERSON',
+  displayName: 'Cathie Wood',
+  handle: 'cathie-wood',
+  xHandle: 'CathieDWood',
+  avatarUrl: null,
+  followerCount: 9,
+  viewerState: { following: null },
 };
 
 describe('profile follows', () => {
-  it('searches users and people and normalizes their identities', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const request = vi.spyOn(client, '_request').mockResolvedValue({
-      data: {
-        profiles: {
-          edges: [{ node: userNode }, { node: personNode }],
-          pageInfo: { endCursor: 'c2', hasNextPage: false },
+  it('searches users and people and rebuilds their identities', async () => {
+    const { client, v2 } = v2Client({
+      'GET /profiles': { items: [USER, PERSON], nextPageToken: null },
+    });
+    expect(
+      await client.follows.searchProfiles({ query: ' cathie ', kind: 'PERSON' })
+    ).toEqual({
+      profiles: [
+        {
+          kind: 'USER',
+          id: 'profile_0u',
+          displayName: 'Alice',
+          followersCount: 3,
+          following: true,
+          username: 'alice',
         },
-      },
+        {
+          kind: 'PERSON',
+          id: 'profile_0p',
+          displayName: 'Cathie Wood',
+          followersCount: 9,
+          following: null,
+          slug: 'cathie-wood',
+          xHandle: 'CathieDWood',
+        },
+      ],
+      pageInfo: { endCursor: '', hasNextPage: false },
     });
-    const page = await client.follows.searchProfiles({
-      query: '  cathie ',
-      kind: 'PERSON',
-    });
-    expect(page.profiles).toEqual([
-      {
-        kind: 'USER',
-        id: '7',
-        displayName: 'Alice',
-        username: 'alice',
-        followersCount: 3,
-        following: false,
-      },
-      {
-        kind: 'PERSON',
-        id: '42',
-        displayName: 'Cathie Wood',
-        slug: 'cathie-wood',
-        xHandle: 'cathiedwood',
-        followersCount: 900,
-        following: true,
-      },
-    ]);
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input: { query: 'cathie', kind: 'PERSON', first: 10 } },
+    expect(v2).toHaveBeenCalledWith('GET', '/profiles', {
+      query: { query: 'cathie', kind: 'PERSON', pageSize: 10 },
     });
   });
 
-  it('follows and unfollows one profile by kind and id', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const request = vi
-      .spyOn(client, '_request')
-      .mockResolvedValueOnce({
-        data: { followProfile: { following: true, target: personNode } },
-      })
-      .mockResolvedValueOnce({
-        data: { unfollowProfile: { following: false, target: null } },
-      });
-    expect(
-      await client.follows.followProfile({ kind: 'PERSON', id: '42' })
-    ).toMatchObject({ following: true, profile: { kind: 'PERSON', id: '42' } });
-    expect(
-      await client.follows.unfollowProfile({ kind: 'PERSON', id: '42' })
-    ).toEqual({ following: false, profile: null });
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      query: expect.stringContaining('followProfile(input: $input)'),
-      variables: { input: { kind: 'PERSON', id: '42' } },
+  it('follows and unfollows one profile by its Profile ID', async () => {
+    const { client, v2 } = v2Client({
+      'POST /me/followed-profiles': { following: true, profile: PERSON },
+      'DELETE /me/followed-profiles/profile_0p': {
+        following: false,
+        profile: null,
+      },
     });
-    expect(request.mock.calls[1][2]?.body).toMatchObject({
-      query: expect.stringContaining('unfollowProfile(input: $input)'),
+    await expect(
+      client.follows.followProfile({ id: 'profile_0p' })
+    ).resolves.toMatchObject({
+      following: true,
+      profile: { kind: 'PERSON', id: 'profile_0p' },
     });
+    await expect(
+      client.follows.unfollowProfile({ id: 'profile_0p', kind: 'PERSON' })
+    ).resolves.toEqual({ following: false, profile: null });
+    expect(v2.mock.calls[0][2]).toEqual({ body: { profileId: 'profile_0p' } });
   });
 
   it('lists followed profiles with a kind filter and cursor', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const request = vi.spyOn(client, '_request').mockResolvedValue({
-      data: {
-        viewer: {
-          followingProfiles: {
-            edges: [{ node: userNode }],
-            pageInfo: { endCursor: 'n', hasNextPage: true },
-          },
-        },
-      },
+    const { client, v2 } = v2Client({
+      'GET /me/followed-profiles': { items: [USER], nextPageToken: 'n' },
     });
-    const page = await client.follows.profiles({
-      kind: 'USER',
-      first: 5,
-      after: 'm',
-    });
-    expect(page.pageInfo).toEqual({ endCursor: 'n', hasNextPage: true });
-    expect(request.mock.calls[0][2]?.body).toMatchObject({
-      variables: { input: { kind: 'USER', first: 5, after: 'm' } },
+    expect(
+      await client.follows.profiles({ kind: 'USER', first: 5, after: 'c' })
+    ).toMatchObject({ pageInfo: { endCursor: 'n', hasNextPage: true } });
+    expect(v2).toHaveBeenCalledWith('GET', '/me/followed-profiles', {
+      query: { kind: 'USER', pageSize: 5, pageToken: 'c' },
     });
   });
 
   it.each([
-    [{ kind: 'TEAM', id: '1' }],
-    [{ kind: 'USER', id: '0' }],
-    [{ kind: 'USER', id: 'alice' }],
-  ])('rejects an invalid profile reference %j', async (params) => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const request = vi.spyOn(client, '_request');
-    await expect(
-      client.follows.followProfile(params as never)
-    ).rejects.toThrow();
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it('reads an omitted person X handle as null', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const withoutHandle: Record<string, unknown> = { ...personNode };
-    delete withoutHandle.xHandle;
-    vi.spyOn(client, '_request').mockResolvedValue({
-      data: {
-        profiles: {
-          edges: [{ node: withoutHandle }],
-          pageInfo: { endCursor: '', hasNextPage: false },
-        },
-      },
-    });
-    const page = await client.follows.searchProfiles({ query: 'cathie' });
-    expect(page.profiles[0]).toMatchObject({ kind: 'PERSON', xHandle: null });
-  });
-
-  it('fails closed on an unrecognized profile type', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    vi.spyOn(client, '_request').mockResolvedValue({
-      data: {
-        profiles: {
-          edges: [{ node: { ...userNode, __typename: 'Team' } }],
-          pageInfo: { endCursor: '', hasNextPage: false },
-        },
-      },
-    });
-    await expect(
-      client.follows.searchProfiles({ query: 'x' })
-    ).rejects.toMatchObject({ code: 'GRAPHQL_INVALID_RESPONSE' });
-  });
+    [{ id: '' }],
+    [{ id: '  ' }],
+    [{ kind: 'TEAM', id: 'profile_0p' }],
+    [{ kind: 'USER' }],
+  ])(
+    'rejects an invalid profile reference %j before any request',
+    async (params) => {
+      const { client, v2 } = v2Client({});
+      await expect(
+        client.follows.followProfile(params as never)
+      ).rejects.toThrow();
+      expect(v2).not.toHaveBeenCalled();
+    }
+  );
 });

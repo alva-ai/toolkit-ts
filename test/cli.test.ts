@@ -4756,22 +4756,22 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'subscriptions',
       'subscribe',
       '--feed-ids',
-      '13292,13293',
+      'automation_0a,automation_0b',
       '--channel-id',
-      '42',
+      'channel_0c',
     ]);
     await dispatch(client, [
       'subscriptions',
       'unsubscribe',
       '--feed-ids',
-      '13292',
+      'automation_0a',
     ]);
     expect(client.subscriptions.subscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['13292', '13293'],
-      channelId: '42',
+      feedIds: ['automation_0a', 'automation_0b'],
+      channelId: 'channel_0c',
     });
     expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['13292'],
+      feedIds: ['automation_0a'],
     });
   });
 
@@ -4979,17 +4979,22 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'alert',
       'enable',
       '--automation-ids',
-      '42,43',
+      'automation_0a,automation_0b',
       '--channel-id',
-      '7',
+      'channel_0c',
     ]);
-    await dispatch(client, ['alert', 'disable', '--automation-ids', '42,43']);
+    await dispatch(client, [
+      'alert',
+      'disable',
+      '--automation-ids',
+      'automation_0a,automation_0b',
+    ]);
     expect(client.alerts.enableBatch).toHaveBeenCalledWith({
-      feedIds: ['42', '43'],
-      channelId: '7',
+      feedIds: ['automation_0a', 'automation_0b'],
+      channelId: 'channel_0c',
     });
     expect(client.alerts.disableBatch).toHaveBeenCalledWith({
-      feedIds: ['42', '43'],
+      feedIds: ['automation_0a', 'automation_0b'],
     });
   });
 
