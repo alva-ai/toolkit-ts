@@ -671,17 +671,19 @@ Subcommands:
   create     Create a service account (--name <label>)
   list       List the service accounts you own
   delete     Delete a service account (--id <id>); referencing jobs fail-close
-  grant      Grant an ALFS path (--id <id> --path <path> --permission read|write|import)
-  revoke     Revoke an ALFS path (--id <id> --path <path> --permission ...)
+  grant      Grant an ALFS path (--id <id> --path <path> --permission read|write|import);
+             prints the grant and its id
+  revoke     Revoke one grant (--id <id> --grant-id <grant id>); granting the
+             same path and permission again prints the same grant id
 
 Examples:
   alva service-account create --name fintwit-bot
-  alva service-account grant --id 90123 --path '~/feeds/x/v1/src/index.js' --permission read
-  alva service-account grant --id 90123 --path '~/feeds/x/v1/' --permission read
+  alva service-account grant --id account_0abc --path '~/feeds/x/v1/src/index.js' --permission read
+  alva service-account grant --id account_0abc --path '~/feeds/x/v1/' --permission read
   alva deploy create --name x-update --path '~/feeds/x/v1/src/index.js' \\
-    --cron "0 */4 * * *" --run-as-service-account 90123
-  alva service-account revoke --id 90123 --path '~/feeds/x/v1/' --permission read
-  alva service-account delete --id 90123`,
+    --cron "0 */4 * * *" --run-as-service-account account_0abc
+  alva service-account revoke --id account_0abc --grant-id service_account_grant_0xyz
+  alva service-account delete --id account_0abc`,
 
   automation: `Usage: alva automation <subcommand> [options]
 
@@ -1898,24 +1900,22 @@ function optionalBoundedIntegerFlag(
 }
 
 // Validate an optional service-account id flag (--run-as-service-account).
-// Returns undefined when absent, but THROWS on a non-positive / non-integer
-// value instead of silently dropping it: this is a security-sensitive flag, and
-// a typo (e.g. `90123x` or `=`) must NOT fail open and run the job with the
-// owner's full privileges instead of the scoped SA (#602, Codex P1).
-//
-// The id is kept as a STRING, not parsed to a number: user ids are snowflake
-// int64s that routinely exceed Number.MAX_SAFE_INTEGER, so coercing to a JS
-// number would round a valid id (or reject it under a MAX_SAFE_INTEGER bound),
-// making real service accounts unusable as run-as targets (Codex P2).
+// Returns undefined when absent, but THROWS on an empty value or "0" instead of
+// silently dropping it: this is a security-sensitive flag, and a typo must NOT
+// fail open and run the job with the owner's full privileges instead of the
+// scoped SA (#602). "0" is refused because `deploy update` reads it as "run as
+// owner"; --clear-run-as says that explicitly. The id is the service account's
+// opaque Account ID (account_0…), passed unchanged; the server rejects any
+// other value.
 function optionalServiceAccountIdFlag(
   flags: Record<string, string>,
   command: string
 ): string | undefined {
   const raw = flags['run-as-service-account'];
   if (raw === undefined) return undefined;
-  if (!/^[1-9]\d*$/.test(raw)) {
+  if (!raw.trim() || raw === '0') {
     throw new CliUsageError(
-      `--run-as-service-account must be a positive service-account id for '${command}', got '${raw}'`,
+      `--run-as-service-account must be a service-account id for '${command}', got '${raw}'`,
       command.split(' ')[0]
     );
   }
@@ -1923,14 +1923,13 @@ function optionalServiceAccountIdFlag(
 }
 
 // Resolve the run_as field for create/update/register from its two flags:
-//   --run-as-service-account <id>  → set/switch to that SA (validated > 0)
+//   --run-as-service-account <id>  → set/switch to that SA
 //   --clear-run-as                 → clear it (send "0"; backend runs as owner)
 //   neither                        → undefined (omitted): backend PRESERVES the
 //                                    prior run_as on re-registration/update.
 // The two flags are mutually exclusive. We keep clearing on an explicit
 // --clear-run-as rather than accepting `--run-as-service-account 0`, so a typo'd
-// empty value still throws instead of silently un-scoping the job (#602). The
-// returned value is a string (snowflake-safe id, or "0" to clear).
+// empty value still throws instead of silently un-scoping the job (#602).
 function resolveRunAsFlag(
   flags: Record<string, string>,
   command: string
@@ -1947,24 +1946,17 @@ function resolveRunAsFlag(
   return setID;
 }
 
-// Require a service-account id flag (--id) as a snowflake-safe string. Like
-// optionalServiceAccountIdFlag but mandatory (grant/revoke/delete): SA ids are
-// int64 snowflakes, so validate the shape and keep the string rather than
-// parsing to a number, which would round a large id.
-function requireServiceAccountIdFlag(
+// Require an opaque ID flag (account_0…, cronjob_0…): present and not blank.
+// IDs are passed unchanged; the server validates their type.
+function requireIdFlag(
   flags: Record<string, string>,
+  name: string,
   command: string
 ): string {
-  const raw = flags['id'];
-  if (raw === undefined || raw === '') {
+  const raw = flags[name];
+  if (raw === undefined || !raw.trim()) {
     throw new CliUsageError(
-      `Missing required flag --id for '${command}'`,
-      command.split(' ')[0]
-    );
-  }
-  if (!/^[1-9]\d*$/.test(raw)) {
-    throw new CliUsageError(
-      `--id must be a positive service-account id for '${command}', got '${raw}'`,
+      `Missing required flag --${name} for '${command}'`,
       command.split(' ')[0]
     );
   }
@@ -3972,11 +3964,11 @@ export async function executeParsedCommand(
           return client.serviceAccount.list();
         case 'delete':
           return client.serviceAccount.delete({
-            id: requireServiceAccountIdFlag(flags, 'service-account delete'),
+            id: requireIdFlag(flags, 'id', 'service-account delete'),
           });
         case 'grant':
           return client.serviceAccount.grant({
-            id: requireServiceAccountIdFlag(flags, 'service-account grant'),
+            id: requireIdFlag(flags, 'id', 'service-account grant'),
             path: requireFlag(flags, 'path', 'service-account grant'),
             permission: requireFlag(
               flags,
@@ -3986,11 +3978,10 @@ export async function executeParsedCommand(
           });
         case 'revoke':
           return client.serviceAccount.revoke({
-            id: requireServiceAccountIdFlag(flags, 'service-account revoke'),
-            path: requireFlag(flags, 'path', 'service-account revoke'),
-            permission: requireFlag(
+            id: requireIdFlag(flags, 'id', 'service-account revoke'),
+            grant_id: requireIdFlag(
               flags,
-              'permission',
+              'grant-id',
               'service-account revoke'
             ),
           });

@@ -867,6 +867,26 @@ describe('CLI dispatch', () => {
     });
   });
 
+  it('dispatches service-account revoke by grant ID', async () => {
+    const client = makeClient();
+    client.serviceAccount.revoke = vi.fn().mockResolvedValue(undefined);
+    await dispatch(client, [
+      'service-account',
+      'revoke',
+      '--id',
+      'account_0sa',
+      '--grant-id',
+      'service_account_grant_0g',
+    ]);
+    expect(client.serviceAccount.revoke).toHaveBeenCalledWith({
+      id: 'account_0sa',
+      grant_id: 'service_account_grant_0g',
+    });
+    await expect(
+      dispatch(client, ['service-account', 'revoke', '--id', 'account_0sa'])
+    ).rejects.toThrow(/--grant-id/);
+  });
+
   it('dispatches run with --code', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
@@ -2935,10 +2955,10 @@ components: {}
       '--cron',
       '* * * * *',
       '--run-as-service-account',
-      '90123',
+      'account_0sa',
     ]);
     expect(client.deploy.create).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: '90123' })
+      expect.objectContaining({ run_as_user_id: 'account_0sa' })
     );
   });
 
@@ -2994,25 +3014,22 @@ components: {}
     }
   );
 
-  // Security: a malformed --run-as-service-account must FAIL, not silently drop
-  // the flag and run the job with the owner's full privileges (Codex #113 P1).
-  it('rejects a non-numeric --run-as-service-account (deploy create)', async () => {
+  // Security: --run-as-service-account 0 must FAIL, not reach deploy update as
+  // "0", which clears run_as and runs the job with the owner's full privileges
+  // (Codex #113 P1); --clear-run-as says that explicitly.
+  it('rejects --run-as-service-account 0 (deploy update)', async () => {
     const client = makeClient();
     await expect(
       dispatch(client, [
         'deploy',
-        'create',
-        '--name',
-        'j',
-        '--path',
-        '~/j.js',
-        '--cron',
-        '* * * * *',
+        'update',
+        '--id',
+        '5',
         '--run-as-service-account',
-        '90123x',
+        '0',
       ])
     ).rejects.toThrow(/run-as-service-account/);
-    expect(client.deploy.create).not.toHaveBeenCalled();
+    expect(client.deploy.update).not.toHaveBeenCalled();
   });
 
   it('rejects an empty --run-as-service-account (functions register)', async () => {

@@ -30,7 +30,7 @@ export interface AlvaClientConfig {
 // --- User ---
 
 export interface UserProfile {
-  id: string;
+  id: AlvaId;
   username: string;
   subscription_tier: 'free' | 'pro' | 'max';
   telegram_username: string;
@@ -689,6 +689,7 @@ export interface CreateSecretRequest {
 }
 
 export interface SecretMetadata {
+  id: AlvaId;
   name: string;
   keyVersion: number;
   createdAt: string;
@@ -1035,7 +1036,7 @@ export interface SubmitFeedbackRequest {
 }
 
 export interface SubmitFeedbackResponse {
-  feedback_id: number;
+  feedback_id: AlvaId;
   notion_page_id: string;
   notion_url: string;
 }
@@ -1294,13 +1295,13 @@ export interface ChannelGroupHistoryResponse {
 // --- Service accounts (restricted run-as identities, issue #602) ---
 
 export interface ServiceAccount {
-  // id and parent_user_id are snowflake int64 user ids that overflow JS number
-  // precision, so they are strings (the gateway emits them string-encoded) and
-  // round-trip safely back into --run-as-service-account (#602).
-  id: string;
+  /** Account ID; what `--run-as-service-account` takes (#602). */
+  id: AlvaId;
   display_name: string;
   username: string;
-  parent_user_id: string;
+  /** Account ID of the owner. */
+  parent_user_id: AlvaId;
+  /** Unix milliseconds. */
   created_at?: number;
 }
 
@@ -1317,7 +1318,22 @@ export interface ServiceAccountListResponse {
 }
 
 export interface ServiceAccountGrantRequest {
-  id: string; // snowflake int64 SA id, kept as a string (overflows JS number)
+  id: AlvaId;
   path: string;
   permission: string; // read | write | import
+}
+
+/** One permission a service account holds on one path. */
+export interface ServiceAccountGrant {
+  id: AlvaId;
+  service_account_id: AlvaId;
+  /** Absolute ALFS path. */
+  path: string;
+  permission: string; // read | write | import
+}
+
+export interface ServiceAccountRevokeRequest {
+  id: AlvaId;
+  /** The grant's ID, from `grant` (granting the same pair again returns it). */
+  grant_id: AlvaId;
 }

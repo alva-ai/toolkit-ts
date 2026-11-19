@@ -243,7 +243,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['id', 'path', 'permission'],
     }),
     route('account service-accounts revoke', 'service-account revoke', {
-      values: ['id', 'path', 'permission'],
+      values: ['id', 'grant-id'],
     }),
     route('fs read', 'fs read', { values: ['path', 'offset', 'size'] }),
     route('fs write', 'fs write', {

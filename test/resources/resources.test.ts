@@ -1,12 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { UserResource } from '../../src/resources/user.js';
 import { RunResource } from '../../src/resources/run.js';
 import { AutomationResource } from '../../src/resources/automation.js';
 import { AlertsResource } from '../../src/resources/alerts.js';
 import { SubscriptionsResource } from '../../src/resources/subscriptions.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
 import { NotificationsResource } from '../../src/resources/notifications.js';
-import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
@@ -19,30 +17,6 @@ function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   client._request = vi.fn().mockResolvedValue({});
   return client;
 }
-
-describe('UserResource', () => {
-  it('me() returns all IM binding display fields from GET /api/v1/me', async () => {
-    const client = makeClient();
-    const profile = {
-      id: '42',
-      username: 'alice',
-      subscription_tier: 'pro',
-      telegram_username: 'alice_tg',
-      discord_username: 'alice_discord',
-      slack_username: 'Alice',
-      whatsapp_username: '+15555550123',
-      imessage_username: 'alice@example.com',
-      active_channel: 'slack',
-      toolkit_min_version: '0.1.0',
-      home_path: '/alva/home/alice',
-    };
-    client._request.mockResolvedValue(profile);
-    const user = new UserResource(client);
-    const result = await user.me();
-    expect(result).toEqual(profile);
-    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/me');
-  });
-});
 
 describe('CreditsResource', () => {
   it('wallet() sends a viewer-scoped POST /query request', async () => {
@@ -692,31 +666,6 @@ describe('NotificationsResource', () => {
       'GET',
       '/api/v1/feed/alice/btc-ema/notifications',
       { query: {} }
-    );
-  });
-});
-
-describe('NotificationPreferencesResource', () => {
-  it('list() sends GET /api/v1/me/notifications/preferences', async () => {
-    const client = makeClient();
-    const preferences = new NotificationPreferencesResource(client);
-    await preferences.list();
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/me/notifications/preferences'
-    );
-  });
-
-  it('update() sends PATCH /api/v1/me/notifications/preferences/:key', async () => {
-    const client = makeClient();
-    const preferences = new NotificationPreferencesResource(client);
-    await preferences.update({ key: 'session_completed', enabled: false });
-    expect(client._request).toHaveBeenCalledWith(
-      'PATCH',
-      '/api/v1/me/notifications/preferences/session_completed',
-      {
-        body: { enabled: false },
-      }
     );
   });
 });

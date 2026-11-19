@@ -267,9 +267,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('service-account grant', {
     values: ['id', 'path', 'permission'],
   }),
-  command('service-account revoke', {
-    values: ['id', 'path', 'permission'],
-  }),
+  command('service-account revoke', { values: ['id', 'grant-id'] }),
 
   command('feed list', { values: ['limit', 'cursor', 'status'] }),
   command('feed stop', { values: ['id'] }),

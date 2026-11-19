@@ -1,44 +1,52 @@
-import { describe, it, expect, vi } from 'vitest';
-import { AlvaClient } from '../../src/client.js';
-import { FeedbackResource } from '../../src/resources/feedback.js';
-
-function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
-  const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-    _request: ReturnType<typeof vi.fn>;
-  };
-  client._request = vi.fn().mockResolvedValue({
-    feedback_id: 123,
-    notion_page_id: 'page-123',
-    notion_url: 'https://notion.so/page-123',
-  });
-  return client;
-}
+import { describe, it, expect } from 'vitest';
+import { v2Client } from '../helpers/v2Client.js';
 
 describe('FeedbackResource', () => {
-  it('submit sends POST /api/v1/feedback', async () => {
-    const client = makeClient();
-    const feedback = new FeedbackResource(client);
-    const result = await feedback.submit({
+  it('submit sends POST /api/v2/feedback with upper-case enums', async () => {
+    const { client, v2 } = v2Client({
+      'POST /feedback': {
+        id: 'feedback_0f',
+        notionPageId: 'page-123',
+        notionUrl: 'https://notion.so/page-123',
+      },
+    });
+    const result = await client.feedback.submit({
       summary: 'runtime failed',
-      category: 'runtime',
+      category: 'data_quality',
       severity: 'high',
       evidence: { command: 'alva run foo.js' },
       context: { session_id: 's1' },
     });
-
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/feedback', {
+    expect(v2).toHaveBeenCalledWith('POST', '/feedback', {
       body: {
+        source: undefined,
+        category: 'DATA_QUALITY',
+        severity: 'HIGH',
         summary: 'runtime failed',
-        category: 'runtime',
-        severity: 'high',
+        details: undefined,
         evidence: { command: 'alva run foo.js' },
         context: { session_id: 's1' },
       },
     });
     expect(result).toEqual({
-      feedback_id: 123,
+      feedback_id: 'feedback_0f',
       notion_page_id: 'page-123',
       notion_url: 'https://notion.so/page-123',
+    });
+  });
+
+  it('submit reports an unfiled Notion page as empty strings', async () => {
+    const { client } = v2Client({
+      'POST /feedback': {
+        id: 'feedback_0f',
+        notionPageId: null,
+        notionUrl: null,
+      },
+    });
+    expect(await client.feedback.submit({ summary: 's' })).toEqual({
+      feedback_id: 'feedback_0f',
+      notion_page_id: '',
+      notion_url: '',
     });
   });
 });

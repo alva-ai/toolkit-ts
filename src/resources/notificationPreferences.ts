@@ -1,9 +1,20 @@
 import type { AlvaClient } from '../client.js';
+import { AlvaError } from '../error.js';
 import type {
+  NotificationPreferenceKey,
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateParams,
   NotificationPreferenceUpdateResponse,
 } from '../types.js';
+
+/** GET and PATCH /api/v2/me/notification-preferences. */
+interface WirePreferences {
+  sessionCompleted: boolean | null;
+}
+
+const FIELDS: Record<NotificationPreferenceKey, keyof WirePreferences> = {
+  session_completed: 'sessionCompleted',
+};
 
 export class NotificationPreferencesResource {
   constructor(private client: AlvaClient) {}
@@ -14,10 +25,16 @@ export class NotificationPreferencesResource {
    */
   async list(): Promise<NotificationPreferencesResponse> {
     this.client._requireAuth();
-    return this.client._request(
+    const prefs = await this.client._v2Request<WirePreferences>(
       'GET',
-      '/api/v1/me/notifications/preferences'
-    ) as Promise<NotificationPreferencesResponse>;
+      '/me/notification-preferences'
+    );
+    return {
+      settings:
+        prefs.sessionCompleted === null
+          ? []
+          : [{ key: 'session_completed', enabled: prefs.sessionCompleted }],
+    };
   }
 
   /**
@@ -27,12 +44,23 @@ export class NotificationPreferencesResource {
     params: NotificationPreferenceUpdateParams
   ): Promise<NotificationPreferenceUpdateResponse> {
     this.client._requireAuth();
-    return this.client._request(
+    const field = Object.hasOwn(FIELDS, params.key)
+      ? FIELDS[params.key]
+      : undefined;
+    if (field === undefined) {
+      throw new AlvaError(
+        'INVALID_ARGUMENT',
+        `unknown notification preference ${JSON.stringify(params.key)}`,
+        400
+      );
+    }
+    const prefs = await this.client._v2Request<WirePreferences>(
       'PATCH',
-      `/api/v1/me/notifications/preferences/${encodeURIComponent(params.key)}`,
-      {
-        body: { enabled: params.enabled },
-      }
-    ) as Promise<NotificationPreferenceUpdateResponse>;
+      '/me/notification-preferences',
+      { body: { [field]: params.enabled } }
+    );
+    return {
+      setting: { key: params.key, enabled: prefs[field] ?? params.enabled },
+    };
   }
 }
