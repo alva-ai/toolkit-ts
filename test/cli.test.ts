@@ -89,8 +89,10 @@ function makeClient(
   client.fs.grant = vi.fn().mockResolvedValue(undefined);
   client.fs.revoke = vi.fn().mockResolvedValue(undefined);
   client.deploy.list = vi.fn().mockResolvedValue({ cronjobs: [] });
-  client.deploy.create = vi.fn().mockResolvedValue({ id: 1 });
-  client.deploy._createSerializedArgs = vi.fn().mockResolvedValue({ id: 1 });
+  client.deploy.create = vi.fn().mockResolvedValue({ id: 'cronjob_0p1' });
+  client.deploy._createSerializedArgs = vi
+    .fn()
+    .mockResolvedValue({ id: 'cronjob_0p1' });
   client.deploy.get = vi.fn().mockResolvedValue({ id: 1 });
   client.deploy.update = vi.fn().mockResolvedValue({ id: 1 });
   client.deploy._updateSerializedArgs = vi.fn().mockResolvedValue({ id: 1 });
@@ -143,7 +145,7 @@ function makeClient(
   client.automation.inspect = vi.fn().mockResolvedValue({
     id: '42',
     feed_id: '42',
-    cronjob_id: 420,
+    cronjob_id: 'cronjob_0p420',
     name: 'portfolio-watch',
     status: 'ACTIVE',
     cron_expression: '0 9 * * *',
@@ -519,9 +521,9 @@ describe('CLI dispatch', () => {
 
   it('dispatches deploy runs with --id', async () => {
     const client = makeClient();
-    await dispatch(client, ['deploy', 'runs', '--id', '42']);
+    await dispatch(client, ['deploy', 'runs', '--id', 'cronjob_0c']);
     expect(client.deploy.listRuns).toHaveBeenCalledWith(
-      expect.objectContaining({ cronjob_id: 42 })
+      expect.objectContaining({ cronjob_id: 'cronjob_0c' })
     );
   });
 
@@ -531,14 +533,14 @@ describe('CLI dispatch', () => {
       'deploy',
       'runs',
       '--id',
-      '42',
+      'cronjob_0c',
       '--first',
       '5',
       '--cursor',
       'next.page.token',
     ]);
     expect(client.deploy.listRuns).toHaveBeenCalledWith({
-      cronjob_id: 42,
+      cronjob_id: 'cronjob_0c',
       first: 5,
       cursor: 'next.page.token',
     });
@@ -546,8 +548,13 @@ describe('CLI dispatch', () => {
 
   it('dispatches deploy trigger with --id and returns workflow_run_id', async () => {
     const client = makeClient();
-    const result = await dispatch(client, ['deploy', 'trigger', '--id', '42']);
-    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 42 });
+    const result = await dispatch(client, [
+      'deploy',
+      'trigger',
+      '--id',
+      'cronjob_0c',
+    ]);
+    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 'cronjob_0c' });
     expect(result).toEqual({ workflow_run_id: 'wf-test' });
   });
 
@@ -557,12 +564,12 @@ describe('CLI dispatch', () => {
       'deploy',
       'run-status',
       '--id',
-      '42',
+      'cronjob_0c',
       '--workflow-run-id',
       'wf-test',
     ]);
     expect(client.deploy.getRunStatus).toHaveBeenCalledWith({
-      cronjob_id: 42,
+      cronjob_id: 'cronjob_0c',
       workflow_run_id: 'wf-test',
     });
     expect(result).toEqual({ workflow_run_id: 'wf-test', state: 'PENDING' });
@@ -574,13 +581,14 @@ describe('CLI dispatch', () => {
       'deploy',
       'run-logs',
       '--id',
-      '42',
+      'cronjob_0c',
       '--run-id',
-      '7',
+      'cronjob_run_0r',
     ]);
-    expect(client.deploy.getRunLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ cronjob_id: 42, run_id: 7 })
-    );
+    expect(client.deploy.getRunLogs).toHaveBeenCalledWith({
+      cronjob_id: 'cronjob_0c',
+      run_id: 'cronjob_run_0r',
+    });
   });
 
   it('dispatches schedule list through the explicit Channel scope', async () => {
@@ -723,43 +731,36 @@ describe('CLI dispatch', () => {
   it('passes canonical whole-second timestamps through the real schedule resource', async () => {
     const client = new AlvaClient({ apiKey: 'test-key' });
     const request = vi.fn().mockResolvedValue({
-      data: {
-        updateChannelSchedule: {
-          schedule: {
-            id: 'AgentSchedule:91:market-open',
-            channel: { id: '91' },
-            name: 'market-open',
-            rule: {
-              kind: 'CRON',
-              atMs: null,
-              everyIntervalSeconds: null,
-              cronExpression: '30 9 * * 1-5',
-              cronTimezone: 'America/New_York',
-            },
-            bounds: {
-              startsAtMs: Date.parse('2026-07-15T12:00:00Z'),
-              untilMs: Date.parse('2026-07-15T14:00:00Z'),
-              maxOccurrences: null,
-            },
-            message: { text: 'Review the market open' },
-            status: 'ACTIVE',
-            failureCode: null,
-            failureAtMs: null,
-            occurrencesUsed: 0,
-            nextFireAtMs: Date.parse('2026-07-15T13:30:00Z'),
-            createdAtMs: Date.parse('2026-07-15T11:00:00.123Z'),
-            updatedAtMs: Date.parse('2026-07-15T11:00:00.456Z'),
-          },
-        },
+      id: 'schedule_0mo',
+      channelId: 'channel_0ch',
+      inboxPath: null,
+      name: 'market-open',
+      rule: {
+        kind: 'CRON',
+        fireAt: null,
+        everySeconds: null,
+        cron: '30 9 * * 1-5',
+        timezone: 'America/New_York',
       },
+      startsAt: '2026-07-15T12:00:00.000Z',
+      endsAt: '2026-07-15T14:00:00.000Z',
+      maxOccurrences: null,
+      message: 'Review the market open',
+      status: 'ACTIVE',
+      failureCode: null,
+      failedAt: null,
+      occurrencesUsed: 0,
+      nextFireAt: '2026-07-15T13:30:00.000Z',
+      createdAt: '2026-07-15T11:00:00.123Z',
+      updatedAt: '2026-07-15T11:00:00.456Z',
     });
-    client._request = request;
+    client._v2Request = request;
 
     await dispatch(client, [
       'schedule',
       'put',
       '--channel-id',
-      '91',
+      'channel_0ch',
       '--name',
       'market-open',
       '--message',
@@ -776,28 +777,20 @@ describe('CLI dispatch', () => {
 
     expect(request).toHaveBeenCalledWith(
       'POST',
-      '/query',
-      expect.objectContaining({
+      '/channels/channel_0ch/schedules',
+      {
         body: expect.objectContaining({
-          variables: expect.objectContaining({
-            input: expect.objectContaining({
-              definition: expect.objectContaining({
-                bounds: {
-                  startsAtMs: Date.parse('2026-07-15T12:00:00Z'),
-                  untilMs: Date.parse('2026-07-15T14:00:00Z'),
-                },
-              }),
-            }),
-          }),
+          startsAt: '2026-07-15T12:00:00.000Z',
+          endsAt: '2026-07-15T14:00:00.000Z',
         }),
-      })
+      }
     );
 
     await dispatch(client, [
       'schedule',
       'put',
       '--channel-id',
-      '91',
+      'channel_0ch',
       '--name',
       'one-shot',
       '--message',
@@ -808,21 +801,12 @@ describe('CLI dispatch', () => {
 
     expect(request).toHaveBeenLastCalledWith(
       'POST',
-      '/query',
-      expect.objectContaining({
+      '/channels/channel_0ch/schedules',
+      {
         body: expect.objectContaining({
-          variables: expect.objectContaining({
-            input: expect.objectContaining({
-              definition: expect.objectContaining({
-                rule: {
-                  kind: 'AT',
-                  atMs: Date.parse('2026-07-15T12:00:00Z'),
-                },
-              }),
-            }),
-          }),
+          rule: { kind: 'AT', fireAt: '2026-07-15T12:00:00.000Z' },
         }),
-      })
+      }
     );
   });
 
@@ -2024,7 +2008,7 @@ describe('CLI dispatch', () => {
       '--id',
       '42',
     ]);
-    expect(client.automation.inspect).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.inspect).toHaveBeenCalledWith({ id: '42' });
     expect(result).toEqual(expect.stringContaining('portfolio-watch'));
     expect(result).toEqual(expect.stringContaining('flow id: portfolio_watch'));
     expect(result).toEqual(
@@ -2046,7 +2030,7 @@ describe('CLI dispatch', () => {
     expect(result).toEqual({
       id: '42',
       feed_id: '42',
-      cronjob_id: 420,
+      cronjob_id: 'cronjob_0p420',
       name: 'portfolio-watch',
       status: 'ACTIVE',
       cron_expression: '0 9 * * *',
@@ -2111,7 +2095,7 @@ describe('CLI dispatch', () => {
       '--version',
       '1.0.1',
       '--cronjob-id',
-      '5',
+      'cronjob_0c',
       '--description=updated',
       '--changelog=republished',
       '--agent-type',
@@ -2121,7 +2105,7 @@ describe('CLI dispatch', () => {
     expect(client.automation.update).toHaveBeenCalledWith({
       id: '2077624515435917312',
       version: '1.0.1',
-      cronjob_id: 5,
+      cronjob_id: 'cronjob_0c',
       description: 'updated',
       changelog: 'republished',
       agent_type: 'alpi',
@@ -3110,10 +3094,10 @@ components: {}
     );
   });
 
-  it('throws CliUsageError with command="deploy" when --id is non-numeric for deploy get', async () => {
+  it('throws CliUsageError with command="deploy" when --id is blank for deploy get', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['deploy', 'get', '--id', 'abc'])
+      dispatch(client, ['deploy', 'get', '--id', ' '])
     ).rejects.toSatisfy(
       (err: unknown) => err instanceof CliUsageError && err.command === 'deploy'
     );
@@ -5559,11 +5543,39 @@ describe('CLI dispatch — Slim Agent profile', () => {
       expect.objectContaining({
         name: 'pulse',
         version: '1.0.0',
-        cronjob_id: '1',
+        cronjob_id: 'cronjob_0p1',
         description: 'Market pulse',
       })
     );
-    expect(result).toEqual({ automation: { feed_id: 1 }, producer: { id: 1 } });
+    expect(result).toEqual({
+      automation: { feed_id: 1 },
+      producer: { id: 'cronjob_0p1' },
+    });
+  });
+
+  it('refuses a producer whose id is not an ID string', async () => {
+    const client = makeClient();
+    client.deploy.create = vi.fn().mockResolvedValue({ id: 1 });
+    await expect(
+      dispatchEmbedded(
+        client,
+        [
+          'automation',
+          'create',
+          '--name',
+          'pulse',
+          '--path',
+          '~/scripts/pulse.js',
+          '--cron',
+          '0 * * * *',
+          '--version',
+          '1.0.0',
+        ],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow('Automation producer creation returned an invalid id');
+    expect(client.automation.publish).not.toHaveBeenCalled();
   });
 
   it('validates automation registration fields before creating a producer', async () => {
@@ -5612,7 +5624,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
         agentDeps
       )
     ).rejects.toThrow(
-      /producer 1 was created.*left intact.*registration unavailable/
+      /producer cronjob_0p1 was created.*left intact.*registration unavailable/
     );
     expect(client.deploy.delete).not.toHaveBeenCalled();
   });
@@ -5635,7 +5647,10 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.update).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 420, cron_expression: '0 8 * * *' })
+      expect.objectContaining({
+        id: 'cronjob_0p420',
+        cron_expression: '0 8 * * *',
+      })
     );
     expect(client.automation.update).toHaveBeenCalledWith(
       expect.objectContaining({ id: '42', description: 'New description' })
@@ -5648,7 +5663,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.listRuns).toHaveBeenCalledWith({
-      cronjob_id: 420,
+      cronjob_id: 'cronjob_0p420',
       first: 20,
       cursor: undefined,
     });
@@ -5659,7 +5674,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 420 });
+    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 'cronjob_0p420' });
     expect(trigger).toEqual({ workflow_run_id: 'wf-test' });
   });
 
@@ -5725,7 +5740,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
         agentDeps
       )
     ).rejects.toThrow(
-      /Automation 42 metadata update failed after producer 420 was updated: metadata unavailable/
+      /Automation 42 metadata update failed after producer cronjob_0p420 was updated: metadata unavailable/
     );
     expect(client.deploy.update).toHaveBeenCalled();
   });
@@ -5794,12 +5809,12 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
+    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 'cronjob_0p420' });
     expect(client.automation.delete).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.delete).not.toHaveBeenCalled();
     expect(result).toEqual({
       automation_id: '42',
-      cronjob_id: 420,
+      cronjob_id: 'cronjob_0p420',
       status: 'deleted',
     });
   });
@@ -5843,7 +5858,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
+    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 'cronjob_0p420' });
     expect(client.automation.stop).toHaveBeenCalledWith({ id: '42' });
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
@@ -5854,7 +5869,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.automation.resume).toHaveBeenCalledWith({ id: '42' });
-    expect(client.deploy.resume).toHaveBeenCalledWith({ id: 420 });
+    expect(client.deploy.resume).toHaveBeenCalledWith({ id: 'cronjob_0p420' });
     expect(client.automation.resume).toHaveBeenCalledBefore(
       client.deploy.resume
     );
@@ -5874,7 +5889,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
         agentDeps
       )
     ).rejects.toThrow(
-      /producer 420 was paused.*remains paused.*delete unavailable/
+      /producer cronjob_0p420 was paused.*remains paused.*delete unavailable/
     );
     expect(client.deploy.delete).not.toHaveBeenCalled();
   });

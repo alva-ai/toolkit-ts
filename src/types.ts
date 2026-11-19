@@ -292,7 +292,7 @@ export interface CronjobCreateRequest {
 }
 
 export interface Cronjob {
-  id: number;
+  id: AlvaId;
   name: string;
   path: string;
   cron_expression: string;
@@ -306,8 +306,8 @@ export interface Cronjob {
   /** Effective wall-clock execution timeout in seconds. */
   execution_timeout_seconds: number;
   /**
-   * SA id the cronjob runs as, or "0" when it runs as the owner (#602).
-   * A string: snowflake int64 ids overflow JS number precision.
+   * Account ID of the service account the cronjob runs as, or "0" when it
+   * runs as the owner (#602).
    */
   run_as_user_id: string;
   /** Inclusive eligibility lower bound, resolved by the server on create. */
@@ -332,11 +332,12 @@ export interface CronjobListParams {
 
 export interface CronjobListResponse {
   cronjobs: Cronjob[];
+  /** Empty on the last page. */
   next_cursor?: string;
 }
 
 export interface CronjobUpdateRequest {
-  id: number;
+  id: AlvaId;
   name?: string;
   cron_expression?: string;
   args?: Record<string, unknown>;
@@ -350,31 +351,31 @@ export interface CronjobUpdateRequest {
    */
   execution_timeout_seconds?: number;
   /**
-   * Re-point the cronjob at a service-account identity, or "0" to clear it back
-   * to the owner (#602). Omitted ⇒ run_as unchanged.
-   * A string: SA ids are snowflake int64s that overflow JS number precision.
+   * Re-point the cronjob at a service account (its Account ID), or "0" to
+   * clear it back to the owner (#602). Omitted ⇒ run_as unchanged.
    */
   run_as_user_id?: string;
 }
 
 export interface CronjobRunsListParams {
-  cronjob_id: number;
+  cronjob_id: AlvaId;
   first?: number;
   cursor?: string;
 }
 
 export interface CronjobRun {
-  id: number;
-  cronjob_id: number;
+  id: AlvaId;
+  cronjob_id: AlvaId;
   status: string;
   error: string;
   duration_ms: number;
   credits_used: number;
   created_at: string;
+  finished_at?: string;
   /**
-   * Hatchet workflow run id captured at trigger time. Populated for runs
-   * persisted by recent worker binaries (both naturally-scheduled ticks and
-   * triggered runs); empty for older rows. External callers that issued
+   * Dispatch ID of the run (what `deploy.trigger()` returns). Populated for
+   * runs persisted by recent worker binaries (both naturally-scheduled ticks
+   * and triggered runs); empty for older rows. External callers that issued
    * `deploy.trigger()` filter by this field to find the run their request
    * produced.
    */
@@ -385,6 +386,7 @@ export interface CronjobRunStats {
   total_runs: number;
   success_count: number;
   fail_count: number;
+  skipped_count: number;
   last_run_at?: string;
   last_success_at?: string;
 }
@@ -392,19 +394,20 @@ export interface CronjobRunStats {
 export interface CronjobRunsListResponse {
   runs: CronjobRun[];
   stats?: CronjobRunStats;
-  next_cursor?: number;
+  /** Opaque token of the next page; absent on the last page. */
+  next_cursor?: string;
 }
 
 export interface CronjobRunStatusParams {
-  cronjob_id: number;
-  workflow_run_id: string;
+  cronjob_id: AlvaId;
+  /** The dispatch ID `deploy.trigger()` returned. */
+  workflow_run_id: AlvaId;
 }
 
 export interface CronjobRunStatusResponse {
   workflow_run_id: string;
   /**
    * PENDING means no cronjob_runs row exists yet. It is not falsifiable:
-   * a mistyped workflow_run_id, a workflow_run_id from another cronjob, or
    * a workflow that failed before persistence can remain PENDING forever.
    * DISPATCHED and RUNNING mean an in-flight row exists. Pollers must stop
    * on their own deadline if the run never reaches a terminal state.
@@ -423,11 +426,13 @@ export interface CronjobRunStatusResponse {
 
 export interface CronjobRunLogsResponse {
   logs: string;
+  /** The run's error; empty when it has none. */
+  error?: string;
 }
 
 export interface CronjobTriggerResponse {
   /**
-   * Hatchet workflow run id at enqueue. Async — the persisted
+   * Dispatch ID at enqueue. Async — the persisted
    * `cronjob_runs` row appears only after the worker finishes the run.
    * Callers verify completion by polling
    * `deploy.getRunStatus({cronjob_id, workflow_run_id})` with their own
@@ -499,17 +504,17 @@ export interface FeedListResponse {
 }
 
 export interface AutomationInspectRequest {
-  /** Positive decimal automation id. String form preserves int64 precision. */
-  id: number | string;
+  /** Automation ID. */
+  id: AlvaId;
 }
 
 export interface AutomationInspectResponse {
-  /** Numeric automation id encoded as a string, matching the gateway response. */
-  id: string;
-  /** Backing feed id encoded as a string. */
-  feed_id: string;
-  /** Backing producer cronjob id used by lifecycle and run operations. */
-  cronjob_id?: number;
+  /** Automation ID. */
+  id: AlvaId;
+  /** The same Automation ID (automations and feeds share one ID). */
+  feed_id: AlvaId;
+  /** Cronjob ID of the producer, used by lifecycle and run operations. */
+  cronjob_id?: AlvaId;
   name: string;
   description?: string;
   /** Automation runtime status. */
@@ -529,12 +534,12 @@ export interface AutomationInspectResponse {
 }
 
 export interface AutomationUpdateRequest {
-  /** Positive decimal automation id kept as a string to preserve int64 precision. */
-  id: string;
+  /** Automation ID. */
+  id: AlvaId;
   /** Contract version to republish. Omitted preserves the current version. */
   version?: string;
-  /** Replacement producer cronjob. Omitted preserves the current producer. */
-  cronjob_id?: number;
+  /** Cronjob ID of a replacement producer. Omitted preserves the current one. */
+  cronjob_id?: AlvaId;
   /** Omitted preserves; an explicit empty string clears the field. */
   description?: string;
   /** Omitted preserves; an explicit empty string clears the field. */
@@ -546,12 +551,12 @@ export interface AutomationUpdateRequest {
 }
 
 export interface AutomationUpdateResponse {
-  id: string;
-  feed_id: string;
+  id: AlvaId;
+  feed_id: AlvaId;
   name: string;
   feed_major: number;
   version: string;
-  cronjob_id: number;
+  cronjob_id: AlvaId;
 }
 
 export interface AutomationEmailDelivery {
@@ -562,29 +567,33 @@ export interface AutomationEmailDelivery {
 
 export interface AutomationAlertDelivery {
   isEnabled: boolean;
-  alvaChannels: Array<{ id: string }>;
+  /** Channel IDs. */
+  alvaChannels: Array<{ id: AlvaId }>;
   email: AutomationEmailDelivery;
 }
 
 export interface AutomationAlertDeliveryGetRequest {
-  /** Positive decimal automation id kept as a string to preserve int64 precision. */
-  id: string;
+  /** Automation ID. */
+  id: AlvaId;
 }
 
 export interface AutomationAlertDeliveryUpdateRequest {
-  /** Positive decimal automation id kept as a string to preserve int64 precision. */
-  id: string;
-  /** Replace Alva destinations when present; an explicit empty list clears them. */
+  /** Automation ID. */
+  id: AlvaId;
+  /**
+   * Replace Alva destinations (Channel IDs; "0" is the caller's Agent channel)
+   * when present; an explicit empty list clears them.
+   */
   alvaChannelIds?: readonly string[];
   /** Update only the verified-account email destination when present. */
   emailEnabled?: boolean;
 }
 
 export interface AutomationAlertDeliveryUpdateResponse {
-  automation: { id: string };
+  automation: { id: AlvaId };
   alertDelivery: {
     isEnabled: boolean;
-    alvaChannels?: Array<{ id: string }>;
+    alvaChannels?: Array<{ id: AlvaId }>;
     email?: AutomationEmailDelivery;
   };
 }

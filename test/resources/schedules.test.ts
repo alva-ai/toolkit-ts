@@ -1,88 +1,183 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AlvaClient } from '../../src/client.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlvaError } from '../../src/error.js';
+import type { V2RequestOptions } from '../../src/platformApi.js';
+import { v2Client } from '../helpers/v2Client.js';
+
+const CHANNEL = 'channel_0ch';
+const INBOX = '/alva/home/alice/original.inbox.jsonl';
 
 const wireSchedule = {
-  id: 'AgentSchedule:91:heartbeat',
-  channel: { id: '91' },
+  id: 'schedule_0hb',
+  channelId: CHANNEL,
+  inboxPath: null,
   name: 'heartbeat',
   rule: {
     kind: 'EVERY',
-    atMs: null,
-    everyIntervalSeconds: 3600,
-    cronExpression: null,
-    cronTimezone: null,
+    fireAt: null,
+    everySeconds: 3600,
+    cron: null,
+    timezone: null,
   },
-  bounds: { startsAtMs: null, untilMs: null, maxOccurrences: 5 },
-  message: { text: 'Check status.' },
+  startsAt: null,
+  endsAt: null,
+  maxOccurrences: 5,
+  message: 'Check status.',
   status: 'ACTIVE',
   failureCode: null,
-  failureAtMs: null,
+  failedAt: null,
   occurrencesUsed: 1,
-  nextFireAtMs: Date.parse('2026-08-11T05:00:00Z'),
-  createdAtMs: Date.parse('2026-08-11T03:00:00Z'),
-  updatedAtMs: Date.parse('2026-08-11T04:00:00Z'),
+  nextFireAt: '2026-08-11T05:00:00.000Z',
+  createdAt: '2026-08-11T03:00:00.000Z',
+  updatedAt: '2026-08-11T04:00:00.000Z',
 };
 
-describe('SchedulesResource', () => {
-  let client: AlvaClient;
-  let request: ReturnType<typeof vi.fn>;
+const heartbeat = {
+  name: 'heartbeat',
+  rule: { kind: 'every', interval: 'PT3600S' },
+  bounds: { maxOccurrences: 5 },
+  text: 'Check status.',
+  status: 'active',
+  occurrencesUsed: 1,
+  nextFireAt: '2026-08-11T05:00:00.000Z',
+  createdAt: '2026-08-11T03:00:00.000Z',
+  updatedAt: '2026-08-11T04:00:00.000Z',
+};
 
-  beforeEach(() => {
-    client = new AlvaClient({ apiKey: 'alva_test' });
-    request = vi.fn();
-    client._request = request;
+function page(items: unknown[], nextPageToken: string | null = null) {
+  return { items, nextPageToken };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('SchedulesResource', () => {
+  it('lists a channel schedules page by page and rebuilds the SDK shape', async () => {
+    const { client, v2 } = v2Client({
+      [`GET /channels/${CHANNEL}/schedules`]: (o: V2RequestOptions) =>
+        o.query?.pageToken === undefined
+          ? page([wireSchedule], 'p2')
+          : page([
+              {
+                ...wireSchedule,
+                name: 'daily',
+                rule: {
+                  ...wireSchedule.rule,
+                  kind: 'CRON',
+                  everySeconds: null,
+                  cron: '0 9 * * *',
+                  timezone: 'UTC',
+                },
+                startsAt: '2026-08-12T00:00:00.000Z',
+                endsAt: '2026-09-01T00:00:00.000Z',
+                maxOccurrences: null,
+                message: null,
+                nextFireAt: null,
+              },
+            ]),
+    });
+    await expect(
+      client.schedules.list({ channelId: CHANNEL })
+    ).resolves.toEqual([
+      heartbeat,
+      {
+        name: 'daily',
+        rule: { kind: 'cron', expression: '0 9 * * *', timezone: 'UTC' },
+        bounds: {
+          startsAt: '2026-08-12T00:00:00.000Z',
+          until: '2026-09-01T00:00:00.000Z',
+        },
+        text: '',
+        status: 'active',
+        occurrencesUsed: 1,
+        createdAt: '2026-08-11T03:00:00.000Z',
+        updatedAt: '2026-08-11T04:00:00.000Z',
+      },
+    ]);
+    expect(v2.mock.calls.map((c) => c[2]?.query)).toEqual([
+      { pageSize: 100, pageToken: undefined },
+      { pageSize: 100, pageToken: 'p2' },
+    ]);
   });
 
-  it('uses the separate Session graph without changing the SDK result shape', async () => {
-    const inboxPath = '/alva/home/alice/original.inbox.jsonl';
-    request.mockResolvedValue({
-      data: {
-        viewer: {
-          sessionSchedules: {
-            edges: [{ node: { ...wireSchedule, inboxPath } }],
-            pageInfo: { hasNextPage: false },
-          },
-        },
-      },
+  it('uses the Session Inbox collection without changing the SDK result shape', async () => {
+    const inboxSchedule = {
+      ...wireSchedule,
+      id: 'session_schedule_0hb',
+      channelId: null,
+      inboxPath: INBOX,
+    };
+    const { client, v2 } = v2Client({
+      'GET /session-schedules': (o: V2RequestOptions) =>
+        page(o.query?.name === 'missing' ? [] : [inboxSchedule]),
+      'POST /session-schedules': inboxSchedule,
+      'POST /session-schedules/session_schedule_0hb/pause': inboxSchedule,
+      'POST /session-schedules/session_schedule_0hb/resume': inboxSchedule,
+      'DELETE /session-schedules/session_schedule_0hb': {},
     });
-    const schedules = await client.schedules.list({ inboxPath });
-    expect(schedules[0]).toMatchObject({ name: 'heartbeat', status: 'active' });
-    expect(schedules[0]).not.toHaveProperty('inboxPath');
-    expect(request.mock.calls[0][2].body).toMatchObject({
-      query: expect.stringContaining('sessionSchedules(inboxPath: $inboxPath'),
-      variables: { inboxPath, after: null },
+    const [listed] = await client.schedules.list({ inboxPath: INBOX });
+    expect(listed).toEqual(heartbeat);
+    expect(v2.mock.calls[0][2]?.query).toEqual({
+      inboxPath: INBOX,
+      pageSize: 100,
+      pageToken: undefined,
     });
-    expect(request.mock.calls[0][2].body.query).not.toContain('channel {');
 
-    request.mockResolvedValue({
-      data: {
-        updateSessionSchedule: { schedule: wireSchedule, deleted: true },
-      },
-    });
     await client.schedules.put({
-      inboxPath,
+      inboxPath: INBOX,
       name: 'heartbeat',
       rule: { kind: 'every', interval: 'PT1H' },
+      bounds: { maxOccurrences: 5 },
       text: 'Check.',
     });
-    await client.schedules.pause({ inboxPath, name: 'heartbeat' });
-    await client.schedules.resume({ inboxPath, name: 'heartbeat' });
-    await client.schedules.delete({ inboxPath, name: 'heartbeat' });
-    for (const [, , { body }] of request.mock.calls.slice(1)) {
-      expect(body.query).toContain('updateSessionSchedule(input: $input)');
-      expect(body.variables.input).toMatchObject({
-        inboxPath,
+    expect(v2).toHaveBeenLastCalledWith('POST', '/session-schedules', {
+      body: {
+        inboxPath: INBOX,
         name: 'heartbeat',
-      });
-      expect(body.variables.input).not.toHaveProperty('channelId');
-    }
+        rule: { kind: 'EVERY', everySeconds: 3600 },
+        maxOccurrences: 5,
+        message: 'Check.',
+      },
+    });
+    await client.schedules.pause({ inboxPath: INBOX, name: 'heartbeat' });
+    await client.schedules.resume({ inboxPath: INBOX, name: 'heartbeat' });
+    await client.schedules.delete({ inboxPath: INBOX, name: 'heartbeat' });
+    expect(v2.mock.calls.slice(2).map(([m, p, o]) => [m, p, o?.query])).toEqual(
+      [
+        ['GET', '/session-schedules', { inboxPath: INBOX, name: 'heartbeat' }],
+        ['POST', '/session-schedules/session_schedule_0hb/pause', undefined],
+        ['GET', '/session-schedules', { inboxPath: INBOX, name: 'heartbeat' }],
+        ['POST', '/session-schedules/session_schedule_0hb/resume', undefined],
+        ['GET', '/session-schedules', { inboxPath: INBOX, name: 'heartbeat' }],
+        ['DELETE', '/session-schedules/session_schedule_0hb', undefined],
+      ]
+    );
+    await expect(
+      client.schedules.pause({ inboxPath: INBOX, name: 'missing' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+
+  it('finds a channel schedule by name and pauses it by its ID', async () => {
+    const { client, v2 } = v2Client({
+      [`GET /channels/${CHANNEL}/schedules`]: page([wireSchedule]),
+      'POST /schedules/schedule_0hb/pause': {
+        ...wireSchedule,
+        status: 'PAUSED',
+      },
+    });
+    await expect(
+      client.schedules.pause({ channelId: CHANNEL, name: 'heartbeat' })
+    ).resolves.toMatchObject({ status: 'paused' });
+    expect(v2.mock.calls[0][2]).toEqual({ query: { name: 'heartbeat' } });
   });
 
   it('rejects ambiguous and malformed targets before any request', async () => {
+    const { client, v2 } = v2Client({});
     for (const target of [
       {},
-      { channelId: 91, inboxPath: '/alva/home/alice/original.inbox.jsonl' },
+      { channelId: CHANNEL, inboxPath: INBOX },
+      { channelId: '' },
+      { channelId: 91 },
       { inboxPath: '' },
       { inboxPath: 'relative.inbox.jsonl' },
       { inboxPath: '/alva/home/alice/../alice/original.inbox.jsonl' },
@@ -96,346 +191,120 @@ describe('SchedulesResource', () => {
         )
       ).rejects.toThrow();
     }
-    expect(request).not.toHaveBeenCalled();
+    expect(v2).not.toHaveBeenCalled();
   });
 
-  it('lists canonical schedules through the owner-scoped Channel graph', async () => {
-    request.mockResolvedValue({
-      data: {
-        viewer: {
-          channel: {
-            schedules: {
-              edges: [{ node: wireSchedule }],
-              pageInfo: { hasNextPage: false, endCursor: 'heartbeat' },
-            },
-          },
-        },
+  it('keeps the problem code of a failed request', async () => {
+    const { client } = v2Client({
+      [`GET /channels/${CHANNEL}/schedules`]: () => {
+        throw new AlvaError('RATE_LIMITED', 'slow down', 429);
       },
     });
-
-    await expect(client.schedules.list({ channelId: '91' })).resolves.toEqual([
-      {
-        name: 'heartbeat',
-        rule: { kind: 'every', interval: 'PT3600S' },
-        bounds: { maxOccurrences: 5 },
-        text: 'Check status.',
-        status: 'active',
-        occurrencesUsed: 1,
-        nextFireAt: '2026-08-11T05:00:00.000Z',
-        createdAt: '2026-08-11T03:00:00.000Z',
-        updatedAt: '2026-08-11T04:00:00.000Z',
-      },
-    ]);
-    expect(request).toHaveBeenCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: { channelId: '91', after: null },
-        }),
-      })
-    );
+    await expect(
+      client.schedules.list({ channelId: CHANNEL })
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED', status: 429 });
   });
 
-  it('reads every schedule page before returning', async () => {
-    request
-      .mockResolvedValueOnce({
-        data: {
-          viewer: {
-            channel: {
-              schedules: {
-                edges: [{ node: wireSchedule }],
-                pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
-              },
-            },
-          },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          viewer: {
-            channel: {
-              schedules: {
-                edges: [{ node: { ...wireSchedule, name: 'second' } }],
-                pageInfo: { hasNextPage: false, endCursor: 'cursor-2' },
-              },
-            },
-          },
-        },
-      });
-
-    await expect(client.schedules.list({ channelId: '91' })).resolves.toEqual([
-      expect.objectContaining({ name: 'heartbeat' }),
-      expect.objectContaining({ name: 'second' }),
-    ]);
-    expect(request).toHaveBeenNthCalledWith(
-      2,
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: { channelId: '91', after: 'cursor-1' },
-        }),
-      })
-    );
-  });
-
-  it('preserves canonical Gateway error codes and retry status', async () => {
-    request.mockResolvedValue({
-      errors: [
-        {
-          message: 'internal error',
-          path: ['viewer', 'channel', 'schedules'],
-          extensions: { code: 'INTERNAL' },
-        },
-      ],
-    });
-
-    const error = await client.schedules
-      .list({ channelId: '91' })
-      .catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(AlvaError);
-    expect(error).toMatchObject({ code: 'INTERNAL', status: 500 });
-  });
-
-  it('treats an unclassified GraphQL failure as an upstream error', async () => {
-    request.mockResolvedValue({
-      errors: [{ message: 'unclassified failure' }],
-    });
-
-    const error = await client.schedules
-      .list({ channelId: '91' })
-      .catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(AlvaError);
-    expect(error).toMatchObject({ code: 'GRAPHQL_ERROR', status: 502 });
-  });
-
-  it('treats mixed classified and unclassified failures as upstream errors', async () => {
-    request.mockResolvedValue({
-      errors: [
-        { message: 'missing', extensions: { code: 'NOT_FOUND' } },
-        { message: 'unclassified failure' },
-      ],
-    });
-
-    const error = await client.schedules
-      .list({ channelId: '91' })
-      .catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(AlvaError);
-    expect(error).toMatchObject({ code: 'GRAPHQL_ERROR', status: 502 });
-  });
-
-  it('converts after to an absolute at before the mutation', async () => {
+  it('converts after to an absolute fireAt before the request', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-11T04:00:00Z'));
-    request.mockResolvedValue({
-      data: {
-        updateChannelSchedule: {
-          schedule: {
-            ...wireSchedule,
-            rule: {
-              kind: 'AT',
-              atMs: Date.parse('2026-08-11T04:01:30Z'),
-              everyIntervalSeconds: null,
-              cronExpression: null,
-              cronTimezone: null,
-            },
-            bounds: {},
-          },
-        },
+    const at = {
+      ...wireSchedule,
+      rule: {
+        kind: 'AT',
+        fireAt: '2026-08-11T04:01:30.000Z',
+        everySeconds: null,
+        cron: null,
+        timezone: null,
+      },
+      maxOccurrences: null,
+    };
+    const { client, v2 } = v2Client({
+      [`POST /channels/${CHANNEL}/schedules`]: at,
+    });
+    await expect(
+      client.schedules.put({
+        channelId: CHANNEL,
+        name: 'soon',
+        rule: { kind: 'after', duration: 'PT90S' },
+        text: 'Check soon.',
+      })
+    ).resolves.toMatchObject({
+      rule: { kind: 'at', timestamp: '2026-08-11T04:01:30.000Z' },
+      bounds: {},
+    });
+    expect(v2).toHaveBeenCalledWith('POST', `/channels/${CHANNEL}/schedules`, {
+      body: {
+        name: 'soon',
+        rule: { kind: 'AT', fireAt: '2026-08-11T04:01:30.000Z' },
+        message: 'Check soon.',
       },
     });
-
-    await client.schedules.put({
-      channelId: 91,
-      name: 'soon',
-      rule: { kind: 'after', duration: 'PT90S' },
-      text: 'Check soon.',
-    });
-
-    expect(request).toHaveBeenCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: {
-            input: {
-              channelId: '91',
-              name: 'soon',
-              definition: {
-                rule: {
-                  kind: 'AT',
-                  atMs: Date.parse('2026-08-11T04:01:30Z'),
-                },
-                message: { text: 'Check soon.' },
-              },
-            },
-          },
-        }),
-      })
-    );
-    vi.useRealTimers();
   });
 
   it('ceil-converts positive whole-second after from a fractional clock', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-11T04:00:00.001Z'));
-    request.mockResolvedValue({
-      data: {
-        updateChannelSchedule: {
-          schedule: {
-            ...wireSchedule,
-            rule: {
-              kind: 'AT',
-              atMs: Date.parse('2026-08-11T04:00:02Z'),
-              everyIntervalSeconds: null,
-              cronExpression: null,
-              cronTimezone: null,
-            },
-          },
-        },
-      },
+    const { client, v2 } = v2Client({
+      [`POST /channels/${CHANNEL}/schedules`]: wireSchedule,
     });
     await client.schedules.put({
-      channelId: 91,
+      channelId: CHANNEL,
       name: 'soon',
       rule: { kind: 'after', duration: 'PT1S' },
       text: 'Check soon.',
     });
-    expect(request).toHaveBeenCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: expect.objectContaining({
-            input: expect.objectContaining({
-              definition: expect.objectContaining({
-                rule: {
-                  kind: 'AT',
-                  atMs: Date.parse('2026-08-11T04:00:02Z'),
-                },
-              }),
-            }),
-          }),
-        }),
-      })
-    );
-    vi.useRealTimers();
-  });
-
-  it('uses explicit lifecycle mutations and rejects unsafe inputs before IO', async () => {
-    request.mockResolvedValue({
-      data: { updateChannelSchedule: { schedule: wireSchedule } },
+    expect(v2.mock.calls[0][2]?.body).toMatchObject({
+      rule: { kind: 'AT', fireAt: '2026-08-11T04:00:02.000Z' },
     });
-    await client.schedules.pause({ channelId: 91, name: 'heartbeat' });
-    expect(request).toHaveBeenCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: {
-            input: {
-              channelId: '91',
-              name: 'heartbeat',
-              lifecycle: 'PAUSED',
-            },
-          },
-        }),
-      })
-    );
-
-    request.mockClear();
-    await expect(
-      client.schedules.put({
-        channelId: 91,
-        name: 'bad',
-        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00' },
-        text: 'x',
-      })
-    ).rejects.toThrow('timezone');
-    expect(request).not.toHaveBeenCalled();
   });
 
-  it('rejects unsafe numeric channel IDs before network IO', async () => {
-    await expect(
-      client.schedules.list({ channelId: Number.MAX_SAFE_INTEGER + 1 })
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    expect(request).not.toHaveBeenCalled();
+  it('sends cron rules and bounds in the v2 body', async () => {
+    const { client, v2 } = v2Client({
+      [`POST /channels/${CHANNEL}/schedules`]: wireSchedule,
+    });
+    await client.schedules.put({
+      channelId: CHANNEL,
+      name: 'daily',
+      rule: {
+        kind: 'cron',
+        expression: '0 9 * * *',
+        timezone: 'America/New_York',
+      },
+      bounds: {
+        startsAt: '2026-08-12T00:00:00+02:00',
+        until: '2026-09-01T00:00:00Z',
+      },
+      text: 'Brief me.',
+    });
+    expect(v2.mock.calls[0][2]?.body).toEqual({
+      name: 'daily',
+      rule: { kind: 'CRON', cron: '0 9 * * *', timezone: 'America/New_York' },
+      startsAt: '2026-08-11T22:00:00.000Z',
+      endsAt: '2026-09-01T00:00:00.000Z',
+      message: 'Brief me.',
+    });
   });
 
   it('accepts lowercase RFC3339 timezone markers', async () => {
-    request.mockResolvedValue({
-      data: {
-        updateChannelSchedule: {
-          schedule: {
-            ...wireSchedule,
-            rule: {
-              kind: 'AT',
-              atMs: Date.parse('2026-08-11T04:00:00Z'),
-              everyIntervalSeconds: null,
-              cronExpression: null,
-              cronTimezone: null,
-            },
-          },
-        },
-      },
+    const { client, v2 } = v2Client({
+      [`POST /channels/${CHANNEL}/schedules`]: wireSchedule,
     });
-
     await client.schedules.put({
-      channelId: 91,
+      channelId: CHANNEL,
       name: 'lowercase-time',
       rule: { kind: 'at', timestamp: '2026-08-11t04:00:00z' },
       text: 'x',
     });
-
-    expect(request).toHaveBeenCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: expect.objectContaining({
-            input: expect.objectContaining({
-              definition: expect.objectContaining({
-                rule: {
-                  kind: 'AT',
-                  atMs: Date.parse('2026-08-11T04:00:00Z'),
-                },
-              }),
-            }),
-          }),
-        }),
-      })
-    );
-  });
-
-  it('tolerates omitted optional bounds and message in responses', async () => {
-    request.mockResolvedValue({
-      data: {
-        viewer: {
-          channel: {
-            schedules: {
-              edges: [
-                { node: { ...wireSchedule, bounds: null, message: null } },
-              ],
-            },
-          },
-        },
-      },
+    expect(v2.mock.calls[0][2]?.body).toMatchObject({
+      rule: { kind: 'AT', fireAt: '2026-08-11T04:00:00.000Z' },
     });
-
-    await expect(client.schedules.list({ channelId: 91 })).resolves.toEqual([
-      expect.objectContaining({ bounds: {}, text: '' }),
-    ]);
   });
 
   it.each([
     [
       'shared name grammar',
       {
-        channelId: 91,
         name: 'Bad Name',
         rule: { kind: 'every', interval: 'PT1H' },
         text: 'x',
@@ -444,7 +313,6 @@ describe('SchedulesResource', () => {
     [
       'calendar-valid RFC3339 timestamp',
       {
-        channelId: 91,
         name: 'valid',
         rule: { kind: 'at', timestamp: '2026-02-30T00:00:00Z' },
         text: 'x',
@@ -453,7 +321,6 @@ describe('SchedulesResource', () => {
     [
       'one-minute duration minimum',
       {
-        channelId: 91,
         name: 'valid',
         rule: { kind: 'every', interval: 'PT59.999S' },
         text: 'x',
@@ -462,7 +329,6 @@ describe('SchedulesResource', () => {
     [
       'fractional explicit timestamp',
       {
-        channelId: 91,
         name: 'valid',
         rule: { kind: 'at', timestamp: '2026-08-11T04:00:00.001Z' },
         text: 'x',
@@ -470,92 +336,82 @@ describe('SchedulesResource', () => {
     ],
     [
       'fractional after duration',
-      {
-        channelId: 91,
-        name: 'valid',
-        rule: { kind: 'after', duration: 'PT1.5S' },
-        text: 'x',
-      },
+      { name: 'valid', rule: { kind: 'after', duration: 'PT1.5S' }, text: 'x' },
     ],
     [
       'empty ISO time component',
-      {
-        channelId: 91,
-        name: 'valid',
-        rule: { kind: 'after', duration: 'P1DT' },
-        text: 'x',
-      },
+      { name: 'valid', rule: { kind: 'after', duration: 'P1DT' }, text: 'x' },
     ],
     [
       'valid UTF-8 text',
       {
-        channelId: 91,
         name: 'valid',
         rule: { kind: 'every', interval: 'PT1H' },
         text: '\ud800',
       },
     ],
   ])('enforces %s before network IO', async (_name, input) => {
-    await expect(client.schedules.put(input as never)).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-    expect(request).not.toHaveBeenCalled();
+    const { client, v2 } = v2Client({});
+    await expect(
+      client.schedules.put({ channelId: CHANNEL, ...input } as never)
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(v2).not.toHaveBeenCalled();
   });
 
   it('fails closed on an unknown response status', async () => {
-    request.mockResolvedValue({
-      data: {
-        viewer: {
-          channel: {
-            schedules: {
-              edges: [{ node: { ...wireSchedule, status: 'FUTURE' } }],
-            },
-          },
-        },
-      },
+    const { client } = v2Client({
+      [`GET /channels/${CHANNEL}/schedules`]: page([
+        { ...wireSchedule, status: 'FUTURE' },
+      ]),
     });
     await expect(
-      client.schedules.list({ channelId: 91 })
-    ).rejects.toMatchObject({ code: 'GRAPHQL_EMPTY_RESPONSE' });
+      client.schedules.list({ channelId: CHANNEL })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('fails closed on a fractional semantic response timestamp', async () => {
-    request.mockResolvedValue({
-      data: {
-        viewer: {
-          channel: {
-            schedules: {
-              edges: [
-                {
-                  node: {
-                    ...wireSchedule,
-                    nextFireAtMs: wireSchedule.nextFireAtMs + 1,
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
+    const { client } = v2Client({
+      [`GET /channels/${CHANNEL}/schedules`]: page([
+        { ...wireSchedule, nextFireAt: '2026-08-11T05:00:00.001Z' },
+      ]),
     });
     await expect(
-      client.schedules.list({ channelId: 91 })
-    ).rejects.toMatchObject({
-      code: 'GRAPHQL_EMPTY_RESPONSE',
+      client.schedules.list({ channelId: CHANNEL })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('reports a failed schedule with its failure code and time', async () => {
+    const { client } = v2Client({
+      [`GET /channels/${CHANNEL}/schedules`]: page([
+        {
+          ...wireSchedule,
+          status: 'FAILED',
+          failureCode: 'TARGET_INVALID',
+          failedAt: '2026-08-11T04:30:00.250Z',
+        },
+      ]),
+    });
+    const [schedule] = await client.schedules.list({ channelId: CHANNEL });
+    expect(schedule).toMatchObject({
+      status: 'failed',
+      failure: { code: 'target_invalid', at: '2026-08-11T04:30:00.250Z' },
     });
   });
 
   it('resolves the viewer Agent Channel for CLI defaults', async () => {
-    request.mockResolvedValue({
-      data: {
-        viewer: {
-          channels: [
-            { id: '12', kind: 'TOPIC' },
-            { id: '91', kind: 'AGENT' },
-          ],
-        },
-      },
+    const { client, v2 } = v2Client({
+      'GET /me/channels': page([{ id: CHANNEL, kind: 'AGENT' }]),
     });
-    await expect(client.schedules.agentChannelId()).resolves.toBe('91');
+    await expect(client.schedules.agentChannelId()).resolves.toBe(CHANNEL);
+    expect(v2).toHaveBeenCalledWith('GET', '/me/channels', {
+      query: { kind: 'AGENT' },
+    });
+  });
+
+  it('reports a missing Agent Channel as NOT_FOUND', async () => {
+    const { client } = v2Client({ 'GET /me/channels': page([]) });
+    await expect(client.schedules.agentChannelId()).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
   });
 });

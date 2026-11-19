@@ -1,6 +1,7 @@
 import type { AlvaClient } from '../client.js';
-import { AlvaError } from '../error.js';
+import { v2Path } from '../platformApi.js';
 import type {
+  AlvaId,
   AutomationAlertDelivery,
   AutomationAlertDeliveryGetRequest,
   AutomationAlertDeliveryUpdateRequest,
@@ -19,56 +20,44 @@ import type {
   FeedStatusUpdateResponse,
 } from '../types.js';
 
-const AUTOMATION_ALERT_DELIVERY_QUERY = `
-query ToolkitAutomationAlertDelivery($automationId: ID!) {
-  automation(id: $automationId) {
-    alertDelivery {
-      isEnabled
-      alvaChannels { id }
-      email { isEnabled isAvailable address }
-    }
-  }
-}
-`.trim();
-
-const UPDATE_AUTOMATION_ALERT_DELIVERY = `
-mutation ToolkitUpdateAutomationAlertDelivery(
-  $input: UpdateAutomationAlertDeliveryInput!
-  $includeAlvaChannels: Boolean!
-  $includeEmail: Boolean!
-) {
-  updateAutomationAlertDelivery(input: $input) {
-    automation { id }
-    alertDelivery {
-      isEnabled
-      alvaChannels @include(if: $includeAlvaChannels) { id }
-      email @include(if: $includeEmail) { isEnabled isAvailable address }
-    }
-  }
-}
-`.trim();
-
-interface GraphQLErrorPayload {
-  message?: unknown;
-  [key: string]: unknown;
+/** An Automation of /api/v2. */
+interface WireAutomation {
+  id: AlvaId;
+  name: string;
+  description: string | null;
+  status: string;
+  schedule: { cron: string; timezone: string };
+  stats: { totalRuns: number };
+  cronjobId: AlvaId | null;
+  flow: string | null;
+  flowConfigPath: string | null;
 }
 
-interface GraphQLResponse<T> {
-  data?: T | null;
-  errors?: Array<GraphQLErrorPayload | null>;
+/** GET /api/v2/automations/{automationId}/delivery. */
+interface WireDelivery {
+  channelIds: AlvaId[];
+  email: { enabled: boolean; available: boolean; address: string | null };
 }
 
-interface AutomationAlertDeliveryQueryData {
-  automation?: { alertDelivery?: AutomationAlertDelivery | null } | null;
-}
+/** The v1 alias of the caller's Agent channel in `alvaChannelIds`. */
+const AGENT_CHANNEL_ALIAS = '0';
 
-interface AutomationAlertDeliveryMutationData {
-  updateAutomationAlertDelivery?: AutomationAlertDeliveryUpdateResponse | null;
+function alertDelivery(delivery: WireDelivery): AutomationAlertDelivery {
+  return {
+    isEnabled: delivery.channelIds.length > 0 || delivery.email.enabled,
+    alvaChannels: delivery.channelIds.map((id) => ({ id })),
+    email: {
+      isEnabled: delivery.email.enabled,
+      isAvailable: delivery.email.available,
+      address: delivery.email.address,
+    },
+  };
 }
 
 /**
- * Product-facing automation API. Backed by the existing feed/release gateway
- * surfaces while those lower-level names remain on the wire for compatibility.
+ * Product-facing automation API. inspect, update and delivery call
+ * /api/v2/automations; list, stop, resume, delete and publish delegate to the
+ * feed and release resources.
  */
 export class AutomationResource {
   readonly delivery: AutomationAlertDeliveryResource;
@@ -81,45 +70,63 @@ export class AutomationResource {
     return this.client.feed.list(params);
   }
 
-  /**
-   * Inspect one automation. Backed by GET /api/v1/automation/:id.
-   */
+  /** Inspect one automation. */
   async inspect(
     params: AutomationInspectRequest
   ): Promise<AutomationInspectResponse> {
     this.client._requireAuth();
-    const id = requireAutomationID(params.id);
-    return this.client._request(
+    const a = await this.client._v2Request<WireAutomation>(
       'GET',
-      `/api/v1/automation/${encodeURIComponent(String(id))}`
-    ) as Promise<AutomationInspectResponse>;
+      v2Path`/automations/${params.id}`
+    );
+    return {
+      id: a.id,
+      feed_id: a.id,
+      ...(a.cronjobId ? { cronjob_id: a.cronjobId } : {}),
+      name: a.name,
+      ...(a.description ? { description: a.description } : {}),
+      status: a.status,
+      ...(a.schedule.cron ? { cron_expression: a.schedule.cron } : {}),
+      total_runs: a.stats.totalRuns,
+      flow_id: a.flow,
+      flow_config_path: a.flowConfigPath,
+    };
   }
 
-  /** Partially update one existing automation by immutable decimal-string id. */
+  /** Partially update one existing automation by publishing a new version. */
   async update(
     params: AutomationUpdateRequest
   ): Promise<AutomationUpdateResponse> {
     this.client._requireAuth();
-    const id = requireAutomationIDString(params.id);
     if (!hasAutomationUpdate(params)) {
       throw new Error(
         'automation update requires at least one field or trigger=true'
       );
     }
-    return this.client._request(
-      'PATCH',
-      `/api/v1/automation/${encodeURIComponent(String(id))}`,
-      {
-        body: {
-          version: params.version,
-          cronjob_id: params.cronjob_id,
-          description: params.description,
-          changelog: params.changelog,
-          agent_type: params.agent_type,
-          trigger: params.trigger,
-        },
-      }
-    ) as Promise<AutomationUpdateResponse>;
+    const version = await this.client._v2Request<{
+      automationId: AlvaId;
+      name: string;
+      major: number;
+      version: string;
+      cronjobId: AlvaId;
+    }>('POST', v2Path`/automations/${params.id}/versions`, {
+      body: {
+        version: params.version,
+        cronjobId: params.cronjob_id,
+        description: params.description,
+        changelog: params.changelog,
+        agentType: params.agent_type,
+        triggerRun: params.trigger ?? false,
+      },
+    });
+    return {
+      id: version.automationId,
+      feed_id: version.automationId,
+      name: version.name,
+      feed_major: version.major,
+      version: version.version,
+      cronjob_id: version.cronjobId,
+    };
   }
 
   stop(params: FeedStatusUpdateRequest): Promise<FeedStatusUpdateResponse> {
@@ -146,27 +153,17 @@ export class AutomationAlertDeliveryResource {
     params: AutomationAlertDeliveryGetRequest
   ): Promise<AutomationAlertDelivery> {
     this.client._requireAuth();
-    const id = requireAutomationIDString(params.id);
-    const data = await this.graphql<AutomationAlertDeliveryQueryData>(
-      AUTOMATION_ALERT_DELIVERY_QUERY,
-      { automationId: id }
-    );
-    const delivery = data.automation?.alertDelivery;
-    if (!delivery) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include automation.alertDelivery',
-        502
-      );
-    }
-    return delivery;
+    return alertDelivery(await this.read(params.id));
   }
 
+  /**
+   * Replaces the Alva channel destinations and/or turns email on or off.
+   * `alvaChannelIds` takes Channel IDs; "0" names the caller's Agent channel.
+   */
   async update(
     params: AutomationAlertDeliveryUpdateRequest
   ): Promise<AutomationAlertDeliveryUpdateResponse> {
     this.client._requireAuth();
-    const id = requireAutomationIDString(params.id);
     const includeAlvaChannels = params.alvaChannelIds !== undefined;
     const includeEmail = params.emailEnabled !== undefined;
     if (!includeAlvaChannels && !includeEmail) {
@@ -174,78 +171,41 @@ export class AutomationAlertDeliveryResource {
         'automation delivery update requires alvaChannelIds or emailEnabled'
       );
     }
-    const alvaChannelIds = includeAlvaChannels
-      ? uniqueAlvaChannelIDs(params.alvaChannelIds ?? [])
+    const channelIds = includeAlvaChannels
+      ? await this.channelIDs(params.alvaChannelIds ?? [])
       : undefined;
-    const data = await this.graphql<AutomationAlertDeliveryMutationData>(
-      UPDATE_AUTOMATION_ALERT_DELIVERY,
-      {
-        input: {
-          automationId: id,
-          ...(includeAlvaChannels ? { alvaChannelIds } : {}),
-          ...(includeEmail ? { emailEnabled: params.emailEnabled } : {}),
-        },
-        includeAlvaChannels,
-        includeEmail,
-      }
+    await this.client._v2Request('PATCH', v2Path`/automations/${params.id}`, {
+      body: { delivery: { channelIds, email: params.emailEnabled } },
+    });
+    const delivery = alertDelivery(await this.read(params.id));
+    return {
+      automation: { id: params.id },
+      alertDelivery: {
+        isEnabled: delivery.isEnabled,
+        ...(includeAlvaChannels ? { alvaChannels: delivery.alvaChannels } : {}),
+        ...(includeEmail ? { email: delivery.email } : {}),
+      },
+    };
+  }
+
+  private read(id: AlvaId): Promise<WireDelivery> {
+    return this.client._v2Request<WireDelivery>(
+      'GET',
+      v2Path`/automations/${id}/delivery`
     );
-    const result = data.updateAutomationAlertDelivery;
-    if (!result) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include updateAutomationAlertDelivery',
-        502
-      );
-    }
-    return result;
   }
 
-  private async graphql<T>(
-    query: string,
-    variables: Record<string, unknown>
-  ): Promise<T> {
-    const response = (await this.client._request('POST', '/query', {
-      body: { query, variables },
-    })) as GraphQLResponse<T> | null | undefined;
-    if (!response) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response was empty',
-        502
-      );
+  private async channelIDs(values: readonly string[]): Promise<AlvaId[]> {
+    const ids = [...new Set(values)];
+    for (const id of ids) {
+      if (!id.trim()) throw new Error('Alva channel ids must not be empty');
     }
-    if (response.errors && response.errors.length > 0) {
-      throw new AlvaError(
-        'GRAPHQL_ERROR',
-        graphQLErrorMessage(response.errors),
-        400,
-        { errors: response.errors }
-      );
-    }
-    if (!response.data) {
-      throw new AlvaError(
-        'GRAPHQL_EMPTY_RESPONSE',
-        'GraphQL response did not include data',
-        502
-      );
-    }
-    return response.data;
+    if (!ids.includes(AGENT_CHANNEL_ALIAS)) return ids;
+    const agent = await this.client.schedules.agentChannelId();
+    return [
+      ...new Set(ids.map((id) => (id === AGENT_CHANNEL_ALIAS ? agent : id))),
+    ];
   }
-}
-
-function requireAutomationID(id: number | string): number | string {
-  if (typeof id === 'string') return requireAutomationIDString(id);
-  if (!Number.isSafeInteger(id) || id <= 0) {
-    throw new Error('automation id must be a positive integer');
-  }
-  return id;
-}
-
-function requireAutomationIDString(id: string): string {
-  if (!/^[1-9]\d*$/.test(id)) {
-    throw new Error('automation id must be a positive integer string');
-  }
-  return id;
 }
 
 function hasAutomationUpdate(params: AutomationUpdateRequest): boolean {
@@ -257,29 +217,4 @@ function hasAutomationUpdate(params: AutomationUpdateRequest): boolean {
     params.agent_type !== undefined ||
     params.trigger === true
   );
-}
-
-function uniqueAlvaChannelIDs(values: readonly string[]): string[] {
-  const ids = [...new Set(values)];
-  for (const id of ids) {
-    if (!/^(0|[1-9]\d*)$/.test(id)) {
-      throw new Error(
-        'Alva channel ids must be positive integer strings or the agent sentinel 0'
-      );
-    }
-  }
-  return ids;
-}
-
-function graphQLErrorMessage(
-  errors: Array<GraphQLErrorPayload | null>
-): string {
-  const messages = errors
-    .map((error) =>
-      error && typeof error.message === 'string' && error.message
-        ? error.message
-        : undefined
-    )
-    .filter((message): message is string => Boolean(message));
-  return messages.length > 0 ? messages.join('; ') : 'GraphQL request failed';
 }

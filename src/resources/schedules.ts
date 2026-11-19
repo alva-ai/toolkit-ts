@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { collectAll, v2Path, type Page } from '../platformApi.js';
+import type { AlvaId } from '../types.js';
 
 export type AgentScheduleStatus = 'active' | 'paused' | 'completed' | 'failed';
 
@@ -33,7 +35,7 @@ export interface AgentSchedule {
 }
 
 export type AgentScheduleTarget =
-  | { channelId: string | number; inboxPath?: never }
+  | { channelId: AlvaId; inboxPath?: never }
   | { inboxPath: string; channelId?: never };
 
 export type PutAgentScheduleParams = AgentScheduleTarget & {
@@ -47,60 +49,6 @@ export type ManageAgentScheduleParams = AgentScheduleTarget & {
   name: string;
 };
 
-const SCHEDULE_FIELDS = `
-  id
-  name
-  rule { kind atMs everyIntervalSeconds cronExpression cronTimezone }
-  bounds { startsAtMs untilMs maxOccurrences }
-  message { text }
-  status
-  failureCode
-  failureAtMs
-  occurrencesUsed
-  nextFireAtMs
-  createdAtMs
-  updatedAtMs
-`;
-
-const LIST_SCHEDULES = `
-query ToolkitListAgentSchedules($channelId: ID!, $after: String) {
-  viewer { channel(id: $channelId) {
-    schedules(input: { first: 64, after: $after }) {
-      edges { node { channel { id } ${SCHEDULE_FIELDS} } }
-      pageInfo { hasNextPage endCursor }
-    }
-  } }
-}`.trim();
-
-const UPDATE_SCHEDULE = `
-mutation ToolkitUpdateAgentSchedule($input: UpdateChannelScheduleInput!) {
-  updateChannelSchedule(input: $input) {
-    schedule { channel { id } ${SCHEDULE_FIELDS} }
-    deleted
-  }
-}`.trim();
-
-const LIST_SESSION_SCHEDULES = `
-query ToolkitListSessionSchedules($inboxPath: String!, $after: String) {
-  viewer { sessionSchedules(inboxPath: $inboxPath, input: { first: 64, after: $after }) {
-    edges { node { ${SCHEDULE_FIELDS} } }
-    pageInfo { hasNextPage endCursor }
-  } }
-}`.trim();
-
-const UPDATE_SESSION_SCHEDULE = `
-mutation ToolkitUpdateSessionSchedule($input: UpdateSessionScheduleInput!) {
-  updateSessionSchedule(input: $input) {
-    schedule { ${SCHEDULE_FIELDS} }
-    deleted
-  }
-}`.trim();
-
-const AGENT_CHANNEL = `
-query ToolkitAgentChannel {
-  viewer { channels { id kind } }
-}`.trim();
-
 const SCHEDULE_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const RFC3339 =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(Z|[+-](\d{2}):(\d{2}))$/i;
@@ -109,81 +57,35 @@ const RFC3339_FRACTIONAL =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-](\d{2}):(\d{2}))$/i;
 const ISO_DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
 
-interface GraphQLErrorPayload {
-  message?: unknown;
-  extensions?: { code?: unknown; [key: string]: unknown } | null;
-  [key: string]: unknown;
-}
-
-interface GraphQLResponse<T> {
-  data?: T | null;
-  errors?: GraphQLErrorPayload[];
-}
-
-const GRAPHQL_STATUS_BY_CODE: Readonly<Record<string, number>> = {
-  INVALID_ARGUMENT: 400,
-  UNAUTHENTICATED: 401,
-  PERMISSION_DENIED: 403,
-  NOT_FOUND: 404,
-  ALREADY_EXISTS: 409,
-  ABORTED: 409,
-  FAILED_PRECONDITION: 412,
-  RESOURCE_EXHAUSTED: 429,
-  INTERNAL: 500,
-  UNKNOWN: 500,
-  DATA_LOSS: 500,
-  UNAVAILABLE: 503,
-  DEADLINE_EXCEEDED: 504,
-};
-
+/** A Schedule or SessionSchedule of /api/v2. */
 interface WireSchedule {
-  id: string;
+  id: AlvaId;
   name: string;
   rule: {
     kind: 'AT' | 'EVERY' | 'CRON';
-    atMs?: number | null;
-    everyIntervalSeconds?: number | string | null;
-    cronExpression?: string | null;
-    cronTimezone?: string | null;
+    fireAt: string | null;
+    everySeconds: number | null;
+    cron: string | null;
+    timezone: string | null;
   };
-  bounds?: {
-    startsAtMs?: number | null;
-    untilMs?: number | null;
-    maxOccurrences?: number | string | null;
-  } | null;
-  message?: { text?: string | null } | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxOccurrences: number | null;
+  message: string | null;
   status: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'FAILED';
-  failureCode?:
+  failureCode:
     | 'TARGET_INVALID'
     | 'DELIVERY_EXHAUSTED'
     | 'PAYLOAD_CONFLICT'
     | null;
-  failureAtMs?: number | null;
-  occurrencesUsed: number | string;
-  nextFireAtMs?: number | null;
-  createdAtMs: number;
-  updatedAtMs: number;
+  failedAt: string | null;
+  occurrencesUsed: number;
+  nextFireAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-interface ScheduleConnection {
-  edges?: Array<{ node?: WireSchedule | null } | null>;
-  pageInfo?: {
-    hasNextPage?: boolean;
-    endCursor?: string | null;
-  } | null;
-}
-
-interface ListSchedulesData {
-  viewer?: {
-    channel?: { schedules?: ScheduleConnection | null } | null;
-    sessionSchedules?: ScheduleConnection | null;
-  } | null;
-}
-
-interface ScheduleMutationResult {
-  schedule?: WireSchedule | null;
-  deleted?: boolean;
-}
+type Target = { channelId: AlvaId } | { inboxPath: string };
 
 export class SchedulesResource {
   constructor(private client: AlvaClient) {}
@@ -191,139 +93,112 @@ export class SchedulesResource {
   async list(params: AgentScheduleTarget): Promise<AgentSchedule[]> {
     this.client._requireAuth();
     const target = targetInput(params);
-    const inbox = 'inboxPath' in target;
-    const schedules: AgentSchedule[] = [];
-    let after: string | null = null;
-    const seenCursors = new Set<string>();
-    for (;;) {
-      const data: ListSchedulesData = await this.graphql<ListSchedulesData>(
-        inbox ? LIST_SESSION_SCHEDULES : LIST_SCHEDULES,
-        { ...target, after }
-      );
-      const connection: ScheduleConnection | null | undefined = inbox
-        ? data.viewer?.sessionSchedules
-        : data.viewer?.channel?.schedules;
-      if (!connection?.edges) throw scheduleNotFound();
-      for (const edge of connection.edges) {
-        if (!edge?.node) throw scheduleEmptyResponse();
-        schedules.push(fromWireSchedule(edge.node));
-      }
-      if (connection.pageInfo?.hasNextPage !== true) return schedules;
-      const next: string | null | undefined = connection.pageInfo.endCursor;
-      if (!next || seenCursors.has(next)) throw scheduleEmptyResponse();
-      seenCursors.add(next);
-      after = next;
-    }
+    const schedules = await collectAll(
+      'channelId' in target
+        ? this.client._v2Pages<WireSchedule>(
+            v2Path`/channels/${target.channelId}/schedules`,
+            { pageSize: 100 }
+          )
+        : this.client._v2Pages<WireSchedule>('/session-schedules', {
+            query: { inboxPath: target.inboxPath },
+            pageSize: 100,
+          })
+    );
+    return schedules.map(fromWireSchedule);
   }
 
   async put(params: PutAgentScheduleParams): Promise<AgentSchedule> {
     this.client._requireAuth();
-    const input = {
-      ...targetInput(params),
+    const target = targetInput(params);
+    const body = {
       name: requireName(params.name),
-      definition: {
-        ...ruleInput(params.rule, params.bounds),
-        message: { text: requireText(params.text) },
-      },
+      ...ruleInput(params.rule, params.bounds),
+      message: requireText(params.text),
     };
-    const schedule = (await this.update(input))?.schedule;
-    if (!schedule) throw scheduleEmptyResponse();
+    const schedule =
+      'channelId' in target
+        ? await this.client._v2Request<WireSchedule>(
+            'POST',
+            v2Path`/channels/${target.channelId}/schedules`,
+            { body }
+          )
+        : await this.client._v2Request<WireSchedule>(
+            'POST',
+            '/session-schedules',
+            { body: { inboxPath: target.inboxPath, ...body } }
+          );
     return fromWireSchedule(schedule);
   }
 
   pause(params: ManageAgentScheduleParams): Promise<AgentSchedule> {
-    return this.manage('PAUSED', params);
+    return this.manage('pause', params);
   }
 
   resume(params: ManageAgentScheduleParams): Promise<AgentSchedule> {
-    return this.manage('ACTIVE', params);
+    return this.manage('resume', params);
   }
 
   async delete(params: ManageAgentScheduleParams): Promise<void> {
     this.client._requireAuth();
-    const result = await this.update({
-      ...managementInput(params),
-      lifecycle: 'REMOVED',
-    });
-    if (result?.deleted !== true) throw scheduleEmptyResponse();
+    await this.client._v2Request('DELETE', await this.schedulePath(params));
   }
 
   /** Resolve the authenticated viewer's unique Agent Channel for CLI defaults. */
-  async agentChannelId(): Promise<string> {
+  async agentChannelId(): Promise<AlvaId> {
     this.client._requireAuth();
-    const data = await this.graphql<{
-      viewer?: { channels?: Array<{ id: string; kind: string }> } | null;
-    }>(AGENT_CHANNEL);
-    const id = data.viewer?.channels?.find(
-      (channel) => channel.kind === 'AGENT'
-    )?.id;
+    const page = await this.client._v2Request<Page<{ id: AlvaId }>>(
+      'GET',
+      '/me/channels',
+      { query: { kind: 'AGENT' } }
+    );
+    const id = page.items[0]?.id;
     if (!id) throw scheduleNotFound();
     return id;
   }
 
   private async manage(
-    lifecycle: 'ACTIVE' | 'PAUSED',
+    action: 'pause' | 'resume',
     params: ManageAgentScheduleParams
   ): Promise<AgentSchedule> {
     this.client._requireAuth();
-    const schedule = (
-      await this.update({ ...managementInput(params), lifecycle })
-    )?.schedule;
-    if (!schedule) throw scheduleEmptyResponse();
-    return fromWireSchedule(schedule);
+    const path = await this.schedulePath(params);
+    return fromWireSchedule(
+      await this.client._v2Request<WireSchedule>('POST', `${path}/${action}`)
+    );
   }
 
-  private async update(
-    input: Record<string, unknown>
-  ): Promise<ScheduleMutationResult | null | undefined> {
-    const inbox = 'inboxPath' in input;
-    const data = await this.graphql<{
-      updateChannelSchedule?: ScheduleMutationResult | null;
-      updateSessionSchedule?: ScheduleMutationResult | null;
-    }>(inbox ? UPDATE_SESSION_SCHEDULE : UPDATE_SCHEDULE, { input });
-    return inbox ? data.updateSessionSchedule : data.updateChannelSchedule;
-  }
-
-  private async graphql<T>(
-    query: string,
-    variables?: Record<string, unknown>
-  ): Promise<T> {
-    const response = (await this.client._request('POST', '/query', {
-      body: variables === undefined ? { query } : { query, variables },
-    })) as GraphQLResponse<T>;
-    if (response.errors?.length) {
-      const codes = response.errors.map((error) => error.extensions?.code);
-      const distinctCodes = new Set(codes);
-      const canonicalCode =
-        distinctCodes.size === 1 && typeof codes[0] === 'string'
-          ? codes[0]
-          : undefined;
-      const canonicalStatus = canonicalCode
-        ? GRAPHQL_STATUS_BY_CODE[canonicalCode]
-        : undefined;
-      const errorCode =
-        canonicalCode !== undefined && canonicalStatus !== undefined
-          ? canonicalCode
-          : 'GRAPHQL_ERROR';
-      throw new AlvaError(
-        errorCode,
-        response.errors
-          .map((error) => error.message)
-          .filter((message): message is string => typeof message === 'string')
-          .join('; ') || 'GraphQL request failed',
-        canonicalStatus ?? 502,
-        { errors: response.errors }
-      );
-    }
-    if (!response.data) throw scheduleEmptyResponse();
-    return response.data;
+  /** The path of the schedule a target and name select. */
+  private async schedulePath(
+    params: ManageAgentScheduleParams
+  ): Promise<string> {
+    const target = targetInput(params);
+    const name = requireName(params.name);
+    const page =
+      'channelId' in target
+        ? await this.client._v2Request<Page<WireSchedule>>(
+            'GET',
+            v2Path`/channels/${target.channelId}/schedules`,
+            { query: { name } }
+          )
+        : await this.client._v2Request<Page<WireSchedule>>(
+            'GET',
+            '/session-schedules',
+            { query: { inboxPath: target.inboxPath, name } }
+          );
+    const id = page.items[0]?.id;
+    if (!id)
+      throw new AlvaError('NOT_FOUND', `schedule ${name} not found`, 404);
+    return 'channelId' in target
+      ? v2Path`/schedules/${id}`
+      : v2Path`/session-schedules/${id}`;
   }
 }
 
+/** The rule and bounds of a POST body. */
 function ruleInput(
   rule: PutAgentScheduleParams['rule'],
   bounds: AgentScheduleBounds | undefined
-): { rule: Record<string, unknown>; bounds?: Record<string, unknown> } {
+): Record<string, unknown> {
   const convertedBounds = boundsInput(bounds);
   switch (rule.kind) {
     case 'after':
@@ -333,36 +208,27 @@ function ruleInput(
       const atMs = Math.ceil(requestedAt / 1000) * 1000;
       if (!Number.isSafeInteger(atMs) || Number.isNaN(new Date(atMs).getTime()))
         throw invalid('after is out of range');
-      return {
-        rule: {
-          kind: 'AT',
-          atMs,
-        },
-      };
+      return { rule: { kind: 'AT', fireAt: new Date(atMs).toISOString() } };
     case 'at':
       if (convertedBounds) throw invalid('at does not accept recurring bounds');
       return {
-        rule: { kind: 'AT', atMs: timestampMilliseconds(rule.timestamp) },
+        rule: {
+          kind: 'AT',
+          fireAt: new Date(timestampMilliseconds(rule.timestamp)).toISOString(),
+        },
       };
     case 'every':
       return {
-        rule: {
-          kind: 'EVERY',
-          everyIntervalSeconds: durationSeconds(rule.interval),
-        },
-        ...(convertedBounds ? { bounds: convertedBounds } : {}),
+        rule: { kind: 'EVERY', everySeconds: durationSeconds(rule.interval) },
+        ...convertedBounds,
       };
     case 'cron':
       if (!rule.expression.trim() || !rule.timezone.trim()) {
         throw invalid('cron expression and timezone are required');
       }
       return {
-        rule: {
-          kind: 'CRON',
-          cronExpression: rule.expression,
-          cronTimezone: rule.timezone,
-        },
-        ...(convertedBounds ? { bounds: convertedBounds } : {}),
+        rule: { kind: 'CRON', cron: rule.expression, timezone: rule.timezone },
+        ...convertedBounds,
       };
   }
 }
@@ -373,9 +239,11 @@ function boundsInput(
   if (!bounds) return undefined;
   const result: Record<string, unknown> = {};
   if (bounds.startsAt !== undefined)
-    result.startsAtMs = timestampMilliseconds(bounds.startsAt);
+    result.startsAt = new Date(
+      timestampMilliseconds(bounds.startsAt)
+    ).toISOString();
   if (bounds.until !== undefined)
-    result.untilMs = timestampMilliseconds(bounds.until);
+    result.endsAt = new Date(timestampMilliseconds(bounds.until)).toISOString();
   if (bounds.maxOccurrences !== undefined) {
     if (
       !Number.isSafeInteger(bounds.maxOccurrences) ||
@@ -396,39 +264,37 @@ function fromWireSchedule(schedule: WireSchedule): AgentSchedule {
     FAILED: 'failed',
   };
   const status = statuses[schedule.status];
-  if (!status) throw scheduleEmptyResponse();
-  const bounds = schedule.bounds ?? {};
-  const message = schedule.message ?? {};
+  if (!status) throw scheduleInvalidResponse();
   const result: AgentSchedule = {
     name: schedule.name,
     rule: fromWireRule(schedule.rule),
     bounds: {
-      ...(bounds.startsAtMs != null
-        ? { startsAt: timestampString(bounds.startsAtMs, true) }
+      ...(schedule.startsAt != null
+        ? { startsAt: instant(schedule.startsAt, true) }
         : {}),
-      ...(bounds.untilMs != null
-        ? { until: timestampString(bounds.untilMs, true) }
+      ...(schedule.endsAt != null
+        ? { until: instant(schedule.endsAt, true) }
         : {}),
-      ...(bounds.maxOccurrences != null
+      ...(schedule.maxOccurrences != null
         ? {
             maxOccurrences: safeInteger(
-              bounds.maxOccurrences,
+              schedule.maxOccurrences,
               'maxOccurrences'
             ),
           }
         : {}),
     },
-    text: message.text ?? '',
+    text: schedule.message ?? '',
     status,
     occurrencesUsed: safeInteger(schedule.occurrencesUsed, 'occurrencesUsed'),
-    ...(schedule.nextFireAtMs != null
-      ? { nextFireAt: timestampString(schedule.nextFireAtMs, true) }
+    ...(schedule.nextFireAt != null
+      ? { nextFireAt: instant(schedule.nextFireAt, true) }
       : {}),
-    createdAt: timestampString(schedule.createdAtMs),
-    updatedAt: timestampString(schedule.updatedAtMs),
+    createdAt: instant(schedule.createdAt),
+    updatedAt: instant(schedule.updatedAt),
   };
   if (status === 'failed') {
-    if (!schedule.failureCode) throw scheduleEmptyResponse();
+    if (!schedule.failureCode) throw scheduleInvalidResponse();
     const failureCodes: Record<
       NonNullable<WireSchedule['failureCode']>,
       AgentScheduleFailureCode
@@ -438,12 +304,10 @@ function fromWireSchedule(schedule: WireSchedule): AgentSchedule {
       PAYLOAD_CONFLICT: 'payload_conflict',
     };
     const code = failureCodes[schedule.failureCode];
-    if (!code) throw scheduleEmptyResponse();
+    if (!code) throw scheduleInvalidResponse();
     result.failure = {
       code,
-      ...(schedule.failureAtMs != null
-        ? { at: timestampString(schedule.failureAtMs) }
-        : {}),
+      ...(schedule.failedAt != null ? { at: instant(schedule.failedAt) } : {}),
     };
   }
   return result;
@@ -452,36 +316,22 @@ function fromWireSchedule(schedule: WireSchedule): AgentSchedule {
 function fromWireRule(rule: WireSchedule['rule']): AgentScheduleRule {
   switch (rule.kind) {
     case 'AT':
-      if (rule.atMs == null) throw scheduleEmptyResponse();
-      return { kind: 'at', timestamp: timestampString(rule.atMs, true) };
+      if (rule.fireAt == null) throw scheduleInvalidResponse();
+      return { kind: 'at', timestamp: instant(rule.fireAt, true) };
     case 'EVERY':
-      if (rule.everyIntervalSeconds == null) throw scheduleEmptyResponse();
+      if (rule.everySeconds == null) throw scheduleInvalidResponse();
       return {
         kind: 'every',
-        interval: `PT${safeInteger(rule.everyIntervalSeconds, 'interval')}S`,
+        interval: `PT${safeInteger(rule.everySeconds, 'interval')}S`,
       };
     case 'CRON':
-      if (!rule.cronExpression || !rule.cronTimezone)
-        throw scheduleEmptyResponse();
-      return {
-        kind: 'cron',
-        expression: rule.cronExpression,
-        timezone: rule.cronTimezone,
-      };
+      if (!rule.cron || !rule.timezone) throw scheduleInvalidResponse();
+      return { kind: 'cron', expression: rule.cron, timezone: rule.timezone };
   }
-  throw scheduleEmptyResponse();
+  throw scheduleInvalidResponse();
 }
 
-function managementInput(
-  params: ManageAgentScheduleParams
-): Record<string, string> {
-  return {
-    ...targetInput(params),
-    name: requireName(params.name),
-  };
-}
-
-function targetInput(target: AgentScheduleTarget): Record<string, string> {
+function targetInput(target: AgentScheduleTarget): Target {
   if ((target.channelId !== undefined) === (target.inboxPath !== undefined))
     throw invalid('exactly one of channelId or inboxPath is required');
   if (target.channelId !== undefined)
@@ -515,19 +365,10 @@ function targetInput(target: AgentScheduleTarget): Record<string, string> {
   return { inboxPath: path };
 }
 
-function channelID(value: string | number): string {
-  if (
-    typeof value === 'number' &&
-    (!Number.isSafeInteger(value) || value <= 0)
-  ) {
-    throw invalid(
-      'numeric channelId must be a positive safe integer; use a decimal string for larger IDs'
-    );
-  }
-  const rendered = String(value);
-  if (!/^[1-9]\d*$/.test(rendered))
-    throw invalid('channelId must be a positive integer');
-  return rendered;
+function channelID(value: AlvaId): AlvaId {
+  if (typeof value !== 'string' || !value.trim())
+    throw invalid('channelId must be a channel id');
+  return value;
 }
 
 function requireName(value: string): string {
@@ -608,12 +449,12 @@ function timestampMilliseconds(value: string, fractional = false): number {
   return result;
 }
 
-function timestampString(value: number, semantic = false): string {
-  if (!Number.isSafeInteger(value)) throw scheduleEmptyResponse();
-  if (semantic && value % 1000 !== 0) throw scheduleEmptyResponse();
-  const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) throw scheduleEmptyResponse();
-  return timestamp.toISOString();
+/** An RFC 3339 instant of the server, normalized; semantic instants are whole seconds. */
+function instant(value: string, semantic = false): string {
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms) || (semantic && ms % 1000 !== 0))
+    throw scheduleInvalidResponse();
+  return new Date(ms).toISOString();
 }
 
 function safeInteger(value: number | string, field: string): number {
@@ -638,10 +479,10 @@ function scheduleNotFound(): AlvaError {
   return new AlvaError('NOT_FOUND', 'channel schedule target not found', 404);
 }
 
-function scheduleEmptyResponse(): AlvaError {
+function scheduleInvalidResponse(): AlvaError {
   return new AlvaError(
-    'GRAPHQL_EMPTY_RESPONSE',
-    'GraphQL response did not include a valid schedule',
+    'INVALID_RESPONSE',
+    'the server returned an invalid schedule',
     502
   );
 }

@@ -13,7 +13,7 @@ import {
   executeParsedCommand,
   handleBroker,
   requireFlag,
-  requirePositiveIntegerStringFlag,
+  requireIdFlag,
 } from './dispatch.js';
 import { EMBEDDED_COMMAND_DEFINITIONS } from './embeddedCommandDefinitions.js';
 import { formatAutomationDetail } from './productFormat.js';
@@ -51,30 +51,30 @@ function internalCommand(
 }
 
 function automationID(parsed: ParsedCommand, command: string): string {
-  return requirePositiveIntegerStringFlag(parsed.flags, 'id', command);
+  return requireIdFlag(parsed.flags, 'id', command);
 }
 
 function producerIDFromAutomationDetail(
   detail: unknown,
   automationId: string
-): number | undefined {
+): string | undefined {
   if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
     throw new Error(`Automation ${automationId} returned an invalid detail`);
   }
   const raw = (detail as Record<string, unknown>).cronjob_id;
   if (raw === undefined || raw === null) return undefined;
-  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
+  if (typeof raw !== 'string' || !raw) {
     throw new Error(`Automation ${automationId} returned an invalid producer`);
   }
   return raw;
 }
 
-function producerIDFromCreate(result: unknown): number {
+function producerIDFromCreate(result: unknown): string {
   if (typeof result !== 'object' || result === null) {
     throw new Error('Automation producer creation returned an invalid result');
   }
   const raw = (result as Record<string, unknown>).id;
-  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
+  if (typeof raw !== 'string' || !raw) {
     throw new Error('Automation producer creation returned an invalid id');
   }
   return raw;
@@ -83,7 +83,7 @@ function producerIDFromCreate(result: unknown): number {
 async function resolveAutomationProducer(
   client: AlvaClient,
   automationId: string
-): Promise<number> {
+): Promise<string> {
   const detail = await client.automation.inspect({ id: automationId });
   const producerId = producerIDFromAutomationDetail(detail, automationId);
   if (producerId === undefined) {
@@ -95,7 +95,7 @@ async function resolveAutomationProducer(
 async function findAutomationProducer(
   client: AlvaClient,
   automationId: string
-): Promise<number | undefined> {
+): Promise<string | undefined> {
   const detail = await client.automation.inspect({ id: automationId });
   return producerIDFromAutomationDetail(detail, automationId);
 }
@@ -209,7 +209,7 @@ async function dispatchEmbeddedAutomation(
           'automation'
         );
       }
-      let cronjobId: number | undefined;
+      let cronjobId: string | undefined;
       let producer: unknown;
       if (Object.keys(producerFlags).length > 0) {
         cronjobId = await resolveAutomationProducer(client, id);

@@ -546,10 +546,11 @@ Subcommands:
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
   trigger    Fire the cronjob once, immediately, bypassing the schedule
-             (returns workflow_run_id; poll 'run-status' with a timeout)
+             (returns workflow_run_id, a dispatch ID; poll 'run-status'
+             with a timeout)
              This is not a dry run and may deliver Feed alerts to subscribers.
   runs       List runs for a cronjob (cursor-paginated)
-  run-status Get one triggered run's pollable status by workflow_run_id
+  run-status Get one triggered run's pollable status by its dispatch ID
   run-logs   Get stdout/stderr logs for a single cronjob run
 
 Create/Update flags:
@@ -581,7 +582,7 @@ Runs flags:
 
 Run-status flags:
   --id <id>              Cronjob ID (required)
-  --workflow-run-id <id> Workflow run ID returned by deploy trigger
+  --workflow-run-id <id> Dispatch ID returned by deploy trigger
 
 Run-logs flags:
   --id <id>              Cronjob ID (required)
@@ -602,22 +603,22 @@ Examples:
   alva deploy create --name alert --path "~/feeds/alert/v1/src/index.js" --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
   alva deploy list
   alva deploy list --limit 10
-  alva deploy get --id 42
-  alva deploy update --id 42 --cron "0 */2 * * *" --no-push-notify
-  alva deploy pause --id 42
-  alva deploy resume --id 42
-  alva deploy delete --id 42
-  alva deploy runs --id 42
-  alva deploy runs --id 42 --first 10
-  alva deploy run-status --id 42 --workflow-run-id hatchet-run-id
-  alva deploy run-logs --id 42 --run-id 123
+  alva deploy get --id cronjob_0abc
+  alva deploy update --id cronjob_0abc --cron "0 */2 * * *" --no-push-notify
+  alva deploy pause --id cronjob_0abc
+  alva deploy resume --id cronjob_0abc
+  alva deploy delete --id cronjob_0abc
+  alva deploy runs --id cronjob_0abc
+  alva deploy runs --id cronjob_0abc --first 10
+  alva deploy run-status --id cronjob_0abc --workflow-run-id cronjob_dispatch_0xyz
+  alva deploy run-logs --id cronjob_0abc --run-id cronjob_run_0xyz
 
 Build-time verify (fire once, then poll up to 5 minutes):
   WARNING: trigger uses production delivery semantics. If --push-notify and
   subscriber alert bindings are enabled, this run may send real notifications.
-  WF=$(alva deploy trigger --id 42 | jq -r .workflow_run_id)
+  WF=$(alva deploy trigger --id cronjob_0abc | jq -r .workflow_run_id)
   for _ in {1..60}; do
-    STATUS_JSON=$(alva deploy run-status --id 42 --workflow-run-id "$WF")
+    STATUS_JSON=$(alva deploy run-status --id cronjob_0abc --workflow-run-id "$WF")
     STATE=$(echo "$STATUS_JSON" | jq -r .state)
     case "$STATE" in PENDING|DISPATCHED|RUNNING) ;; *) break ;; esac
     sleep 5
@@ -625,7 +626,7 @@ Build-time verify (fire once, then poll up to 5 minutes):
   case "$STATE" in
     PENDING|DISPATCHED|RUNNING) echo "Timed out waiting for run completion" >&2; exit 1 ;;
   esac
-  [ "$STATE" = COMPLETED ] || alva deploy run-logs --id 42 \\
+  [ "$STATE" = COMPLETED ] || alva deploy run-logs --id cronjob_0abc \\
                                   --run-id "$(echo "$STATUS_JSON" | jq -r .run.id)"`,
 
   schedule: `Usage: alva schedule <subcommand> [options]
@@ -688,13 +689,14 @@ Examples:
   automation: `Usage: alva automation <subcommand> [options]
 
 Manage automations. This is the product-facing surface for what older CLI
-commands called "feeds"; ids are currently the same underlying feed ids.
+commands called "feeds"; an automation and its feed share one ID
+(automation_0…).
 
 Subcommands:
   list      List automations owned by the caller
   inspect   Inspect one automation and show its flow config path when available
   publish   First-publish/register a new automation after deploying its cronjob
-  update    Partially update an existing automation by numeric id
+  update    Partially update an existing automation by id
   delivery  Get or partially update per-automation alert destinations
   stop      Stop an automation's producer cronjob
   resume    Resume a stopped automation's producer cronjob
@@ -737,27 +739,28 @@ Delivery subcommands:
 
 Delivery flags:
   --id <automation_id>       Existing automation id (required)
-  --alva-channel-ids <a,b>   Replace Alva destinations; empty clears them
+  --alva-channel-ids <a,b>   Replace Alva destinations (channel ids; 0 is your
+                             Agent channel); empty clears them
   --email-enabled            Enable verified-account email delivery
   --no-email-enabled         Disable email delivery
 
 Lifecycle flags:
-  --id <automation_id>   Numeric automation id (required for inspect/update/stop/resume/delete)
+  --id <automation_id>   Automation id (required for inspect/update/stop/resume/delete)
 
 Examples:
   alva automation list
   alva automation list --status all --limit 20
-  alva automation inspect --id 42
-  alva automation publish --name btc-ema --version 1.0.0 --cronjob-id 42
-  alva automation update --id 42 --description "Updated BTC EMA"
-  alva automation update --id 42 --version 2.0.0 --trigger
-  alva automation delivery get --id 42
-  alva automation delivery update --id 42 --email-enabled
-  alva automation delivery update --id 42 --no-email-enabled
-  alva automation delivery update --id 42 --alva-channel-ids 0,123
-  alva automation stop --id 42
-  alva automation resume --id 42
-  alva automation delete --id 42`,
+  alva automation inspect --id automation_0abc
+  alva automation publish --name btc-ema --version 1.0.0 --cronjob-id cronjob_0abc
+  alva automation update --id automation_0abc --description "Updated BTC EMA"
+  alva automation update --id automation_0abc --version 2.0.0 --trigger
+  alva automation delivery get --id automation_0abc
+  alva automation delivery update --id automation_0abc --email-enabled
+  alva automation delivery update --id automation_0abc --no-email-enabled
+  alva automation delivery update --id automation_0abc --alva-channel-ids 0,channel_0xyz
+  alva automation stop --id automation_0abc
+  alva automation resume --id automation_0abc
+  alva automation delete --id automation_0abc`,
 
   alert: `Usage: alva alert <subcommand> [options]
 
@@ -1948,7 +1951,7 @@ function resolveRunAsFlag(
 
 // Require an opaque ID flag (account_0…, cronjob_0…): present and not blank.
 // IDs are passed unchanged; the server validates their type.
-function requireIdFlag(
+export function requireIdFlag(
   flags: Record<string, string>,
   name: string,
   command: string
@@ -1956,7 +1959,7 @@ function requireIdFlag(
   const raw = flags[name];
   if (raw === undefined || !raw.trim()) {
     throw new CliUsageError(
-      `Missing required flag --${name} for '${command}'`,
+      `--${name} is required for '${command}'`,
       command.split(' ')[0]
     );
   }
@@ -2304,16 +2307,10 @@ function automationUpdateParams(flags: Record<string, string>) {
   const cronjobID =
     flags['cronjob-id'] === undefined
       ? undefined
-      : optionalBoundedIntegerFlag(
-          flags,
-          'cronjob-id',
-          command,
-          1,
-          Number.MAX_SAFE_INTEGER
-        );
+      : requireIdFlag(flags, 'cronjob-id', command);
   const trigger = boolFlag(flags['trigger']);
   const params = {
-    id: requirePositiveIntegerStringFlag(flags, 'id', command),
+    id: requireIdFlag(flags, 'id', command),
     version: flags['version'],
     cronjob_id: cronjobID,
     description: flags['description'],
@@ -2339,7 +2336,7 @@ function automationUpdateParams(flags: Record<string, string>) {
 
 function automationDeliveryUpdateParams(flags: Record<string, string>) {
   const command = 'automation delivery update';
-  const id = requirePositiveIntegerStringFlag(flags, 'id', command);
+  const id = requireIdFlag(flags, 'id', command);
   const alvaChannelIds =
     flags['alva-channel-ids'] === undefined
       ? undefined
@@ -3492,11 +3489,11 @@ export async function executeParsedCommand(
           });
         case 'get':
           return client.deploy.get({
-            id: requireNumericFlag(flags, 'id', 'deploy get'),
+            id: requireIdFlag(flags, 'id', 'deploy get'),
           });
         case 'update': {
           const params = {
-            id: requireNumericFlag(flags, 'id', 'deploy update'),
+            id: requireIdFlag(flags, 'id', 'deploy update'),
             name: flags['name'],
             cron_expression: flags['cron'],
             push_notify: boolFlag(flags['push-notify']),
@@ -3526,29 +3523,29 @@ export async function executeParsedCommand(
         }
         case 'delete':
           return client.deploy.delete({
-            id: requireNumericFlag(flags, 'id', 'deploy delete'),
+            id: requireIdFlag(flags, 'id', 'deploy delete'),
           });
         case 'pause':
           return client.deploy.pause({
-            id: requireNumericFlag(flags, 'id', 'deploy pause'),
+            id: requireIdFlag(flags, 'id', 'deploy pause'),
           });
         case 'resume':
           return client.deploy.resume({
-            id: requireNumericFlag(flags, 'id', 'deploy resume'),
+            id: requireIdFlag(flags, 'id', 'deploy resume'),
           });
         case 'trigger':
           return client.deploy.trigger({
-            id: requireNumericFlag(flags, 'id', 'deploy trigger'),
+            id: requireIdFlag(flags, 'id', 'deploy trigger'),
           });
         case 'runs':
           return client.deploy.listRuns({
-            cronjob_id: requireNumericFlag(flags, 'id', 'deploy runs'),
+            cronjob_id: requireIdFlag(flags, 'id', 'deploy runs'),
             first: num(flags['first']),
             cursor: flags['cursor'],
           });
         case 'run-status':
           return client.deploy.getRunStatus({
-            cronjob_id: requireNumericFlag(flags, 'id', 'deploy run-status'),
+            cronjob_id: requireIdFlag(flags, 'id', 'deploy run-status'),
             workflow_run_id: requireFlag(
               flags,
               'workflow-run-id',
@@ -3557,8 +3554,8 @@ export async function executeParsedCommand(
           });
         case 'run-logs':
           return client.deploy.getRunLogs({
-            cronjob_id: requireNumericFlag(flags, 'id', 'deploy run-logs'),
-            run_id: requireNumericFlag(flags, 'run-id', 'deploy run-logs'),
+            cronjob_id: requireIdFlag(flags, 'id', 'deploy run-logs'),
+            run_id: requireIdFlag(flags, 'run-id', 'deploy run-logs'),
           });
         default:
           throw new CliUsageError(
@@ -4049,7 +4046,7 @@ export async function executeParsedCommand(
         }
         case 'inspect': {
           const result = await client.automation.inspect({
-            id: requireNumericFlag(flags, 'id', 'automation inspect'),
+            id: requireIdFlag(flags, 'id', 'automation inspect'),
           });
           return boolFlag(flags['json'])
             ? result
@@ -4069,11 +4066,7 @@ export async function executeParsedCommand(
           switch (leaf) {
             case 'get':
               return client.automation.delivery.get({
-                id: requirePositiveIntegerStringFlag(
-                  flags,
-                  'id',
-                  'automation delivery get'
-                ),
+                id: requireIdFlag(flags, 'id', 'automation delivery get'),
               });
             case 'update':
               return client.automation.delivery.update(
