@@ -354,32 +354,7 @@ export class AlvaClient {
       }
     }
 
-    const headers: Record<string, string> = {};
-    if (!options?.noAuth) {
-      if (this.pbsvToken) {
-        headers.Authorization = `Bearer ${this.pbsvToken}`;
-        headers['X-Pbsv'] = '1';
-      } else if (this.viewer_token) {
-        headers['x-Playbook-Viewer'] = this.viewer_token;
-      } else if (this.apiKey) {
-        headers['X-Alva-Api-Key'] = this.apiKey;
-      }
-    }
-
-    if (this.gaClientId) {
-      headers['X-Alva-GA-Client-ID'] = this.gaClientId;
-    }
-    if (this.gaSessionId) {
-      headers['X-Alva-GA-Session-ID'] = this.gaSessionId;
-    }
-    if (this.utmParams) {
-      headers['X-Alva-UTM-Params'] = this.utmParams;
-    }
-    // Origin-session attribution is identity-scoped: never attach it on noAuth
-    // requests, which carry no caller identity to attribute work to.
-    if (this.originSessionId && !options?.noAuth) {
-      headers['X-Alva-Origin-Session-Id'] = this.originSessionId;
-    }
+    const headers = this._headers(options?.noAuth);
 
     let fetchBody: BodyInit | undefined;
     if (options?.rawBody !== undefined) {
@@ -393,86 +368,14 @@ export class AlvaClient {
       fetchBody = JSON.stringify(options.body);
     }
 
-    let response: Response;
-    const timeoutMs = options?.timeoutMs;
-    const externalSignal = options?.signal ?? this.signal;
-    if (externalSignal?.aborted) {
-      throw new AlvaError(
-        'NETWORK_ABORTED',
-        `Request aborted while calling ${method} ${path}`,
-        0,
-        {
-          method,
-          path,
-        }
-      );
-    }
-    const controller =
-      timeoutMs !== undefined ? new AbortController() : undefined;
-    let didTimeout = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let abortListener: (() => void) | undefined;
-    if (controller && timeoutMs !== undefined) {
-      if (externalSignal) {
-        abortListener = () => controller.abort(externalSignal.reason);
-        externalSignal.addEventListener('abort', abortListener, { once: true });
-      }
-      timeoutId = setTimeout(() => {
-        didTimeout = true;
-        controller.abort(
-          new Error(
-            `Request timed out after ${timeoutMs}ms while calling ${method} ${path}`
-          )
-        );
-      }, timeoutMs);
-    }
-
-    const fetchInit: RequestInit & { timeout?: number } = {
+    const response = await this._send(
       method,
+      path,
+      url,
       headers,
-      body: fetchBody,
-      signal: controller?.signal ?? externalSignal,
-    };
-    if (timeoutMs !== undefined) {
-      fetchInit.timeout = timeoutMs;
-    }
-
-    try {
-      response = await fetch(url, fetchInit);
-    } catch (err) {
-      if (externalSignal?.aborted && !didTimeout) {
-        throw new AlvaError(
-          'NETWORK_ABORTED',
-          `Request aborted while calling ${method} ${path}`,
-          0,
-          {
-            method,
-            path,
-          }
-        );
-      }
-      if (didTimeout) {
-        throw new AlvaError(
-          'NETWORK_TIMEOUT',
-          `Request timed out after ${timeoutMs}ms while calling ${method} ${path}`,
-          0,
-          { method, path, timeout_ms: timeoutMs }
-        );
-      }
-      const failure = describeFetchFailure(err);
-      throw new AlvaError('NETWORK_ERROR', failure.message, 0, {
-        method,
-        path,
-        ...failure.details,
-      });
-    } finally {
-      if (abortListener && externalSignal) {
-        externalSignal.removeEventListener('abort', abortListener);
-      }
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-    }
+      fetchBody,
+      options
+    );
 
     if (!response.ok) {
       // Read body as text first to avoid double consumption
@@ -511,30 +414,155 @@ export class AlvaClient {
       );
     }
 
-    // Handle 204 No Content and empty responses
-    if (response.status === 204) {
-      return undefined;
-    }
-
-    // Only parse as JSON when the server says so; everything else (PDF,
-    // octet-stream, image/*, text/*, …) is returned as raw bytes so callers
-    // like `fs.read` can handle binary files. An allowlist of binary types is
-    // never complete: e.g. a PDF served as application/pdf used to fall through
-    // to response.json() and throw a JSON parse error.
-    //
-    // Match the media type case-insensitively and accept the `+json`
-    // structured-suffix family (e.g. application/graphql-response+json from the
-    // GraphQL gateway), not just the literal application/json.
-    const contentType = (
-      response.headers.get('content-type') ?? ''
-    ).toLowerCase();
-    if (
-      contentType.includes('application/json') ||
-      contentType.includes('+json')
-    ) {
-      return response.json();
-    }
-
-    return response.arrayBuffer();
+    return decodeResponse(response);
   }
+
+  /** The credential, analytics and origin-session headers of a request. */
+  private _headers(noAuth: boolean | undefined): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (!noAuth) {
+      if (this.pbsvToken) {
+        headers.Authorization = `Bearer ${this.pbsvToken}`;
+        headers['X-Pbsv'] = '1';
+      } else if (this.viewer_token) {
+        headers['x-Playbook-Viewer'] = this.viewer_token;
+      } else if (this.apiKey) {
+        headers['X-Alva-Api-Key'] = this.apiKey;
+      }
+    }
+
+    if (this.gaClientId) {
+      headers['X-Alva-GA-Client-ID'] = this.gaClientId;
+    }
+    if (this.gaSessionId) {
+      headers['X-Alva-GA-Session-ID'] = this.gaSessionId;
+    }
+    if (this.utmParams) {
+      headers['X-Alva-UTM-Params'] = this.utmParams;
+    }
+    // Origin-session attribution is identity-scoped: never attach it on noAuth
+    // requests, which carry no caller identity to attribute work to.
+    if (this.originSessionId && !noAuth) {
+      headers['X-Alva-Origin-Session-Id'] = this.originSessionId;
+    }
+    return headers;
+  }
+
+  /** Fetches once, turning abort, timeout and network failures into AlvaError. */
+  private async _send(
+    method: string,
+    path: string,
+    url: string,
+    headers: Record<string, string>,
+    body: BodyInit | undefined,
+    options: { timeoutMs?: number; signal?: AbortSignal } | undefined
+  ): Promise<Response> {
+    const timeoutMs = options?.timeoutMs;
+    const externalSignal = options?.signal ?? this.signal;
+    if (externalSignal?.aborted) {
+      throw new AlvaError(
+        'NETWORK_ABORTED',
+        `Request aborted while calling ${method} ${path}`,
+        0,
+        {
+          method,
+          path,
+        }
+      );
+    }
+    const controller =
+      timeoutMs !== undefined ? new AbortController() : undefined;
+    let didTimeout = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let abortListener: (() => void) | undefined;
+    if (controller && timeoutMs !== undefined) {
+      if (externalSignal) {
+        abortListener = () => controller.abort(externalSignal.reason);
+        externalSignal.addEventListener('abort', abortListener, { once: true });
+      }
+      timeoutId = setTimeout(() => {
+        didTimeout = true;
+        controller.abort(
+          new Error(
+            `Request timed out after ${timeoutMs}ms while calling ${method} ${path}`
+          )
+        );
+      }, timeoutMs);
+    }
+
+    const fetchInit: RequestInit & { timeout?: number } = {
+      method,
+      headers,
+      body,
+      signal: controller?.signal ?? externalSignal,
+    };
+    if (timeoutMs !== undefined) {
+      fetchInit.timeout = timeoutMs;
+    }
+
+    try {
+      return await fetch(url, fetchInit);
+    } catch (err) {
+      if (externalSignal?.aborted && !didTimeout) {
+        throw new AlvaError(
+          'NETWORK_ABORTED',
+          `Request aborted while calling ${method} ${path}`,
+          0,
+          {
+            method,
+            path,
+          }
+        );
+      }
+      if (didTimeout) {
+        throw new AlvaError(
+          'NETWORK_TIMEOUT',
+          `Request timed out after ${timeoutMs}ms while calling ${method} ${path}`,
+          0,
+          { method, path, timeout_ms: timeoutMs }
+        );
+      }
+      const failure = describeFetchFailure(err);
+      throw new AlvaError('NETWORK_ERROR', failure.message, 0, {
+        method,
+        path,
+        ...failure.details,
+      });
+    } finally {
+      if (abortListener && externalSignal) {
+        externalSignal.removeEventListener('abort', abortListener);
+      }
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+}
+
+async function decodeResponse(response: Response): Promise<unknown> {
+  // Handle 204 No Content and empty responses
+  if (response.status === 204) {
+    return undefined;
+  }
+
+  // Only parse as JSON when the server says so; everything else (PDF,
+  // octet-stream, image/*, text/*, …) is returned as raw bytes so callers
+  // like `fs.read` can handle binary files. An allowlist of binary types is
+  // never complete: e.g. a PDF served as application/pdf used to fall through
+  // to response.json() and throw a JSON parse error.
+  //
+  // Match the media type case-insensitively and accept the `+json`
+  // structured-suffix family (e.g. application/graphql-response+json from the
+  // GraphQL gateway), not just the literal application/json.
+  const contentType = (
+    response.headers.get('content-type') ?? ''
+  ).toLowerCase();
+  if (
+    contentType.includes('application/json') ||
+    contentType.includes('+json')
+  ) {
+    return response.json();
+  }
+
+  return response.arrayBuffer();
 }
