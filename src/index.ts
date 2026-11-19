@@ -5,7 +5,13 @@ export const VERSION: string =
   typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
 
 export { AlvaClient } from './client.js';
-export { AlvaError, CliUsageError } from './error.js';
+export {
+  AlvaError,
+  CliUsageError,
+  type InvalidParam,
+  type ProblemFields,
+} from './error.js';
+export type { Page } from './platformApi.js';
 export * from './playbookRuntime.js';
 export {
   AutomationAlertDeliveryResource,
@@ -99,6 +105,7 @@ export {
   type StewardTarget,
 } from './resources/steward.js';
 export type {
+  AlvaId,
   AlvaClientConfig,
   FsReadParams,
   FsWriteParams,

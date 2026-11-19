@@ -1,3 +1,11 @@
+// --- IDs ---
+
+/**
+ * An Alva resource ID as /api/v2 returns it, for example `task_0…`: an opaque
+ * string. Pass it back unchanged; never parse it or convert it to a number.
+ */
+export type AlvaId = string;
+
 // --- Client config ---
 
 export interface AlvaClientConfig {

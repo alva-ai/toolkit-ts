@@ -6,7 +6,7 @@ import { Agent, setGlobalDispatcher } from 'undici';
 
 import { AlvaClient } from '../client.js';
 import { isArrayBuffer } from '../arrayBuffer.js';
-import { AlvaError, CliUsageError } from '../error.js';
+import { AlvaError, alvaErrorOutput, CliUsageError } from '../error.js';
 import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
 import { loadConfig, writeConfig } from './config.js';
 import {
@@ -272,20 +272,7 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     } else if (error instanceof AlvaError) {
       process.stderr.write(
-        `${JSON.stringify(
-          {
-            error: {
-              code: error.code,
-              message: error.message,
-              status: error.status,
-              ...(error.details !== undefined
-                ? { details: error.details }
-                : {}),
-            },
-          },
-          null,
-          2
-        )}\n`
+        `${JSON.stringify(alvaErrorOutput(error), null, 2)}\n`
       );
       process.exitCode = 1;
     } else {

@@ -1,4 +1,13 @@
 import { AlvaError } from './error.js';
+import {
+  encodeQuery,
+  generateRequestId,
+  v2ResponseError,
+  type Page,
+  type V2Method,
+  type V2PageOptions,
+  type V2RequestOptions,
+} from './platformApi.js';
 import type { AlvaClientConfig } from './types.js';
 import { FsResource } from './resources/fs.js';
 import { RunResource } from './resources/run.js';
@@ -415,6 +424,88 @@ export class AlvaClient {
     }
 
     return decodeResponse(response);
+  }
+
+  /**
+   * Sends one /api/v2 request. `path` is relative to /api/v2 (build it with
+   * v2Path); the query repeats a parameter per array element; PATCH sends a
+   * JSON Merge Patch; every write carries an Idempotency-Key; a failure is
+   * thrown as an AlvaError read from the RFC 9457 problem.
+   */
+  async _v2Request<T = unknown>(
+    method: V2Method,
+    path: string,
+    options: V2RequestOptions = {}
+  ): Promise<T> {
+    const fullPath = `/api/v2${path}`;
+    const url = `${this.baseUrl}${fullPath}${encodeQuery(options.query)}`;
+    const headers = this._headers(false);
+    const jsonType =
+      method === 'PATCH' ? 'application/merge-patch+json' : 'application/json';
+
+    let fetchBody: BodyInit | undefined;
+    if (options.rawBody !== undefined) {
+      headers['Content-Type'] = 'application/octet-stream';
+      fetchBody = options.rawBody;
+    } else if (options.jsonBody !== undefined) {
+      headers['Content-Type'] = jsonType;
+      fetchBody = options.jsonBody;
+    } else if (options.body !== undefined) {
+      headers['Content-Type'] = jsonType;
+      fetchBody = JSON.stringify(options.body);
+    }
+    if (method !== 'GET') {
+      headers['Idempotency-Key'] =
+        options.idempotencyKey ?? generateRequestId();
+    }
+
+    const response = await this._send(
+      method,
+      fullPath,
+      url,
+      headers,
+      fetchBody,
+      options
+    );
+    if (!response.ok) throw await v2ResponseError(response);
+    return (await decodeResponse(response)) as T;
+  }
+
+  /**
+   * Reads an /api/v2 collection page by page ({items, nextPageToken}),
+   * following nextPageToken until it is null. Combine with collectAll to read
+   * every item.
+   */
+  async *_v2Pages<T>(
+    path: string,
+    options: V2PageOptions = {}
+  ): AsyncGenerator<Page<T>, void, undefined> {
+    let pageToken = options.pageToken;
+    for (;;) {
+      const page = await this._v2Request<Page<T> | undefined>('GET', path, {
+        query: { ...options.query, pageSize: options.pageSize, pageToken },
+        timeoutMs: options.timeoutMs,
+        signal: options.signal,
+      });
+      if (!Array.isArray(page?.items)) {
+        throw new AlvaError(
+          'INVALID_RESPONSE',
+          `GET /api/v2${path} did not return a page`,
+          502
+        );
+      }
+      yield page;
+      const next = page.nextPageToken;
+      if (!next) return;
+      if (next === pageToken) {
+        throw new AlvaError(
+          'INVALID_RESPONSE',
+          `GET /api/v2${path} returned the page token it was sent`,
+          502
+        );
+      }
+      pageToken = next;
+    }
   }
 
   /** The credential, analytics and origin-session headers of a request. */

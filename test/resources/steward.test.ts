@@ -834,26 +834,3 @@ describe('StewardResource', () => {
     });
   });
 });
-
-describe('generateRequestId', () => {
-  it('produces RFC 4122 v4 ids even without crypto.randomUUID', async () => {
-    const { generateRequestId } =
-      await import('../../src/resources/steward.js');
-    const v4 =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-    expect(generateRequestId()).toMatch(v4);
-    const original = globalThis.crypto;
-    Object.defineProperty(globalThis, 'crypto', {
-      value: undefined,
-      configurable: true,
-    });
-    try {
-      expect(generateRequestId()).toMatch(v4);
-    } finally {
-      Object.defineProperty(globalThis, 'crypto', {
-        value: original,
-        configurable: true,
-      });
-    }
-  });
-});
