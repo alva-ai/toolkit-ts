@@ -66,8 +66,9 @@ exitCode}`; a failed request still prints the `network` envelope, exit 2.
   `CreditWalletItem.extras` (adds `title`), `CreditAllowance.consumer_uid`.
 - D6: `functions.register` refuses `run_as_user_id: "0"` (v1's clear); the
   CLI refuses `--clear-run-as` for functions and accepts any Account ID for
-  `--run-as-service-account` there (`functionRunAsFlag`), leaving the shared
-  numeric validator of deploy to the automation migration.
+  `--run-as-service-account` there (`functionRunAsFlag`). At integration it
+  reuses deploy's check, which the automation migration relaxed to Account
+  IDs and which refuses `0`.
 - D7: `updateRiskRules` rewrites the `trading_limits:write` refusal's message
   ("may only tighten") and keeps code, status and `requiredPermission`.
 - D8: `src/resources/brokerAccounts.ts` holds the portfolio/trading wire

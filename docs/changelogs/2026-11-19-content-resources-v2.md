@@ -47,8 +47,9 @@ Primary record: alva-gateway/docs/changelogs/2026-11-19-agent-api-permissions.md
 - D3: `author_ref` is the author's Profile ID (it was the uid), not the
   handle; `author_kind` maps USER to `alva_user`, PERSON to
   `public_source`.
-- D4: `callerUsername` reads `GET /api/v2/me` once per client (feed paths,
-  own-Playbook lookups).
+- D4: the caller's username (feed paths, own-Playbook lookups) is read from
+  `GET /api/v2/me` once per client; at integration this became
+  `client.user._username()`, shared with deploy and trading.
 - D5: types widen only where v2 sends values 0.x never did: candidate kinds
   COMMODITY/UNKNOWN, watchpoint origin `unknown`, For You action UNKNOWN and
   source MARKET_DATA/UNKNOWN.

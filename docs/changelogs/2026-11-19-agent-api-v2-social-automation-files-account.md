@@ -162,7 +162,7 @@ Calls that keep their transport:
 Integration notes:
 
 - The content change adds its own username helper for `feed_path`; one of
-  the two should go.
+  the two should go (done at integration: `client.user._username()`).
 - `release feed --cronjob-id` and `FeedReleaseRequest.cronjob_id` changed
   here exactly as in the content change, so both merge cleanly.
 - `package.json` stays at 0.36.0 (`scripts/release.sh major` bumps it).
