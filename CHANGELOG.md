@@ -208,3 +208,82 @@ Each resource lists its changes here as it moves to the `/api/v2` shapes.
 - Broker: `alva broker … --account-id <BrokerAccount ID>` names the account
   as the invocation's `accountId`; the gateway refuses an argv `--account`
   and the `accounts` command (use `alva trading accounts`).
+
+#### Theses
+
+- Every method takes and returns the `/api/v2` schemas (`Thesis`,
+  `ThesisVersion`, `NewThesis`, `ThesisUpdate`, `ThesisList`, ...); the 0.x
+  snake_case shapes, the publication summaries and the response validators
+  are gone.
+- `create(body, { idempotencyKey })`; `update(id, body, { idempotencyKey })`
+  is one `POST …/updates` that also sets `visibility` and `archived`, and
+  absent members carry over instead of being cleared. `setArchived` is
+  `archive(id, { expectedVersionId, note })` and `unarchive(...)`.
+- `getVersion(versionId)` takes the Update's ID only; new
+  `getByNumber(number)` and `getVersionByNumber(number, versionNumber)`.
+- `list()` takes `assetId` (was `entityId`), `archived` (was `status`) and
+  `pageSize`/`pageToken` (were `first`/`cursor`), and returns the
+  `ThesisList` page without `scope`.
+- `related()` throws reason `RELATED_THESES_GENERATING` (503, not retried)
+  instead of answering `state: GENERATING`, and no other failure reads as
+  generating. `signals()` returns the `SignalList` page (research state is
+  `Thesis.research`).
+- `setStarred()` returns `ThesisFollow`; `setSignalEnabled()` and
+  `setVisibility(id, { visibility, confirmEndPaidRenewals })` return the
+  `Thesis`.
+- CLI `thesis`: JSON is the route's answer (no `unchanged` member: an
+  identical Update returns `currentVersion.id` equal to
+  `--expected-author-version-id`). `--entity-stances` takes
+  `[{"assetId":"…","stance":"BEARISH"}]`; `--medias` takes
+  `currentVersion.media` (`[{type, coverUrl, url}]`). `update --visibility`
+  is optional; omitted `--title`, `--entity-ids` and `--medias` carry over.
+  New `get --number`, `version get --number --version` (replacing
+  `version get --id`), `archive --expected-author-version-id`, and
+  `--confirm-end-paid-renewals` on `set-visibility` and `update`.
+
+#### For You
+
+- `forYou.list(query)` returns the `FeedEntryList` page and
+  `theses(query)` the `ForYouItemList` page (`ranking` `THESIS_ONLY` by
+  default); an item carries the recommended `version` and the current
+  `thesis` apart. The `edges`/`pageInfo` connections, `exhausted`, `listId`
+  and the parameter validators are gone. CLI `for-you list --newer-than` is
+  an error naming the removal.
+
+#### Feeds
+
+- `feed.list(query)` returns `AutomationSummaryList`; `stop(id)` and
+  `resume(id)` return the `Automation`, `delete(id)` returns `{}`, and
+  `setVisibility(id, 'PUBLIC' | 'PRIVATE')` returns `AutomationVisibility`.
+  `automation.list/stop/resume/delete/publish` return the same shapes.
+
+#### Playbooks and Skillhub
+
+- `playbooks.getByIds(ids)` returns `Playbook[]` (`[]` without a request for
+  none); `listByOwner(owner, query)`, `listOwn(query)` and `trending(query)`
+  return `PlaybookList` pages; `get({ id } | { ref })` is `null` only on 404
+  (403 is thrown); new `getBySlug(owner, slug)`.
+  `setVisibility({ name, visibility })` is `update(id, PlaybookPatch)` (the
+  CLI keeps `set-visibility --name` and adds `--confirm-end-paid-renewals`).
+  The agent-friendly `url`, `ref` and per-row `cursor` members are gone
+  (`playbookUrl()` builds the web URL).
+- `playbookSkills.list(query)` and `tags(query)` return one page, `get(id)`
+  the `SkillDetail`, `file(id, path)` the `SkillFile`; the CLI reads every
+  page. `parsePlaybookSkillId()` returns `{ owner, name }`.
+- Keyless discovery moved to `client.v1.playbooks` (`trending`, `getByIds`,
+  `listByOwner`, `get`) and `client.v1.playbookSkills` (`list`, `tags`,
+  `get`, `file`) with their 0.x types; the CLI uses them when no API key is
+  configured.
+
+#### Release, comments, remix and SDK docs
+
+- `release.feed(PublishAutomationBody)` returns `AutomationVersion` (no
+  `feed_path`); `playbookDraft(NewDraft)` returns `Draft`;
+  `playbook(playbookId, NewRelease)` returns `Release`. CLI `--feeds` takes
+  `[{"automationId":"…","major":1}]`, and `--skill-id` an ID or
+  `owner/name`.
+- `comments.create(playbookId, NewComment)`, `pin(id)` and `unpin(id)`
+  return the `Comment`. `remix.save(playbookId, parentIds)` returns the
+  `Playbook`. `sdk.doc(name)`, `sdk.partitions(query)` (one page) and
+  `sdk.partitionSummary(name)` return `SDKModule`, `SDKPartitionList` and
+  `SDKPartitionDetail`.

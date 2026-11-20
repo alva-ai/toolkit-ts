@@ -7,17 +7,18 @@ use the frozen 0.36 bundle ([Browser Usage](#browser-usage)).
 
 ```sh
 alva for-you list --limit 50
-alva for-you list --limit 20 --cursor '<endCursor>'
+alva for-you list --limit 20 --cursor '<nextPageToken>'
 alva for-you list --feed-id automation_0abc --limit 50
 ```
 
 ```ts
-const page = await client.forYou.list({ first: 50 });
+const page = await client.forYou.list({ pageSize: 50 });
 ```
 
-Available in both the terminal and embedded Agent CLI. Returns one JSON
-connection (`edges`, `pageInfo`) with full immutable card content and source
-references, newest publication first. Default page size: 20; maximum: 50.
+Available in both the terminal and embedded Agent CLI. Returns one
+`/api/v2` page (`items`, `nextPageToken`) of feed entries with full card
+content and source references, newest publication first. Default page size:
+20; maximum: 50.
 Entry and feed IDs are opaque platform IDs (a feed is an Automation).
 The optional feed filter only narrows the authenticated viewer's For You scope.
 PBSV and service identities are not accepted by the server.
@@ -81,6 +82,24 @@ shapes as they are. CLIs and SDKs still on 0.x keep working against
   every account is its BrokerAccount ID, broker commands included
   (`--account-id`). Orders are an `OrderInstruction` placed with
   `trading.placeOrders` (CLI `trading execute --instruction`).
+- **Theses.** Methods take and return the `/api/v2` schemas:
+  `create(newThesis, { idempotencyKey })`, `update(id, thesisUpdate)` (one
+  write: absent members carry over, `visibility` and `archived` included),
+  `archive`/`unarchive(id, { expectedVersionId })`, `getVersion(versionId)`
+  and `getVersionByNumber(number, versionNumber)`. A Related read that is
+  being prepared throws reason `RELATED_THESES_GENERATING`; leaving paid
+  visibility needs `confirmEndPaidRenewals`
+  (`PAID_RENEWALS_END_CONFIRMATION_REQUIRED`). CLI `--entity-stances` takes
+  `[{"assetId":"…","stance":"BEARISH"}]` and `--medias` takes
+  `currentVersion.media`.
+- **For You.** `forYou.list()` and `forYou.theses()` return the pages;
+  a recommendation is `{itemId, kind, version, thesis}`: the recommended
+  Update and the Thesis as it is now.
+- **Playbooks and Skillhub.** Reads return `Playbook`, `Skill` and
+  `{items, nextPageToken}` pages; `getByIds([])` is `[]`, and `get()` is
+  `null` only on 404. Publishing takes `PublishAutomationBody`, `NewDraft`
+  and `NewRelease`; CLI `--feeds` takes `[{"automationId":"…","major":1}]`.
+  Keyless discovery is `client.v1.playbooks` and `client.v1.playbookSkills`.
 - **Errors.** `AlvaError` has `code`, `reason` (such as
   `IDEMPOTENCY_KEY_REUSED` or `INSUFFICIENT_CREDITS`), `type`, `status`,
   `message`, `requiredPermission`, `invalidParams` and `retryAfter`, read
@@ -196,17 +215,19 @@ alva skillhub file alva/ai-digest references/api/example.md > out.md
 ```
 
 By default output is pretty-printed for humans. Pass `--json` to get the
-raw `{success, data}` envelope (e.g. for piping into `jq`).
+`/api/v2` JSON (e.g. for piping into `jq`): `list` and `tags` print every
+page as `{items, nextPageToken: null}`, `get` the `SkillDetail`, `file` the
+`SkillFile`.
 
 ### Playbook Discovery
 
-Discover public playbooks with a compact, agent-friendly result shape. The
-trending endpoint returns identifiers and ranking context, omitting
-frontend-only preview fields.
+Discover public playbooks. `--json` prints the `/api/v2` page of
+`Playbook`s; without an API key, discovery reads the public `/api/v1`
+catalog (`client.v1.playbooks`, 0.x shapes).
 
 ```bash
 alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
-alva playbooks trending --tag btc --cursor <cursor>
+alva playbooks trending --tag btc --cursor <nextPageToken>
 ```
 
 ### Playbook Functions
@@ -395,8 +416,8 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 | `client.run`        | `execute()`                                                                                                                                                        |
 | `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
 | `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
-| `client.playbooks`  | `trending()`                                                                                                                                                       |
-| `client.theses`     | `create()`, `get()`, `update()`, `close()`, `delete()`, `rewrite()`                                                                                                |
+| `client.playbooks`  | `trending()`, `getByIds()`, `listByOwner()`, `listOwn()`, `get()`, `getBySlug()`, `update()`                                                                       |
+| `client.theses`     | `create()`, `get()`, `getVersion()`, `list()`, `listUpdates()`, `related()`, `signals()`, `update()`, `archive()`, `rewrite()`                                     |
 | `client.functions`  | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
 | `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
 | `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
@@ -496,9 +517,9 @@ alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
 alva thesis <list|related|create|get|signals|set-visibility|update|rewrite>
-alva thesis version get --id <thesis-id> --author-version-id <version-id>
-alva thesis list --person <slug>       # or --person-name <name> / --user <username>
-alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextCursor>
+alva thesis version get --author-version-id <version-id>  # or --number <n> --version <m>
+alva thesis list --person <handle>     # or --person-name <name> / --user <handle>
+alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextPageToken>
 alva thesis related --id <thesis-id>
 alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoints: [{label, text, origin}]
 alva functions <register|list|delete|invoke|allowance>
