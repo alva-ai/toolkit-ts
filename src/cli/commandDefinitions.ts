@@ -632,7 +632,15 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('trading unsubscribe', { values: ['subscription-id'] }),
   command('trading execute', {
-    values: ['account-id', 'signal', 'source-username', 'source-feed'],
+    values: [
+      'account-id',
+      'instruction',
+      'idempotency-key',
+      // Retained so the handler can name their replacement.
+      'signal',
+      'source-username',
+      'source-feed',
+    ],
     booleans: ['dry-run'],
   }),
   command('trading update-risk-rules', {

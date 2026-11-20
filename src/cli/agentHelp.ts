@@ -388,25 +388,31 @@ Subcommands:
   summary         Read one account's holdings and balances
   activities      Read normalized account activity
   orders          Read detailed TREX order history
-  equity-history  Read TREX account equity history`,
+  equity-history  Read TREX account equity history
+
+Results are the /api/v2 shapes; pages are {items, nextPageToken}.`,
 
   trading: `Usage: alva trading <subcommand>
 
 Subcommands:
-  accounts    List execution-capable TREX accounts
+  accounts    List the accounts that can copy trade (BrokerAccount IDs)
   risk-rules  Read the admission limits enforced by Broker and Signal
   signals     Legacy Signal subscriptions and execution
-  broker      Venue-native reads and order execution`,
+  broker      Venue-native reads and order execution
+
+Every account flag, broker --account-id included, takes the BrokerAccount ID
+'trading accounts' lists.`,
 
   'trading signals': `Usage: alva trading signals <subcommand>
 
-Legacy Signal/copy-trading surface. It is separate from Broker.
-Subscriptions take the account ID 'portfolio accounts' lists; execute takes the
-TREX account ID 'trading accounts' lists.
+Legacy Signal/copy-trading surface. It is separate from Broker. Every command
+takes the BrokerAccount ID 'trading accounts' lists.
 
 Subcommands:
   subscriptions list|subscribe|unsubscribe
-  execute       Interpret one Signal; dry-run unless --live is explicit`,
+  execute       Place one /api/v2 OrderInstruction (--instruction); dry-run
+                unless --live is explicit; pass --idempotency-key to retry
+                a live placement safely`,
 
   'trading signals subscriptions': `Usage: alva trading signals subscriptions <subcommand>
 
@@ -421,6 +427,7 @@ Subcommands:
   describe  balance  positions  quote  ohlcv  funding-rate  raw
   order place|cancel|get|list
 
+Name the account with --account-id <BrokerAccount ID>, never --account.
 Run 'alva trading broker describe' for the live venue contract.`,
 };
 

@@ -1,4 +1,5 @@
 import type { AlvaClient } from '../client.js';
+import { V1TradingResource } from './trading.js';
 
 /**
  * `client.v1`: the 0.x methods that have no /api/v2 route. They call /api/v1
@@ -7,5 +8,11 @@ import type { AlvaClient } from '../client.js';
  * CHANGELOG 1.0.0 lists them.
  */
 export class V1Resources {
+  private _trading?: V1TradingResource;
+
   constructor(private readonly client: AlvaClient) {}
+
+  get trading(): V1TradingResource {
+    return (this._trading ??= new V1TradingResource(this.client));
+  }
 }

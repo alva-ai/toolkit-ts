@@ -576,8 +576,8 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('portfolio equity-history', 'trading equity-history', {
       values: ['account-id', 'range', 'timeframe', 'since-ms', 'until-ms'],
     }),
-    route('trading accounts', 'broker accounts'),
-    route('trading risk-rules', 'broker risk-rules'),
+    route('trading accounts', 'trading accounts'),
+    route('trading risk-rules', 'trading risk-rules'),
     route('trading signals subscriptions list', 'trading subscriptions', {
       values: ['account-id'],
     }),
@@ -597,7 +597,14 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     action(
       'trading signals execute',
       {
-        values: ['account-id', 'signal', 'source-username', 'source-feed'],
+        values: [
+          'account-id',
+          'instruction',
+          'idempotency-key',
+          'signal',
+          'source-username',
+          'source-feed',
+        ],
         booleans: ['live'],
       },
       'signal-execute'

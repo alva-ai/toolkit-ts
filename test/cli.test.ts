@@ -5866,12 +5866,20 @@ describe('CLI dispatch — Slim Agent profile', () => {
 
   it('moves portfolio reads and defaults legacy Signal execution to dry-run', async () => {
     const client = makeClient();
-    client.portfolio.accounts = vi.fn().mockResolvedValue({ accounts: [] });
-    client.portfolio.summary = vi.fn().mockResolvedValue({ positions: [] });
-    client.portfolio.activities = vi.fn().mockResolvedValue({ activities: [] });
-    client.trading.orders = vi.fn().mockResolvedValue({ orders: [] });
-    client.trading.equityHistory = vi.fn().mockResolvedValue({ equity: [] });
-    client.trading.execute = vi.fn().mockResolvedValue({ accepted: true });
+    client.portfolio.accounts = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.portfolio.snapshot = vi.fn().mockResolvedValue({ positions: [] });
+    client.portfolio.activities = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.orders = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.equity = vi.fn().mockResolvedValue({ points: [] });
+    client.trading.placeOrders = vi
+      .fn()
+      .mockResolvedValue({ status: 'EXECUTED', orders: [] });
 
     await dispatchEmbedded(
       client,
@@ -5911,47 +5919,48 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'equity-history',
         '--account-id',
         'broker_account_0a',
-        '--timeframe',
-        '1D',
+        '--range',
+        'ALL',
       ],
       undefined,
       agentDeps
     );
 
-    expect(client.portfolio.accounts).toHaveBeenCalled();
-    expect(client.portfolio.summary).toHaveBeenCalledWith('broker_account_0a');
-    expect(client.portfolio.activities).toHaveBeenCalledWith({
-      accountId: 'broker_account_0a',
-      limit: 10,
-      pageToken: undefined,
-    });
-    expect(client.trading.orders).toHaveBeenCalledWith({
-      accountId: 'broker_account_0a',
+    expect(client.portfolio.accounts).toHaveBeenCalledWith();
+    expect(client.portfolio.snapshot).toHaveBeenCalledWith('broker_account_0a');
+    expect(client.portfolio.activities).toHaveBeenCalledWith(
+      'broker_account_0a',
+      { pageSize: 10, pageToken: undefined }
+    );
+    expect(client.trading.orders).toHaveBeenCalledWith('broker_account_0a', {
       origin: undefined,
-      since: undefined,
-      limit: undefined,
+      from: undefined,
+      pageSize: undefined,
     });
-    expect(client.trading.equityHistory).toHaveBeenCalledWith({
-      accountId: 'broker_account_0a',
-      range: undefined,
-      timeframe: '1D',
-      sinceMs: undefined,
-      untilMs: undefined,
+    expect(client.trading.equity).toHaveBeenCalledWith('broker_account_0a', {
+      range: 'ALL',
     });
 
+    const instruction = '{"type":"ORDERS","orders":[]}';
     await dispatchEmbedded(
       client,
-      ['trading', 'signals', 'execute', '--account-id', '42', '--signal', '{}'],
+      [
+        'trading',
+        'signals',
+        'execute',
+        '--account-id',
+        'broker_account_0a',
+        '--instruction',
+        instruction,
+      ],
       undefined,
       agentDeps
     );
-    expect(client.trading.execute).toHaveBeenLastCalledWith({
-      accountId: '42',
-      signalJson: '{}',
-      dryRun: true,
-      sourceUsername: undefined,
-      sourceFeed: undefined,
-    });
+    expect(client.trading.placeOrders).toHaveBeenLastCalledWith(
+      'broker_account_0a',
+      { type: 'ORDERS', orders: [], dryRun: true },
+      { idempotencyKey: undefined }
+    );
 
     await dispatchEmbedded(
       client,
@@ -5960,16 +5969,18 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'signals',
         'execute',
         '--account-id',
-        '42',
-        '--signal',
-        '{}',
+        'broker_account_0a',
+        '--instruction',
+        instruction,
         '--live',
       ],
       undefined,
       agentDeps
     );
-    expect(client.trading.execute).toHaveBeenLastCalledWith(
-      expect.objectContaining({ dryRun: false })
+    expect(client.trading.placeOrders).toHaveBeenLastCalledWith(
+      'broker_account_0a',
+      { type: 'ORDERS', orders: [] },
+      { idempotencyKey: undefined }
     );
   });
 
@@ -5977,11 +5988,13 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
     client.trading.subscriptions = vi
       .fn()
-      .mockResolvedValue({ subscriptions: [] });
+      .mockResolvedValue({ items: [], nextPageToken: null });
     client.trading.subscribe = vi
       .fn()
       .mockResolvedValue({ id: 'trade_subscription_0a' });
-    client.trading.unsubscribe = vi.fn().mockResolvedValue({ ok: true });
+    client.trading.unsubscribe = vi
+      .fn()
+      .mockResolvedValue({ id: 'trade_subscription_0a' });
 
     await dispatchEmbedded(
       client,
@@ -6005,10 +6018,8 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'subscribe',
         '--account-id',
         'broker_account_0a',
-        '--source-username',
-        'alice',
-        '--source-feed',
-        'targets',
+        '--signal-source-id',
+        'automation_0f',
         '--playbook-id',
         'playbook_0p',
         '--playbook-version',
@@ -6034,12 +6045,12 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.trading.subscriptions).toHaveBeenCalledWith(
       'broker_account_0a'
     );
-    expect(client.trading.subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({
-        accountId: 'broker_account_0a',
-        executeLatest: undefined,
-      })
-    );
+    expect(client.trading.subscribe).toHaveBeenCalledWith('broker_account_0a', {
+      playbookId: 'playbook_0p',
+      signalSourceId: 'automation_0f',
+      playbookVersion: '1.0.0',
+      initialOrders: 'NONE',
+    });
     expect(client.trading.unsubscribe).toHaveBeenCalledWith(
       'trade_subscription_0a'
     );
@@ -6175,8 +6186,12 @@ describe('CLI dispatch — broker', () => {
     }
   );
 
-  it('routes shared accounts and risk rules through Broker-backed reads', async () => {
-    const client = brokerClient({ envelope: { items: [] }, exit: 0 });
+  it('routes shared accounts and risk rules through the /api/v2 reads, not Broker', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    client.portfolio.accounts = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.riskRules = vi.fn().mockResolvedValue({});
 
     await dispatchEmbedded(client, ['trading', 'accounts'], undefined, {
       runtime: 'jagent',
@@ -6185,24 +6200,12 @@ describe('CLI dispatch — broker', () => {
       runtime: 'jagent',
     });
 
+    expect(client.portfolio.accounts).toHaveBeenCalledWith({
+      copyTradingOnly: true,
+    });
+    expect(client.trading.riskRules).toHaveBeenCalled();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const request = (client as any)._v2Request;
-    expect(request).toHaveBeenNthCalledWith(
-      1,
-      'POST',
-      '/broker/invocations',
-      expect.objectContaining({
-        body: expect.objectContaining({ argv: ['accounts'] }),
-      })
-    );
-    expect(request).toHaveBeenNthCalledWith(
-      2,
-      'POST',
-      '/broker/invocations',
-      expect.objectContaining({
-        body: expect.objectContaining({ argv: ['risk-rules'] }),
-      })
-    );
+    expect((client as any)._v2Request).not.toHaveBeenCalled();
   });
 
   it('passes argv through verbatim to /api/v2/broker/invocations', async () => {
@@ -6243,8 +6246,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6263,6 +6266,8 @@ describe('CLI dispatch — broker', () => {
     const idx = argv.indexOf('--intent-id');
     expect(idx).toBeGreaterThan(-1);
     expect(argv[idx + 1]).toMatch(/^[0-9a-f-]{36}$/); // a UUID
+    expect(call[2].body.accountId).toBe('broker_account_0a1');
+    expect(argv).not.toContain('--account-id');
   });
 
   it('does NOT mint an intent-id for a dry-run or when one is supplied', async () => {
@@ -6274,8 +6279,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6302,8 +6307,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6334,8 +6339,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6425,8 +6430,8 @@ describe('CLI dispatch — broker', () => {
         'list',
         '--venue',
         'binance',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--open',
       ],
       undefined,
@@ -6449,8 +6454,8 @@ describe('CLI dispatch — broker', () => {
         'balance',
         '--venue',
         'binance',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
       ])
     ).resolves.toEqual({ status: 'ok' });
   });
@@ -6463,7 +6468,15 @@ describe('CLI dispatch — broker', () => {
       .mockRejectedValue(new Error('econnrefused'));
     const env = (await dispatchEmbedded(
       client,
-      ['trading', 'broker', 'balance', '--venue', 'binance', '--account', '7'],
+      [
+        'trading',
+        'broker',
+        'balance',
+        '--venue',
+        'binance',
+        '--account-id',
+        'broker_account_0a1',
+      ],
       undefined,
       { runtime: 'jagent' }
     )) as { status: string; reason: { code: string } };

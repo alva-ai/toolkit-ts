@@ -199,7 +199,12 @@ export type {
 
 export { XResource } from './resources/x.js';
 
-export type { OrderOrigin, EquityRange } from './resources/trading.js';
+export type { TradeOptions } from './resources/trading.js';
+export {
+  V1TradingResource,
+  type SubscribeExecutingLatestParams,
+  type TradingSubscription,
+} from './v1/trading.js';
 
 export {
   FollowsResource,

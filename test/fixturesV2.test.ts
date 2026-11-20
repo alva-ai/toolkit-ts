@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { shapeErrors } from './contractShape.js';
 import { BILLING_FIXTURES } from './billingV2.js';
 import { asset, MARKET_FIXTURES } from './marketV2.js';
+import { PORTFOLIO_FIXTURES } from './portfolioV2.js';
 import { RUNTIME_FIXTURES } from './runtimeV2.js';
 
-const FIXTURES = [...MARKET_FIXTURES, ...BILLING_FIXTURES, ...RUNTIME_FIXTURES];
+const FIXTURES = [
+  ...MARKET_FIXTURES,
+  ...BILLING_FIXTURES,
+  ...RUNTIME_FIXTURES,
+  ...PORTFOLIO_FIXTURES,
+];
 
 // The fakes of the resource tests answer contract shapes.
 

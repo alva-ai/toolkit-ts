@@ -161,7 +161,7 @@ Commands:
   people      Search, follow, and unfollow Alva users and curated people (search, follows list|follow|unfollow)
   trading-pairs  Discover and strictly verify canonical trading pairs (search, resolve)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
-  broker      Agentic order execution — venue-native passthrough to trex (accounts, quote, order, balance, positions, ...; run 'alva broker describe')
+  broker      Agentic order execution — venue-native passthrough to trex (quote, order, balance, positions, ...; --account-id names the account; run 'alva broker describe')
   auth        Authentication (login)
   screenshot  Capture a web screenshot as PNG
   arrays      Arrays backend operations (token ensure, token status)
@@ -1404,20 +1404,22 @@ Examples:
 
   portfolio: `Usage: alva portfolio <subcommand> [options]
 
-Read-only view of connected accounts across TREX and SnapTrade.
-For trading actions (subscribe, execute, etc.) use 'alva trading'.
+Read-only view of connected accounts across TREX and SnapTrade, in the
+/api/v2 shapes (BrokerAccount, PortfolioSnapshot, BrokerActivity; amounts are
+decimal strings in Money). For trading actions (subscribe, execute, etc.) use
+'alva trading'.
 
 Subcommands:
-  accounts     List all connected accounts (TREX + SnapTrade)
-  summary      Get portfolio summary (holdings + balance) for an account
-  activities   List recent activity for an account
+  accounts     List connected accounts (a BrokerAccountList page)
+  summary      Get an account's PortfolioSnapshot (positions and balances)
+  activities   List an account's recent activity (a BrokerActivityList page)
 
 Summary/Activities flags:
   --account-id <id>    Account ID from 'alva portfolio accounts' (required)
 
 Activities optional flags:
-  --limit <n>          Max results (default 50, max 200)
-  --page-token <tok>   Pagination token from a previous response
+  --limit <n>          Page size (default 50, max 200)
+  --page-token <tok>   nextPageToken of the previous page
 
 Examples:
   alva portfolio accounts
@@ -1544,55 +1546,56 @@ must keep their stored full pair symbol instead of being resolved again.`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
-Manage trading accounts, portfolios, orders, subscriptions, and risk rules.
+Manage trading accounts, orders, subscriptions, and risk rules. Results are
+the /api/v2 shapes; every account flag takes the BrokerAccount ID
+'alva trading accounts' lists (broker_account_0…).
 
 Subcommands:
-  accounts             List all trading accounts
-  portfolio            Get portfolio for an account
-  orders               List orders for an account
-  subscriptions        List subscriptions for an account
-  equity-history       Get equity history for an account
+  accounts             List the accounts that can copy trade (a page)
+  portfolio            Get an account's PortfolioSnapshot
+  orders               List an account's orders (an OrderList page)
+  subscriptions        List an account's trade subscriptions (a page)
+  equity-history       Get an account's EquitySeries
   risk-rules           Show risk rules
-  subscribe            Subscribe an account to a source feed
-  unsubscribe          Unsubscribe by subscription ID
-  execute              Execute a signal on an account
+  subscribe            Copy a Playbook feed's signals into an account
+  unsubscribe          Stop a trade subscription
+  execute              Place an order instruction on an account
   update-risk-rules    Update risk rules
 
 Portfolio/Orders/Subscriptions/Equity-history flags:
   --account-id <id>    Account ID from 'alva trading accounts' (required)
 
 Orders optional flags:
-  --limit <n>          Max results (max 200)
+  --limit <n>          Page size (max 200)
   --origin <origin>    EXTERNAL, ALVA_DIRECT, ALVA_INSTRUCTION or UNKNOWN
-  --since <seconds>    Orders placed at or after this Unix time
+  --since <time>       Orders placed at or after this RFC 3339 time
 
 Equity-history optional flags:
   --range <range>      ONE_DAY, ONE_WEEK, ONE_MONTH, THREE_MONTHS, YEAR_TO_DATE,
-                       ONE_YEAR or ALL (default: the smallest holding --since-ms, else ALL)
-  --timeframe <tf>     Only 1D (daily points)
-  --since-ms <ms>      Keep points from this time
-  --until-ms <ms>      Keep points up to this time
+                       ONE_YEAR or ALL. Each point's change is against the
+                       previous point.
 
 Subscribe flags:
   --account-id <id>            Account ID (required)
-  --signal-source-id <id>      The feed's Automation ID
-  --source-username <user>     Feed owner (required without --signal-source-id;
-                               then only your own feeds are found by name)
-  --source-feed <feed>         Feed name (required without --signal-source-id)
+  --signal-source-id <id>      The feed's Automation ID (required)
   --playbook-id <id>           Playbook ID (required)
-  --playbook-version <ver>     Playbook version (required)
-  --execute-latest             Execute latest signal on subscribe (v1 API: takes
-                               the numeric IDs 'alva broker accounts' lists)
+  --playbook-version <ver>     Playbook version (optional)
+  --execute-latest             Also execute the feed's latest signal now. This
+                               stays on /api/v1 and takes its numeric account
+                               and Playbook IDs, with --source-username,
+                               --source-feed and --playbook-version.
 
 Unsubscribe flags:
-  --subscription-id <id>       Subscription ID (required)
+  --subscription-id <id>       Trade subscription ID (required)
 
 Execute flags:
-  --account-id <id>            TREX account ID from 'alva broker accounts' (required)
-  --signal <json>              Signal JSON (required)
-  --dry-run                    Dry run mode
-  --source-username <user>     Source username (optional)
-  --source-feed <feed>         Source feed (optional)
+  --account-id <id>            Account ID (required)
+  --instruction <json>         An /api/v2 OrderInstruction (required): type
+                               ORDERS with orders, ALLOCATE with weights, or
+                               PREDICT with predictions; decimals are strings
+  --dry-run                    Plan the orders after the risk rules only
+  --idempotency-key <key>      Reuse to retry the same placement safely; the
+                               same key never places the orders twice
 
 Update-risk-rules flags:
   --max-single-order-value <n>       Max single order value (required)
@@ -1611,7 +1614,7 @@ Examples:
   alva trading risk-rules
   alva trading subscribe --account-id broker_account_0abc --signal-source-id automation_0abc --playbook-id playbook_0abc --playbook-version v1.0.0
   alva trading unsubscribe --subscription-id trade_subscription_0abc
-  alva trading execute --account-id 123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
+  alva trading execute --account-id broker_account_0abc --instruction '{"type":"ALLOCATE","weights":[{"symbol":"BINANCE_PERP_BTC_USDT","weight":"0.1"}]}' --dry-run
   alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
 
   arrays: `Usage: alva arrays token <subcommand>
@@ -2862,6 +2865,41 @@ function tradingEnumFlag<T extends string>(
   return value;
 }
 
+/** Refuses flags 1.0 removed, naming what replaces each. */
+function retiredFlags(
+  flags: Record<string, string>,
+  command: string,
+  replacements: Readonly<Record<string, string>>
+): void {
+  for (const [name, replacement] of Object.entries(replacements)) {
+    if (flags[name] !== undefined) {
+      throw new CliUsageError(
+        `--${name} is no longer a flag of '${command}'; use ${replacement}`,
+        command.split(' ')[0]
+      );
+    }
+  }
+}
+
+/** An optional RFC 3339 time flag; 1.0 refuses the Unix numbers 0.x took. */
+function rfc3339Flag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): string | undefined {
+  const value = flags[name];
+  if (value === undefined) return undefined;
+  try {
+    parseRfc3339Milliseconds(value);
+  } catch {
+    throw new CliUsageError(
+      `--${name} takes an RFC 3339 time with a timezone (2026-01-02T15:04:05Z) for '${command}'; Unix numbers are no longer accepted`,
+      command.split(' ')[0]
+    );
+  }
+  return value;
+}
+
 function localFileUnsupported(command: string, flag: string): CliUsageError {
   return new CliUsageError(
     `--${flag} reads or writes a local file, which is unavailable in jagent. ` +
@@ -3222,9 +3260,44 @@ function brokerStdinNeedsIntentId(stdin: string): boolean {
 }
 
 /**
+ * Takes `--account-id <id>` (or `--account-id=<id>`) out of a broker command
+ * line: the account is the invocation's accountId, the BrokerAccount ID
+ * `alva trading accounts` lists, never an argv `--account` (D31).
+ */
+function brokerAccountId(argv: readonly string[]): {
+  argv: string[];
+  accountId?: string;
+} {
+  const rest: string[] = [];
+  let accountId: string | undefined;
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    let value: string | undefined;
+    if (token === '--account-id') {
+      value = argv[i + 1];
+      i += 1;
+    } else if (token.startsWith('--account-id=')) {
+      value = token.slice('--account-id='.length);
+    } else {
+      rest.push(token);
+      continue;
+    }
+    if (!value || value.startsWith('--') || accountId !== undefined) {
+      throw new CliUsageError(
+        '--account-id takes one BrokerAccount ID (alva trading accounts)',
+        'broker'
+      );
+    }
+    accountId = value;
+  }
+  return { argv: rest, accountId };
+}
+
+/**
  * `alva broker` — a thin passthrough to trex's BrokerService.Invoke via the
  * gateway. argv goes through untouched (the command grammar IS the contract:
- * `alva broker describe`); the envelope comes back and is written to stdout
+ * `alva broker describe`) except `--account-id`, which becomes the
+ * invocation's accountId; the envelope comes back and is written to stdout
  * verbatim, the process exits with its exit code. No DTO, no per-command
  * knowledge — with ONE exception: a live `order place` gets a client-minted
  * `--intent-id` (printed to stderr BEFORE the request) so the idempotency
@@ -3233,9 +3306,10 @@ function brokerStdinNeedsIntentId(stdin: string): boolean {
  */
 export async function handleBroker(
   client: AlvaClient,
-  brokerArgv: readonly string[],
+  commandArgv: readonly string[],
   deps?: DispatchRuntimeDeps
 ): Promise<unknown> {
+  const { argv: brokerArgv, accountId } = brokerAccountId(commandArgv);
   let argv = [...brokerArgv];
   const isOrderPlace = brokerArgv[0] === 'order' && brokerArgv[1] === 'place';
   // Detect a retry handle in either form: `--intent-id x` or `--intent-id=x`
@@ -3280,10 +3354,11 @@ export async function handleBroker(
   let envelope: unknown;
   let exit = 2;
   try {
-    const resp = await client._v2Request<{
-      envelope: unknown;
-      exitCode: number;
-    }>('POST', '/broker/invocations', { body: { argv, stdin } });
+    const resp = await client._v2Request<Schema<'BrokerInvocation'>>(
+      'POST',
+      '/broker/invocations',
+      { body: { accountId, argv, stdin } }
+    );
     envelope = resp.envelope;
     exit = resp.exitCode ?? 2;
   } catch (e) {
@@ -5261,15 +5336,14 @@ export async function executeParsedCommand(
         case 'accounts':
           return client.portfolio.accounts();
         case 'summary':
-          return client.portfolio.summary(
+          return client.portfolio.snapshot(
             requireFlag(flags, 'account-id', 'portfolio summary')
           );
         case 'activities':
-          return client.portfolio.activities({
-            accountId: requireFlag(flags, 'account-id', 'portfolio activities'),
-            limit: num(flags['limit']),
-            pageToken: flags['page-token'],
-          });
+          return client.portfolio.activities(
+            requireFlag(flags, 'account-id', 'portfolio activities'),
+            { pageSize: num(flags['limit']), pageToken: flags['page-token'] }
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: portfolio ${subcommand}`,
@@ -5428,136 +5502,159 @@ export async function executeParsedCommand(
         throw new CliUsageError('Missing subcommand for trading', 'trading');
       switch (subcommand) {
         case 'accounts':
-          return client.trading.accounts();
+          return client.portfolio.accounts({ copyTradingOnly: true });
         case 'portfolio':
-          return client.trading.portfolio(
+          return client.portfolio.snapshot(
             requireFlag(flags, 'account-id', 'trading portfolio')
           );
         case 'orders':
-          if (flags['source'] !== undefined) {
-            throw new CliUsageError(
-              "--source is no longer a filter for 'trading orders'; use --origin",
-              'trading'
-            );
-          }
-          return client.trading.orders({
-            accountId: requireFlag(flags, 'account-id', 'trading orders'),
-            origin: tradingEnumFlag(
-              flags,
-              'origin',
-              ['EXTERNAL', 'ALVA_DIRECT', 'ALVA_INSTRUCTION', 'UNKNOWN'],
-              'trading orders'
-            ),
-            since: num(flags['since']),
-            limit: num(flags['limit']),
+          retiredFlags(flags, 'trading orders', {
+            source: '--origin',
           });
+          return client.trading.orders(
+            requireFlag(flags, 'account-id', 'trading orders'),
+            {
+              origin: tradingEnumFlag(
+                flags,
+                'origin',
+                ['EXTERNAL', 'ALVA_DIRECT', 'ALVA_INSTRUCTION', 'UNKNOWN'],
+                'trading orders'
+              ),
+              from: rfc3339Flag(flags, 'since', 'trading orders'),
+              pageSize: num(flags['limit']),
+            }
+          );
         case 'subscriptions':
           return client.trading.subscriptions(
             requireFlag(flags, 'account-id', 'trading subscriptions')
           );
         case 'equity-history':
-          return client.trading.equityHistory({
-            accountId: requireFlag(
-              flags,
-              'account-id',
-              'trading equity-history'
-            ),
-            range: tradingEnumFlag(
-              flags,
-              'range',
-              [
-                'ONE_DAY',
-                'ONE_WEEK',
-                'ONE_MONTH',
-                'THREE_MONTHS',
-                'YEAR_TO_DATE',
-                'ONE_YEAR',
-                'ALL',
-              ],
-              'trading equity-history'
-            ),
-            timeframe: flags['timeframe'],
-            sinceMs: num(flags['since-ms']),
-            untilMs: num(flags['until-ms']),
+          retiredFlags(flags, 'trading equity-history', {
+            timeframe: '--range',
+            'since-ms': '--range',
+            'until-ms': '--range',
           });
+          return client.trading.equity(
+            requireFlag(flags, 'account-id', 'trading equity-history'),
+            {
+              range: tradingEnumFlag(
+                flags,
+                'range',
+                [
+                  'ONE_DAY',
+                  'ONE_WEEK',
+                  'ONE_MONTH',
+                  'THREE_MONTHS',
+                  'YEAR_TO_DATE',
+                  'ONE_YEAR',
+                  'ALL',
+                ],
+                'trading equity-history'
+              ),
+            }
+          );
         case 'risk-rules':
           return client.trading.riskRules();
         case 'subscribe': {
-          // A feed is named by its Automation ID, or by owner and name.
-          const signalSourceId = flags['signal-source-id'];
-          const byName = signalSourceId === undefined;
-          return client.trading.subscribe({
-            accountId: requireFlag(flags, 'account-id', 'trading subscribe'),
-            sourceUsername: byName
-              ? requireFlag(flags, 'source-username', 'trading subscribe')
-              : (flags['source-username'] ?? ''),
-            sourceFeed: byName
-              ? requireFlag(flags, 'source-feed', 'trading subscribe')
-              : (flags['source-feed'] ?? ''),
-            playbookId: requireFlag(flags, 'playbook-id', 'trading subscribe'),
-            playbookVersion: requireFlag(
-              flags,
-              'playbook-version',
-              'trading subscribe'
-            ),
-            signalSourceId,
-            executeLatest: boolFlag(flags['execute-latest']),
+          const accountId = requireFlag(
+            flags,
+            'account-id',
+            'trading subscribe'
+          );
+          const playbookId = requireFlag(
+            flags,
+            'playbook-id',
+            'trading subscribe'
+          );
+          if (boolFlag(flags['execute-latest'])) {
+            // /api/v2 does not execute the latest signal yet (client.v1).
+            return client.v1.trading.subscribe({
+              accountId,
+              sourceUsername: requireFlag(
+                flags,
+                'source-username',
+                'trading subscribe --execute-latest'
+              ),
+              sourceFeed: requireFlag(
+                flags,
+                'source-feed',
+                'trading subscribe --execute-latest'
+              ),
+              playbookId,
+              playbookVersion: requireFlag(
+                flags,
+                'playbook-version',
+                'trading subscribe --execute-latest'
+              ),
+            });
+          }
+          if (flags['signal-source-id'] === undefined) {
+            throw new CliUsageError(
+              "--signal-source-id (the feed's Automation ID) is required for 'trading subscribe'; a feed is no longer found by --source-username and --source-feed",
+              'trading'
+            );
+          }
+          return client.trading.subscribe(accountId, {
+            playbookId,
+            signalSourceId: flags['signal-source-id'],
+            playbookVersion: flags['playbook-version'],
+            initialOrders: 'NONE',
           });
         }
         case 'unsubscribe':
           return client.trading.unsubscribe(
             requireFlag(flags, 'subscription-id', 'trading unsubscribe')
           );
-        case 'execute':
-          return client.trading.execute({
-            accountId: requireFlag(flags, 'account-id', 'trading execute'),
-            signalJson: requireFlag(flags, 'signal', 'trading execute'),
-            dryRun: boolFlag(flags['dry-run']) ?? false,
-            sourceUsername: flags['source-username'],
-            sourceFeed: flags['source-feed'],
+        case 'execute': {
+          retiredFlags(flags, 'trading execute', {
+            signal: '--instruction (an /api/v2 OrderInstruction)',
+            'source-username': '--instruction reason',
+            'source-feed': '--instruction reason',
           });
-        case 'update-risk-rules':
+          const instruction = jsonObjectFlag(
+            flags,
+            'instruction',
+            'trading execute'
+          );
+          if (instruction === undefined) {
+            throw new CliUsageError(
+              "--instruction is required for 'trading execute'",
+              'trading'
+            );
+          }
+          return client.trading.placeOrders(
+            requireFlag(flags, 'account-id', 'trading execute'),
+            {
+              ...(instruction as Schema<'OrderInstruction'>),
+              ...(boolFlag(flags['dry-run']) ? { dryRun: true } : {}),
+            },
+            { idempotencyKey: flags['idempotency-key'] }
+          );
+        }
+        case 'update-risk-rules': {
+          const limit = (
+            name: 'max-single-order' | 'max-daily-turnover' | 'max-daily-orders'
+          ): Schema<'RiskLimitPatch'> => ({
+            value: String(
+              requireNumericFlag(
+                flags,
+                `${name}-value`,
+                'trading update-risk-rules'
+              )
+            ),
+            enabled:
+              requireFlag(
+                flags,
+                `${name}-enabled`,
+                'trading update-risk-rules'
+              ) === 'true',
+          });
           return client.trading.updateRiskRules({
-            maxSingleOrder: {
-              value: requireNumericFlag(
-                flags,
-                'max-single-order-value',
-                'trading update-risk-rules'
-              ),
-              enabled:
-                requireFlag(
-                  flags,
-                  'max-single-order-enabled',
-                  'trading update-risk-rules'
-                ) === 'true',
-            },
-            maxDailyTurnover: {
-              value: requireNumericFlag(
-                flags,
-                'max-daily-turnover-value',
-                'trading update-risk-rules'
-              ),
-              enabled:
-                requireFlag(
-                  flags,
-                  'max-daily-turnover-enabled',
-                  'trading update-risk-rules'
-                ) === 'true',
-            },
-            maxDailyOrders: {
-              value: requireNumericFlag(
-                flags,
-                'max-daily-orders-value',
-                'trading update-risk-rules'
-              ),
-              enabled:
-                requireFlag(
-                  flags,
-                  'max-daily-orders-enabled',
-                  'trading update-risk-rules'
-                ) === 'true',
-            },
+            maxOrderValue: limit('max-single-order'),
+            maxDailyTurnover: limit('max-daily-turnover'),
+            maxDailyOrders: limit('max-daily-orders'),
           });
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: trading ${subcommand}`,
