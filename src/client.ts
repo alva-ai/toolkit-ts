@@ -13,6 +13,7 @@ import {
 } from './platformApi.js';
 import { V1Resources } from './v1/index.js';
 import type { AlvaClientConfig } from './types.js';
+import { AsksResource } from './resources/asks.js';
 import { FsResource } from './resources/fs.js';
 import { RunResource } from './resources/run.js';
 import { DeployResource } from './resources/deploy.js';
@@ -168,6 +169,7 @@ export class AlvaClient {
   /** Host-attached file Session target, distinct from the chat origin header. */
   readonly originInboxPath?: string;
 
+  private _asks?: AsksResource;
   private _fs?: FsResource;
   private _run?: RunResource;
   private _deploy?: DeployResource;
@@ -220,6 +222,9 @@ export class AlvaClient {
     this.originInboxPath = config.originInboxPath;
   }
 
+  get asks(): AsksResource {
+    return (this._asks ??= new AsksResource(this));
+  }
   get fs(): FsResource {
     return (this._fs ??= new FsResource(this));
   }
