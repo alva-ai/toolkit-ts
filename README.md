@@ -1,6 +1,7 @@
 # @alva-ai/toolkit
 
-Alva REST API SDK and CLI for Node.js and the browser.
+Alva platform API SDK and CLI for Node.js and the command line. Browser pages
+use the frozen 0.36 bundle ([Browser Usage](#browser-usage)).
 
 ### Read For You publications
 
@@ -37,7 +38,8 @@ a compatible Dispatch update does not require rebuilding Pi or JAgent.
 
 - **CLI** — manage config, call any Alva API from your terminal
 - **SDK** — typed TypeScript/JavaScript client for Node.js
-- **Browser** — drop a `<script>` tag into plain HTML, no build step needed
+- **Browser** — a `<script>` tag pinned to `@alva-ai/toolkit@0.36` (the
+  frozen 0.36 bundle), no build step needed
 
 ## Install
 
@@ -53,81 +55,43 @@ npm install -g @alva-ai/toolkit
 
 ## Migrating from 0.x to 1.0
 
-1.0 moves the SDK and CLI to Alva's platform API, `/api/v2`. CLIs and SDKs
-still on 0.x keep working against `/api/v1`. Methods, commands and output keep
-their shape apart from the points below; the full list is in
-[CHANGELOG.md](CHANGELOG.md).
+1.0 moves the SDK and CLI to Alva's platform API, `/api/v2`, and returns its
+shapes as they are. CLIs and SDKs still on 0.x keep working against
+`/api/v1`. The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
-- **IDs are strings.** Every ID the SDK returns or accepts is an opaque
-  string (`AlvaId`), such as `task_0…`. Numeric 0.x IDs are not accepted.
-  Store and pass IDs unchanged; never parse them or turn them into numbers.
-- **Errors.** `AlvaError` keeps `code`, `message`, `status` and `details`,
-  and adds `requiredPermission` (on `INSUFFICIENT_PERMISSION`),
-  `invalidParams` (on `INVALID_ARGUMENT`) and `retryAfter` in seconds (on
-  `RATE_LIMITED`). The CLI prints them with the error. Codes come from the
-  platform API's problems: `details` no longer carries backend reasons, a
-  failed precondition is `CONFLICT` (was `FAILED_PRECONDITION`), and a
-  malformed response is `INVALID_RESPONSE` (was `GRAPHQL_*`).
+- **Shapes.** Results, and the CLI's JSON output (`--json`, and the default
+  of commands without a human formatter), are the `/api/v2` JSON of the
+  route: camelCase members, opaque string IDs (`thesis_0…`; store and pass
+  them unchanged), `{ items, nextPageToken }` pages, RFC 3339 times and
+  decimal strings. The contract is the OpenAPI document at
+  [`GET /api/v2/openapi.json`](https://api-llm.prd.alva.ai/api/v2/openapi.json);
+  the SDK's types are generated from it:
+
+  ```typescript
+  import type { Schema, V2Query } from '@alva-ai/toolkit';
+
+  type Thesis = Schema<'Thesis'>;
+  type CreditFilters = V2Query<'/me/credit-entries', 'get'>;
+  ```
+
+- **`client.v1`.** Methods without an `/api/v2` route keep their 0.x types
+  and IDs under `client.v1` (CHANGELOG, "Moved to `client.v1`").
+- **Errors.** `AlvaError` has `code`, `reason` (such as
+  `IDEMPOTENCY_KEY_REUSED` or `INSUFFICIENT_CREDITS`), `type`, `status`,
+  `message`, `requiredPermission`, `invalidParams` and `retryAfter`, read
+  from the RFC 9457 problem. Branch on `reason` where it is set, else on
+  `code`.
 - **Permissions.** Each call needs one permission of the API key; a key
-  without it gets `INSUFFICIENT_PERMISSION` with `requiredPermission`. Calls
-  that rebuild home paths or check ownership also read the caller's profile
-  (`social:read`), and broker commands need `trading:write`.
-- **Writes.** Every write sends an `Idempotency-Key`. A method that takes a
-  request ID sends it as the key, so a retry with the same request ID returns
-  the first result. The SDK still does not retry on its own.
-- **Browser and Playbook pages.** `/api/v2` accepts only API keys and sends
-  no CORS headers. A client holding a `pbsvToken` or `viewer_token`, or no
-  credential, keeps `/api/v1` for `fs`, Playbook and Skillhub discovery
-  (with 0.x IDs) and the UDF runtime.
-- **Still on `/api/v1`.** `steward`, `trading.execute`,
-  `trading.subscribe({ executeLatest: true })`, `secrets.get`,
-  `notifications.listFeed`, `subscriptions.subscribeFeed`/`unsubscribeFeed`
-  and `channelGroupSubscriptions` (`alert group`) have no `/api/v2` route
-  yet; they keep 0.x IDs.
-- **Resources.**
-  - Theses, Thesis reads and For You: `publication.playbookId` names the
-    Playbook; use `thesisId` (or a list node's `playbookId`) with
-    `theses.get`, `signals` and `related`. A Thesis's page and the Alva
-    App's Thesis card take its number (`https://alva.ai/thesis/<number>`):
-    `thesis.number` and `publication.thesisNumber` (with
-    `thesis.author_version_number`), which 0.x returned as the ID. Lists put
-    the next cursor on the last edge only. `thesis update --archived false`
-    on an archived Thesis unarchives it, then publishes the Update.
-    `for-you list --newer-than` is gone: read the first page again.
-  - Playbooks, comments, remix, release, Skillhub, SDK docs and feeds: feed
-    IDs are Automation IDs and `release feed --cronjob-id` takes a Cronjob
-    ID.
-  - `fs`: `stat`/`readdir` return `mod_time` in Unix seconds and `meta`;
-    `readlink` returns `{ target_path }`.
-  - `deploy`: cronjob, run and dispatch IDs are strings; `trigger` returns the
-    dispatch ID as `workflow_run_id`, which `getRunStatus` takes; a paused
-    cronjob's trigger is 409 `CONFLICT`; `listRuns` drops
-    `next_cursor_sort_at` (the cursor is one opaque token).
-  - `automation`, `schedules`: Automation, Cronjob and Channel IDs are
-    strings; `delivery.update` still takes `"0"` for the Agent channel.
-  - `follows`: `entityId` is an Asset ID and profile `id` a Profile ID;
-    `followProfile`/`unfollowProfile` take the ID alone. Removing tickers is no
-    longer one atomic batch, and `FAILED_PRECONDITION` (ambiguous symbol) is
-    gone: a symbol resolves to its primary listing.
-  - `subscriptions`, `alerts`: Automation, Playbook and Channel IDs are
-    strings; `follow.id`/`user_id`, per-row `cursor` and `total_count` are
-    gone; `unsubscribeBatch` reports every ID as `UNSUBSCRIBED`.
-  - `serviceAccount`: IDs are Account IDs (`account_0…`); `grant` returns the
-    grant, and `revoke` takes its `grant_id` (CLI `--grant-id`).
-  - `user`, `secrets`, `feedback`: `id`, `feedback_id` and the new secret
-    `id` are strings.
-  - `markets`, `tradingPairs`: same results; errors carry `/api/v2` codes.
-  - `companyNews.create`: `feed_id` and `cronjob_id` are Automation and
-    Cronjob IDs.
-  - `x`: X accounts and posts have Alva IDs; posts add `url`.
-  - `run`, `arraysJwt`: same results.
-  - `credits.items`: entries have Alva IDs and `title` instead of `extras`.
-  - `functions`: Playbook, function and service-account IDs are Alva IDs;
-    `--clear-run-as` is not available; allowances drop `consumer_uid`.
-  - `portfolio`, `trading`: account, subscription and Playbook IDs are Alva
-    IDs; `trading.orders` filters by `origin` and `equityHistory` by `range`;
-    `subscribe` takes the feed's Automation ID. `trading.execute` takes
-    trex's account ID from `alva broker accounts`.
+  without it gets `INSUFFICIENT_PERMISSION` with `requiredPermission`.
+- **Writes and retries.** Every POST and PATCH sends one `Idempotency-Key`
+  per call; pass `idempotencyKey` (or a method's request ID) to make your own
+  retries safe. The SDK retries network errors, 409
+  `IDEMPOTENCY_KEY_IN_USE`, 429 with a short `Retry-After`, and 502, 503 and
+  504 with the same key, at most 3 attempts within 60 s.
+- **Credentials and browsers.** `/api/v2` takes API keys. A client holding a
+  `pbsvToken` or `viewer_token` gets `CREDENTIAL_REQUIRED` from `/api/v2`
+  methods. 1.x has no browser build: pages load the 0.36 bundle, pinned
+  ([Browser Usage](#browser-usage)).
 
 ## CLI Quick Start
 
@@ -344,10 +308,12 @@ const secrets = await client.secrets.list();
 
 ## Browser Usage
 
-Add the browser bundle via a CDN:
+Browser pages use the 0.36 bundle. 1.x has no browser build: its
+`dist/browser.global.js` is the published 0.36.0 bundle, unchanged, so pages
+that load the unversioned URL keep their 0.36 behavior. Pin the version:
 
 ```html
-<script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
+<script src="https://unpkg.com/@alva-ai/toolkit@0.36/dist/browser.global.js"></script>
 <script>
   const client = new AlvaToolkit.AlvaClient({
     viewer_token,
@@ -359,10 +325,8 @@ Add the browser bundle via a CDN:
 </script>
 ```
 
-> **Note:** The Alva API must have CORS headers configured for browser requests to work from your origin.
-> A client holding a `viewer_token` or `pbsvToken` reads files and Playbook
-> discovery from `/api/v1`; `/api/v2` accepts only API keys and sends no CORS
-> headers.
+> **Note:** The 0.36 bundle calls `/api/v1` and has the 0.x shapes and IDs.
+> `/api/v2` accepts only API keys and sends no CORS headers.
 
 ### Playbook Runtime UDFs
 
@@ -377,7 +341,7 @@ Register creator-side functions first with `alva functions register`; viewer
 HTML should call the browser runtime instead of hand-writing API fetches.
 
 ```html
-<script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
+<script src="https://unpkg.com/@alva-ai/toolkit@0.36/dist/browser.global.js"></script>
 <script>
   (async () => {
     const response = await window.alva.udf.call('analyze', { ticker: 'AAPL' });
@@ -445,11 +409,13 @@ try {
 } catch (err) {
   if (err instanceof AlvaError) {
     console.error(err.code); // 'NOT_FOUND'
+    console.error(err.reason); // a finer public reason, when the problem has one
     console.error(err.status); // 404
-    console.error(err.message); // 'File not found'
+    console.error(err.message); // the problem's detail
+    console.error(err.type); // 'https://alva.ai/problems/not-found'
     console.error(err.requiredPermission); // on INSUFFICIENT_PERMISSION
     console.error(err.invalidParams); // on INVALID_ARGUMENT: [{ name, reason }]
-    console.error(err.retryAfter); // on RATE_LIMITED: seconds
+    console.error(err.retryAfter); // seconds, on RATE_LIMITED and retryable failures
   }
 }
 ```
