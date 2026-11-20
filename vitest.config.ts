@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     root: '.',
     include: ['test/**/*.test.ts'],
+    setupFiles: ['test/setup/no-network.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
