@@ -9,8 +9,7 @@ import {
 import type { ListThesesParams } from '../resources/theses.js';
 import { AlvaClient } from '../client.js';
 import { decodeBase64 } from '../base64.js';
-import { requireDecision } from '../resources/steward.js';
-import { parseRfc3339Milliseconds } from '../resources/schedules.js';
+import { requireDecision } from '../v1/steward.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import type { Schema, V2Query } from '../platformApi.js';
 import { allPages } from './pages.js';
@@ -533,19 +532,25 @@ Examples:
 Manage scheduled cronjobs that run your scripts on a cron schedule.
 Min interval: 1 minute.
 
+Output is the /api/v2 shape: create, get, update, pause and resume print the
+Cronjob; list a CronjobList page; delete {}; trigger the DispatchReceipt
+{dispatchId}; runs a CronjobRunList page; run-stats the CronjobRunStats;
+run-status the CronjobDispatch {id, cronjobId, state, run}; run-logs the
+CronjobRunLogs {logs, error}.
+
 Subcommands:
   create     Create a new cronjob
-  list       List all cronjobs (supports cursor-based pagination)
+  list       List all cronjobs (one page; pass nextPageToken as --cursor)
   get        Get a single cronjob by ID
   update     Update a cronjob (partial update — only include changed fields)
   delete     Delete a cronjob
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
   trigger    Fire the cronjob once, immediately, bypassing the schedule
-             (returns workflow_run_id, a dispatch ID; poll 'run-status'
-             with a timeout)
+             (returns dispatchId; poll 'run-status' with a timeout)
              This is not a dry run and may deliver Feed alerts to subscribers.
-  runs       List runs for a cronjob (cursor-paginated)
+  runs       List runs for a cronjob (one page)
+  run-stats  Run counts and the last run and success times of a cronjob
   run-status Get one triggered run's pollable status by its dispatch ID
   run-logs   Get stdout/stderr logs for a single cronjob run
 
@@ -561,28 +566,27 @@ Create/Update flags:
   --run-as-service-account <id>  Run the cronjob under a service-account identity
                          (id from "alva service-account create"); restricts file
                          access to the SA's grants. Omit on update ⇒ unchanged (#602)
-  --clear-run-as         Clear run_as on update — run the cronjob as yourself
-                         again (mutually exclusive with --run-as-service-account)
+  --clear-run-as         Clear the run-as account on update — run the cronjob as
+                         yourself again (mutually exclusive with --run-as-service-account)
 
 List flags:
   --limit <n>            Max results per page (default: 20)
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <token>       nextPageToken of the previous page
 
-Get/Update/Delete/Pause/Resume/Trigger flags:
+Get/Update/Delete/Pause/Resume/Trigger/Run-stats flags:
   --id <id>              Cronjob ID (required)
 
 Runs flags:
   --id <id>              Cronjob ID (required)
   --first <n>            Max results per page
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <token>       nextPageToken of the previous page
 
 Run-status flags:
   --id <id>              Cronjob ID (required)
-  --workflow-run-id <id> Dispatch ID returned by deploy trigger
+  --workflow-run-id <id> The dispatchId deploy trigger printed
 
 Run-logs flags:
-  --id <id>              Cronjob ID (required)
-  --run-id <id>          Run ID (required)
+  --run-id <id>          Run ID (required; it names its cronjob)
 
 Name format: 1-63 lowercase alphanumeric or hyphens, no leading/trailing hyphens.
   Valid:   btc-ema-update, my-strategy-1
@@ -606,28 +610,34 @@ Examples:
   alva deploy delete --id cronjob_0abc
   alva deploy runs --id cronjob_0abc
   alva deploy runs --id cronjob_0abc --first 10
+  alva deploy run-stats --id cronjob_0abc
   alva deploy run-status --id cronjob_0abc --workflow-run-id cronjob_dispatch_0xyz
-  alva deploy run-logs --id cronjob_0abc --run-id cronjob_run_0xyz
+  alva deploy run-logs --run-id run_0xyz
 
 Build-time verify (fire once, then poll up to 5 minutes):
   WARNING: trigger uses production delivery semantics. If --push-notify and
   subscriber alert bindings are enabled, this run may send real notifications.
-  WF=$(alva deploy trigger --id cronjob_0abc | jq -r .workflow_run_id)
+  WF=$(alva deploy trigger --id cronjob_0abc | jq -r .dispatchId)
   for _ in {1..60}; do
     STATUS_JSON=$(alva deploy run-status --id cronjob_0abc --workflow-run-id "$WF")
     STATE=$(echo "$STATUS_JSON" | jq -r .state)
-    case "$STATE" in PENDING|DISPATCHED|RUNNING) ;; *) break ;; esac
+    case "$STATE" in PENDING|QUEUED|RUNNING) ;; *) break ;; esac
     sleep 5
   done
   case "$STATE" in
-    PENDING|DISPATCHED|RUNNING) echo "Timed out waiting for run completion" >&2; exit 1 ;;
+    PENDING|QUEUED|RUNNING) echo "Timed out waiting for run completion" >&2; exit 1 ;;
   esac
-  [ "$STATE" = COMPLETED ] || alva deploy run-logs --id cronjob_0abc \\
+  [ "$STATE" = SUCCEEDED ] || alva deploy run-logs \\
                                   --run-id "$(echo "$STATUS_JSON" | jq -r .run.id)"`,
 
   schedule: `Usage: alva schedule <subcommand> [options]
 
 Manage named future and recurring work for an Alva Channel Agent or Session Inbox.
+
+Output is the /api/v2 Schedule (a Channel target) or SessionSchedule (an
+Inbox target): list prints every one as {items, nextPageToken: null}; put,
+pause and resume print the schedule; delete prints {}. Rules are
+{kind: AT|EVERY|CRON, fireAt, everySeconds, cron, timezone}.
 
 Subcommands:
   list       List schedules
@@ -742,6 +752,10 @@ Delivery flags:
 
 Lifecycle flags:
   --id <automation_id>   Automation id (required for inspect/update/stop/resume/delete)
+
+Output: inspect prints a summary (--json: the /api/v2 Automation); update
+the AutomationVersion; delivery get the AutomationDelivery {channelIds,
+email}; delivery update the Automation.
 
 Examples:
   alva automation list
@@ -1971,18 +1985,18 @@ function optionalServiceAccountIdFlag(
   return raw;
 }
 
-// Resolve the run_as field for create/update/register from its two flags:
+// Resolve the run-as account of a cronjob update from its two flags:
 //   --run-as-service-account <id>  → set/switch to that SA
-//   --clear-run-as                 → clear it (send "0"; backend runs as owner)
-//   neither                        → undefined (omitted): backend PRESERVES the
-//                                    prior run_as on re-registration/update.
+//   --clear-run-as                 → clear it (null: the job runs as its owner)
+//   neither                        → undefined (omitted): the update PRESERVES
+//                                    the prior run-as account.
 // The two flags are mutually exclusive. We keep clearing on an explicit
 // --clear-run-as rather than accepting `--run-as-service-account 0`, so a typo'd
 // empty value still throws instead of silently un-scoping the job (#602).
 function resolveRunAsFlag(
   flags: Record<string, string>,
   command: string
-): string | undefined {
+): string | null | undefined {
   const clear = boolFlag(flags['clear-run-as']) ?? false;
   const setID = optionalServiceAccountIdFlag(flags, command);
   if (clear && setID !== undefined) {
@@ -1991,7 +2005,7 @@ function resolveRunAsFlag(
       command.split(' ')[0]
     );
   }
-  if (clear) return '0';
+  if (clear) return null;
   return setID;
 }
 
@@ -2432,57 +2446,58 @@ function automationPins(
   return pins as Schema<'AutomationPin'>[];
 }
 
-function automationUpdateParams(flags: Record<string, string>) {
+function automationUpdateParams(flags: Record<string, string>): {
+  id: string;
+  body: Schema<'PublishVersionBody'>;
+} {
   const command = 'automation update';
-  const cronjobID =
-    flags['cronjob-id'] === undefined
-      ? undefined
-      : requireIdFlag(flags, 'cronjob-id', command);
-  const trigger = boolFlag(flags['trigger']);
-  const params = {
-    id: requireIdFlag(flags, 'id', command),
+  const body: Schema<'PublishVersionBody'> = {
     version: flags['version'],
-    cronjob_id: cronjobID,
+    cronjobId:
+      flags['cronjob-id'] === undefined
+        ? undefined
+        : requireIdFlag(flags, 'cronjob-id', command),
     description: flags['description'],
     changelog: flags['changelog'],
-    agent_type: flags['agent-type'],
-    trigger: trigger === true ? true : undefined,
+    agentType: flags['agent-type'],
+    triggerRun: boolFlag(flags['trigger']) === true ? true : undefined,
   };
-  if (
-    params.version === undefined &&
-    params.cronjob_id === undefined &&
-    params.description === undefined &&
-    params.changelog === undefined &&
-    params.agent_type === undefined &&
-    params.trigger !== true
-  ) {
+  if (Object.values(body).every((value) => value === undefined)) {
     throw new CliUsageError(
       'automation update requires at least one field or --trigger',
       'automation'
     );
   }
-  return params;
+  return { id: requireIdFlag(flags, 'id', command), body };
 }
 
-function automationDeliveryUpdateParams(flags: Record<string, string>) {
+/** v1's alias of the caller's Agent channel in --alva-channel-ids. */
+const AGENT_CHANNEL_ALIAS = '0';
+
+async function automationDeliveryUpdateParams(
+  client: AlvaClient,
+  flags: Record<string, string>
+): Promise<{ id: string; patch: Schema<'DeliveryPatch'> }> {
   const command = 'automation delivery update';
   const id = requireIdFlag(flags, 'id', command);
-  const alvaChannelIds =
+  const channels =
     flags['alva-channel-ids'] === undefined
       ? undefined
       : (csvList(flags['alva-channel-ids']) ?? []);
-  const emailEnabled = boolFlag(flags['email-enabled']);
-  if (alvaChannelIds === undefined && emailEnabled === undefined) {
+  const email = boolFlag(flags['email-enabled']);
+  if (channels === undefined && email === undefined) {
     throw new CliUsageError(
       'automation delivery update requires --alva-channel-ids or --email-enabled/--no-email-enabled',
       'automation'
     );
   }
-  return {
-    id,
-    alvaChannelIds,
-    emailEnabled,
-  };
+  const agent = channels?.includes(AGENT_CHANNEL_ALIAS)
+    ? await client.schedules.agentChannelId()
+    : undefined;
+  const channelIds = channels && [
+    ...new Set(channels.map((c) => (c === AGENT_CHANNEL_ALIAS ? agent! : c))),
+  ];
+  return { id, patch: { channelIds, email } };
 }
 
 function trendingPlaybooksSort(
@@ -2678,7 +2693,7 @@ function parseCreditsDurationMs(value: string): number {
 async function scheduleTarget(
   client: AlvaClient,
   flags: Record<string, string>
-): Promise<import('../resources/schedules.js').AgentScheduleTarget> {
+): Promise<{ channelId: string } | { inboxPath: string }> {
   if (flags['inbox-path'] !== undefined) {
     if (flags['channel-id'] !== undefined)
       throw new CliUsageError(
@@ -2694,13 +2709,16 @@ async function scheduleTarget(
   };
 }
 
+/** The ID of the schedule a `name` filter selected. */
+function scheduleIdOf(items: readonly { id: string }[], name: string): string {
+  const id = items[0]?.id;
+  if (!id) throw new AlvaError('NOT_FOUND', `schedule ${name} not found`, 404);
+  return id;
+}
+
 function scheduleRuleFromFlags(
   flags: Record<string, string>
-):
-  | { kind: 'after'; duration: string }
-  | { kind: 'at'; timestamp: string }
-  | { kind: 'every'; interval: string }
-  | { kind: 'cron'; expression: string; timezone: string } {
+): Schema<'ScheduleRuleInput'> {
   const selected = ['after', 'at', 'every', 'cron'].filter(
     (flag) => flags[flag] !== undefined
   );
@@ -2714,22 +2732,63 @@ function scheduleRuleFromFlags(
     throw new CliUsageError('--timezone is only valid with --cron', 'schedule');
   }
   switch (selected[0]) {
-    case 'after':
-      return { kind: 'after', duration: flags['after'] };
-    case 'at':
+    case 'after': {
+      // The first whole second at or after now + the duration.
+      const at = Date.now() + scheduleDurationSeconds(flags['after'], 1) * 1000;
       return {
-        kind: 'at',
-        timestamp: parseScheduleTimestamp(flags['at'], 'at'),
+        kind: 'AT',
+        fireAt: new Date(Math.ceil(at / 1000) * 1000).toISOString(),
       };
+    }
+    case 'at':
+      return { kind: 'AT', fireAt: parseScheduleTimestamp(flags['at'], 'at') };
     case 'every':
-      return { kind: 'every', interval: flags['every'] };
+      return {
+        kind: 'EVERY',
+        everySeconds: scheduleDurationSeconds(flags['every'], 60),
+      };
     default:
       return {
-        kind: 'cron',
-        expression: flags['cron'],
+        kind: 'CRON',
+        cron: flags['cron'],
         timezone: requireFlag(flags, 'timezone', 'schedule put'),
       };
   }
+}
+
+/** Whole seconds of an ISO 8601 day/time duration (PT1H, P1DT30M), at least `minimumSeconds`. */
+function scheduleDurationSeconds(
+  value: string,
+  minimumSeconds: number
+): number {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
+    value
+  );
+  if (
+    !match ||
+    match.slice(1, 5).every((part) => part === undefined) ||
+    (value.includes('T') &&
+      match.slice(2, 5).every((part) => part === undefined))
+  ) {
+    throw new CliUsageError(
+      'duration must be a positive ISO 8601 day/time duration such as PT1H',
+      'schedule'
+    );
+  }
+  const [days, hours, minutes, seconds] = match
+    .slice(1, 5)
+    .map((part) => BigInt(part ?? '0'));
+  const total = ((days * 24n + hours) * 60n + minutes) * 60n + seconds;
+  if (total < BigInt(minimumSeconds)) {
+    throw new CliUsageError(
+      `duration must be at least ${minimumSeconds} whole seconds`,
+      'schedule'
+    );
+  }
+  if (total * 1000n > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new CliUsageError('duration is out of range', 'schedule');
+  }
+  return Number(total);
 }
 
 function parseScheduleTimestamp(value: string, flag: string): string {
@@ -2770,24 +2829,19 @@ function parseScheduleTimestamp(value: string, flag: string): string {
       'schedule'
     );
   }
-  // Schedule semantic timestamps are canonical whole seconds end-to-end.
-  // Date#toISOString always appends `.000Z`, which the schedule resource
-  // correctly rejects as fractional-second syntax even when the value is zero.
-  return new Date(parsed).toISOString().replace('.000Z', 'Z');
+  return new Date(parsed).toISOString();
 }
 
-function scheduleBoundsFromFlags(flags: Record<string, string>):
-  | {
-      startsAt?: string;
-      until?: string;
-      maxOccurrences?: number;
-    }
+function scheduleBoundsFromFlags(
+  flags: Record<string, string>
+):
+  | Pick<Schema<'PutScheduleBody'>, 'startsAt' | 'endsAt' | 'maxOccurrences'>
   | undefined {
   const startsAt =
     flags['starts-at'] !== undefined
       ? parseScheduleTimestamp(flags['starts-at'], 'starts-at')
       : undefined;
-  const until =
+  const endsAt =
     flags['until'] !== undefined
       ? parseScheduleTimestamp(flags['until'], 'until')
       : undefined;
@@ -2796,9 +2850,9 @@ function scheduleBoundsFromFlags(flags: Record<string, string>):
       ? requirePositiveIntegerFlag(flags, 'max-occurrences', 'schedule put')
       : undefined;
   return startsAt !== undefined ||
-    until !== undefined ||
+    endsAt !== undefined ||
     maxOccurrences !== undefined
-    ? { startsAt, until, maxOccurrences }
+    ? { startsAt, endsAt, maxOccurrences }
     : undefined;
 }
 
@@ -3808,114 +3862,108 @@ export async function executeParsedCommand(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for deploy', 'deploy');
       switch (subcommand) {
-        case 'create': {
-          const params = {
+        case 'create':
+          return client.deploy.create({
             name: requireFlag(flags, 'name', 'deploy create'),
-            path: requireFlag(flags, 'path', 'deploy create'),
-            cron_expression: requireFlag(flags, 'cron', 'deploy create'),
-            push_notify: boolFlag(flags['push-notify']),
-            max_heap_size_mb: optionalBoundedIntegerFlag(
+            entryPath: requireFlag(flags, 'path', 'deploy create'),
+            cronExpression: requireFlag(flags, 'cron', 'deploy create'),
+            argsJson: serializedJSONFlag(flags['args'], 'deploy create'),
+            pushNotify: boolFlag(flags['push-notify']),
+            maxHeapSizeMb: optionalBoundedIntegerFlag(
               flags,
               'max-heap-size-mb',
               'deploy create',
               1,
               2046
             ),
-            execution_timeout_seconds: optionalBoundedIntegerFlag(
+            executionTimeoutSeconds: optionalBoundedIntegerFlag(
               flags,
               'execution-timeout-seconds',
               'deploy create',
               1,
               3600
             ),
-            run_as_user_id: optionalServiceAccountIdFlag(
+            runAsAccountId: optionalServiceAccountIdFlag(
               flags,
               'deploy create'
             ),
-          };
-          const serializedArgs = serializedJSONFlag(
-            flags['args'],
-            'deploy create'
-          );
-          return serializedArgs === undefined
-            ? client.deploy.create(params)
-            : client.deploy._createSerializedArgs(params, serializedArgs);
-        }
+          });
         case 'list':
           return client.deploy.list({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'],
           });
         case 'get':
-          return client.deploy.get({
-            id: requireIdFlag(flags, 'id', 'deploy get'),
-          });
-        case 'update': {
-          const params = {
-            id: requireIdFlag(flags, 'id', 'deploy update'),
-            name: flags['name'],
-            cron_expression: flags['cron'],
-            push_notify: boolFlag(flags['push-notify']),
-            max_heap_size_mb: optionalBoundedIntegerFlag(
-              flags,
-              'max-heap-size-mb',
-              'deploy update',
-              1,
-              2046
-            ),
-            execution_timeout_seconds: optionalBoundedIntegerFlag(
-              flags,
-              'execution-timeout-seconds',
-              'deploy update',
-              1,
-              3600
-            ),
-            run_as_user_id: resolveRunAsFlag(flags, 'deploy update'),
-          };
-          const serializedArgs = serializedJSONFlag(
-            flags['args'],
-            'deploy update'
+          return client.deploy.get(requireIdFlag(flags, 'id', 'deploy get'));
+        case 'update':
+          return client.deploy.update(
+            requireIdFlag(flags, 'id', 'deploy update'),
+            {
+              name: flags['name'],
+              cronExpression: flags['cron'],
+              argsJson: serializedJSONFlag(flags['args'], 'deploy update'),
+              pushNotify: boolFlag(flags['push-notify']),
+              maxHeapSizeMb: optionalBoundedIntegerFlag(
+                flags,
+                'max-heap-size-mb',
+                'deploy update',
+                1,
+                2046
+              ),
+              executionTimeoutSeconds: optionalBoundedIntegerFlag(
+                flags,
+                'execution-timeout-seconds',
+                'deploy update',
+                1,
+                3600
+              ),
+              runAsAccountId: resolveRunAsFlag(flags, 'deploy update'),
+            }
           );
-          return serializedArgs === undefined
-            ? client.deploy.update(params)
-            : client.deploy._updateSerializedArgs(params, serializedArgs);
-        }
         case 'delete':
-          return client.deploy.delete({
-            id: requireIdFlag(flags, 'id', 'deploy delete'),
-          });
+          return client.deploy.delete(
+            requireIdFlag(flags, 'id', 'deploy delete')
+          );
         case 'pause':
-          return client.deploy.pause({
-            id: requireIdFlag(flags, 'id', 'deploy pause'),
-          });
+          return client.deploy.pause(
+            requireIdFlag(flags, 'id', 'deploy pause')
+          );
         case 'resume':
-          return client.deploy.resume({
-            id: requireIdFlag(flags, 'id', 'deploy resume'),
-          });
+          return client.deploy.resume(
+            requireIdFlag(flags, 'id', 'deploy resume')
+          );
         case 'trigger':
-          return client.deploy.trigger({
-            id: requireIdFlag(flags, 'id', 'deploy trigger'),
-          });
+          return client.deploy.trigger(
+            requireIdFlag(flags, 'id', 'deploy trigger')
+          );
         case 'runs':
-          return client.deploy.listRuns({
-            cronjob_id: requireIdFlag(flags, 'id', 'deploy runs'),
-            first: num(flags['first']),
-            cursor: flags['cursor'],
-          });
-        case 'run-status':
-          return client.deploy.getRunStatus({
-            cronjob_id: requireIdFlag(flags, 'id', 'deploy run-status'),
-            workflow_run_id: requireFlag(
-              flags,
-              'workflow-run-id',
-              'deploy run-status'
-            ),
-          });
+          return client.deploy.listRuns(
+            requireIdFlag(flags, 'id', 'deploy runs'),
+            { pageSize: num(flags['first']), pageToken: flags['cursor'] }
+          );
+        case 'run-stats':
+          return client.deploy.runStats(
+            requireIdFlag(flags, 'id', 'deploy run-stats')
+          );
+        case 'run-status': {
+          const command = 'deploy run-status';
+          const cronjobId = requireIdFlag(flags, 'id', command);
+          const dispatch = await client.deploy.getDispatch(
+            requireIdFlag(flags, 'workflow-run-id', command)
+          );
+          if (dispatch.cronjobId !== cronjobId) {
+            throw new AlvaError(
+              'NOT_FOUND',
+              `dispatch ${dispatch.id} is not a run of cronjob ${cronjobId}`,
+              404
+            );
+          }
+          return dispatch;
+        }
         case 'run-logs':
-          return client.deploy.getRunLogs({
-            cronjob_id: requireIdFlag(flags, 'id', 'deploy run-logs'),
-            run_id: requireIdFlag(flags, 'run-id', 'deploy run-logs'),
-          });
+          return client.deploy.getRunLogs(
+            requireIdFlag(flags, 'run-id', 'deploy run-logs')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: deploy ${subcommand}`,
@@ -3930,55 +3978,71 @@ export async function executeParsedCommand(
       }
       switch (subcommand) {
         case 'list': {
-          return client.schedules.list(await scheduleTarget(client, flags));
+          const target = await scheduleTarget(client, flags);
+          return 'inboxPath' in target
+            ? allPages((pageToken) =>
+                client.schedules.listSession({
+                  inboxPath: target.inboxPath,
+                  pageSize: 100,
+                  pageToken,
+                })
+              )
+            : allPages((pageToken) =>
+                client.schedules.list(target.channelId, {
+                  pageSize: 100,
+                  pageToken,
+                })
+              );
         }
         case 'put': {
           const rule = scheduleRuleFromFlags(flags);
           const bounds = scheduleBoundsFromFlags(flags);
-          if (
-            (rule.kind === 'at' || rule.kind === 'after') &&
-            bounds !== undefined
-          ) {
+          if (rule.kind === 'AT' && bounds !== undefined) {
             throw new CliUsageError(
-              `${rule.kind} does not accept recurring bounds`,
+              `${flags['after'] !== undefined ? 'after' : 'at'} does not accept recurring bounds`,
               'schedule'
             );
           }
-          const name = requireFlag(flags, 'name', 'schedule put');
-          const text = requireFlag(flags, 'message', 'schedule put');
-          const target = await scheduleTarget(client, flags);
-          return client.schedules.put({
-            ...target,
-            name,
-            text,
+          const body = {
+            name: requireFlag(flags, 'name', 'schedule put'),
+            message: requireFlag(flags, 'message', 'schedule put'),
             rule,
-            bounds,
-          });
-        }
-        case 'pause': {
-          const name = requireFlag(flags, 'name', 'schedule pause');
+            ...bounds,
+          };
           const target = await scheduleTarget(client, flags);
-          return client.schedules.pause({
-            ...target,
-            name,
-          });
+          return 'inboxPath' in target
+            ? client.schedules.putSession({
+                inboxPath: target.inboxPath,
+                ...body,
+              })
+            : client.schedules.put(target.channelId, body);
         }
-        case 'resume': {
-          const name = requireFlag(flags, 'name', 'schedule resume');
-          const target = await scheduleTarget(client, flags);
-          return client.schedules.resume({
-            ...target,
-            name,
-          });
-        }
+        case 'pause':
+        case 'resume':
         case 'delete': {
-          const name = requireFlag(flags, 'name', 'schedule delete');
+          const name = requireFlag(flags, 'name', `schedule ${subcommand}`);
           const target = await scheduleTarget(client, flags);
-          await client.schedules.delete({
-            ...target,
+          if ('inboxPath' in target) {
+            const { items } = await client.schedules.listSession({
+              inboxPath: target.inboxPath,
+              name,
+            });
+            const id = scheduleIdOf(items, name);
+            return subcommand === 'pause'
+              ? client.schedules.pauseSession(id)
+              : subcommand === 'resume'
+                ? client.schedules.resumeSession(id)
+                : client.schedules.deleteSession(id);
+          }
+          const { items } = await client.schedules.list(target.channelId, {
             name,
           });
-          return { deleted: true };
+          const id = scheduleIdOf(items, name);
+          return subcommand === 'pause'
+            ? client.schedules.pause(id)
+            : subcommand === 'resume'
+              ? client.schedules.resume(id)
+              : client.schedules.delete(id);
         }
         default:
           throw new CliUsageError(
@@ -4012,7 +4076,7 @@ export async function executeParsedCommand(
       };
       switch (subcommand) {
         case 'decide':
-          return client.steward.decide({
+          return client.v1.steward.decide({
             inboxPath,
             deliveryId: requireFlag(flags, 'delivery-id', 'steward decide'),
             decision: requireDecision(
@@ -4021,21 +4085,21 @@ export async function executeParsedCommand(
             reason: requireFlag(flags, 'reason', 'steward decide'),
           });
         case 'forward':
-          return client.steward.forward({
+          return client.v1.steward.forward({
             inboxPath,
             deliveryId: requireFlag(flags, 'delivery-id', 'steward forward'),
             requestId: flags['request-id'],
           });
         case 'send':
           if (flags['digest-run-id'] !== undefined) {
-            return client.steward.sendDigestRun({
+            return client.v1.steward.sendDigestRun({
               inboxPath,
               digestRunId: requireFlag(flags, 'digest-run-id', 'steward send'),
               deliveryIds: optionalIds('delivery-ids'),
               body: flags.body,
             });
           }
-          return client.steward.send({
+          return client.v1.steward.send({
             inboxPath,
             body: requireFlag(flags, 'body', 'steward send'),
             deliveryIds: optionalIds('delivery-ids'),
@@ -4043,7 +4107,7 @@ export async function executeParsedCommand(
           });
         case 'pending': {
           if (flags['digest-run-id'] !== undefined) {
-            return client.steward.digestRunPending({
+            return client.v1.steward.digestRunPending({
               inboxPath,
               digestRunId: requireFlag(
                 flags,
@@ -4052,21 +4116,13 @@ export async function executeParsedCommand(
               ),
             });
           }
-          const parseTime = (name: 'since' | 'until'): number | undefined => {
-            const value = flags[name];
-            if (value === undefined) return undefined;
-            try {
-              return parseRfc3339Milliseconds(value);
-            } catch {
-              throw new CliUsageError(
-                `--${name} must be an RFC3339 timestamp with a timezone`,
-                'steward'
-              );
-            }
-          };
+          const parseTime = (name: 'since' | 'until'): number | undefined =>
+            flags[name] === undefined
+              ? undefined
+              : rfc3339Flag(flags[name], name, 'steward pending');
           const first =
             flags.first === undefined ? undefined : Number(flags.first);
-          return client.steward.pending({
+          return client.v1.steward.pending({
             inboxPath,
             sinceMs: parseTime('since'),
             untilMs: parseTime('until'),
@@ -4074,13 +4130,13 @@ export async function executeParsedCommand(
           });
         }
         case 'briefed':
-          return client.steward.briefed({
+          return client.v1.steward.briefed({
             inboxPath,
             deliveryIds: ids('delivery-ids'),
             digestRunId: requireFlag(flags, 'digest-run-id', 'steward briefed'),
           });
         case 'status':
-          return client.steward.digestRun({
+          return client.v1.steward.digestRun({
             inboxPath,
             digestRunId: requireFlag(flags, 'digest-run-id', 'steward status'),
           });
@@ -4395,9 +4451,9 @@ export async function executeParsedCommand(
             : formatAutomationList(result);
         }
         case 'inspect': {
-          const result = await client.automation.inspect({
-            id: requireIdFlag(flags, 'id', 'automation inspect'),
-          });
+          const result = await client.automation.inspect(
+            requireIdFlag(flags, 'id', 'automation inspect')
+          );
           return boolFlag(flags['json'])
             ? result
             : formatAutomationDetail(result);
@@ -4406,8 +4462,10 @@ export async function executeParsedCommand(
           return client.automation.publish(
             feedReleaseParams(flags, 'automation publish')
           );
-        case 'update':
-          return client.automation.update(automationUpdateParams(flags));
+        case 'update': {
+          const { id, body } = automationUpdateParams(flags);
+          return client.automation.update(id, body);
+        }
         case 'delivery': {
           const leaf = parsedCommand.path[2];
           if (!leaf || leaf === '--help' || leaf === '-h') {
@@ -4415,13 +4473,16 @@ export async function executeParsedCommand(
           }
           switch (leaf) {
             case 'get':
-              return client.automation.delivery.get({
-                id: requireIdFlag(flags, 'id', 'automation delivery get'),
-              });
-            case 'update':
-              return client.automation.delivery.update(
-                automationDeliveryUpdateParams(flags)
+              return client.automation.delivery.get(
+                requireIdFlag(flags, 'id', 'automation delivery get')
               );
+            case 'update': {
+              const { id, patch } = await automationDeliveryUpdateParams(
+                client,
+                flags
+              );
+              return client.automation.delivery.update(id, patch);
+            }
             default:
               throw new CliUsageError(
                 `Unknown subcommand: automation delivery ${leaf}`,

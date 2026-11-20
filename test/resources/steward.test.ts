@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
-import type { StewardPendingParams } from '../../src/resources/steward.js';
+import type { StewardPendingParams } from '../../src/v1/steward.js';
 
 const inboxPath =
   '/alva/home/alice/agents/steward-9/.pi/agent/sessions/main.inbox.jsonl';
@@ -25,13 +25,13 @@ function client() {
   return new AlvaClient({ apiKey: 'alva_test' });
 }
 
-describe('StewardResource', () => {
+describe('client.v1.steward', () => {
   it('records a decision through the gateway mutation', async () => {
     const c = client();
     const request = vi.spyOn(c, '_request').mockResolvedValue({
       data: { updateStewardDelivery: { delivery: { state: 'consumed' } } },
     });
-    const result = await c.steward.decide({
+    const result = await c.v1.steward.decide({
       inboxPath,
       deliveryId: '123',
       decision: 'digest',
@@ -70,8 +70,8 @@ describe('StewardResource', () => {
           },
         },
       });
-    await c.steward.forward({ inboxPath, deliveryId: '5' });
-    await c.steward.send({ inboxPath, body: 'x', deliveryIds: ['5', '6'] });
+    await c.v1.steward.forward({ inboxPath, deliveryId: '5' });
+    await c.v1.steward.send({ inboxPath, body: 'x', deliveryIds: ['5', '6'] });
     const uuid = /^[0-9a-f-]{36}$/;
     const forwardInput = (
       request.mock.calls[0][2] as {
@@ -99,14 +99,14 @@ describe('StewardResource', () => {
         },
       },
     });
-    await c.steward.send({
+    await c.v1.steward.send({
       inboxPath,
       body: 'For You only',
       deliveryIds: [],
       requestId: '11111111-1111-4111-8111-111111111111',
     });
     // Omitting deliveryIds entirely is equivalent to an empty set.
-    await c.steward.send({
+    await c.v1.steward.send({
       inboxPath,
       body: 'For You only',
       requestId: '22222222-2222-4222-8222-222222222222',
@@ -121,7 +121,7 @@ describe('StewardResource', () => {
     }
 
     await expect(
-      c.steward.briefed({ inboxPath, deliveryIds: [], digestRunId: 'run' })
+      c.v1.steward.briefed({ inboxPath, deliveryIds: [], digestRunId: 'run' })
     ).rejects.toThrow(/at least one delivery id/);
   });
 
@@ -150,7 +150,7 @@ describe('StewardResource', () => {
         },
       },
     });
-    const page = await c.steward.pendingPage({
+    const page = await c.v1.steward.pendingPage({
       inboxPath,
       untilMs: 1788720000000,
     });
@@ -164,7 +164,7 @@ describe('StewardResource', () => {
       },
     });
     // A continuation passes only the cursor; the window travels inside it.
-    await c.steward.pendingPage({ inboxPath, after: 'cur-5', untilMs: 1 });
+    await c.v1.steward.pendingPage({ inboxPath, after: 'cur-5', untilMs: 1 });
     expect(request).toHaveBeenLastCalledWith('POST', '/query', {
       body: {
         query: expect.stringContaining('stewardDigestPending'),
@@ -172,7 +172,7 @@ describe('StewardResource', () => {
       },
     });
     await expect(
-      c.steward.pendingPage({ inboxPath, first: 500 })
+      c.v1.steward.pendingPage({ inboxPath, first: 500 })
     ).rejects.toThrow(/between 1 and 100/);
   });
 
@@ -191,7 +191,7 @@ describe('StewardResource', () => {
       },
     });
 
-    const page = await c.steward.pending({ inboxPath, after: 'cur-5' });
+    const page = await c.v1.steward.pending({ inboxPath, after: 'cur-5' });
 
     expect(page.nextCursor).toBeNull();
     expect(request).toHaveBeenCalledWith('POST', '/query', {
@@ -202,7 +202,7 @@ describe('StewardResource', () => {
     });
 
     const widened: StewardPendingParams = { inboxPath, after: 'cur-5' };
-    const widenedResult = await c.steward.pending(widened);
+    const widenedResult = await c.v1.steward.pending(widened);
     expect('nextCursor' in widenedResult).toBe(true);
   });
 
@@ -245,7 +245,7 @@ describe('StewardResource', () => {
       });
     });
 
-    const result = await c.steward.pending({
+    const result = await c.v1.steward.pending({
       inboxPath,
       untilMs: 1788720000000,
       first: 2,
@@ -315,7 +315,7 @@ describe('StewardResource', () => {
         },
       });
 
-    const result = await c.steward.pending({ inboxPath });
+    const result = await c.v1.steward.pending({ inboxPath });
     expect(result.items.map((item) => item.deliveryId)).toEqual([
       '1',
       '2',
@@ -347,7 +347,7 @@ describe('StewardResource', () => {
         },
       });
 
-    const result = await c.steward.pending({ inboxPath });
+    const result = await c.v1.steward.pending({ inboxPath });
     expect(result.items).toEqual([]);
     expect(request).toHaveBeenCalledTimes(2);
   });
@@ -357,7 +357,7 @@ describe('StewardResource', () => {
     const error = new AlvaError('NETWORK_TIMEOUT', 'timed out', 0);
     const request = vi.spyOn(c, '_request').mockRejectedValue(error);
 
-    await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
+    await expect(c.v1.steward.pending({ inboxPath })).rejects.toBe(error);
     expect(request).toHaveBeenCalledTimes(3);
   });
 
@@ -391,7 +391,7 @@ describe('StewardResource', () => {
       })
       .mockRejectedValue(error);
 
-    await expect(c.steward.pending({ inboxPath })).rejects.toBe(error);
+    await expect(c.v1.steward.pending({ inboxPath })).rejects.toBe(error);
     expect(request).toHaveBeenCalledTimes(4);
   });
 
@@ -423,7 +423,7 @@ describe('StewardResource', () => {
         },
       });
 
-    const error = await c.steward
+    const error = await c.v1.steward
       .pending({ inboxPath })
       .catch((caught: unknown) => caught);
     expect(error).toMatchObject({
@@ -448,7 +448,7 @@ describe('StewardResource', () => {
       },
     });
 
-    const error = await c.steward
+    const error = await c.v1.steward
       .pending({ inboxPath })
       .catch((caught: unknown) => caught);
     expect(error).toMatchObject({
@@ -484,7 +484,7 @@ describe('StewardResource', () => {
       },
     });
 
-    await expect(c.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
+    await expect(c.v1.steward.pending({ inboxPath })).rejects.toThrow(/empty/);
   });
 
   it.each([undefined, {}, { hasNextPage: 'false', endCursor: null }])(
@@ -504,7 +504,7 @@ describe('StewardResource', () => {
         },
       });
 
-      await expect(c.steward.pendingPage({ inboxPath })).rejects.toThrow(
+      await expect(c.v1.steward.pendingPage({ inboxPath })).rejects.toThrow(
         /empty/
       );
     }
@@ -525,7 +525,7 @@ describe('StewardResource', () => {
     }));
 
     await expect(
-      c.steward.digestRunPending({ inboxPath, digestRunId })
+      c.v1.steward.digestRunPending({ inboxPath, digestRunId })
     ).rejects.toThrow(/empty/);
     expect(request).toHaveBeenCalledTimes(3);
   });
@@ -540,7 +540,7 @@ describe('StewardResource', () => {
     );
 
     await expect(
-      c.steward.briefed({ inboxPath, deliveryIds, digestRunId: 'run-1' })
+      c.v1.steward.briefed({ inboxPath, deliveryIds, digestRunId: 'run-1' })
     ).rejects.toThrow(/at most 100/);
     expect(request).not.toHaveBeenCalled();
   });
@@ -574,7 +574,7 @@ describe('StewardResource', () => {
         { inboxPath, untilMs: 1788720000000 },
         { inboxPath, after: 'cur-5' },
       ]) {
-        const page = await c.steward.pendingPage(params);
+        const page = await c.v1.steward.pendingPage(params);
         expect(page.items).toEqual([item]);
         expect(page.items[0].alertSnapshot).toBe(snapshot);
         expect(page.nextCursor).toBe('cur-5');
@@ -599,7 +599,7 @@ describe('StewardResource', () => {
       { sinceMs: 10, untilMs: 10 },
     ]) {
       await expect(
-        c.steward.pending({ inboxPath, ...params })
+        c.v1.steward.pending({ inboxPath, ...params })
       ).rejects.toThrow();
     }
     expect(request).not.toHaveBeenCalled();
@@ -616,7 +616,7 @@ describe('StewardResource', () => {
       request.mockResolvedValue({
         data: { viewer: { stewardDigestPending: { edges: [], ...bounds } } },
       });
-      await expect(c.steward.pendingPage({ inboxPath })).rejects.toThrow(
+      await expect(c.v1.steward.pendingPage({ inboxPath })).rejects.toThrow(
         /empty/
       );
     }
@@ -626,7 +626,7 @@ describe('StewardResource', () => {
     const c = client();
     const request = vi.spyOn(c, '_request');
     await expect(
-      c.steward.decide({
+      c.v1.steward.decide({
         inboxPath,
         deliveryId: 'abc',
         decision: 'digest',
@@ -634,14 +634,14 @@ describe('StewardResource', () => {
       })
     ).rejects.toThrow(/positive integer/);
     await expect(
-      c.steward.briefed({
+      c.v1.steward.briefed({
         inboxPath,
         deliveryIds: ['1', '1'],
         digestRunId: 'run',
       })
     ).rejects.toThrow(/duplicate/);
     await expect(
-      c.steward.forward({ inboxPath: '', deliveryId: '1' })
+      c.v1.steward.forward({ inboxPath: '', deliveryId: '1' })
     ).rejects.toThrow(/Session Inbox path/);
     expect(request).not.toHaveBeenCalled();
   });
@@ -657,7 +657,7 @@ describe('StewardResource', () => {
         },
       ],
     });
-    const error = await c.steward
+    const error = await c.v1.steward
       .briefed({ inboxPath, deliveryIds: ['1'], digestRunId: 'run' })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AlvaError);
@@ -717,10 +717,10 @@ describe('StewardResource', () => {
       });
 
     await expect(
-      c.steward.digestRun({ inboxPath, digestRunId })
+      c.v1.steward.digestRun({ inboxPath, digestRunId })
     ).resolves.toEqual(run);
     await expect(
-      c.steward.digestRunPending({ inboxPath, digestRunId })
+      c.v1.steward.digestRunPending({ inboxPath, digestRunId })
     ).resolves.toEqual([item, { ...item, deliveryId: '6' }]);
     expect(request.mock.calls[0][2]).toEqual({
       body: {
@@ -762,7 +762,7 @@ describe('StewardResource', () => {
       });
 
       await expect(
-        c.steward.digestRunPending({ inboxPath, digestRunId })
+        c.v1.steward.digestRunPending({ inboxPath, digestRunId })
       ).rejects.toThrow(/empty/);
     }
   );
@@ -776,7 +776,7 @@ describe('StewardResource', () => {
     });
 
     await expect(
-      c.steward.digestRun({ inboxPath, digestRunId: uppercaseRunId })
+      c.v1.steward.digestRun({ inboxPath, digestRunId: uppercaseRunId })
     ).resolves.toEqual(run);
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {
@@ -798,7 +798,7 @@ describe('StewardResource', () => {
     });
 
     await expect(
-      c.steward.sendDigestRun({
+      c.v1.steward.sendDigestRun({
         inboxPath,
         digestRunId,
         deliveryIds,
@@ -822,7 +822,7 @@ describe('StewardResource', () => {
     });
 
     await expect(
-      c.steward.sendDigestRun({ inboxPath, digestRunId, deliveryIds })
+      c.v1.steward.sendDigestRun({ inboxPath, digestRunId, deliveryIds })
     ).resolves.toEqual(run);
     expect(request).toHaveBeenCalledWith('POST', '/query', {
       body: {

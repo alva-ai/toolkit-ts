@@ -61,7 +61,7 @@ function producerIDFromAutomationDetail(
   if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
     throw new Error(`Automation ${automationId} returned an invalid detail`);
   }
-  const raw = (detail as Record<string, unknown>).cronjob_id;
+  const raw = (detail as Record<string, unknown>).cronjobId;
   if (raw === undefined || raw === null) return undefined;
   if (typeof raw !== 'string' || !raw) {
     throw new Error(`Automation ${automationId} returned an invalid producer`);
@@ -84,7 +84,7 @@ async function resolveAutomationProducer(
   client: AlvaClient,
   automationId: string
 ): Promise<string> {
-  const detail = await client.automation.inspect({ id: automationId });
+  const detail = await client.automation.inspect(automationId);
   const producerId = producerIDFromAutomationDetail(detail, automationId);
   if (producerId === undefined) {
     throw new Error(`Automation ${automationId} has no active producer`);
@@ -96,7 +96,7 @@ async function findAutomationProducer(
   client: AlvaClient,
   automationId: string
 ): Promise<string | undefined> {
-  const detail = await client.automation.inspect({ id: automationId });
+  const detail = await client.automation.inspect(automationId);
   return producerIDFromAutomationDetail(detail, automationId);
 }
 
@@ -110,7 +110,7 @@ async function dispatchEmbeddedAutomation(
   switch (definition.action) {
     case 'automation-inspect': {
       const id = automationID(parsed, 'automation inspect');
-      const result = await client.automation.inspect({ id });
+      const result = await client.automation.inspect(id);
       return parsed.flags.json === 'true'
         ? result
         : formatAutomationDetail(result);

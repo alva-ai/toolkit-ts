@@ -3,5 +3,3 @@
 # the contract (literal method and v2Path path per call, _v2Fetch for raw
 # bytes); delete this file when it is empty.
 
-src/resources/schedules.ts: DELETE <await this.schedulePath(params)> (not literal)
-src/resources/schedules.ts: POST <`${path}/${action}`> (not literal)

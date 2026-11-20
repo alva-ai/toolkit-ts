@@ -143,6 +143,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('deploy resume', { values: ['id'] }),
   command('deploy trigger', { values: ['id'] }),
   command('deploy runs', { values: ['id', 'first', 'cursor'] }),
+  command('deploy run-stats', { values: ['id'] }),
   command('deploy run-status', {
     values: ['id', 'workflow-run-id'],
   }),

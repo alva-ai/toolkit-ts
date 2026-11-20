@@ -45,7 +45,6 @@ import { FunctionsResource } from './resources/functions.js';
 import { CreditsResource } from './resources/credits.js';
 import { MarketsResource } from './resources/markets.js';
 import { SchedulesResource } from './resources/schedules.js';
-import { StewardResource } from './resources/steward.js';
 import { TradingPairsResource } from './resources/tradingPairs.js';
 import { ThesesResource } from './resources/theses.js';
 import { CompanyNewsResource } from './resources/companyNews.js';
@@ -201,7 +200,6 @@ export class AlvaClient {
   private _credits?: CreditsResource;
   private _markets?: MarketsResource;
   private _schedules?: SchedulesResource;
-  private _steward?: StewardResource;
   private _tradingPairs?: TradingPairsResource;
   private _theses?: ThesesResource;
   private _companyNews?: CompanyNewsResource;
@@ -317,9 +315,6 @@ export class AlvaClient {
   }
   get schedules(): SchedulesResource {
     return (this._schedules ??= new SchedulesResource(this));
-  }
-  get steward(): StewardResource {
-    return (this._steward ??= new StewardResource(this));
   }
   get theses(): ThesesResource {
     return (this._theses ??= new ThesesResource(this));

@@ -4,6 +4,7 @@ import { V1NotificationsResource } from './notifications.js';
 import { V1PlaybooksResource } from './playbooks.js';
 import { V1PlaybookSkillsResource } from './playbookSkills.js';
 import { V1SecretsResource } from './secrets.js';
+import { StewardResource } from './steward.js';
 import { V1TradingResource } from './trading.js';
 
 /**
@@ -18,6 +19,7 @@ export class V1Resources {
   private _playbooks?: V1PlaybooksResource;
   private _playbookSkills?: V1PlaybookSkillsResource;
   private _secrets?: V1SecretsResource;
+  private _steward?: StewardResource;
   private _trading?: V1TradingResource;
 
   constructor(private readonly client: AlvaClient) {}
@@ -45,6 +47,11 @@ export class V1Resources {
   /** A secret's value. */
   get secrets(): V1SecretsResource {
     return (this._secrets ??= new V1SecretsResource(this.client));
+  }
+
+  /** Push steward commands and the Daily Brief (GraphQL /query). */
+  get steward(): StewardResource {
+    return (this._steward ??= new StewardResource(this.client));
   }
 
   /** Trade subscriptions that execute the latest signal at once. */

@@ -1,6 +1,5 @@
 import type { Schema } from '../platformApi.js';
 import type {
-  AutomationInspectResponse,
   ChannelGroupSubscriptionListResponse,
   PushSubscriptionListResponse,
 } from '../types.js';
@@ -30,23 +29,20 @@ export function formatAutomationList(
   return lines.join('\n');
 }
 
-export function formatAutomationDetail(
-  result: AutomationInspectResponse
-): string {
-  const status = result.status ? `  [${result.status}]` : '';
+export function formatAutomationDetail(result: Schema<'Automation'>): string {
   const lines: string[] = [
-    `${result.name || '(unnamed)'}${status}`,
+    `${result.name || '(unnamed)'}  [${result.status}]`,
     `  id: ${result.id}`,
   ];
-  if (result.feed_id && result.feed_id !== result.id) {
-    lines.push(`  feed id: ${result.feed_id}`);
+  if (result.cronjobId) lines.push(`  cronjob id: ${result.cronjobId}`);
+  if (result.schedule.cron) {
+    lines.push(
+      `  schedule: ${result.schedule.cron} (${result.schedule.timezone})`
+    );
   }
-  if (result.cron_expression) {
-    lines.push(`  schedule: ${result.cron_expression}`);
-  }
-  lines.push(`  runs: ${result.total_runs ?? 0}`);
-  lines.push(`  flow id: ${result.flow_id ?? '(none)'}`);
-  lines.push(`  flow config path: ${result.flow_config_path ?? '(none)'}`);
+  lines.push(`  runs: ${result.stats.totalRuns}`);
+  lines.push(`  flow id: ${result.flow ?? '(none)'}`);
+  lines.push(`  flow config path: ${result.flowConfigPath ?? '(none)'}`);
   return `${lines.join('\n')}\n`;
 }
 

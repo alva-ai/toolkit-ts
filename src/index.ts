@@ -30,6 +30,7 @@ export * from './playbookRuntime.js';
 export {
   AutomationAlertDeliveryResource,
   AutomationResource,
+  type AutomationWriteOptions,
 } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
 export { CompanyNewsResource } from './resources/companyNews.js';
@@ -100,15 +101,12 @@ export {
 } from './resources/tradingPairs.js';
 export {
   SchedulesResource,
-  type AgentSchedule,
-  type AgentScheduleBounds,
-  type AgentScheduleFailureCode,
-  type AgentScheduleRule,
-  type AgentScheduleStatus,
-  type AgentScheduleTarget,
-  type ManageAgentScheduleParams,
-  type PutAgentScheduleParams,
+  type ScheduleWriteOptions,
 } from './resources/schedules.js';
+export {
+  DeployResource,
+  type CronjobWriteOptions,
+} from './resources/deploy.js';
 export {
   StewardResource,
   type StewardBriefedParams,
@@ -127,7 +125,7 @@ export {
   type StewardSendParams,
   type StewardSendDigestRunParams,
   type StewardTarget,
-} from './resources/steward.js';
+} from './v1/steward.js';
 export type {
   AlvaId,
   AlvaClientConfig,
@@ -166,11 +164,6 @@ export type {
   ChannelGroupHistoryParams,
   ChannelGroupHistoryResponse,
   GroupChatMessage,
-  AutomationEmailDelivery,
-  AutomationAlertDelivery,
-  AutomationAlertDeliveryGetRequest,
-  AutomationAlertDeliveryUpdateRequest,
-  AutomationAlertDeliveryUpdateResponse,
   FeedDeleteRequest,
   FeedStatusUpdateRequest,
   FollowPlaybookResponse,
