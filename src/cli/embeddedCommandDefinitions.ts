@@ -328,9 +328,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('people follows unfollow', 'people follows unfollow', {
       values: ['kind', 'id'],
     }),
-    route('people follows activity', 'people follows activity', {
-      values: ['since'],
-    }),
     route('trading-pairs search', 'trading-pairs search', {
       values: [
         'symbol',

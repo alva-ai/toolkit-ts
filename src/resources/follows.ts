@@ -124,47 +124,6 @@ export interface ProfilesPage {
   pageInfo: FollowPageInfo;
 }
 
-/**
- * Known today: THESIS_PUBLISHED, THESIS_UPDATED, THESIS_BOOKMARKED,
- * SIGNAL_LIKED, WATCHLIST_ADDED. Alva may add kinds; an installed CLI passes a
- * new one through as it is.
- */
-export type FollowingActivityKind =
-  | 'THESIS_PUBLISHED'
-  | 'THESIS_UPDATED'
-  | 'THESIS_BOOKMARKED'
-  | 'SIGNAL_LIKED'
-  | 'WATCHLIST_ADDED'
-  | (string & {});
-
-export interface FollowingActivityParams {
-  /** ISO 8601 time or Unix milliseconds; omitted means the last day. */
-  since?: string | number;
-}
-
-export interface FollowingActivityItem {
-  kind: FollowingActivityKind;
-  at: string;
-  actor: { username?: string; displayName: string } | null;
-  thesis?: { id: string; title: string; versionId?: string };
-  /** The liked Signal, for SIGNAL_LIKED; `thesis` is the Thesis it belongs to. */
-  signal?: {
-    id: string;
-    stance: string;
-    explanation: string;
-    excerpt?: string;
-    source: { title: string; url?: string };
-  };
-  ticker?: { id: string; ticker: string; name: string };
-}
-
-export interface FollowingActivityPage {
-  items: FollowingActivityItem[];
-  hasMore: boolean;
-  /** End of the window; pass it as --since next time. */
-  until: string;
-}
-
 export interface ProfileFollowResult {
   following: boolean;
   profile: FollowProfile | null;
@@ -260,83 +219,6 @@ function responseData(
   if (!record(response) || !record(response.data))
     return invalidResponse(field);
   return response.data;
-}
-
-/** Parse --since as ISO 8601 or Unix milliseconds. */
-export function sinceMillis(
-  since: string | number | undefined
-): number | undefined {
-  if (since === undefined || since === '') return undefined;
-  const ms =
-    typeof since === 'number'
-      ? since
-      : /^\d+$/.test(since)
-        ? Number(since)
-        : Date.parse(since);
-  if (!Number.isFinite(ms) || ms <= 0) {
-    throw new Error('since must be an ISO 8601 time or Unix milliseconds');
-  }
-  return Math.trunc(ms);
-}
-
-function activityItem(value: unknown, field: string): FollowingActivityItem {
-  if (
-    !record(value) ||
-    typeof value.kind !== 'string' ||
-    !value.kind ||
-    typeof value.occurredAtMs !== 'number'
-  ) {
-    return invalidResponse(field);
-  }
-  const item: FollowingActivityItem = {
-    kind: value.kind,
-    at: new Date(value.occurredAtMs).toISOString(),
-    actor: null,
-  };
-  if (record(value.actor) && typeof value.actor.displayName === 'string') {
-    item.actor = { displayName: value.actor.displayName };
-    if (typeof value.actor.username === 'string') {
-      item.actor.username = value.actor.username;
-    }
-  }
-  if (record(value.thesis)) {
-    item.thesis = {
-      id: requireString(value.thesis.id, field),
-      title: typeof value.thesis.title === 'string' ? value.thesis.title : '',
-    };
-    if (typeof value.thesisVersionId === 'string') {
-      item.thesis.versionId = value.thesisVersionId;
-    }
-  }
-  if (record(value.signal)) {
-    const source = record(value.signal.source) ? value.signal.source : {};
-    item.signal = {
-      id: requireString(value.signal.id, field),
-      stance:
-        typeof value.signal.stance === 'string' ? value.signal.stance : '',
-      explanation:
-        typeof value.signal.explanation === 'string'
-          ? value.signal.explanation
-          : '',
-      source: { title: typeof source.title === 'string' ? source.title : '' },
-    };
-    if (
-      record(value.signal.evidenceExcerpt) &&
-      typeof value.signal.evidenceExcerpt.text === 'string'
-    ) {
-      item.signal.excerpt = value.signal.evidenceExcerpt.text;
-    }
-    if (typeof source.url === 'string') item.signal.source.url = source.url;
-  }
-  if (record(value.entity)) {
-    item.ticker = {
-      id: requireString(value.entity.id, field),
-      ticker:
-        typeof value.entity.ticker === 'string' ? value.entity.ticker : '',
-      name: typeof value.entity.name === 'string' ? value.entity.name : '',
-    };
-  }
-  return item;
 }
 
 function viewerField(response: unknown, field: string): unknown {
@@ -673,46 +555,6 @@ export class FollowsResource {
       viewerField(response, 'followingProfiles'),
       'viewer.followingProfiles'
     );
-  }
-
-  /**
-   * What the users the caller follows did on public Theses, their Signals and
-   * their Watchlists after `since`, newest first (at most 200 items, 31 days back).
-   */
-  async activity(
-    params: FollowingActivityParams = {}
-  ): Promise<FollowingActivityPage> {
-    const sinceMs = sinceMillis(params.since);
-    this.client._requireAuth();
-    const response = await this.client._request('POST', '/query', {
-      body: {
-        query: `query ToolkitFollowingActivity($sinceMs: TimestampMs) { viewer { followingActivity(sinceMs: $sinceMs) { items { kind occurredAtMs thesisVersionId actor { __typename displayName ... on PublicUser { username } } thesis { id title } signal { id stance explanation evidenceExcerpt { text } source { title url } } entity { id ticker name } } hasMore untilMs } } }`,
-        variables: { sinceMs },
-      },
-    });
-    const field = 'viewer.followingActivity';
-    // An item's actor, Thesis and ticker are nullable: one that fails to load
-    // leaves the rest of the page usable. A missing page still fails.
-    const loaded =
-      record(response) && record(response.data) && record(response.data.viewer)
-        ? response.data.viewer.followingActivity
-        : undefined;
-    const value = record(loaded)
-      ? loaded
-      : viewerField(response, 'followingActivity');
-    if (
-      !record(value) ||
-      !Array.isArray(value.items) ||
-      typeof value.hasMore !== 'boolean' ||
-      typeof value.untilMs !== 'number'
-    ) {
-      return invalidResponse(field);
-    }
-    return {
-      items: value.items.map((item: unknown) => activityItem(item, field)),
-      hasMore: value.hasMore,
-      until: new Date(value.untilMs).toISOString(),
-    };
   }
 
   /** Follow one profile. Idempotent. */

@@ -587,7 +587,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('people follows list', { values: ['kind', 'limit', 'cursor'] }),
   command('people follows follow', { values: ['kind', 'id'] }),
   command('people follows unfollow', { values: ['kind', 'id'] }),
-  command('people follows activity', { values: ['since'] }),
 
   command('trading-pairs search', {
     values: [
