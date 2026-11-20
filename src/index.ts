@@ -132,7 +132,12 @@ export type {
   FeedNotificationListResponse,
   NotificationEvent,
   NotificationListParams,
+  PushSubscription,
+  PushSubscriptionFeedParams,
   Secret,
+  SubscribeFeedParams,
+  SubscribeFeedResponse,
+  UnsubscribeResponse,
   FsReadParams,
   FsWriteParams,
   FsRawWriteParams,
@@ -161,18 +166,8 @@ export type {
   ChannelGroupSubscriptionContextResponse,
   ChannelGroupSubscriptionListResponse,
   ChannelGroupSubscriptionMutationResponse,
-  ChannelGroupHistoryParams,
-  ChannelGroupHistoryResponse,
-  GroupChatMessage,
   FeedDeleteRequest,
   FeedStatusUpdateRequest,
-  FollowPlaybookResponse,
-  PlaybookFollowParams,
-  SubscribeBatchParams,
-  SubscribeBatchResponse,
-  UnsubscribeBatchParams,
-  UnsubscribeBatchResponse,
-  UnfollowPlaybookResponse,
 } from './types.js';
 export type {
   SkillDoc,
@@ -195,22 +190,11 @@ export {
 
 export {
   FollowsResource,
-  type WatchlistTickerKind,
-  type FollowProfileKind,
-  type WatchlistTickerSpec,
-  type WatchlistTickersParams,
-  type ResolvedTicker,
-  type UnresolvedTicker,
-  type AddToWatchlistResult,
-  type RemoveFromWatchlistResult,
-  type FollowPageParams,
-  type FollowPageInfo,
-  type WatchlistTicker,
-  type WatchlistPage,
-  type FollowProfile,
-  type SearchProfilesParams,
-  type ProfileRefParams,
-  type FollowedProfilesParams,
-  type ProfilesPage,
-  type ProfileFollowResult,
+  type FollowWriteOptions,
 } from './resources/follows.js';
+export {
+  SubscriptionsResource,
+  type SubscriptionWriteOptions,
+} from './resources/subscriptions.js';
+export { V1ChannelGroupSubscriptionsResource } from './v1/channelGroupSubscriptions.js';
+export { V1SubscriptionsResource } from './v1/subscriptions.js';

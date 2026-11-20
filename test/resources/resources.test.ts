@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { RunResource } from '../../src/resources/run.js';
 import { AlertsResource } from '../../src/resources/alerts.js';
-import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
+import { V1ChannelGroupSubscriptionsResource } from '../../src/v1/channelGroupSubscriptions.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
@@ -379,10 +379,10 @@ describe('NotificationsResource', () => {
   });
 });
 
-describe('ChannelGroupSubscriptionsResource', () => {
+describe('client.v1.channelGroupSubscriptions', () => {
   it('context() sends GET /api/v1/channel/group-subscriptions/context', async () => {
     const client = makeClient();
-    const groups = new ChannelGroupSubscriptionsResource(client);
+    const groups = new V1ChannelGroupSubscriptionsResource(client);
     await groups.context({ session_id: '2047213140224270336' });
     expect(client._request).toHaveBeenCalledWith(
       'GET',
@@ -395,7 +395,7 @@ describe('ChannelGroupSubscriptionsResource', () => {
 
   it('list() sends GET /api/v1/channel/group-subscriptions', async () => {
     const client = makeClient();
-    const groups = new ChannelGroupSubscriptionsResource(client);
+    const groups = new V1ChannelGroupSubscriptionsResource(client);
     await groups.list({ session_id: '2047213140224270336' });
     expect(client._request).toHaveBeenCalledWith(
       'GET',
@@ -408,7 +408,7 @@ describe('ChannelGroupSubscriptionsResource', () => {
 
   it('subscribe() preserves int64 session id in raw JSON', async () => {
     const client = makeClient();
-    const groups = new ChannelGroupSubscriptionsResource(client);
+    const groups = new V1ChannelGroupSubscriptionsResource(client);
     await groups.subscribe({
       session_id: '2047213140224270336',
       target_type: 'feed',
@@ -426,7 +426,7 @@ describe('ChannelGroupSubscriptionsResource', () => {
 
   it('unsubscribe() sends DELETE /api/v1/channel/group-subscriptions', async () => {
     const client = makeClient();
-    const groups = new ChannelGroupSubscriptionsResource(client);
+    const groups = new V1ChannelGroupSubscriptionsResource(client);
     await groups.unsubscribe({
       session_id: '2047213140224270336',
       target_type: 'feed',
@@ -444,7 +444,7 @@ describe('ChannelGroupSubscriptionsResource', () => {
 
   it('rejects unsafe numeric ids before JSON serialization can round them', async () => {
     const client = makeClient();
-    const groups = new ChannelGroupSubscriptionsResource(client);
+    const groups = new V1ChannelGroupSubscriptionsResource(client);
     await expect(
       groups.subscribe({
         session_id: 2047213140224270300,
@@ -457,79 +457,43 @@ describe('ChannelGroupSubscriptionsResource', () => {
 });
 
 describe('AlertsResource', () => {
-  it('list() delegates to subscriptions.list()', async () => {
+  it('list() and follows() delegate to the subscriptions pages', async () => {
     const client = makeClient();
-    client.subscriptions.list = vi.fn().mockResolvedValue({ items: [] });
-    const alerts = new AlertsResource(client);
-    await alerts.list({ first: 20, cursor: 'c1' });
-    expect(client.subscriptions.list).toHaveBeenCalledWith({
-      first: 20,
-      cursor: 'c1',
-    });
-  });
-
-  it('follows() delegates to subscriptions.follows()', async () => {
-    const client = makeClient();
+    client.subscriptions.list = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
     client.subscriptions.follows = vi
       .fn()
-      .mockResolvedValue({ items: [], has_next: false });
+      .mockResolvedValue({ items: [], nextPageToken: null });
     const alerts = new AlertsResource(client);
-    await alerts.follows({ limit: 20, cursor: 'c1' });
-    expect(client.subscriptions.follows).toHaveBeenCalledWith({
-      limit: 20,
-      cursor: 'c1',
+    await alerts.list({ pageSize: 20, pageToken: 'c1' });
+    await alerts.follows({ pageSize: 5 });
+    expect(client.subscriptions.list).toHaveBeenCalledWith({
+      pageSize: 20,
+      pageToken: 'c1',
     });
+    expect(client.subscriptions.follows).toHaveBeenCalledWith({ pageSize: 5 });
   });
 
-  it('automation alert methods delegate to feed subscription methods', async () => {
-    const client = makeClient();
-    client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({});
-    client.subscriptions.unsubscribeFeed = vi
-      .fn()
-      .mockResolvedValue({ ok: true });
-    const alerts = new AlertsResource(client);
-
-    await alerts.enableAutomation({
-      username: 'alice',
-      name: 'btc-ema',
-      channelId: '7',
-    });
-    await alerts.disableAutomation({ username: 'alice', name: 'btc-ema' });
-
-    expect(client.subscriptions.subscribeFeed).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-ema',
-      channelId: '7',
-    });
-    expect(client.subscriptions.unsubscribeFeed).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-ema',
-    });
-  });
-
-  it('enableBatch() delegates to subscriptions.subscribeBatch()', async () => {
+  it('enableBatch() and disableBatch() delegate to the batch subscriptions', async () => {
     const client = makeClient();
     client.subscriptions.subscribeBatch = vi
       .fn()
       .mockResolvedValue({ subscriptions: [] });
+    client.subscriptions.unsubscribeBatch = vi.fn().mockResolvedValue([]);
     const alerts = new AlertsResource(client);
-    await alerts.enableBatch({ feedIds: ['42'], channelId: '7' });
+    await alerts.enableBatch({
+      automationIds: ['automation_0a'],
+      channelId: 'channel_0ch',
+    });
+    await alerts.disableBatch(['automation_0a']);
     expect(client.subscriptions.subscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['42'],
-      channelId: '7',
+      automationIds: ['automation_0a'],
+      channelId: 'channel_0ch',
     });
-  });
-
-  it('disableBatch() delegates to subscriptions.unsubscribeBatch()', async () => {
-    const client = makeClient();
-    client.subscriptions.unsubscribeBatch = vi
-      .fn()
-      .mockResolvedValue({ results: [], ok_count: 0 });
-    const alerts = new AlertsResource(client);
-    await alerts.disableBatch({ feedIds: ['42'] });
-    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['42'],
-    });
+    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith([
+      'automation_0a',
+    ]);
   });
 
   it('history() delegates to notifications.list()', async () => {

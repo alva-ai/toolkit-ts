@@ -1,8 +1,5 @@
 import type { Schema } from '../platformApi.js';
-import type {
-  ChannelGroupSubscriptionListResponse,
-  PushSubscriptionListResponse,
-} from '../types.js';
+import type { ChannelGroupSubscriptionListResponse } from '../types.js';
 
 export function formatAutomationList(
   result: Schema<'AutomationSummaryList'>
@@ -46,35 +43,31 @@ export function formatAutomationDetail(result: Schema<'Automation'>): string {
   return `${lines.join('\n')}\n`;
 }
 
-export function formatAlertList(result: PushSubscriptionListResponse): string {
-  const alerts = result.items ?? [];
+export function formatAlertList(
+  result: Schema<'NotificationSubscriptionList'>
+): string {
+  const alerts = result.items;
   if (alerts.length === 0) return '(no alerts)\n';
 
   const lines: string[] = [`${alerts.length} alert(s):`, ''];
   for (const alert of alerts) {
-    const targetType = alert.target?.type ?? 'UNSPECIFIED';
-    const status = alert.target_status ? `  [${alert.target_status}]` : '';
-    lines.push(`• ${alertTitle(alert)}${status}`);
-    lines.push(`    target: ${targetType} ${alert.target?.id ?? ''}`.trimEnd());
-    if (alert.channel_id !== undefined) {
-      lines.push(`    channel: ${alert.channel_id}`);
-    }
-    if (alert.kind) lines.push(`    kind: ${alert.kind}`);
-    if (alert.feed_status)
-      lines.push(`    automation status: ${alert.feed_status}`);
-    if (alert.used_by_total !== undefined) {
-      lines.push(`    used by: ${alert.used_by_total}`);
-    }
-    if (alert.last_pushed_at_ms) {
-      lines.push(
-        `    last pushed: ${new Date(alert.last_pushed_at_ms).toISOString()}`
-      );
+    lines.push(
+      `• ${alert.automationName ?? `automation ${alert.automationId}`}  [${alert.targetStatus}]`
+    );
+    lines.push(`    automation: ${alert.automationId}`);
+    lines.push(
+      `    destination: ${alert.medium} ${alert.channelId ?? '(Agent channel)'}`
+    );
+    lines.push(`    automation status: ${alert.automationStatus}`);
+    lines.push(`    used by: ${alert.usedByCount}`);
+    if (alert.lastDeliveredAt) {
+      lines.push(`    last delivered: ${alert.lastDeliveredAt}`);
     }
     lines.push('');
   }
-  if (result.next_cursor) {
-    lines.push('(more results — pass --cursor <next_cursor> to page)');
-    lines.push(`next_cursor: ${result.next_cursor}`);
+  if (result.nextPageToken !== null) {
+    lines.push('(more results — pass --cursor <nextPageToken> to page)');
+    lines.push(`nextPageToken: ${result.nextPageToken}`);
     lines.push('');
   }
   return lines.join('\n');
@@ -95,11 +88,4 @@ export function formatGroupAlertList(
     lines.push('');
   }
   return lines.join('\n');
-}
-
-type AlertItem = PushSubscriptionListResponse['items'][number];
-
-function alertTitle(alert: AlertItem): string {
-  if (alert.feed_name) return alert.feed_name;
-  return alert.target?.id ? `target ${alert.target.id}` : '(unknown target)';
 }

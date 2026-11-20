@@ -1,10 +1,12 @@
 import type { AlvaClient } from '../client.js';
+import { V1ChannelGroupSubscriptionsResource } from './channelGroupSubscriptions.js';
 import { V1FsResource } from './fs.js';
 import { V1NotificationsResource } from './notifications.js';
 import { V1PlaybooksResource } from './playbooks.js';
 import { V1PlaybookSkillsResource } from './playbookSkills.js';
 import { V1SecretsResource } from './secrets.js';
 import { StewardResource } from './steward.js';
+import { V1SubscriptionsResource } from './subscriptions.js';
 import { V1TradingResource } from './trading.js';
 
 /**
@@ -14,15 +16,23 @@ import { V1TradingResource } from './trading.js';
  * CHANGELOG 1.0.0 lists them.
  */
 export class V1Resources {
+  private _channelGroupSubscriptions?: V1ChannelGroupSubscriptionsResource;
   private _fs?: V1FsResource;
   private _notifications?: V1NotificationsResource;
   private _playbooks?: V1PlaybooksResource;
   private _playbookSkills?: V1PlaybookSkillsResource;
   private _secrets?: V1SecretsResource;
   private _steward?: StewardResource;
+  private _subscriptions?: V1SubscriptionsResource;
   private _trading?: V1TradingResource;
 
   constructor(private readonly client: AlvaClient) {}
+
+  /** IM group alert subscriptions by numeric origin session. */
+  get channelGroupSubscriptions(): V1ChannelGroupSubscriptionsResource {
+    return (this._channelGroupSubscriptions ??=
+      new V1ChannelGroupSubscriptionsResource(this.client));
+  }
 
   /** ALFS files with a PBSV or viewer token, or public reads without a credential. */
   get fs(): V1FsResource {
@@ -52,6 +62,11 @@ export class V1Resources {
   /** Push steward commands and the Daily Brief (GraphQL /query). */
   get steward(): StewardResource {
     return (this._steward ??= new StewardResource(this.client));
+  }
+
+  /** Alerts of one feed by owner and name. */
+  get subscriptions(): V1SubscriptionsResource {
+    return (this._subscriptions ??= new V1SubscriptionsResource(this.client));
   }
 
   /** Trade subscriptions that execute the latest signal at once. */

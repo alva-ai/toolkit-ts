@@ -4,6 +4,7 @@ import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 import { AlvaError } from '../../src/error.js';
 import type { V2RequestOptions } from '../../src/platformApi.js';
 import { v2Client } from '../helpers/v2Client.js';
+import { anAsset, aProfile } from '../socialV2.js';
 
 // New commands use one path in both the terminal and the embedded tree.
 const commands = {
@@ -20,8 +21,13 @@ const paths = {
   embedded: { dispatch: embedded, ...commands },
 } as const;
 
-function asset(id: string, symbol: string, kind = 'STOCK') {
-  return { id, symbol, name: symbol, kind };
+function asset(id: string, symbol: string, kind: 'STOCK' | 'CRYPTO' = 'STOCK') {
+  return anAsset({ id, symbol, name: symbol, kind });
+}
+
+function followed(a: ReturnType<typeof asset>, changed = true) {
+  const { id, symbol, name, kind } = a;
+  return { asset: { id, symbol, name, kind }, following: true, changed };
 }
 
 /** A by-symbol lookup answering `assets[symbol@class]`, else NOT_FOUND. */
@@ -33,39 +39,29 @@ function bySymbol(assets: Record<string, ReturnType<typeof asset>>) {
   };
 }
 
-const PERSON = {
+const PERSON = aProfile({
   id: 'profile_0p',
   kind: 'PERSON',
   displayName: 'Cathie Wood',
   handle: 'cathie-wood',
-  xHandle: null,
-  avatarUrl: null,
   followerCount: 1,
   viewerState: { following: false },
-};
+});
 
 for (const [name, cli] of Object.entries(paths)) {
   describe(`follows ${name} contract`, () => {
     it('adds tickers to the watchlist through the real resource', async () => {
       const lookup = bySymbol({
         'NVDA@US_STOCK': asset('asset_0n', 'NVDA'),
-        'LMT@US_STOCK': asset('asset_0l', 'LMT'),
+        'LMT@US_STOCK': asset('asset_0m', 'LMT'),
       });
       const { client, v2 } = v2Client({
         'GET /assets/by-symbol/NVDA': lookup('NVDA'),
         'GET /assets/by-symbol/LMT': lookup('LMT'),
         'POST /me/followed-assets': {
           assets: [
-            {
-              asset: asset('asset_0n', 'NVDA'),
-              following: true,
-              changed: true,
-            },
-            {
-              asset: asset('asset_0l', 'LMT'),
-              following: true,
-              changed: false,
-            },
+            followed(asset('asset_0n', 'NVDA')),
+            followed(asset('asset_0m', 'LMT'), false),
           ],
         },
       });
@@ -76,13 +72,14 @@ for (const [name, cli] of Object.entries(paths)) {
         '--kind',
         'stock',
       ]);
-      expect(result).toMatchObject({
-        added: [{ input: 'NVDA', entityId: 'asset_0n' }],
-        unchanged: [{ input: 'LMT' }],
-        unresolved: [],
+      expect(result).toEqual({
+        assets: [
+          followed(asset('asset_0n', 'NVDA')),
+          followed(asset('asset_0m', 'LMT'), false),
+        ],
       });
       expect(v2).toHaveBeenLastCalledWith('POST', '/me/followed-assets', {
-        body: { assetIds: ['asset_0n', 'asset_0l'] },
+        body: { assetIds: ['asset_0n', 'asset_0m'] },
       });
     });
 
@@ -92,23 +89,19 @@ for (const [name, cli] of Object.entries(paths)) {
           'NVDA@': asset('asset_0n', 'NVDA'),
         })('NVDA'),
         'DELETE /me/followed-assets/asset_0n': {
-          asset: asset('asset_0n', 'NVDA'),
+          ...followed(asset('asset_0n', 'NVDA')),
           following: false,
-          changed: true,
         },
         'GET /me/followed-assets': { items: [], nextPageToken: null },
-        'GET /me/follow-counts': { assetCount: 0 },
       });
       expect(
         await cli.dispatch(client, [...cli.remove, '--tickers', 'NVDA'])
-      ).toMatchObject({ removed: [{ entityId: 'asset_0n' }] });
+      ).toEqual({
+        assets: [{ ...followed(asset('asset_0n', 'NVDA')), following: false }],
+      });
       expect(
         await cli.dispatch(client, [...cli.watchlist, '--limit', '50'])
-      ).toEqual({
-        totalCount: 0,
-        tickers: [],
-        pageInfo: { endCursor: '', hasNextPage: false },
-      });
+      ).toEqual({ items: [], nextPageToken: null });
       expect(v2).toHaveBeenCalledWith('GET', '/me/followed-assets', {
         query: { pageSize: 50, pageToken: undefined },
       });
@@ -129,7 +122,7 @@ for (const [name, cli] of Object.entries(paths)) {
           '--kind',
           'person',
         ])
-      ).toMatchObject({ profiles: [{ kind: 'PERSON', id: 'profile_0p' }] });
+      ).toEqual(page);
       expect(
         await cli.dispatch(client, [...cli.followProfile, '--id', 'profile_0p'])
       ).toMatchObject({ following: true });
@@ -139,8 +132,11 @@ for (const [name, cli] of Object.entries(paths)) {
         '/me/followed-profiles',
         { body: { profileId: 'profile_0p' } },
       ]);
+      expect(v2.mock.calls[0][2]).toEqual({
+        query: { query: 'cathie', kind: 'PERSON', pageSize: undefined },
+      });
       expect(v2.mock.calls[2][2]).toEqual({
-        query: { kind: 'USER', pageSize: 20, pageToken: undefined },
+        query: { kind: 'USER', pageSize: undefined, pageToken: undefined },
       });
     });
 
@@ -154,16 +150,8 @@ for (const [name, cli] of Object.entries(paths)) {
         'GET /assets/by-symbol/BTC': lookup('BTC'),
         'POST /me/followed-assets': {
           assets: [
-            {
-              asset: asset('asset_0n', 'NVDA'),
-              following: true,
-              changed: true,
-            },
-            {
-              asset: asset('asset_0b', 'BTC', 'CRYPTO'),
-              following: true,
-              changed: true,
-            },
+            followed(asset('asset_0n', 'NVDA')),
+            followed(asset('asset_0b', 'BTC', 'CRYPTO')),
           ],
         },
       });
@@ -175,7 +163,7 @@ for (const [name, cli] of Object.entries(paths)) {
         'stock',
       ]);
       expect(result).toMatchObject({
-        added: [{ input: 'NVDA' }, { input: 'BTC' }],
+        assets: [{ asset: { id: 'asset_0n' } }, { asset: { id: 'asset_0b' } }],
       });
       expect(v2.mock.calls.filter(([m]) => m === 'POST')).toEqual([
         [
@@ -184,6 +172,47 @@ for (const [name, cli] of Object.entries(paths)) {
           { body: { assetIds: ['asset_0n', 'asset_0b'] } },
         ],
       ]);
+    });
+
+    it('writes an Asset two symbols name once, and skips listings of another kind', async () => {
+      const brk = asset('asset_0b', 'BRK.B');
+      const lookup = bySymbol({
+        'BRK.B@': brk,
+        'BRK-B@': brk,
+        'COIN@US_STOCK': asset('asset_0c', 'COIN', 'CRYPTO'),
+        'COIN@NON_US_STOCK': asset('asset_0d', 'COIN'),
+      });
+      const { client, v2 } = v2Client({
+        'GET /assets/by-symbol/BRK.B': lookup('BRK.B'),
+        'GET /assets/by-symbol/BRK-B': lookup('BRK-B'),
+        'GET /assets/by-symbol/COIN': lookup('COIN'),
+        'POST /me/followed-assets': { assets: [] },
+      });
+      await cli.dispatch(client, [
+        ...cli.add,
+        '--tickers',
+        'BRK.B,BRK-B,COIN:stock',
+      ]);
+      expect(v2).toHaveBeenLastCalledWith('POST', '/me/followed-assets', {
+        body: { assetIds: ['asset_0b', 'asset_0d'] },
+      });
+    });
+
+    it('refuses tickers without an Asset before writing anything', async () => {
+      const lookup = bySymbol({ 'NVDA@': asset('asset_0n', 'NVDA') });
+      const { client, v2 } = v2Client({
+        'GET /assets/by-symbol/NVDA': lookup('NVDA'),
+        'GET /assets/by-symbol/BTC': lookup('BTC'),
+        'GET /assets/by-symbol/XYZ': lookup('XYZ'),
+      });
+      await expect(
+        cli.dispatch(client, [...cli.add, '--tickers', 'NVDA,BTC:crypto,XYZ'])
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        message:
+          'no CRYPTO asset found for ticker BTC; it may exist as another kind (retry with a different :kind suffix or none); no asset found for ticker XYZ',
+      });
+      expect(v2.mock.calls.every(([method]) => method === 'GET')).toBe(true);
     });
 
     it.each([

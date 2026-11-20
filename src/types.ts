@@ -243,11 +243,6 @@ export interface PushSubscriptionUsedBy {
   owner_avatar_url: string;
 }
 
-export interface PlaybookFollowParams {
-  username: string;
-  name: string;
-}
-
 export interface PushSubscriptionFeedParams {
   username: string;
   name: string;
@@ -256,87 +251,6 @@ export interface PushSubscriptionFeedParams {
 export interface SubscribeFeedParams extends PushSubscriptionFeedParams {
   /** Delivery channel id. Omit for the user's agent/home channel. */
   channelId?: string;
-}
-
-export interface PushSubscriptionListParams {
-  /** Page size, default 50, max 200 server-side. */
-  first?: number;
-  /** Opaque cursor token from previous page's `next_cursor`. */
-  cursor?: string;
-}
-
-export interface PushSubscriptionListResponse {
-  items: PushSubscription[];
-  /** Empty when there is no next page; otherwise the page is truncated. */
-  next_cursor?: string;
-}
-
-export interface FollowsListParams {
-  /** Page size, default 50, max 100 server-side. */
-  limit?: number;
-  /** Opaque cursor from the previous page's `next_cursor`. */
-  cursor?: string;
-}
-
-export interface PlaybookFollowItem {
-  playbook_id: AlvaId;
-  owner_username: string;
-  name: string;
-  display_name: string;
-  followed_at_ms: number;
-}
-
-export interface FollowsListResponse {
-  items: PlaybookFollowItem[];
-  has_next: boolean;
-  next_cursor?: string;
-}
-
-export interface UnsubscribeBatchParams {
-  /** Automation IDs. */
-  feedIds: AlvaId[];
-}
-
-export interface SubscribeBatchParams {
-  /** Automation IDs. */
-  feedIds: AlvaId[];
-  /** Delivery Channel ID. Omit (or "0") for the user's agent/home channel. */
-  channelId?: AlvaId;
-}
-
-export interface SubscribeBatchResponse {
-  subscriptions: PushSubscription[];
-}
-
-export interface UnsubscribeBatchResult {
-  id: AlvaId;
-  kind: 'FEED';
-  ok: boolean;
-  status: 'UNSUBSCRIBED' | string;
-}
-
-export interface UnsubscribeBatchResponse {
-  results: UnsubscribeBatchResult[];
-  ok_count: number;
-}
-
-export interface PlaybookFollow {
-  playbook_id: AlvaId;
-  created_at_ms: number;
-  updated_at_ms: number;
-}
-
-export interface FollowPlaybookResponse {
-  /** The social follow created or confirmed by this operation. */
-  follow: PlaybookFollow;
-  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
-  playbook_path: string;
-  playbook_id: AlvaId;
-}
-
-export interface UnfollowPlaybookResponse {
-  ok: true;
-  unfollowed: boolean;
 }
 
 export interface SubscribeFeedResponse {
@@ -406,34 +320,4 @@ export interface ChannelGroupSubscriptionMutationResponse {
   caller: ChannelGroupCallerInfo;
   admin: ChannelGroupAdminInfo | null;
   subscriptions: ChannelGroupSubscription[];
-}
-
-/** Params for reading a group's buffered chat history (group-chat digest). */
-export interface ChannelGroupHistoryParams {
-  /** Platform: "telegram" | "discord" | "slack". */
-  channel: string;
-  /** Platform group/channel id. */
-  remote_chat_id: string;
-  /** Window start, message-origin timestamp in microseconds (inclusive, read at millisecond precision). */
-  from_micros: number | string;
-  /** Window end, message-origin timestamp in microseconds (inclusive, read at millisecond precision). */
-  to_micros: number | string;
-}
-
-/** One buffered group message, projected for the digest. */
-export interface GroupChatMessage {
-  sender_username: string;
-  content: string;
-  /** "[photo]" etc. when the message carried media. */
-  media_summary: string;
-  ts_micros: number;
-  /** Deep link back to the original message; empty when unavailable. */
-  permalink: string;
-  /** "user" | "assistant" (bot replies). */
-  role: string;
-}
-
-export interface ChannelGroupHistoryResponse {
-  /** Chronological (ts ascending). */
-  messages: GroupChatMessage[];
 }

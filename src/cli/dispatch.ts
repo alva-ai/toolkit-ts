@@ -1,18 +1,11 @@
-import {
-  normalizeWatchlistTickersParams,
-  parseTickerSpec,
-  validateProfileRef,
-  validateSearchProfilesParams,
-  type FollowProfileKind,
-  type WatchlistTickerKind,
-} from '../resources/follows.js';
 import type { ListThesesParams } from '../resources/theses.js';
 import { AlvaClient } from '../client.js';
 import { decodeBase64 } from '../base64.js';
 import { requireDecision } from '../v1/steward.js';
 import { AlvaError, CliUsageError } from '../error.js';
-import type { Schema, V2Query } from '../platformApi.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 import { allPages } from './pages.js';
+import { parseTickers, resolveTickers } from './watchlist.js';
 import { optionalRfc3339Flag, rfc3339Flag } from './timeFlags.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
@@ -809,9 +802,16 @@ Group subcommands:
 Group commands must run inside the attached external IM-group sandbox. The
 current group is inferred automatically; there is no session-id argument.
 
+Output: list --json prints the /api/v2 NotificationSubscriptionList; follows
+a FollowedPlaybookList page; enable/disable --automation-ids print the
+SubscribeResponse and the removed destinations [{id}]; history
+--automation-id a NotificationDeliveryList page; preferences the
+NotificationPreferences. --automation <owner/name> and the group commands
+call /api/v1 and print its 0.x output.
+
 List flags:
   --first <n>      Optional page size
-  --cursor <token> Optional cursor from previous response
+  --cursor <token> Optional nextPageToken of the previous page
   --json           Print raw JSON instead of a human-readable summary
 
 Follows flags:
@@ -1340,10 +1340,13 @@ Three DISTINCT concepts share the word "subscribe" in the product:
   - PURCHASE — paid playbook access / the SaaS plan. NOT this command.
 
 Operations:
-  - follow-playbook / unfollow-playbook change only the social follow.
-  - subscribe-feed / unsubscribe-feed toggle one feed's alert.
-  - subscribe / unsubscribe toggle alerts for FEED ids in a batch. They never
-    follow or unfollow a playbook.
+  - follow-playbook / unfollow-playbook change only the social follow
+    (they print the /api/v2 PlaybookFollow).
+  - subscribe-feed / unsubscribe-feed toggle one feed's alert by owner and
+    name (/api/v1, 0.x output).
+  - subscribe / unsubscribe toggle alerts for automation ids in a batch
+    (subscribe prints the SubscribeResponse, unsubscribe the removed
+    destinations [{id}]). They never follow or unfollow a playbook.
 
 Subcommands:
   follow-playbook        Follow a playbook without changing alerts
@@ -1361,20 +1364,22 @@ Name-addressed flags:
 
 Batch flags:
   --feed-ids <a,b>       Comma-separated automation ids (automation_0…)
-  --channel-id <id>      Alva channel ID for subscribe (optional)
+  --channel-id <id>      Alva channel ID for subscribe (optional; 0 or none is
+                         your Agent channel)
 
 List flags:
-  --first <n>            Optional page size (a non-empty next_cursor means
+  --first <n>            Optional page size (a non-null nextPageToken means
                          more pages: keep paginating)
-  --cursor <token>       Optional cursor from the previous page
+  --cursor <token>       Optional nextPageToken of the previous page
 
 Follows flags:
   --limit <n>            Optional page size
-  --cursor <token>       Optional cursor from the previous page
+  --cursor <token>       Optional nextPageToken of the previous page
 
-List response notes:
-  items[].kind           FEED_ALERT
-  items[].target_status  ACTIVE | TARGET_DELETED | PAUSED
+List response notes (the /api/v2 NotificationSubscriptionList):
+  items[].medium         CHANNEL | EMAIL
+  items[].channelId      the Alva channel; null for the Agent channel
+  items[].targetStatus   ACTIVE | PAUSED | TARGET_DELETED | UNSPECIFIED
 
 Examples:
   alva subscriptions follow-playbook    --username alice --name btc-dashboard
@@ -1529,7 +1534,10 @@ Flags:
   --id <id>                 follow/unfollow: profile id from a search or list
                             result (required)
   --limit <1-50>            search/list: page size
-  --cursor <endCursor>      list: pageInfo.endCursor of the previous page
+  --cursor <token>          list: nextPageToken of the previous page
+
+Output is the /api/v2 shape: search and list print a ProfileList page,
+follow and unfollow the ProfileFollow {following, profile}.
 
 Examples:
   alva people search --query "cathie wood" --kind person
@@ -2242,7 +2250,7 @@ function usageChecked<T>(command: string, check: () => T): T {
   }
 }
 
-function dispatchWatchlist(
+async function dispatchWatchlist(
   client: AlvaClient,
   leaf: string | undefined,
   flags: Record<string, string>
@@ -2253,23 +2261,23 @@ function dispatchWatchlist(
     case 'add':
     case 'remove': {
       const command = `markets watchlist ${leaf}`;
-      const params = usageChecked(command, () =>
-        normalizeWatchlistTickersParams({
-          tickers: (csvList(requireFlag(flags, 'tickers', command)) ?? []).map(
-            parseTickerSpec
-          ),
-          kind: upperFlag(flags['kind']) as WatchlistTickerKind | undefined,
-        })
+      const tickers = parseTickers(
+        csvList(requireFlag(flags, 'tickers', command)) ?? [],
+        flags['kind'],
+        command
       );
+      const assetIds = await resolveTickers(client, tickers);
       return leaf === 'add'
-        ? client.follows.addToWatchlist(params)
-        : client.follows.removeFromWatchlist(params);
+        ? client.follows.followAssets(assetIds)
+        : client.follows.unfollowAssets(assetIds);
     }
     case 'list': {
       const command = 'markets watchlist list';
       return client.follows.watchlist({
-        first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 100),
-        after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
+        pageSize: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 100),
+        pageToken: usageChecked(command, () =>
+          optionalCursorFlag(flags['cursor'])
+        ),
       });
     }
     default:
@@ -2290,47 +2298,51 @@ function dispatchPeople(
     return { _help: true, text: COMMAND_HELP.people };
   }
   const command = ['people', ...path].join(' ');
+  const kind = optionalProfileKind(upperFlag(flags['kind']), command);
   switch (subcommand === 'follows' ? `follows ${leaf}` : subcommand) {
-    case 'search':
-      return client.follows.searchProfiles(
-        usageChecked(command, () =>
-          validateSearchProfilesParams({
-            query: requireFlag(flags, 'query', command),
-            kind: upperFlag(flags['kind']) as FollowProfileKind | undefined,
-            first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
-          })
-        )
-      );
+    case 'search': {
+      const query = requireFlag(flags, 'query', command).trim();
+      if (!query) {
+        throw new CliUsageError(
+          `--query must not be blank for '${command}'`,
+          'people'
+        );
+      }
+      return client.follows.searchProfiles({
+        query,
+        kind,
+        pageSize: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
+      });
+    }
     case 'follows list':
       return client.follows.profiles({
-        kind: usageChecked(command, () =>
-          optionalProfileKind(upperFlag(flags['kind']))
+        kind,
+        pageSize: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
+        pageToken: usageChecked(command, () =>
+          optionalCursorFlag(flags['cursor'])
         ),
-        first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
-        after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
       });
+    // The Profile ID names the kind; --kind is only checked.
     case 'follows follow':
-    case 'follows unfollow': {
-      const params = usageChecked(command, () =>
-        validateProfileRef({
-          kind: upperFlag(flags['kind']) as FollowProfileKind | undefined,
-          id: requireFlag(flags, 'id', command),
-        })
+      return client.follows.followProfile(requireIdFlag(flags, 'id', command));
+    case 'follows unfollow':
+      return client.follows.unfollowProfile(
+        requireIdFlag(flags, 'id', command)
       );
-      return leaf === 'follow'
-        ? client.follows.followProfile(params)
-        : client.follows.unfollowProfile(params);
-    }
     default:
       throw new CliUsageError(`Unknown subcommand: ${command}`, 'people');
   }
 }
 
 function optionalProfileKind(
-  kind: string | undefined
-): FollowProfileKind | undefined {
+  kind: string | undefined,
+  command: string
+): Schema<'ProfileKind'> | undefined {
   if (kind !== undefined && kind !== 'USER' && kind !== 'PERSON') {
-    throw new Error('kind must be USER or PERSON');
+    throw new CliUsageError(
+      `--kind must be USER or PERSON for '${command}'`,
+      'people'
+    );
   }
   return kind;
 }
@@ -2358,6 +2370,42 @@ function parseOwnerNameTarget(
     );
   }
   return { username, name };
+}
+
+/** The ID of the Playbook --username and --name name. */
+async function playbookIdBySlug(
+  client: AlvaClient,
+  flags: Record<string, string>,
+  command: string
+): Promise<string> {
+  const playbook = await client._v2Request<Schema<'Playbook'>>(
+    'GET',
+    v2Path`/playbooks/by-slug/${requireFlag(flags, 'username', command)}/${requireFlag(flags, 'name', command)}`
+  );
+  return playbook.id;
+}
+
+/** A required comma-separated list of Automation IDs. */
+function requireAutomationIds(
+  flags: Record<string, string>,
+  flag: string,
+  command: string
+): string[] {
+  const ids = csvList(flags[flag]) ?? [];
+  if (ids.length === 0) {
+    throw new CliUsageError(`--${flag} is required`, command.split(' ')[0]);
+  }
+  return ids;
+}
+
+/** --channel-id of an alert: a Channel ID, or 0 (or none) for the Agent channel. */
+function alertChannelFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  if (flags['channel-id'] === undefined) return undefined;
+  const id = requireIdFlag(flags, 'channel-id', command);
+  return id === '0' ? undefined : id;
 }
 
 function rejectPlaybookAlertTarget(
@@ -5232,85 +5280,57 @@ export async function executeParsedCommand(
           'Missing subcommand for subscriptions',
           'subscriptions'
         );
+      const command = `subscriptions ${subcommand}`;
       switch (subcommand) {
         case 'follow-playbook':
-          return client.subscriptions.followPlaybook({
-            username: requireFlag(
-              flags,
-              'username',
-              `subscriptions ${subcommand}`
-            ),
-            name: requireFlag(flags, 'name', `subscriptions ${subcommand}`),
-          });
+          return client.subscriptions.followPlaybook(
+            await playbookIdBySlug(client, flags, command)
+          );
         case 'unfollow-playbook':
-          return client.subscriptions.unfollowPlaybook({
-            username: requireFlag(
-              flags,
-              'username',
-              `subscriptions ${subcommand}`
-            ),
-            name: requireFlag(flags, 'name', `subscriptions ${subcommand}`),
-          });
+          return client.subscriptions.unfollowPlaybook(
+            await playbookIdBySlug(client, flags, command)
+          );
         case 'subscribe-feed':
-          return client.subscriptions.subscribeFeed({
-            username: requireFlag(
-              flags,
-              'username',
-              'subscriptions subscribe-feed'
-            ),
-            name: requireFlag(flags, 'name', 'subscriptions subscribe-feed'),
+          return client.v1.subscriptions.subscribeFeed({
+            username: requireFlag(flags, 'username', command),
+            name: requireFlag(flags, 'name', command),
           });
         case 'unsubscribe-feed':
-          return client.subscriptions.unsubscribeFeed({
-            username: requireFlag(
-              flags,
-              'username',
-              'subscriptions unsubscribe-feed'
-            ),
-            name: requireFlag(flags, 'name', 'subscriptions unsubscribe-feed'),
+          return client.v1.subscriptions.unsubscribeFeed({
+            username: requireFlag(flags, 'username', command),
+            name: requireFlag(flags, 'name', command),
           });
         case 'list':
           return client.subscriptions.list({
-            first: num(flags['first']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['first']),
+            pageToken: flags['cursor'],
           });
         case 'follows':
           return client.subscriptions.follows({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'],
           });
-        case 'subscribe': {
+        case 'subscribe':
           if (flags['playbook-ids'] !== undefined) {
             throw new CliUsageError(
               'Playbook alert targets are unsupported; use --feed-ids',
               'subscriptions'
             );
-          }
-          const feedIds = csvList(flags['feed-ids']) ?? [];
-          if (feedIds.length === 0) {
-            throw new CliUsageError('--feed-ids is required', 'subscriptions');
           }
           return client.subscriptions.subscribeBatch({
-            feedIds,
-            channelId:
-              flags['channel-id'] === undefined
-                ? undefined
-                : requireIdFlag(flags, 'channel-id', 'subscriptions subscribe'),
+            automationIds: requireAutomationIds(flags, 'feed-ids', command),
+            channelId: alertChannelFlag(flags, command),
           });
-        }
-        case 'unsubscribe': {
+        case 'unsubscribe':
           if (flags['playbook-ids'] !== undefined) {
             throw new CliUsageError(
               'Playbook alert targets are unsupported; use --feed-ids',
               'subscriptions'
             );
           }
-          const feedIds = csvList(flags['feed-ids']) ?? [];
-          if (feedIds.length === 0) {
-            throw new CliUsageError('--feed-ids is required', 'subscriptions');
-          }
-          return client.subscriptions.unsubscribeBatch({ feedIds });
-        }
+          return client.subscriptions.unsubscribeBatch(
+            requireAutomationIds(flags, 'feed-ids', command)
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: subscriptions ${subcommand}`,
@@ -5325,15 +5345,15 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'list': {
           const result = await client.alerts.list({
-            first: num(flags['first']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['first']),
+            pageToken: flags['cursor'],
           });
           return boolFlag(flags['json']) ? result : formatAlertList(result);
         }
         case 'follows':
           return client.alerts.follows({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'],
           });
         case 'enable': {
           rejectPlaybookAlertTarget(flags, 'alert enable');
@@ -5346,11 +5366,8 @@ export async function executeParsedCommand(
               );
             }
             return client.alerts.enableBatch({
-              feedIds: automationIds,
-              channelId:
-                flags['channel-id'] === undefined
-                  ? undefined
-                  : requireIdFlag(flags, 'channel-id', 'alert enable'),
+              automationIds,
+              channelId: alertChannelFlag(flags, 'alert enable'),
             });
           }
           const target = requireAutomationAlertTarget(flags, 'alert enable');
@@ -5362,7 +5379,7 @@ export async function executeParsedCommand(
                   'channel-id',
                   'alert enable'
                 );
-          return client.alerts.enableAutomation(
+          return client.v1.subscriptions.subscribeFeed(
             channelId === undefined ? target : { ...target, channelId }
           );
         }
@@ -5376,9 +5393,9 @@ export async function executeParsedCommand(
                 'alert'
               );
             }
-            return client.alerts.disableBatch({ feedIds: automationIds });
+            return client.alerts.disableBatch(automationIds);
           }
-          return client.alerts.disableAutomation(
+          return client.v1.subscriptions.unsubscribeFeed(
             requireAutomationAlertTarget(flags, 'alert disable')
           );
         }
@@ -5397,7 +5414,7 @@ export async function executeParsedCommand(
           const sessionID = requireCurrentGroupAlertSessionID(client, command);
           switch (leaf) {
             case 'list': {
-              const result = await client.channelGroupSubscriptions.list({
+              const result = await client.v1.channelGroupSubscriptions.list({
                 session_id: sessionID,
               });
               return boolFlag(flags['json'])
@@ -5405,13 +5422,13 @@ export async function executeParsedCommand(
                 : formatGroupAlertList(result);
             }
             case 'enable':
-              return client.channelGroupSubscriptions.subscribe({
+              return client.v1.channelGroupSubscriptions.subscribe({
                 session_id: sessionID,
                 target_type: 'feed',
                 target_id: requireSingleGroupAlertFeedID(flags, command),
               });
             case 'disable':
-              return client.channelGroupSubscriptions.unsubscribe({
+              return client.v1.channelGroupSubscriptions.unsubscribe({
                 session_id: sessionID,
                 target_type: 'feed',
                 target_id: requireSingleGroupAlertFeedID(flags, command),

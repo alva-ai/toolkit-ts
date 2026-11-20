@@ -68,6 +68,7 @@ import {
   aSchedule,
 } from './automationV2.js';
 import { fakeV2 } from './fakeV2.js';
+import { aPlaybookFollow, aSubscription } from './socialV2.js';
 
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -277,21 +278,14 @@ function makeClient(
   client.user._username = vi.fn().mockResolvedValue('alice');
   client.subscriptions.follows = vi
     .fn()
-    .mockResolvedValue({ items: [], has_next: false });
-  client.subscriptions.followPlaybook = vi.fn().mockResolvedValue({
-    follow: {
-      id: '1',
-      user_id: '2',
-      playbook_id: '3',
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-    playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
-  });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.subscriptions.followPlaybook = vi
+    .fn()
+    .mockResolvedValue(aPlaybookFollow());
   client.subscriptions.unfollowPlaybook = vi
     .fn()
-    .mockResolvedValue({ ok: true, unfollowed: true });
-  client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({
+    .mockResolvedValue(aPlaybookFollow({ following: false }));
+  client.v1.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({
     subscription: {
       target: { type: 'FEED', id: '42' },
       created_at_ms: 1700000000000,
@@ -299,67 +293,27 @@ function makeClient(
     },
     feed_path: '/alva/home/alice/feeds/btc-ema',
   });
-  client.subscriptions.unsubscribeFeed = vi
+  client.v1.subscriptions.unsubscribeFeed = vi
     .fn()
     .mockResolvedValue({ ok: true });
   client.subscriptions.subscribeBatch = vi
     .fn()
-    .mockResolvedValue({ subscriptions: [] });
-  client.subscriptions.list = vi.fn().mockResolvedValue({
-    items: [
-      {
-        target: { type: 'FEED', id: '42' },
-        created_at_ms: 1700000000000,
-        updated_at_ms: 1700000000000,
-        feed_name: 'btc-ema',
-        feed_status: 'ACTIVE',
-        kind: 'FEED_ALERT',
-        target_status: 'ACTIVE',
-        channel_id: '7',
-        used_by_total: 1,
-        last_pushed_at_ms: 1700000000000,
-      },
-    ],
-    next_cursor: 'next',
-    total_count: 2,
-  });
-  client.subscriptions.unsubscribeBatch = vi
+    .mockResolvedValue({ subscriptions: [aSubscription()] });
+  client.subscriptions.list = vi
     .fn()
-    .mockResolvedValue({ results: [], ok_count: 0 });
+    .mockResolvedValue({ items: [aSubscription()], nextPageToken: 'next' });
+  client.subscriptions.unsubscribeBatch = vi.fn().mockResolvedValue([]);
   client.alerts.list = vi.fn().mockResolvedValue({
-    items: [
-      {
-        target: { type: 'FEED', id: '42' },
-        created_at_ms: 1700000000000,
-        updated_at_ms: 1700000000000,
-        feed_name: 'btc-ema',
-        feed_status: 'ACTIVE',
-        kind: 'FEED_ALERT',
-        target_status: 'ACTIVE',
-        channel_id: '7',
-        used_by_total: 1,
-        last_pushed_at_ms: 1700000000000,
-      },
-    ],
-    next_cursor: 'next',
-    total_count: 2,
+    items: [aSubscription({ channelId: 'channel_0ch' })],
+    nextPageToken: 'next',
   });
   client.alerts.follows = vi
     .fn()
-    .mockResolvedValue({ items: [], has_next: false });
-  client.alerts.enableAutomation = vi.fn().mockResolvedValue({
-    subscription: {
-      target: { type: 'FEED', id: '42' },
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-    feed_path: '/alva/home/alice/feeds/btc-ema',
-  });
-  client.alerts.disableAutomation = vi.fn().mockResolvedValue({ ok: true });
-  client.alerts.enableBatch = vi.fn().mockResolvedValue({ subscriptions: [] });
-  client.alerts.disableBatch = vi
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.alerts.enableBatch = vi
     .fn()
-    .mockResolvedValue({ results: [], ok_count: 0 });
+    .mockResolvedValue({ subscriptions: [aSubscription()] });
+  client.alerts.disableBatch = vi.fn().mockResolvedValue([]);
   client.alerts.history = vi
     .fn()
     .mockResolvedValue({ items: [aDelivery()], nextPageToken: null });
@@ -440,16 +394,16 @@ function makeClient(
     .fn()
     .mockResolvedValue({ sessionCompleted: false });
   client.feedback.submit = vi.fn().mockResolvedValue(aFeedback());
-  client.channelGroupSubscriptions.context = vi
+  client.v1.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
-  client.channelGroupSubscriptions.list = vi
+  client.v1.channelGroupSubscriptions.list = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
-  client.channelGroupSubscriptions.subscribe = vi
+  client.v1.channelGroupSubscriptions.subscribe = vi
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
-  client.channelGroupSubscriptions.unsubscribe = vi
+  client.v1.channelGroupSubscriptions.unsubscribe = vi
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
   client.remix.save = vi.fn().mockResolvedValue(aPlaybook());
@@ -3018,7 +2972,7 @@ components: {}
     await expect(
       dispatch(client, ['channel', 'group-subscriptions', 'list'])
     ).rejects.toThrow("Unknown command: 'channel'");
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('dispatches remix', async () => {
@@ -4945,18 +4899,26 @@ components: {}
 describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)', () => {
   it('dispatches playbook follow without changing alerts', async () => {
     const client = makeClient();
-    await dispatch(client, [
-      'subscriptions',
-      'follow-playbook',
-      '--username',
-      'alice',
-      '--name',
-      'btc-dashboard',
-    ]);
-    expect(client.subscriptions.followPlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-    });
+    client._v2Request = vi
+      .fn()
+      .mockResolvedValue({ id: 'playbook_0abc' }) as AlvaClient['_v2Request'];
+    expect(
+      await dispatch(client, [
+        'subscriptions',
+        'follow-playbook',
+        '--username',
+        'alice',
+        '--name',
+        'btc-dashboard',
+      ])
+    ).toEqual(aPlaybookFollow());
+    expect(client._v2Request).toHaveBeenCalledWith(
+      'GET',
+      '/playbooks/by-slug/alice/btc-dashboard'
+    );
+    expect(client.subscriptions.followPlaybook).toHaveBeenCalledWith(
+      'playbook_0abc'
+    );
     expect(client.subscriptions.subscribeBatch).not.toHaveBeenCalled();
   });
 
@@ -4971,8 +4933,8 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'c1',
     ]);
     expect(client.subscriptions.follows).toHaveBeenCalledWith({
-      limit: 20,
-      cursor: 'c1',
+      pageSize: 20,
+      pageToken: 'c1',
     });
   });
 
@@ -4993,11 +4955,23 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'automation_0a',
     ]);
     expect(client.subscriptions.subscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['automation_0a', 'automation_0b'],
+      automationIds: ['automation_0a', 'automation_0b'],
       channelId: 'channel_0c',
     });
-    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['automation_0a'],
+    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith([
+      'automation_0a',
+    ]);
+    await dispatch(client, [
+      'subscriptions',
+      'subscribe',
+      '--feed-ids',
+      'automation_0a',
+      '--channel-id',
+      '0',
+    ]);
+    expect(client.subscriptions.subscribeBatch).toHaveBeenLastCalledWith({
+      automationIds: ['automation_0a'],
+      channelId: undefined,
     });
   });
 
@@ -5036,41 +5010,33 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'c1',
     ]);
     expect(client.alerts.list).toHaveBeenCalledWith({
-      first: 20,
-      cursor: 'c1',
+      pageSize: 20,
+      pageToken: 'c1',
     });
     expect(result).toEqual(expect.stringContaining('1 alert(s):'));
-    expect(result).toEqual(expect.stringContaining('btc-ema'));
-    expect(result).toEqual(expect.stringContaining('channel: 7'));
-    expect(result).toEqual(expect.stringContaining('next_cursor: next'));
+    expect(result).toEqual(expect.stringContaining('btc-ema  [ACTIVE]'));
+    expect(result).toEqual(
+      expect.stringContaining('destination: CHANNEL channel_0ch')
+    );
+    expect(result).toEqual(
+      expect.stringContaining('automation status: ACTIVE')
+    );
+    expect(result).toEqual(expect.stringContaining('used by: 1'));
+    expect(result).toEqual(expect.stringContaining('nextPageToken: next'));
   });
 
   it('returns raw alert list with --json', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['alert', 'list', '--json']);
     expect(result).toEqual({
-      items: [
-        {
-          target: { type: 'FEED', id: '42' },
-          created_at_ms: 1700000000000,
-          updated_at_ms: 1700000000000,
-          feed_name: 'btc-ema',
-          feed_status: 'ACTIVE',
-          kind: 'FEED_ALERT',
-          target_status: 'ACTIVE',
-          channel_id: '7',
-          used_by_total: 1,
-          last_pushed_at_ms: 1700000000000,
-        },
-      ],
-      next_cursor: 'next',
-      total_count: 2,
+      items: [aSubscription({ channelId: 'channel_0ch' })],
+      nextPageToken: 'next',
     });
   });
 
   it('lists current group alerts through the explicit group subcommand', async () => {
     const client = makeClient('123', 'channel_group');
-    vi.mocked(client.channelGroupSubscriptions.list).mockResolvedValueOnce({
+    vi.mocked(client.v1.channelGroupSubscriptions.list).mockResolvedValueOnce({
       subscriptions: [
         {
           event_type: 'feed_alert_ready',
@@ -5083,7 +5049,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       ],
     });
     const result = await dispatch(client, ['alert', 'group', 'list']);
-    expect(client.channelGroupSubscriptions.list).toHaveBeenCalledWith({
+    expect(client.v1.channelGroupSubscriptions.list).toHaveBeenCalledWith({
       session_id: '123',
     });
     expect(client.alerts.list).not.toHaveBeenCalled();
@@ -5094,7 +5060,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     const client = makeClient('123', 'channel_group');
     await dispatch(client, ['alert', 'list']);
     expect(client.alerts.list).toHaveBeenCalled();
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('dispatches alert follows with pagination flags', async () => {
@@ -5108,8 +5074,8 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'c1',
     ]);
     expect(client.alerts.follows).toHaveBeenCalledWith({
-      limit: 20,
-      cursor: 'c1',
+      pageSize: 20,
+      pageToken: 'c1',
     });
   });
 
@@ -5127,11 +5093,11 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--automation',
       'alice/btc-ema',
     ]);
-    expect(client.alerts.enableAutomation).toHaveBeenCalledWith({
+    expect(client.v1.subscriptions.subscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
     });
-    expect(client.alerts.disableAutomation).toHaveBeenCalledWith({
+    expect(client.v1.subscriptions.unsubscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
     });
@@ -5149,7 +5115,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '7',
     ]);
 
-    expect(client.alerts.enableAutomation).toHaveBeenCalledWith({
+    expect(client.v1.subscriptions.subscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
       channelId: '7',
@@ -5180,7 +5146,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     ).rejects.toThrow(/--channel-id is not supported for 'alert group list'/);
 
     expect(client.alerts.list).not.toHaveBeenCalled();
-    expect(client.alerts.disableAutomation).not.toHaveBeenCalled();
+    expect(client.v1.subscriptions.unsubscribeFeed).not.toHaveBeenCalled();
     expect(client.alerts.disableBatch).not.toHaveBeenCalled();
   });
 
@@ -5216,12 +5182,13 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'automation_0a,automation_0b',
     ]);
     expect(client.alerts.enableBatch).toHaveBeenCalledWith({
-      feedIds: ['automation_0a', 'automation_0b'],
+      automationIds: ['automation_0a', 'automation_0b'],
       channelId: 'channel_0c',
     });
-    expect(client.alerts.disableBatch).toHaveBeenCalledWith({
-      feedIds: ['automation_0a', 'automation_0b'],
-    });
+    expect(client.alerts.disableBatch).toHaveBeenCalledWith([
+      'automation_0a',
+      'automation_0b',
+    ]);
   });
 
   it('enables and disables current group alerts by automation id', async () => {
@@ -5240,12 +5207,14 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--automation-ids',
       '42',
     ]);
-    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
+    expect(client.v1.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
       session_id: '123',
       target_type: 'feed',
       target_id: '42',
     });
-    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
+    expect(
+      client.v1.channelGroupSubscriptions.unsubscribe
+    ).toHaveBeenCalledWith({
       session_id: '123',
       target_type: 'feed',
       target_id: '42',
@@ -5283,7 +5252,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
       /only available inside an external IM-group sandbox/
     );
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('requires the attached group session id without accepting it as input', async () => {
@@ -5291,7 +5260,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
       /current group session is unavailable/
     );
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('does not accept an explicit session id for alert group commands', async () => {
@@ -5299,7 +5268,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await expect(
       dispatch(client, ['alert', 'group', 'list', '--session-id', '456'])
     ).rejects.toThrow(/does not accept --session-id/);
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('rejects playbook ids for alert batch mutations', async () => {
@@ -6079,15 +6048,13 @@ describe('CLI dispatch — Slim Agent profile', () => {
   it('deletes an int64 automation without requiring a backing producer', async () => {
     const client = makeClient();
     const id = '9007199254740993';
-    client.automation.inspect = vi
-      .fn()
-      .mockResolvedValue(
-        anAutomation({
-          name: 'metadata-only',
-          status: 'PAUSED',
-          cronjobId: null,
-        })
-      );
+    client.automation.inspect = vi.fn().mockResolvedValue(
+      anAutomation({
+        name: 'metadata-only',
+        status: 'PAUSED',
+        cronjobId: null,
+      })
+    );
 
     const result = await dispatchEmbedded(
       client,

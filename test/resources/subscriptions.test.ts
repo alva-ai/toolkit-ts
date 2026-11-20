@@ -1,280 +1,126 @@
-import { describe, it, expect } from 'vitest';
-import type { V2RequestOptions } from '../../src/platformApi.js';
-import { v2Client } from '../helpers/v2Client.js';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { AlvaClient } from '../../src/client.js';
+import { fakeV2 } from '../fakeV2.js';
+import {
+  aPlaybookFollow,
+  aSubscription,
+  AUTOMATION,
+  PLAYBOOK,
+} from '../socialV2.js';
 
-const SUBSCRIPTION = {
-  id: 'notification_subscription_0s1',
-  automationId: 'automation_0a',
-  automationName: 'btc-ema',
-  automationStatus: 'ACTIVE',
-  targetStatus: 'ACTIVE',
-  medium: 'CHANNEL',
-  channelId: 'channel_0c',
-  usedBy: [
-    {
-      playbookId: 'playbook_0p',
-      ownerUsername: 'alice',
-      slug: 'btc-dashboard',
-      displayName: 'BTC Dashboard',
-      ownerAvatarUrl: null,
-    },
-  ],
-  usedByCount: 1,
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-02T00:00:00.000Z',
-  lastDeliveredAt: '2026-11-03T00:00:00.000Z',
-};
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
 
-const ALERT = {
-  id: 'notification_subscription_0s1',
-  target: { type: 'FEED', id: 'automation_0a' },
-  created_at_ms: Date.parse('2026-11-01T00:00:00.000Z'),
-  updated_at_ms: Date.parse('2026-11-02T00:00:00.000Z'),
-  channel_id: 'channel_0c',
-  feed_name: 'btc-ema',
-  feed_status: 'ACTIVE',
-  last_pushed_at_ms: Date.parse('2026-11-03T00:00:00.000Z'),
-  used_by: [
-    {
-      playbook_id: 'playbook_0p',
-      owner_username: 'alice',
-      playbook_name: 'btc-dashboard',
-      display_name: 'BTC Dashboard',
-      owner_avatar_url: '',
-    },
-  ],
-  used_by_total: 1,
-  kind: 'FEED_ALERT',
-  target_status: 'ACTIVE',
-};
-
-const FOLLOW = {
-  changed: true,
-  following: true,
-  followedAt: '2026-11-19T10:00:00.000Z',
-  playbook: {
-    id: 'playbook_0p',
-    ownerUsername: 'alice',
-    slug: 'btc-dashboard',
-    displayName: 'BTC Dashboard',
-  },
-};
+function client() {
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
+}
 
 describe('SubscriptionsResource', () => {
-  it('followPlaybook() looks the Playbook up by slug and follows its ID', async () => {
-    const { client, v2 } = v2Client({
-      'GET /playbooks/by-slug/alice/btc-dashboard': { id: 'playbook_0p' },
-      'POST /me/followed-playbooks': FOLLOW,
+  it('followPlaybook() and unfollowPlaybook() take the Playbook ID', async () => {
+    const fake = fakeV2({
+      'POST /me/followed-playbooks': () => aPlaybookFollow(),
+      [`DELETE /me/followed-playbooks/${PLAYBOOK}`]: () =>
+        aPlaybookFollow({ following: false, followedAt: null }),
     });
-    expect(
-      await client.subscriptions.followPlaybook({
-        username: 'alice',
-        name: 'btc-dashboard',
-      })
-    ).toEqual({
-      follow: {
-        playbook_id: 'playbook_0p',
-        created_at_ms: Date.parse('2026-11-19T10:00:00.000Z'),
-        updated_at_ms: Date.parse('2026-11-19T10:00:00.000Z'),
-      },
-      playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
-      playbook_id: 'playbook_0p',
+    restore = fake.restore;
+    const c = client();
+    expect(await c.subscriptions.followPlaybook(PLAYBOOK)).toEqual(
+      aPlaybookFollow()
+    );
+    expect(await c.subscriptions.unfollowPlaybook(PLAYBOOK)).toMatchObject({
+      following: false,
     });
-    expect(v2).toHaveBeenLastCalledWith('POST', '/me/followed-playbooks', {
-      body: { playbookId: 'playbook_0p' },
-    });
+    expect(fake.calls[0].body).toEqual({ playbookId: PLAYBOOK });
   });
 
-  it('unfollowPlaybook() reports whether the follow changed', async () => {
-    const { client } = v2Client({
-      'GET /playbooks/by-slug/alice/btc-dashboard': { id: 'playbook_0p' },
-      'DELETE /me/followed-playbooks/playbook_0p': {
-        ...FOLLOW,
-        changed: false,
-        following: false,
-      },
-    });
-    await expect(
-      client.subscriptions.unfollowPlaybook({
-        username: 'alice',
-        name: 'btc-dashboard',
-      })
-    ).resolves.toEqual({ ok: true, unfollowed: false });
-  });
-
-  it('follows() pages the followed Playbooks with the v1 names', async () => {
-    const { client, v2 } = v2Client({
-      'GET /me/followed-playbooks': (o: V2RequestOptions) => ({
-        items: [
-          {
-            id: 'playbook_0p',
-            ownerUsername: 'alice',
-            slug: 'btc-dashboard',
-            displayName: 'BTC Dashboard',
-            followedAt: '2026-11-19T10:00:00.000Z',
-          },
-        ],
-        nextPageToken: o.query?.pageToken ? null : 'n',
-      }),
-    });
-    expect(await client.subscriptions.follows({ limit: 20 })).toEqual({
+  it('list() and follows() return their pages', async () => {
+    const subscriptions = { items: [aSubscription()], nextPageToken: 'p2' };
+    const follows = {
       items: [
         {
-          playbook_id: 'playbook_0p',
-          owner_username: 'alice',
-          name: 'btc-dashboard',
-          display_name: 'BTC Dashboard',
-          followed_at_ms: Date.parse('2026-11-19T10:00:00.000Z'),
+          id: PLAYBOOK,
+          ownerUsername: 'alice',
+          slug: 'btc-dashboard',
+          displayName: 'BTC Dashboard',
+          followedAt: null,
         },
       ],
-      has_next: true,
-      next_cursor: 'n',
-    });
-    const last = await client.subscriptions.follows({ cursor: 'n' });
-    expect(last).toMatchObject({ has_next: false });
-    expect(last).not.toHaveProperty('next_cursor');
-    expect(v2.mock.calls.map((c) => c[2]?.query)).toEqual([
-      { pageSize: 20, pageToken: undefined },
-      { pageSize: undefined, pageToken: 'n' },
-    ]);
-  });
-
-  it('list() rebuilds the v1 alert rows; no channel is the agent channel 0', async () => {
-    const { client, v2 } = v2Client({
-      'GET /me/notification-subscriptions': {
-        items: [
-          SUBSCRIPTION,
-          {
-            ...SUBSCRIPTION,
-            id: 'notification_subscription_0s2',
-            automationName: null,
-            channelId: null,
-            lastDeliveredAt: null,
-            usedBy: [],
-            usedByCount: 0,
-          },
-        ],
-        nextPageToken: null,
-      },
-    });
-    const { items, next_cursor } = await client.subscriptions.list({
-      first: 50,
-      cursor: 'c1',
-    });
-    expect(items[0]).toEqual(ALERT);
-    expect(items[1]).toEqual({
-      id: 'notification_subscription_0s2',
-      target: { type: 'FEED', id: 'automation_0a' },
-      created_at_ms: ALERT.created_at_ms,
-      updated_at_ms: ALERT.updated_at_ms,
-      channel_id: '0',
-      feed_status: 'ACTIVE',
-      used_by: [],
-      used_by_total: 0,
-      kind: 'FEED_ALERT',
-      target_status: 'ACTIVE',
-    });
-    expect(next_cursor).toBe('');
-    expect(v2).toHaveBeenCalledWith('GET', '/me/notification-subscriptions', {
-      query: { pageSize: 50, pageToken: 'c1' },
-    });
-  });
-
-  it('subscribeBatch() posts Automation IDs; channel 0 is the agent channel', async () => {
-    const { client, v2 } = v2Client({
-      'POST /me/notification-subscriptions': { subscriptions: [SUBSCRIPTION] },
-    });
-    expect(
-      await client.subscriptions.subscribeBatch({
-        feedIds: ['automation_0a'],
-        channelId: 'channel_0c',
-      })
-    ).toEqual({ subscriptions: [ALERT] });
-    await client.subscriptions.subscribeBatch({
-      feedIds: ['automation_0a'],
-      channelId: '0',
-    });
-    expect(v2.mock.calls.map((c) => c[2]?.body)).toEqual([
-      { automationIds: ['automation_0a'], channelId: 'channel_0c' },
-      { automationIds: ['automation_0a'], channelId: undefined },
-    ]);
-  });
-
-  it('unsubscribeBatch() deletes every destination of the named Automations', async () => {
-    const other = {
-      ...SUBSCRIPTION,
-      id: 'notification_subscription_0o',
-      automationId: 'automation_0other',
+      nextPageToken: null,
     };
-    const { client, v2 } = v2Client({
-      'GET /me/notification-subscriptions': (o: V2RequestOptions) =>
-        o.query?.pageToken === undefined
-          ? { items: [SUBSCRIPTION, other], nextPageToken: 'p2' }
-          : {
-              items: [
-                {
-                  ...SUBSCRIPTION,
-                  id: 'notification_subscription_0s2',
-                  channelId: null,
-                },
-              ],
-              nextPageToken: null,
-            },
-      'DELETE /me/notification-subscriptions/notification_subscription_0s1': {
-        id: 'notification_subscription_0s1',
-      },
-      'DELETE /me/notification-subscriptions/notification_subscription_0s2': {
-        id: 'notification_subscription_0s2',
-      },
+    const fake = fakeV2({
+      'GET /me/notification-subscriptions': () => subscriptions,
+      'GET /me/followed-playbooks': () => follows,
     });
-    expect(
-      await client.subscriptions.unsubscribeBatch({
-        feedIds: ['automation_0a', 'automation_0none'],
-      })
-    ).toEqual({
-      results: [
-        { id: 'automation_0a', kind: 'FEED', ok: true, status: 'UNSUBSCRIBED' },
-        {
-          id: 'automation_0none',
-          kind: 'FEED',
-          ok: true,
-          status: 'UNSUBSCRIBED',
-        },
-      ],
-      ok_count: 2,
-    });
-    expect(
-      v2.mock.calls.filter(([m]) => m === 'DELETE').map(([, p]) => p)
-    ).toEqual([
-      '/me/notification-subscriptions/notification_subscription_0s1',
-      '/me/notification-subscriptions/notification_subscription_0s2',
-    ]);
+    restore = fake.restore;
+    const c = client();
+    expect(await c.subscriptions.list({ pageSize: 1 })).toEqual(subscriptions);
+    expect(await c.subscriptions.follows({ pageToken: 't' })).toEqual(follows);
   });
 
-  it('subscribeFeed() and unsubscribeFeed() keep the v1 routes by owner and name', async () => {
-    const { client, legacy } = v2Client({});
-    legacy.mockResolvedValue({} as never);
-    await client.subscriptions.subscribeFeed({
-      username: 'alice',
-      name: 'btc-ema',
-      channelId: '42',
+  it('subscribeBatch() posts the Subscription and returns the SubscribeResponse', async () => {
+    const answer = { subscriptions: [aSubscription()] };
+    const fake = fakeV2({
+      'POST /me/notification-subscriptions': () => answer,
     });
-    await client.subscriptions.subscribeFeed({
-      username: 'alice',
-      name: 'btc-ema',
+    restore = fake.restore;
+    const body = { automationIds: [AUTOMATION], channelId: 'channel_0ch' };
+    expect(await client().subscriptions.subscribeBatch(body)).toEqual(answer);
+    expect(fake.calls[0].body).toEqual(body);
+  });
+
+  it('unsubscribeBatch() removes every destination of the automations', async () => {
+    const other = aSubscription({
+      id: 'notification_subscription_0x',
+      automationId: 'automation_0x',
     });
-    await client.subscriptions.unsubscribeFeed({
-      username: 'alice',
-      name: 'btc-ema',
+    const email = aSubscription({
+      id: 'notification_subscription_0e',
+      channelId: 'channel_0ch',
     });
-    expect(legacy.mock.calls).toEqual([
+    const fake = fakeV2({
+      'GET /me/notification-subscriptions': [
+        () => ({ items: [aSubscription(), other], nextPageToken: 'p2' }),
+        () => ({ items: [email], nextPageToken: null }),
+      ],
+      'DELETE /me/notification-subscriptions/notification_subscription_0n':
+        () => ({ id: 'notification_subscription_0n' }),
+      'DELETE /me/notification-subscriptions/notification_subscription_0e':
+        () => ({ id: 'notification_subscription_0e' }),
+    });
+    restore = fake.restore;
+    expect(await client().subscriptions.unsubscribeBatch([AUTOMATION])).toEqual(
+      [
+        { id: 'notification_subscription_0n' },
+        { id: 'notification_subscription_0e' },
+      ]
+    );
+    expect(fake.calls[1].query.get('pageToken')).toBe('p2');
+    expect(fake.calls.filter((call) => call.method === 'DELETE')).toHaveLength(
+      2
+    );
+  });
+});
+
+describe('client.v1.subscriptions', () => {
+  it('subscribeFeed() and unsubscribeFeed() keep /api/v1 by owner and name', async () => {
+    const c = new AlvaClient({ apiKey: 'key' });
+    const request = vi.spyOn(c, '_request').mockResolvedValue({ ok: true });
+    await c.v1.subscriptions.subscribeFeed({
+      username: 'alice',
+      name: 'btc ema',
+      channelId: '7',
+    });
+    await c.v1.subscriptions.unsubscribeFeed({
+      username: 'alice',
+      name: 'btc ema',
+    });
+    expect(request.mock.calls).toEqual([
       [
         'POST',
-        '/api/v1/subscriptions/feed/alice/btc-ema',
-        { body: { channel_id: '42' } },
+        '/api/v1/subscriptions/feed/alice/btc%20ema',
+        { body: { channel_id: '7' } },
       ],
-      ['POST', '/api/v1/subscriptions/feed/alice/btc-ema'],
-      ['DELETE', '/api/v1/subscriptions/feed/alice/btc-ema'],
+      ['DELETE', '/api/v1/subscriptions/feed/alice/btc%20ema'],
     ]);
   });
 });

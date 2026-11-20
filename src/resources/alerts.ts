@@ -1,57 +1,34 @@
 import type { AlvaClient } from '../client.js';
 import type { Schema, V2Query } from '../platformApi.js';
-import type {
-  FollowsListParams,
-  FollowsListResponse,
-  PushSubscriptionFeedParams,
-  PushSubscriptionListParams,
-  PushSubscriptionListResponse,
-  SubscribeFeedParams,
-  SubscribeBatchParams,
-  SubscribeBatchResponse,
-  SubscribeFeedResponse,
-  UnsubscribeBatchParams,
-  UnsubscribeBatchResponse,
-  UnsubscribeResponse,
-} from '../types.js';
 
 /**
  * Product-facing alert API: delegates to the subscriptions, notifications and
- * notification preferences resources.
+ * notification preferences resources. Enabling one feed by owner and name is
+ * `client.v1.subscriptions.subscribeFeed`.
  */
 export class AlertsResource {
   constructor(private client: AlvaClient) {}
 
   list(
-    params: PushSubscriptionListParams = {}
-  ): Promise<PushSubscriptionListResponse> {
-    return this.client.subscriptions.list(params);
+    query: V2Query<'/me/notification-subscriptions', 'get'> = {}
+  ): Promise<Schema<'NotificationSubscriptionList'>> {
+    return this.client.subscriptions.list(query);
   }
 
-  follows(params: FollowsListParams = {}): Promise<FollowsListResponse> {
-    return this.client.subscriptions.follows(params);
+  follows(
+    query: V2Query<'/me/followed-playbooks', 'get'> = {}
+  ): Promise<Schema<'FollowedPlaybookList'>> {
+    return this.client.subscriptions.follows(query);
   }
 
-  enableAutomation(
-    params: SubscribeFeedParams
-  ): Promise<SubscribeFeedResponse> {
-    return this.client.subscriptions.subscribeFeed(params);
+  enableBatch(
+    body: Schema<'Subscription'>
+  ): Promise<Schema<'SubscribeResponse'>> {
+    return this.client.subscriptions.subscribeBatch(body);
   }
 
-  disableAutomation(
-    params: PushSubscriptionFeedParams
-  ): Promise<UnsubscribeResponse> {
-    return this.client.subscriptions.unsubscribeFeed(params);
-  }
-
-  enableBatch(params: SubscribeBatchParams): Promise<SubscribeBatchResponse> {
-    return this.client.subscriptions.subscribeBatch(params);
-  }
-
-  disableBatch(
-    params: UnsubscribeBatchParams
-  ): Promise<UnsubscribeBatchResponse> {
-    return this.client.subscriptions.unsubscribeBatch(params);
+  disableBatch(automationIds: string[]): Promise<Schema<'Removed'>[]> {
+    return this.client.subscriptions.unsubscribeBatch(automationIds);
   }
 
   history(
