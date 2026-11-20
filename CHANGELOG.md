@@ -377,6 +377,10 @@ resource:
   `delivery.get(id)` the `AutomationDelivery` and
   `delivery.update(id, DeliveryPatch)` the `Automation`. `stop`, `resume`
   and `delete` take the Automation ID (were `{ id }`), as `feed` does.
+- The agent CLI's `automation pause`, `resume`, `update` and `delete`
+  print `{ automationId, cronjobId, automation, producer }` with the
+  `/api/v2` objects they changed (were `automation_id`, `cronjob_id` and a
+  lower-case `status`); `delete` prints the IDs only.
 
 #### Follows
 

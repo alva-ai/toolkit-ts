@@ -6030,13 +6030,17 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
     const id = '9007199254740993';
 
-    await dispatchEmbedded(
+    const result = await dispatchEmbedded(
       client,
       ['automation', 'update', '--id', id, '--description', 'Metadata only'],
       undefined,
       agentDeps
     );
 
+    expect(result).toEqual({
+      automationId: id,
+      automation: expect.objectContaining({ version: '1.0.1' }),
+    });
     expect(client.automation.inspect).not.toHaveBeenCalled();
     expect(client.deploy.update).not.toHaveBeenCalled();
     expect(client.automation.update).toHaveBeenCalledWith(id, {
@@ -6084,11 +6088,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.deploy.pause).toHaveBeenCalledWith('cronjob_0p420');
     expect(client.automation.delete).toHaveBeenCalledWith('42');
     expect(client.deploy.delete).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      automation_id: '42',
-      cronjob_id: 'cronjob_0p420',
-      status: 'deleted',
-    });
+    expect(result).toEqual({ automationId: '42', cronjobId: 'cronjob_0p420' });
   });
 
   it('deletes an int64 automation without requiring a backing producer', async () => {
@@ -6113,31 +6113,40 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.automation.delete).toHaveBeenCalledWith(id);
     expect(client.deploy.pause).not.toHaveBeenCalled();
     expect(client.deploy.delete).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      automation_id: id,
-      status: 'deleted',
-    });
+    expect(result).toEqual({ automationId: id });
   });
 
   it('coordinates product and producer pause/resume state', async () => {
     const client = makeClient();
 
-    await dispatchEmbedded(
-      client,
-      ['automation', 'pause', '--id', '42'],
-      undefined,
-      agentDeps
-    );
+    expect(
+      await dispatchEmbedded(
+        client,
+        ['automation', 'pause', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).toEqual({
+      automationId: '42',
+      cronjobId: 'cronjob_0p420',
+      automation: AUTOMATION,
+    });
     expect(client.deploy.pause).toHaveBeenCalledWith('cronjob_0p420');
     expect(client.automation.stop).toHaveBeenCalledWith('42');
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
-    await dispatchEmbedded(
-      client,
-      ['automation', 'resume', '--id', '42'],
-      undefined,
-      agentDeps
-    );
+    expect(
+      await dispatchEmbedded(
+        client,
+        ['automation', 'resume', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).toEqual({
+      automationId: '42',
+      cronjobId: 'cronjob_0p420',
+      automation: { ...AUTOMATION, status: 'ACTIVE' },
+    });
     expect(client.automation.resume).toHaveBeenCalledWith('42');
     expect(client.deploy.resume).toHaveBeenCalledWith('cronjob_0p420');
     expect(client.automation.resume).toHaveBeenCalledBefore(
