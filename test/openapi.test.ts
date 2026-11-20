@@ -13,7 +13,6 @@ import {
 // types and every transport call site in src/.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const PENDING_PATH = path.join(ROOT, 'test/openapi-pending.txt');
 const TRANSPORT = new Set(['_v2Request', '_v2Fetch', '_v2Pages']);
 const METHODS = ['get', 'post', 'patch', 'delete'] as const;
 
@@ -141,16 +140,6 @@ function mismatch(
   return undefined;
 }
 
-/** test/openapi-pending.txt: the call sites not yet on the contract. */
-function pending(): string[] {
-  if (!fs.existsSync(PENDING_PATH)) return [];
-  return fs
-    .readFileSync(PENDING_PATH, 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-}
-
 describe('the /api/v2 contract', () => {
   it('generates the committed types (npm run openapi:gen)', async () => {
     const generated = await generatePlatformTypes();
@@ -190,13 +179,10 @@ describe('the /api/v2 contract', () => {
     );
     expect(sites.length).toBeGreaterThan(0);
 
-    // A site that matches no operation stays listed in
-    // test/openapi-pending.txt until its resource moves to the contract; the
-    // list must be exact, and the file goes once it is empty.
     const failing = sites.flatMap((site) => {
       const why = mismatch(site, ops);
       return why ? [`${site.file}: ${site.method} ${site.path} (${why})`] : [];
     });
-    expect(failing.sort()).toEqual(pending().sort());
+    expect(failing.sort()).toEqual([]);
   });
 });

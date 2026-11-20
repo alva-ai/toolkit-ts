@@ -1,5 +1,0 @@
-# Call sites test/openapi.test.ts cannot match to an operation of
-# openapi/alva-platform-v2.json yet. Delete a resource's lines when it moves to
-# the contract (literal method and v2Path path per call, _v2Fetch for raw
-# bytes); delete this file when it is empty.
-
