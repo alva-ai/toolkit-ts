@@ -4,3 +4,4 @@ node_modules/
 .worktrees/
 openapi/
 src/generated/
+legacy/

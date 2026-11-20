@@ -8,5 +8,6 @@ export default tseslint.config(tseslint.configs.recommended, prettierConfig, {
     'coverage/',
     '.worktrees/',
     'src/generated/',
+    'legacy/',
   ],
 });
