@@ -284,19 +284,20 @@ follow|unfollow: --id <profile id>`,
 
 Subcommands:
   search   Discover matching candidates; multiple results are normal
-  resolve  Require exactly one canonical tradingPair
+  resolve  Require exactly one canonical pair (its symbol)
 
 Run 'alva trading-pairs search --help' and
 'alva trading-pairs resolve --help' for flags and examples.`,
 
   'trading-pairs search': `Usage: alva trading-pairs search [options]
 
-Return all matching candidates. Multiple results are normal; this command
-does not select a venue or construct a tradingPair.
+Return all matching candidates, as TradingPair JSON.
+Multiple results are normal; this command does not select a venue or
+construct a pair symbol.
 
 Flags:
   --symbol <ticker>             Ticker/query (required)
-  --market <market>             Optional market filter
+  --market <market>             Optional exchange filter
   --instrument-type <type>      Optional spot/perp/option filter
   --underlying-type <type>      Optional stock/crypto filter
   --quote <currency>             Optional quote filter
@@ -305,13 +306,14 @@ Flags:
 
   'trading-pairs resolve': `Usage: alva trading-pairs resolve [options]
 
-Require exactly one canonical tradingPair. Pass either a complete --pair or a
---symbol with enough filters to make the result unique.
+Require exactly one canonical pair; use its symbol (US_SPOT_RKLB_USD)
+unchanged. Pass either a complete --pair or a --symbol with enough filters to
+make the result unique.
 
 Flags:
   --pair <trading-pair>          Verify one complete pair
   --symbol <ticker>              Discover then require one match
-  --market <market>              Market filter
+  --market <market>              Exchange filter
   --instrument-type <type>       Spot/perp/option filter
   --underlying-type <type>       Stock/crypto filter
   --quote <currency>              Quote filter

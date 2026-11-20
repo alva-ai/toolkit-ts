@@ -73,9 +73,9 @@ export {
 export { MarketsResource } from './resources/markets.js';
 export {
   TradingPairsResource,
-  type TradingPairCandidate,
+  type TradingPairFilters,
+  type TradingPairResolveParams,
   type TradingPairSearchParams,
-  type TradingPairSearchResponse,
 } from './resources/tradingPairs.js';
 export {
   SchedulesResource,

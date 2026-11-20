@@ -1506,31 +1506,31 @@ Examples:
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
 Discover canonical trading-pair identities before backtesting or trading.
-The returned tradingPair is the exact value to use in OHLCV, Altra targets,
-positions, and orders. This command never constructs aliases or picks the
-first result.
+A result is the /api/v2 TradingPair; its symbol (US_SPOT_RKLB_USD) is the
+exact value to use in OHLCV, Altra targets, positions, and orders. This
+command never constructs aliases or picks the first result.
 
 Subcommands:
   search       Return all matching candidates; multiple results are normal
-  resolve      Require exactly one matching canonical tradingPair
+  resolve      Require exactly one matching canonical pair
 
 Search and resolve flags:
   --symbol <ticker>             Underlying ticker/query (for example RKLB)
-  --market <market>             Venue/market filter (for example US, BINANCE)
+  --market <market>             Exchange filter (for example US, BINANCE)
   --instrument-type <type>      spot, perp, option, ...
   --underlying-type <type>      stock, crypto, ...
   --quote <currency>             USD, USDT, USDC, ...
-  --json                         Return the machine-readable result
+  --json                         Return the TradingPair JSON (search: a list)
 
 Search-only flags:
-  --limit <n>                    Limit returned candidates; truncation is reported
+  --limit <n>                    Return at most n candidates
 
 Resolve forms:
   alva trading-pairs resolve --pair US_SPOT_RKLB_USD --json
   alva trading-pairs resolve --symbol RKLB --market US --instrument-type spot --quote USD --json
 
 Resolve fails when zero or multiple distinct pairs remain. Existing holdings
-must keep their stored full tradingPair instead of being resolved again.`,
+must keep their stored full pair symbol instead of being resolved again.`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
@@ -5368,12 +5368,13 @@ export async function executeParsedCommand(
                   'limit',
                   'trading-pairs search'
                 );
+          const symbol = requireFlag(flags, 'symbol', 'trading-pairs search');
           const result = await client.tradingPairs.search({
-            symbol: requireFlag(flags, 'symbol', 'trading-pairs search'),
+            symbol,
             ...filters,
             limit,
           });
-          return asJson ? result : formatTradingPairSearch(result);
+          return asJson ? result : formatTradingPairSearch(symbol, result);
         }
         case 'resolve': {
           const pair = flags['pair'];
