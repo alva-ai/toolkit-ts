@@ -1,5 +1,7 @@
 import type { AlvaClient } from '../client.js';
-import { v2Path } from '../platformApi.js';
+import { v2Path, type Schema } from '../platformApi.js';
+import type { FeedListQuery } from './feed.js';
+import type { ReleaseWriteOptions } from './release.js';
 import type {
   AlvaId,
   AutomationAlertDelivery,
@@ -11,13 +13,7 @@ import type {
   AutomationUpdateRequest,
   AutomationUpdateResponse,
   FeedDeleteRequest,
-  FeedDeleteResponse,
-  FeedListParams,
-  FeedListResponse,
-  FeedReleaseRequest,
-  FeedReleaseResponse,
   FeedStatusUpdateRequest,
-  FeedStatusUpdateResponse,
 } from '../types.js';
 
 /** An Automation of /api/v2. */
@@ -66,8 +62,8 @@ export class AutomationResource {
     this.delivery = new AutomationAlertDeliveryResource(client);
   }
 
-  list(params: FeedListParams = {}): Promise<FeedListResponse> {
-    return this.client.feed.list(params);
+  list(query: FeedListQuery = {}): Promise<Schema<'AutomationSummaryList'>> {
+    return this.client.feed.list(query);
   }
 
   /** Inspect one automation. */
@@ -129,20 +125,23 @@ export class AutomationResource {
     };
   }
 
-  stop(params: FeedStatusUpdateRequest): Promise<FeedStatusUpdateResponse> {
-    return this.client.feed.stop(params);
+  stop(params: FeedStatusUpdateRequest): Promise<Schema<'Automation'>> {
+    return this.client.feed.stop(params.id);
   }
 
-  resume(params: FeedStatusUpdateRequest): Promise<FeedStatusUpdateResponse> {
-    return this.client.feed.resume(params);
+  resume(params: FeedStatusUpdateRequest): Promise<Schema<'Automation'>> {
+    return this.client.feed.resume(params.id);
   }
 
-  delete(params: FeedDeleteRequest): Promise<FeedDeleteResponse> {
-    return this.client.feed.delete(params);
+  delete(params: FeedDeleteRequest): Promise<Record<string, never>> {
+    return this.client.feed.delete(params.id);
   }
 
-  publish(params: FeedReleaseRequest): Promise<FeedReleaseResponse> {
-    return this.client.release.feed(params);
+  publish(
+    body: Schema<'PublishAutomationBody'>,
+    options: ReleaseWriteOptions = {}
+  ): Promise<Schema<'AutomationVersion'>> {
+    return this.client.release.feed(body, options);
   }
 }
 

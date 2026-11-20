@@ -31,27 +31,32 @@ describe('AutomationResource', () => {
     const { client } = v2Client({});
     client.feed.list = vi
       .fn()
-      .mockResolvedValue({ feeds: [], has_more: false });
+      .mockResolvedValue({ items: [], nextPageToken: null });
     client.feed.stop = vi.fn().mockResolvedValue({ id: 'automation_0a' });
     client.feed.resume = vi.fn().mockResolvedValue({ id: 'automation_0a' });
-    client.feed.delete = vi.fn().mockResolvedValue({ id: 'automation_0a' });
+    client.feed.delete = vi.fn().mockResolvedValue({});
     client.release.feed = vi.fn().mockResolvedValue({});
     const id = 'automation_0a';
-    await client.automation.list({ limit: 20, cursor: 'abc', status: 'all' });
+    await client.automation.list({ pageSize: 20, pageToken: 'abc' });
     await client.automation.stop({ id });
     await client.automation.resume({ id });
     await client.automation.delete({ id });
-    const release = { name: 'btc-ema', version: '1.0.0', cronjob_id: 42 };
-    await client.automation.publish(release);
+    const release = {
+      name: 'btc-ema',
+      version: '1.0.0',
+      cronjobId: 'cronjob_0c',
+    };
+    await client.automation.publish(release, { idempotencyKey: 'k1' });
     expect(client.feed.list).toHaveBeenCalledWith({
-      limit: 20,
-      cursor: 'abc',
-      status: 'all',
+      pageSize: 20,
+      pageToken: 'abc',
     });
-    expect(client.feed.stop).toHaveBeenCalledWith({ id });
-    expect(client.feed.resume).toHaveBeenCalledWith({ id });
-    expect(client.feed.delete).toHaveBeenCalledWith({ id });
-    expect(client.release.feed).toHaveBeenCalledWith(release);
+    expect(client.feed.stop).toHaveBeenCalledWith(id);
+    expect(client.feed.resume).toHaveBeenCalledWith(id);
+    expect(client.feed.delete).toHaveBeenCalledWith(id);
+    expect(client.release.feed).toHaveBeenCalledWith(release, {
+      idempotencyKey: 'k1',
+    });
   });
 
   it('inspect() rebuilds the v1 detail from GET /api/v2/automations/{id}', async () => {

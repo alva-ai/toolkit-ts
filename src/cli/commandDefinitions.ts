@@ -228,14 +228,19 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     ],
   }),
   command('thesis related', { values: ['id', 'first', 'cursor'] }),
-  command('thesis get', { values: ['id'] }),
+  command('thesis get', { values: ['id', 'number'] }),
   command('thesis version list', { values: ['id', 'first', 'cursor'] }),
   command('thesis version get', {
-    values: ['id', 'author-version-id'],
+    values: ['author-version-id', 'number', 'version'],
   }),
   command('thesis signals', { values: ['id', 'first', 'cursor'] }),
-  command('thesis set-visibility', { values: ['id', 'visibility'] }),
-  command('thesis archive', { values: ['id', 'request-id', 'note'] }),
+  command('thesis set-visibility', {
+    values: ['id', 'visibility'],
+    booleans: ['confirm-end-paid-renewals'],
+  }),
+  command('thesis archive', {
+    values: ['id', 'request-id', 'note', 'expected-author-version-id'],
+  }),
   command('thesis star', { values: ['id'] }),
   command('thesis unstar', { values: ['id'] }),
   command('thesis set-signal-enabled', { values: ['id', 'enabled'] }),
@@ -254,7 +259,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'track-return',
       'archived',
     ],
-    booleans: ['body-stdin'],
+    booleans: ['body-stdin', 'confirm-end-paid-renewals'],
   }),
   command('thesis rewrite', {
     values: ['body', 'body-file', 'mode'],
@@ -337,6 +342,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('playbooks set-visibility', {
     values: ['name', 'visibility'],
+    booleans: ['confirm-end-paid-renewals'],
   }),
   command('playbooks get', {
     values: ['ids', 'id', 'ref'],

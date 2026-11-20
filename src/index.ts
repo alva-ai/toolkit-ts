@@ -24,48 +24,62 @@ export { AlertsResource } from './resources/alerts.js';
 export { CompanyNewsResource } from './resources/companyNews.js';
 export {
   ThesesResource,
-  type Thesis,
-  type ThesisID,
-  type ThesisRewriteMode,
-  type ThesisVisibility,
-  type ThesisAssetStance,
-  type ThesisEntityStance,
-  type ThesisMedia,
-  type ThesisAssetCandidate,
-  type ThesisAssetMention,
-  type ThesisAssetCandidatesResponse,
-  type ThesisResponse,
-  type ThesisGetResponse,
-  type ThesisResearchStatus,
-  type ThesisSignalEvidenceExcerpt,
-  type ThesisSignalSource,
-  type ThesisSignal,
-  type ThesisSignalEntry,
-  type ListThesisSignalsParams,
-  type ThesisSignalsResponse,
-  type ThesisAuthor,
-  type ThesisEntity,
-  type CreateThesisParams,
-  type UpdateThesisParams,
-  type SetThesisArchivedParams,
-  type ThesisStarredResponse,
-  type ThesisSignalEnabledResponse,
-  type SetThesisVisibilityParams,
-  type RewriteThesisParams,
-  type RewriteThesisResponse,
+  type ListThesesParams,
+  type ThesisPageQuery,
+  type ThesisWriteOptions,
 } from './resources/theses.js';
 export {
   ForYouResource,
-  type ForYouListParams,
-  type ForYouEntry,
-  type ForYouConnection,
-  type ForYouThesesParams,
-  type ThesisRecommendation,
-  type ThesisRecommendationPage,
-  type ThesisPublicationSummary,
-  type ThesisPublisher,
-  type ThesisSourceReference,
+  type ForYouListQuery,
+  type ForYouThesesQuery,
 } from './resources/forYou.js';
+export { FeedResource, type FeedListQuery } from './resources/feed.js';
+export {
+  PlaybooksResource,
+  parsePlaybookRef,
+  playbookUrl,
+  webOriginFromApiBase,
+  type OwnPlaybooksQuery,
+  type PlaybookCatalogQuery,
+  type PlaybookPageQuery,
+  type PlaybookWriteOptions,
+} from './resources/playbooks.js';
+export {
+  PlaybookSkillsResource,
+  parsePlaybookSkillId,
+  type PlaybookSkillsQuery,
+  type PlaybookSkillTagsQuery,
+} from './resources/playbookSkills.js';
+export {
+  CommentsResource,
+  type CommentWriteOptions,
+} from './resources/comments.js';
+export { RemixResource } from './resources/remix.js';
+export {
+  ReleaseResource,
+  type ReleaseWriteOptions,
+} from './resources/release.js';
+export { SdkDocsResource } from './resources/sdkDocs.js';
+export {
+  V1PlaybooksResource,
+  type DiscoveryByIDsResponse,
+  type ListByOwnerParams,
+  type ListByOwnerResponse,
+  type PlaybookDiscoveryItem,
+  type TrendingPlaybookItem,
+  type TrendingPlaybooksDir,
+  type TrendingPlaybooksParams,
+  type TrendingPlaybooksResponse,
+  type TrendingPlaybooksSort,
+} from './v1/playbooks.js';
+export {
+  V1PlaybookSkillsResource,
+  type PlaybookSkillFile,
+  type PlaybookSkillFileMeta,
+  type PlaybookSkillMeta,
+  type PlaybookSkillSummary,
+  type PlaybookSkillTagEntry,
+} from './v1/playbookSkills.js';
 export { MarketsResource } from './resources/markets.js';
 export {
   TradingPairsResource,
@@ -144,19 +158,13 @@ export type {
   NotificationPreferenceUpdateResponse,
   SubmitFeedbackRequest,
   SubmitFeedbackResponse,
-  FeedListStatus,
-  FeedListParams,
-  FeedListItem,
-  FeedListResponse,
   AutomationEmailDelivery,
   AutomationAlertDelivery,
   AutomationAlertDeliveryGetRequest,
   AutomationAlertDeliveryUpdateRequest,
   AutomationAlertDeliveryUpdateResponse,
   FeedDeleteRequest,
-  FeedDeleteResponse,
   FeedStatusUpdateRequest,
-  FeedStatusUpdateResponse,
   FollowPlaybookResponse,
   PlaybookFollowParams,
   SubscribeBatchParams,
@@ -172,30 +180,8 @@ export type {
   SkillMetadata,
   SkillSummary,
 } from './resources/dataSkills.js';
-export type {
-  TrendingPlaybookItem,
-  TrendingPlaybooksDir,
-  TrendingPlaybooksParams,
-  TrendingPlaybooksResponse,
-  TrendingPlaybooksSort,
-} from './resources/playbooks.js';
-export type {
-  PlaybookSkillFile,
-  PlaybookSkillFileMeta,
-  PlaybookSkillMeta,
-  PlaybookSkillSummary,
-  PlaybookSkillTagEntry,
-} from './resources/playbookSkills.js';
 export type { InvokeFunctionOptions } from './resources/functions.js';
 export type { RunOptions } from './resources/run.js';
-
-export type {
-  ListThesesParams,
-  ThesisPageParams,
-  ThesisReadScope,
-  ThesisListPage,
-  RelatedThesesPage,
-} from './resources/thesisReads.js';
 
 export { XResource } from './resources/x.js';
 

@@ -1,44 +1,29 @@
 import type { AlvaClient } from '../client.js';
-import { collectAll, v2Path } from '../platformApi.js';
-import type {
-  ModuleDoc,
-  PartitionsResponse,
-  PartitionSummaryResponse,
-} from '../types.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
-interface WirePartition {
-  name: string;
-}
-
+/** Docs of the SDK modules Playbook scripts import, on /api/v2. */
 export class SdkDocsResource {
   constructor(private client: AlvaClient) {}
 
-  async doc(params: { name: string }): Promise<ModuleDoc> {
-    this.client._requireAuth();
-    const module = await this.client._v2Request<ModuleDoc>(
-      'GET',
-      '/sdk-modules/by-name',
-      { query: { name: params.name } }
-    );
-    return { name: module.name, doc: module.doc };
+  /** One module's doc, by its import name (`@arrays/...`). */
+  async doc(name: string): Promise<Schema<'SDKModule'>> {
+    return this.client._v2Request('GET', '/sdk-modules/by-name', {
+      query: { name },
+    });
   }
 
-  async partitions(): Promise<PartitionsResponse> {
-    this.client._requireAuth();
-    const items = await collectAll(
-      this.client._v2Pages<WirePartition>('/sdk-partitions', { pageSize: 100 })
-    );
-    return { partitions: items.map((p) => p.name) };
+  /** One page of the doc partitions. */
+  async partitions(
+    query: V2Query<'/sdk-partitions', 'get'> = {}
+  ): Promise<Schema<'SDKPartitionList'>> {
+    return this.client._v2Request('GET', '/sdk-partitions', { query });
   }
 
-  async partitionSummary(params: {
-    partition: string;
-  }): Promise<PartitionSummaryResponse> {
-    this.client._requireAuth();
-    const detail = await this.client._v2Request<{ summary: string }>(
+  /** One partition and its summary, by name. */
+  async partitionSummary(name: string): Promise<Schema<'SDKPartitionDetail'>> {
+    return this.client._v2Request(
       'GET',
-      v2Path`/sdk-partitions/by-name/${params.partition}`
+      v2Path`/sdk-partitions/by-name/${name}`
     );
-    return { summary: detail.summary };
   }
 }

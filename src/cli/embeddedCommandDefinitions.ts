@@ -174,21 +174,22 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis related', 'thesis related', {
       values: ['id', 'first', 'cursor'],
     }),
-    route('thesis get', 'thesis get', { values: ['id'] }),
+    route('thesis get', 'thesis get', { values: ['id', 'number'] }),
     route('thesis version list', 'thesis version list', {
       values: ['id', 'first', 'cursor'],
     }),
     route('thesis version get', 'thesis version get', {
-      values: ['id', 'author-version-id'],
+      values: ['author-version-id', 'number', 'version'],
     }),
     route('thesis signals', 'thesis signals', {
       values: ['id', 'first', 'cursor'],
     }),
     route('thesis set-visibility', 'thesis set-visibility', {
       values: ['id', 'visibility'],
+      booleans: ['confirm-end-paid-renewals'],
     }),
     route('thesis archive', 'thesis archive', {
-      values: ['id', 'request-id', 'note'],
+      values: ['id', 'request-id', 'note', 'expected-author-version-id'],
     }),
     route('thesis star', 'thesis star', { values: ['id'] }),
     route('thesis unstar', 'thesis unstar', { values: ['id'] }),
@@ -209,6 +210,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'track-return',
         'archived',
       ],
+      booleans: ['confirm-end-paid-renewals'],
     }),
     route('thesis rewrite', 'thesis rewrite', { values: ['body', 'mode'] }),
     route('account whoami', 'whoami'),
@@ -449,6 +451,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     }),
     route('playbooks set-visibility', 'playbooks set-visibility', {
       values: ['name', 'visibility'],
+      booleans: ['confirm-end-paid-renewals'],
     }),
     route('playbooks draft', 'release playbook-draft', {
       values: [

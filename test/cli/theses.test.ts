@@ -1,505 +1,46 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { CliUsageError } from '../../src/error.js';
 import { dispatch as dispatchTerminal } from '../../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../../src/cli/embeddedDispatch.js';
+import { fakeV2, problem } from '../fakeV2.js';
+import {
+  ASSET,
+  ASSET_2,
+  REQUEST_ID,
+  THESIS,
+  VERSION,
+  aPage,
+  aThesis,
+  aVersion,
+} from '../contentV2.js';
 
-const REQUEST_ID = '123e4567-e89b-72d3-c456-426614174000';
-const THESIS = {
-  thesis: {
-    id: '9223372036854775807',
-    author_version_id: '9223372036854775806',
-    material_version_id: '9223372036854775805',
-    title: '',
-    body: 'draft',
-    entity_ids: [],
-    visibility: 'public' as const,
-    closed: false,
-    archived: false,
-    closing_note: '',
-    author_kind: 'user',
-    author_ref: 'alice',
-  },
-  author: {
-    id: '42',
-    kind: 'user',
-    display_name: 'Alice',
-    avatar_url: 'https://example.com/alice.png',
-    username: 'alice',
-  },
-  entities: [],
-};
-const SIGNALS = {
-  research: { state: 'ready', pending_work: 0, read_complete: true },
-  entries: [],
-  next_cursor: '',
-};
+// `alva thesis` end to end: CLI flags → the /api/v2 request → the printed
+// JSON, which is the route's answer.
+
+let fake: ReturnType<typeof fakeV2> | undefined;
+afterEach(() => {
+  fake?.restore();
+  fake = undefined;
+});
 
 function client() {
-  return new AlvaClient({ apiKey: 'key' });
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
 }
 
-function mockLifecycle(value: AlvaClient) {
-  return {
-    create: vi.spyOn(value.theses, 'create').mockResolvedValue(THESIS),
-    assetCandidates: vi
-      .spyOn(value.theses, 'assetCandidates')
-      .mockResolvedValue({
-        mentions: [],
-        returnPreview: null,
-      }),
-    get: vi.spyOn(value.theses, 'get').mockResolvedValue(THESIS),
-    getVersion: vi.spyOn(value.theses, 'getVersion').mockResolvedValue(THESIS),
-    signals: vi.spyOn(value.theses, 'signals').mockResolvedValue(SIGNALS),
-    setVisibility: vi
-      .spyOn(value.theses, 'setVisibility')
-      .mockResolvedValue(THESIS),
-    setArchived: vi
-      .spyOn(value.theses, 'setArchived')
-      .mockResolvedValue(THESIS),
-    setStarred: vi.spyOn(value.theses, 'setStarred').mockResolvedValue({
-      thesis_id: THESIS.thesis.id,
-      star_count: 1,
-      is_starred: true,
-    }),
-    setSignalEnabled: vi
-      .spyOn(value.theses, 'setSignalEnabled')
-      .mockResolvedValue({
-        thesis_id: THESIS.thesis.id,
-        author_version_id: THESIS.thesis.author_version_id,
-        archived: false,
-        research_paused: false,
-        enabled: true,
-      }),
-    update: vi.spyOn(value.theses, 'update').mockResolvedValue(THESIS),
-    rewrite: vi
-      .spyOn(value.theses, 'rewrite')
-      .mockResolvedValue({ body: 'new' }),
-  };
-}
+const KEY = `"${REQUEST_ID}"`;
+const RUNTIMES = [
+  ['terminal', dispatchTerminal],
+  ['embedded', dispatchEmbedded],
+] as const;
 
-describe('thesis terminal dispatch', () => {
-  it('dispatches all lifecycle operations without hidden rewrite or retries', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-    const localFiles = {
-      readText: () => 'file\r\nbody',
-      readBytes: () => new TextEncoder().encode('file\r\nbody'),
-      writeBytes: () => undefined,
-    };
+for (const [name, dispatch] of RUNTIMES) {
+  describe(`${name} thesis writes`, () => {
+    it('creates with the v2 body, the request ID as key, and prints the Thesis', async () => {
+      const created = aThesis();
+      fake = fakeV2({ 'POST /theses': () => created });
 
-    await dispatchTerminal(value, [
-      'thesis',
-      'create',
-      '--request-id',
-      REQUEST_ID,
-      '--body',
-      'first\r\nsecond',
-      '--entity-ids',
-      '9223372036854775807,42',
-      '--tickers',
-      ' AAPL,NVDA ',
-    ]);
-    await dispatchTerminal(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'version',
-      'get',
-      '--id',
-      THESIS.thesis.id,
-      '--author-version-id',
-      THESIS.thesis.author_version_id,
-    ]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'signals',
-      '--id',
-      THESIS.thesis.id,
-      '--first',
-      '10',
-      '--cursor',
-      'after',
-    ]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'set-visibility',
-      '--id',
-      THESIS.thesis.id,
-      '--visibility',
-      'private',
-    ]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'archive',
-      '--id',
-      THESIS.thesis.id,
-      '--request-id',
-      REQUEST_ID,
-      '--note',
-      'review later',
-    ]);
-    await dispatchTerminal(value, ['thesis', 'star', '--id', THESIS.thesis.id]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'unstar',
-      '--id',
-      THESIS.thesis.id,
-    ]);
-    await dispatchTerminal(value, [
-      'thesis',
-      'set-signal-enabled',
-      '--id',
-      THESIS.thesis.id,
-      '--enabled',
-      'false',
-    ]);
-    await dispatchTerminal(
-      value,
-      [
-        'thesis',
-        'update',
-        '--id',
-        THESIS.thesis.id,
-        '--request-id',
-        REQUEST_ID,
-        '--expected-author-version-id',
-        THESIS.thesis.author_version_id,
-        '--body-file',
-        '/tmp/thesis.md',
-        '--visibility',
-        'private',
-      ],
-      undefined,
-      { localFiles }
-    );
-    await dispatchTerminal(
-      value,
-      ['thesis', 'rewrite', '--body-stdin'],
-      undefined,
-      {
-        readStdinBytes: async () => new TextEncoder().encode('stdin\r\nbody'),
-      }
-    );
-
-    expect(calls.create).toHaveBeenCalledWith({
-      request_id: REQUEST_ID,
-      body: 'first\r\nsecond',
-      title: '',
-      entity_ids: ['9223372036854775807', '42'],
-      entity_stances: undefined,
-      tickers: ['AAPL', 'NVDA'],
-      visibility: 'public',
-    });
-    expect(calls.get).toHaveBeenCalledWith(THESIS.thesis.id);
-    expect(calls.getVersion).toHaveBeenCalledWith(
-      THESIS.thesis.id,
-      THESIS.thesis.author_version_id
-    );
-    expect(calls.signals).toHaveBeenCalledWith(THESIS.thesis.id, {
-      first: 10,
-      cursor: 'after',
-    });
-    expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
-      visibility: 'private',
-    });
-    expect(calls.setArchived).toHaveBeenCalledExactlyOnceWith(
-      THESIS.thesis.id,
-      {
-        request_id: REQUEST_ID,
-        archived: true,
-        note: 'review later',
-      }
-    );
-    expect(calls.setStarred).toHaveBeenNthCalledWith(1, THESIS.thesis.id, true);
-    expect(calls.setStarred).toHaveBeenNthCalledWith(
-      2,
-      THESIS.thesis.id,
-      false
-    );
-    expect(calls.setSignalEnabled).toHaveBeenCalledWith(
-      THESIS.thesis.id,
-      false
-    );
-    expect(calls.update).toHaveBeenCalledWith(THESIS.thesis.id, {
-      request_id: REQUEST_ID,
-      expected_author_version_id: THESIS.thesis.author_version_id,
-      body: 'file\r\nbody',
-      title: '',
-      entity_ids: [],
-      entity_stances: undefined,
-      visibility: 'private',
-    });
-    expect(calls.rewrite).toHaveBeenCalledWith({
-      body: 'stdin\r\nbody',
-      mode: 'reformat',
-    });
-    expect(calls.rewrite).toHaveBeenCalledTimes(1);
-  });
-
-  it('unarchives only by publishing an Update', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-    const update = [
-      'thesis',
-      'update',
-      '--id',
-      THESIS.thesis.id,
-      '--request-id',
-      REQUEST_ID,
-      '--expected-author-version-id',
-      THESIS.thesis.author_version_id,
-      '--body',
-      'Back in play',
-      '--visibility',
-      'public',
-    ];
-
-    await dispatchTerminal(value, [...update, '--archived', 'false']);
-    expect(calls.update).toHaveBeenCalledExactlyOnceWith(THESIS.thesis.id, {
-      request_id: REQUEST_ID,
-      expected_author_version_id: THESIS.thesis.author_version_id,
-      body: 'Back in play',
-      title: '',
-      entity_ids: [],
-      entity_stances: undefined,
-      visibility: 'public',
-      archived: false,
-    });
-
-    await expect(
-      dispatchTerminal(value, [...update, '--archived', 'true'])
-    ).rejects.toThrow(/--archived only accepts false/);
-    await expect(
-      dispatchEmbedded(value, [
-        'thesis',
-        'restore',
-        '--id',
-        THESIS.thesis.id,
-        '--request-id',
-        REQUEST_ID,
-      ])
-    ).rejects.toThrow(/Unknown subcommand: thesis restore/);
-    expect(calls.update).toHaveBeenCalledTimes(1);
-    expect(calls.setArchived).not.toHaveBeenCalled();
-  });
-
-  it('says when an Update changed nothing', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-    const update = [
-      'thesis',
-      'update',
-      '--id',
-      THESIS.thesis.id,
-      '--request-id',
-      REQUEST_ID,
-      '--expected-author-version-id',
-      THESIS.thesis.author_version_id,
-      '--body',
-      'draft',
-      '--visibility',
-      'public',
-    ];
-
-    // The Backend returns the current Update when nothing changed.
-    await expect(dispatchTerminal(value, update)).resolves.toMatchObject({
-      thesis: { author_version_id: THESIS.thesis.author_version_id },
-      unchanged: true,
-    });
-
-    const published = {
-      ...THESIS,
-      thesis: { ...THESIS.thesis, author_version_id: '9223372036854775807' },
-    };
-    calls.update.mockResolvedValue(published);
-    await expect(dispatchEmbedded(value, update)).resolves.toMatchObject({
-      thesis: { author_version_id: published.thesis.author_version_id },
-      unchanged: false,
-    });
-  });
-
-  it('requires update visibility and one body transport before resource calls', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'update',
-        '--id',
-        '1',
-        '--request-id',
-        REQUEST_ID,
-        '--expected-author-version-id',
-        '2',
-        '--body',
-        'draft',
-      ])
-    ).rejects.toBeInstanceOf(CliUsageError);
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'create',
-        '--request-id',
-        REQUEST_ID,
-        '--body',
-        'draft',
-        '--body-stdin',
-      ])
-    ).rejects.toThrow(/exactly one/);
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'update',
-        '--id',
-        '1',
-        '--request-id',
-        REQUEST_ID,
-        '--expected-author-version-id',
-        '2',
-        '--body',
-        'draft',
-        '--visibility',
-        'private',
-        '--tickers',
-        'AAPL',
-      ])
-    ).rejects.toThrow(/--tickers is not supported for 'thesis update'/);
-    expect(calls.update).not.toHaveBeenCalled();
-    expect(calls.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects missing or invalid set-visibility flags before resource calls', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'set-visibility',
-        '--visibility',
-        'private',
-      ])
-    ).rejects.toBeInstanceOf(CliUsageError);
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'set-visibility',
-        '--id',
-        THESIS.thesis.id,
-      ])
-    ).rejects.toBeInstanceOf(CliUsageError);
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'set-visibility',
-        '--id',
-        THESIS.thesis.id,
-        '--visibility',
-        'paid',
-      ])
-    ).rejects.toBeInstanceOf(CliUsageError);
-    expect(calls.setVisibility).not.toHaveBeenCalled();
-  });
-
-  it('rejects malformed UTF-8 file and stdin bytes without calling the resource', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-    const invalidBytes = new Uint8Array([0xc3, 0x28]);
-
-    await expect(
-      dispatchTerminal(
-        value,
-        [
-          'thesis',
-          'create',
-          '--request-id',
-          REQUEST_ID,
-          '--body-file',
-          '/tmp/invalid.md',
-        ],
-        undefined,
-        {
-          localFiles: {
-            readText: () => 'unused',
-            readBytes: () => invalidBytes,
-            writeBytes: () => undefined,
-          },
-        }
-      )
-    ).rejects.toThrow(/--body-file must contain valid UTF-8/);
-    await expect(
-      dispatchTerminal(
-        value,
-        ['thesis', 'rewrite', '--body-stdin'],
-        undefined,
-        {
-          readStdinBytes: async () => invalidBytes,
-        }
-      )
-    ).rejects.toThrow(/--body-stdin must contain valid UTF-8/);
-    expect(calls.create).not.toHaveBeenCalled();
-    expect(calls.rewrite).not.toHaveBeenCalled();
-  });
-
-  it('preserves a UTF-8 BOM from a body file as a text code point', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-
-    await dispatchTerminal(
-      value,
-      [
-        'thesis',
-        'create',
-        '--request-id',
-        REQUEST_ID,
-        '--body-file',
-        '/tmp/bom.md',
-      ],
-      undefined,
-      {
-        localFiles: {
-          readText: () => 'unused',
-          readBytes: () =>
-            new Uint8Array([0xef, 0xbb, 0xbf, 0x64, 0x72, 0x61, 0x66, 0x74]),
-          writeBytes: () => undefined,
-        },
-      }
-    );
-
-    expect(calls.create).toHaveBeenCalledWith(
-      expect.objectContaining({ body: '\ufeffdraft' })
-    );
-  });
-
-  it('trims entity ID CSV tokens without changing body text and rejects empty tokens', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-
-    await dispatchTerminal(value, [
-      'thesis',
-      'create',
-      '--request-id',
-      REQUEST_ID,
-      '--body',
-      'first\r\nsecond',
-      '--entity-ids',
-      '123, 456',
-    ]);
-
-    expect(calls.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: 'first\r\nsecond',
-        entity_ids: ['123', '456'],
-      })
-    );
-    expect(calls.create.mock.calls[0]?.[0]).toHaveProperty(
-      'tickers',
-      undefined
-    );
-
-    await expect(
-      dispatchTerminal(value, [
+      const result = await dispatch(client(), [
         'thesis',
         'create',
         '--request-id',
@@ -507,342 +48,633 @@ describe('thesis terminal dispatch', () => {
         '--body',
         'first\r\nsecond',
         '--entity-ids',
-        '123,,456',
-      ])
-    ).rejects.toThrow(/must not contain empty IDs/);
-    expect(calls.create).toHaveBeenCalledTimes(1);
-  });
-
-  it('trims ticker CSV tokens and rejects empty tickers before create', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-
-    await dispatchTerminal(value, [
-      'thesis',
-      'create',
-      '--request-id',
-      REQUEST_ID,
-      '--body',
-      'view',
-      '--tickers',
-      ' AAPL, NVDA ',
-    ]);
-    expect(calls.create).toHaveBeenCalledWith(
-      expect.objectContaining({ tickers: ['AAPL', 'NVDA'] })
-    );
-
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'create',
-        '--request-id',
-        REQUEST_ID,
-        '--body',
-        'view',
+        ` ${ASSET}, ${ASSET_2}`,
+        '--entity-stances',
+        `[{"assetId":"${ASSET}","stance":"BEARISH"}]`,
         '--tickers',
-        'AAPL,,NVDA',
-      ])
-    ).rejects.toThrow(/must not contain empty tickers/);
-    await expect(
-      dispatchTerminal(value, [
-        'thesis',
-        'create',
-        '--request-id',
-        REQUEST_ID,
-        '--body',
-        'view',
-        '--tickers',
-        '',
-      ])
-    ).rejects.toThrow(/must not contain empty tickers/);
-    expect(calls.create).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns terminal help that documents replacement fields and ambiguity handling', async () => {
-    const result = (await dispatchTerminal(client(), ['thesis', '--help'])) as {
-      text: string;
-    };
-    expect(result.text).toContain('Publish a new Update replacing');
-    expect(result.text).toContain('response is ambiguous');
-    expect(result.text).toContain('defaults --visibility to public');
-    expect(result.text).toContain('--tickers <ticker,ticker>');
-    expect(result.text).toContain('--mode reformat|shorten|enrich');
-    expect(result.text).toContain('candidate only');
-  });
-
-  it.each(['reformat', 'shorten', 'enrich'] as const)(
-    'dispatches terminal rewrite mode %s without automatic selection',
-    async (mode) => {
-      const value = client();
-      const calls = mockLifecycle(value);
-
-      await dispatchTerminal(value, [
-        'thesis',
-        'rewrite',
-        '--body',
-        'draft',
-        '--mode',
-        mode,
+        ' AAPL, NVDA ',
+        '--images',
+        '["https://cdn.example/a.png"]',
+        '--track-return',
+        'false',
       ]);
 
-      expect(calls.rewrite).toHaveBeenCalledWith({ body: 'draft', mode });
-    }
-  );
+      expect(result).toEqual(created);
+      expect(fake.calls).toHaveLength(1);
+      expect(fake.calls[0].headers['Idempotency-Key']).toBe(KEY);
+      expect(fake.calls[0].body).toEqual({
+        title: '',
+        body: 'first\r\nsecond',
+        assets: [{ assetId: ASSET, stance: 'BEARISH' }, { assetId: ASSET_2 }],
+        media: [
+          {
+            type: 'IMAGE',
+            coverUrl: 'https://cdn.example/a.png',
+            url: 'https://cdn.example/a.png',
+          },
+        ],
+        tickers: ['AAPL', 'NVDA'],
+        trackReturn: false,
+      });
+    });
 
-  it.each(['', ' ', 'rewrite'])(
-    'rejects terminal rewrite mode %j before the resource call',
-    async (mode) => {
-      const value = client();
-      const calls = mockLifecycle(value);
+    it.each([
+      [
+        'a stance on an asset not in --entity-ids',
+        [
+          '--entity-ids',
+          ASSET,
+          '--entity-stances',
+          `[{"assetId":"${ASSET_2}","stance":"BULLISH"}]`,
+        ],
+      ],
+      [
+        'a 0.x stance item',
+        [
+          '--entity-ids',
+          ASSET,
+          '--entity-stances',
+          `[{"entity_id":"${ASSET}","stance":"bullish"}]`,
+        ],
+      ],
+      [
+        'two stances for one asset',
+        [
+          '--entity-ids',
+          ASSET,
+          '--entity-stances',
+          `[{"assetId":"${ASSET}","stance":"BULLISH"},{"assetId":"${ASSET}","stance":"BEARISH"}]`,
+        ],
+      ],
+      ['an empty entity ID', ['--entity-ids', `${ASSET},,${ASSET_2}`]],
+      ['an empty ticker', ['--tickers', 'AAPL,,NVDA']],
+      [
+        'images on a private Thesis',
+        [
+          '--visibility',
+          'private',
+          '--images',
+          '["https://cdn.example/a.png"]',
+        ],
+      ],
+      ['an HTTP image', ['--images', '["http://cdn.example/a.png"]']],
+      [
+        'an image with credentials',
+        ['--images', '["https://u:p@cdn.example/a.png"]'],
+      ],
+      [
+        '21 images',
+        [
+          '--images',
+          JSON.stringify(Array(21).fill('https://cdn.example/a.png')),
+        ],
+      ],
+      ['a paid new Thesis', ['--visibility', 'paid']],
+      ['a malformed --track-return', ['--track-return', 'off']],
+    ])('refuses %s before any request', async (_case, extra) => {
+      fake = fakeV2({});
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'create',
+          '--request-id',
+          REQUEST_ID,
+          '--body',
+          'view',
+          ...extra,
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it('updates in one write; omitted parts carry over and given ones replace', async () => {
+      const published = aThesis(
+        { visibility: 'PRIVATE' },
+        { id: 'thesis_version_0b', number: 3 }
+      );
+      fake = fakeV2({ [`POST /theses/${THESIS}/updates`]: () => published });
+      const media = [
+        { type: 'IMAGE', coverUrl: 'https://cdn.example/a.png', url: null },
+      ];
+
+      const result = await dispatch(client(), [
+        'thesis',
+        'update',
+        '--id',
+        THESIS,
+        '--request-id',
+        REQUEST_ID,
+        '--expected-author-version-id',
+        VERSION,
+        '--body',
+        'Back in play',
+        '--visibility',
+        'private',
+        '--medias',
+        JSON.stringify(media),
+        '--archived',
+        'false',
+        '--confirm-end-paid-renewals',
+      ]);
+
+      expect(result).toEqual(published);
+      expect(fake.calls).toHaveLength(1);
+      expect(fake.calls[0].headers['Idempotency-Key']).toBe(KEY);
+      // No --title or --entity-ids: the edited Update's carry over.
+      expect(fake.calls[0].body).toEqual({
+        expectedVersionId: VERSION,
+        body: 'Back in play',
+        media,
+        visibility: 'PRIVATE',
+        confirmEndPaidRenewals: true,
+        archived: false,
+      });
+    });
+
+    it('prints the unchanged Thesis of an identical Update, and a conflict as an error', async () => {
+      const current = aThesis();
+      fake = fakeV2({
+        [`POST /theses/${THESIS}/updates`]: [
+          () => current,
+          () => problem(409, 'CONFLICT'),
+        ],
+      });
+      const argv = [
+        'thesis',
+        'update',
+        '--id',
+        THESIS,
+        '--request-id',
+        REQUEST_ID,
+        '--expected-author-version-id',
+        VERSION,
+        '--body',
+        'line one\r\nline two',
+      ];
+
+      await expect(dispatch(client(), argv)).resolves.toEqual(current);
+      await expect(dispatch(client(), argv)).rejects.toMatchObject({
+        status: 409,
+        code: 'CONFLICT',
+      });
+      expect(fake.calls).toHaveLength(2);
+    });
+
+    it('refuses update --archived true and a missing body before any request', async () => {
+      fake = fakeV2({});
+      const base = [
+        'thesis',
+        'update',
+        '--id',
+        THESIS,
+        '--request-id',
+        REQUEST_ID,
+        '--expected-author-version-id',
+        VERSION,
+      ];
+      await expect(
+        dispatch(client(), [...base, '--body', 'x', '--archived', 'true'])
+      ).rejects.toThrow(/--archived only accepts false/);
+      await expect(dispatch(client(), base)).rejects.toThrow(/exactly one/);
+      await expect(
+        dispatch(client(), [...base, '--body', 'x', '--medias', '{}'])
+      ).rejects.toThrow(/--medias must be a JSON array/);
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it('archives the current Update unless the Update is named', async () => {
+      fake = fakeV2({
+        [`GET /theses/${THESIS}`]: () => aThesis(),
+        [`POST /theses/${THESIS}/archive`]: () => aThesis({ archived: true }),
+      });
+      const argv = [
+        'thesis',
+        'archive',
+        '--id',
+        THESIS,
+        '--request-id',
+        REQUEST_ID,
+        '--note',
+        'later',
+      ];
+
+      await expect(dispatch(client(), argv)).resolves.toMatchObject({
+        archived: true,
+      });
+      await dispatch(client(), [
+        ...argv,
+        '--expected-author-version-id',
+        'thesis_version_0c',
+      ]);
+      expect(fake.calls.map((c) => [c.method, c.path, c.body])).toEqual([
+        ['GET', `/theses/${THESIS}`, undefined],
+        [
+          'POST',
+          `/theses/${THESIS}/archive`,
+          { expectedVersionId: VERSION, note: 'later' },
+        ],
+        [
+          'POST',
+          `/theses/${THESIS}/archive`,
+          { expectedVersionId: 'thesis_version_0c', note: 'later' },
+        ],
+      ]);
+      expect(fake.calls[1].headers['Idempotency-Key']).toBe(KEY);
+    });
+
+    it('sets visibility, stars, unstars and pauses research on their routes', async () => {
+      const follow = { thesisId: THESIS, following: true, followerCount: 1 };
+      fake = fakeV2({
+        [`PATCH /theses/${THESIS}`]: () => aThesis({ visibility: 'PRIVATE' }),
+        'POST /me/followed-theses': () => follow,
+        [`DELETE /me/followed-theses/${THESIS}`]: () => ({
+          ...follow,
+          following: false,
+          followerCount: 0,
+        }),
+        [`POST /theses/${THESIS}/research/pause`]: () => aThesis(),
+      });
+
+      await dispatch(client(), [
+        'thesis',
+        'set-visibility',
+        '--id',
+        THESIS,
+        '--visibility',
+        'Private',
+      ]);
+      await expect(
+        dispatch(client(), ['thesis', 'star', '--id', THESIS])
+      ).resolves.toEqual(follow);
+      await dispatch(client(), ['thesis', 'unstar', '--id', THESIS]);
+      await dispatch(client(), [
+        'thesis',
+        'set-signal-enabled',
+        '--id',
+        THESIS,
+        '--enabled',
+        'false',
+      ]);
+      expect(fake.calls.map((c) => [c.method, c.path, c.body])).toEqual([
+        ['PATCH', `/theses/${THESIS}`, { visibility: 'PRIVATE' }],
+        ['POST', '/me/followed-theses', { thesisId: THESIS }],
+        ['DELETE', `/me/followed-theses/${THESIS}`, undefined],
+        ['POST', `/theses/${THESIS}/research/pause`, undefined],
+      ]);
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'set-visibility',
+          '--id',
+          THESIS,
+          '--visibility',
+          'paid',
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(fake.calls).toHaveLength(4);
+    });
+
+    it.each([
+      [[], {}],
+      [['--mode', 'shorten'], { mode: 'SHORTEN' }],
+      [['--mode', 'ENRICH'], { mode: 'ENRICH' }],
+    ])('rewrites with %j', async (flags, mode) => {
+      fake = fakeV2({ 'POST /thesis-rewrites': () => ({ body: 'new' }) });
+      await expect(
+        dispatch(client(), ['thesis', 'rewrite', '--body', 'draft', ...flags])
+      ).resolves.toEqual({ body: 'new' });
+      expect(fake.calls[0].body).toEqual({ body: 'draft', ...mode });
+    });
+
+    it.each(['', ' ', 'rewrite'])(
+      'refuses rewrite mode %j before any request',
+      async (mode) => {
+        fake = fakeV2({});
+        await expect(
+          dispatch(client(), [
+            'thesis',
+            'rewrite',
+            '--body',
+            'draft',
+            '--mode',
+            mode,
+          ])
+        ).rejects.toThrow(/--mode must be one of reformat, shorten, enrich/);
+        expect(fake.calls).toHaveLength(0);
+      }
+    );
+  });
+
+  describe(`${name} thesis reads`, () => {
+    it('reads by ID, by number, and an Update by ID or by numbers', async () => {
+      const thesis = aThesis();
+      const version = aVersion({ number: 3 });
+      fake = fakeV2({
+        [`GET /theses/${THESIS}`]: () => thesis,
+        'GET /theses/by-number/42': () => thesis,
+        [`GET /thesis-versions/${VERSION}`]: () => version,
+        'GET /theses/by-number/42/versions/3': () => version,
+      });
 
       await expect(
-        dispatchTerminal(value, [
+        dispatch(client(), ['thesis', 'get', '--id', THESIS])
+      ).resolves.toEqual(thesis);
+      await expect(
+        dispatch(client(), ['thesis', 'get', '--number', '42'])
+      ).resolves.toEqual(thesis);
+      await expect(
+        dispatch(client(), [
           'thesis',
-          'rewrite',
-          '--body',
-          'draft',
-          '--mode',
-          mode,
+          'version',
+          'get',
+          '--author-version-id',
+          VERSION,
         ])
-      ).rejects.toThrow(/--mode must be reformat, shorten, or enrich/);
-      expect(calls.rewrite).not.toHaveBeenCalled();
-    }
-  );
-});
+      ).resolves.toEqual(version);
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'version',
+          'get',
+          '--number',
+          '42',
+          '--version',
+          '3',
+        ])
+      ).resolves.toEqual(version);
+      await expect(
+        dispatch(client(), ['thesis', 'version', 'get', '--number', '42'])
+      ).rejects.toThrow(/--author-version-id, or --number and --version/);
+      await expect(
+        dispatch(client(), ['thesis', 'get', '--number', '4.2'])
+      ).rejects.toThrow(/--number must be a positive integer/);
+      expect(fake.calls).toHaveLength(4);
+    });
 
-describe('thesis embedded dispatch', () => {
-  it('passes extracted entity direction through the AI command path', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-    const text = '看跌英伟达';
-    const candidates = {
-      mentions: [
-        {
-          quote: '英伟达',
-          ticker: 'NVDA',
-          resolution: 'RESOLVED' as const,
-          stance: 'BEARISH' as const,
-          candidates: [
+    it('maps --first, --cursor and --status onto the page queries', async () => {
+      const page = aPage([aThesis()], 'next');
+      fake = fakeV2({
+        'GET /profiles': () =>
+          aPage([
             {
-              entityId: '745337',
-              ticker: 'NVDA',
-              name: 'NVIDIA',
-              kind: 'STOCK' as const,
+              id: 'profile_0a',
+              kind: 'PERSON',
+              handle: 'ada',
+              displayName: 'Ada',
+              avatarUrl: null,
+              followerCount: 0,
+              viewerState: { following: null },
+              xHandle: null,
             },
-          ],
+          ]),
+        'GET /profiles/profile_0a/theses': () => page,
+        [`GET /assets/${ASSET}/theses`]: () => page,
+        [`GET /theses/${THESIS}/signals`]: () => aPage([]),
+        [`GET /theses/${THESIS}/updates`]: () => aPage([aVersion()]),
+        [`GET /theses/${THESIS}/related`]: () => aPage([]),
+      });
+
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'list',
+          '--person',
+          'ada',
+          '--status',
+          'archived',
+          '--first',
+          '5',
+          '--cursor',
+          'p1',
+        ])
+      ).resolves.toEqual(page);
+      await dispatch(client(), ['thesis', 'list', '--entity-id', ASSET]);
+      await dispatch(client(), [
+        'thesis',
+        'signals',
+        '--id',
+        THESIS,
+        '--first',
+        '2',
+      ]);
+      await dispatch(client(), [
+        'thesis',
+        'version',
+        'list',
+        '--id',
+        THESIS,
+        '--cursor',
+        'p2',
+      ]);
+      await dispatch(client(), ['thesis', 'related', '--id', THESIS]);
+      expect(fake.calls.map((c) => `${c.path}?${c.query}`)).toEqual([
+        '/profiles?query=ada&kind=PERSON&pageSize=50',
+        '/profiles/profile_0a/theses?archived=true&pageSize=5&pageToken=p1',
+        `/assets/${ASSET}/theses?`,
+        `/theses/${THESIS}/signals?pageSize=2`,
+        `/theses/${THESIS}/updates?pageToken=p2`,
+        `/theses/${THESIS}/related?`,
+      ]);
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'list',
+          '--user',
+          'ada',
+          '--status',
+          'old',
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      await expect(
+        dispatch(client(), ['thesis', 'list', '--user', 'ada', '--first', '0'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(fake.calls).toHaveLength(6);
+    });
+
+    it('prints RELATED_THESES_GENERATING as the error reason', async () => {
+      fake = fakeV2({
+        [`GET /theses/${THESIS}/related`]: () =>
+          problem(503, 'UNAVAILABLE', { reason: 'RELATED_THESES_GENERATING' }),
+      });
+      await expect(
+        dispatch(client(), ['thesis', 'related', '--id', THESIS])
+      ).rejects.toMatchObject({ reason: 'RELATED_THESES_GENERATING' });
+      expect(fake.calls).toHaveLength(1);
+    });
+
+    it('passes asset-candidates, return and watchpoints flags through', async () => {
+      fake = fakeV2({
+        'POST /thesis-asset-suggestions': () => ({
+          mentions: [],
+          selected: [],
+          returnPreview: null,
+        }),
+        [`GET /theses/${THESIS}/return`]: () => ({
+          tracking: 'ON',
+          return: null,
+        }),
+        [`GET /theses/${THESIS}/watchpoints`]: () => ({
+          versionId: null,
+          watchpoints: [],
+        }),
+      });
+
+      await dispatch(client(), [
+        'thesis',
+        'asset-candidates',
+        '--text',
+        'body',
+        '--entity-ids',
+        ASSET,
+        '--thesis-id',
+        THESIS,
+        '--no-discovery',
+      ]);
+      await dispatch(client(), ['thesis', 'asset-candidates', '--text', 'b']);
+      await dispatch(client(), [
+        'thesis',
+        'return',
+        '--id',
+        THESIS,
+        '--detail',
+      ]);
+      await expect(
+        dispatch(client(), ['thesis', 'watchpoints', '--id', THESIS])
+      ).resolves.toEqual({ versionId: null, watchpoints: [] });
+      expect(fake.calls.map((c) => c.body ?? `${c.query}`)).toEqual([
+        {
+          text: 'body',
+          selectedAssetIds: [ASSET],
+          thesisId: THESIS,
+          discover: false,
         },
-      ],
-      returnPreview: null,
-    };
-    calls.assetCandidates.mockResolvedValue(candidates);
+        { text: 'b', selectedAssetIds: [], discover: true },
+        'detail=true',
+        '',
+      ]);
+    });
+  });
+}
 
+describe('terminal thesis body transports', () => {
+  function create(
+    extra: string[],
+    deps: Parameters<typeof dispatchTerminal>[3]
+  ) {
+    return dispatchTerminal(
+      client(),
+      ['thesis', 'create', '--request-id', REQUEST_ID, ...extra],
+      undefined,
+      deps
+    );
+  }
+
+  it('sends file and stdin bytes as text, a BOM included', async () => {
+    fake = fakeV2({
+      'POST /theses': [() => aThesis(), () => aThesis()],
+      'POST /thesis-rewrites': () => ({ body: 'new' }),
+    });
+    const bytes = (text: string) => new TextEncoder().encode(text);
+
+    await create(['--body-file', '/tmp/bom.md'], {
+      localFiles: {
+        readText: () => 'unused',
+        readBytes: () =>
+          new Uint8Array([0xef, 0xbb, 0xbf, 0x64, 0x72, 0x61, 0x66, 0x74]),
+        writeBytes: () => undefined,
+      },
+    });
+    await create(['--body-stdin'], {
+      readStdinBytes: async () => bytes('stdin\r\nbody'),
+    });
+    expect(fake.calls.map((c) => (c.body as { body: string }).body)).toEqual([
+      '\ufeffdraft',
+      'stdin\r\nbody',
+    ]);
+  });
+
+  it('refuses malformed UTF-8 and two body sources before any request', async () => {
+    fake = fakeV2({});
+    const invalid = new Uint8Array([0xc3, 0x28]);
     await expect(
-      dispatchEmbedded(value, ['thesis', 'asset-candidates', '--text', text])
-    ).resolves.toEqual(candidates);
-    await dispatchEmbedded(value, [
-      'thesis',
-      'create',
-      '--request-id',
-      REQUEST_ID,
-      '--body',
-      text,
-      '--entity-ids',
-      '745337',
-      '--entity-stances',
-      '[{"entity_id":"745337","stance":"bearish"}]',
-    ]);
-    expect(calls.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entity_ids: ['745337'],
-        entity_stances: [{ entity_id: '745337', stance: 'bearish' }],
+      create(['--body-file', '/tmp/x.md'], {
+        localFiles: {
+          readText: () => 'unused',
+          readBytes: () => invalid,
+          writeBytes: () => undefined,
+        },
       })
+    ).rejects.toThrow(/--body-file must contain valid UTF-8/);
+    await expect(
+      dispatchTerminal(
+        client(),
+        ['thesis', 'rewrite', '--body-stdin'],
+        undefined,
+        {
+          readStdinBytes: async () => invalid,
+        }
+      )
+    ).rejects.toThrow(/--body-stdin must contain valid UTF-8/);
+    await expect(create(['--body', 'a', '--body-stdin'], {})).rejects.toThrow(
+      /exactly one/
     );
-  });
-  it('dispatches all lifecycle operations with literal bodies only', async () => {
-    const value = client();
-    const calls = mockLifecycle(value);
-
-    await dispatchEmbedded(value, [
-      'thesis',
-      'create',
-      '--request-id',
-      REQUEST_ID,
-      '--body',
-      'embedded\r\nbody',
-      '--tickers',
-      'AAPL,NVDA',
-    ]);
-    await dispatchEmbedded(value, ['thesis', 'get', '--id', THESIS.thesis.id]);
-    await dispatchEmbedded(value, [
-      'thesis',
-      'version',
-      'get',
-      '--id',
-      THESIS.thesis.id,
-      '--author-version-id',
-      THESIS.thesis.author_version_id,
-    ]);
-    await dispatchEmbedded(value, [
-      'thesis',
-      'set-visibility',
-      '--id',
-      THESIS.thesis.id,
-      '--visibility',
-      'private',
-    ]);
-    await dispatchEmbedded(value, [
-      'thesis',
-      'update',
-      '--id',
-      THESIS.thesis.id,
-      '--request-id',
-      REQUEST_ID,
-      '--expected-author-version-id',
-      THESIS.thesis.author_version_id,
-      '--body',
-      'update',
-      '--visibility',
-      'private',
-    ]);
-    await dispatchEmbedded(value, ['thesis', 'rewrite', '--body', 'rewrite']);
-
-    expect(calls.create).toHaveBeenCalledWith({
-      request_id: REQUEST_ID,
-      body: 'embedded\r\nbody',
-      title: '',
-      entity_ids: [],
-      entity_stances: undefined,
-      tickers: ['AAPL', 'NVDA'],
-      visibility: 'public',
-    });
-    expect(calls.setVisibility).toHaveBeenCalledWith(THESIS.thesis.id, {
-      visibility: 'private',
-    });
-    expect(calls.update).toHaveBeenCalledWith(
-      THESIS.thesis.id,
-      expect.objectContaining({
-        body: 'update',
-        visibility: 'private',
-      })
-    );
-    expect(calls.rewrite).toHaveBeenCalledWith({
-      body: 'rewrite',
-      mode: 'reformat',
-    });
+    expect(fake.calls).toHaveLength(0);
   });
 
-  it('rejects unsupported body transports instead of inventing filesystem support', async () => {
+  it('embedded refuses file and stdin bodies', async () => {
     await expect(
       dispatchEmbedded(client(), [
         'thesis',
         'rewrite',
         '--body-file',
-        '/tmp/thesis.md',
+        '/tmp/t.md',
       ])
     ).rejects.toThrow(/--body-file is not supported/);
     await expect(
       dispatchEmbedded(client(), ['thesis', 'rewrite', '--body-stdin'])
     ).rejects.toThrow(/--body-stdin is not supported/);
   });
-
-  it('returns embedded help with the no-retry and public-default contract', async () => {
-    const result = (await dispatchEmbedded(client(), ['thesis', '--help'])) as {
-      text: string;
-    };
-    expect(result.text).toContain('asset-candidates --text');
-    expect(result.text).toContain('--entity-stances <json>');
-    expect(result.text).toContain('returnPreview.directions');
-    expect(result.text).toContain('--no-discovery');
-    expect(result.text).toContain('--track-return false');
-    expect(result.text).toContain('"stance":"bearish"');
-    expect(result.text).toContain('never creates request IDs or retries');
-    expect(result.text).toContain('Create defaults --visibility to public');
-    expect(result.text).toContain('changes current access without publishing');
-    expect(result.text).toContain('never uses a request ID');
-    expect(result.text).toContain('--mode reformat|shorten|enrich');
-    expect(result.text).toContain('candidate only');
-  });
-
-  it.each(['reformat', 'shorten', 'enrich'] as const)(
-    'dispatches embedded rewrite mode %s without automatic selection',
-    async (mode) => {
-      const value = client();
-      const calls = mockLifecycle(value);
-
-      await dispatchEmbedded(value, [
-        'thesis',
-        'rewrite',
-        '--body',
-        'draft',
-        '--mode',
-        mode,
-      ]);
-
-      expect(calls.rewrite).toHaveBeenCalledWith({ body: 'draft', mode });
-    }
-  );
-
-  it.each(['', ' ', 'rewrite'])(
-    'rejects embedded rewrite mode %j before the resource call',
-    async (mode) => {
-      const value = client();
-      const calls = mockLifecycle(value);
-
-      await expect(
-        dispatchEmbedded(value, [
-          'thesis',
-          'rewrite',
-          '--body',
-          'draft',
-          '--mode',
-          mode,
-        ])
-      ).rejects.toThrow(/--mode must be reformat, shorten, or enrich/);
-      expect(calls.rewrite).not.toHaveBeenCalled();
-    }
-  );
 });
 
-describe('removed thesis commands', () => {
-  const UPDATE_ARGS = [
-    'thesis',
-    'update',
-    '--id',
-    '1',
-    '--request-id',
-    REQUEST_ID,
-    '--expected-author-version-id',
-    '2',
-    '--body',
-    'draft',
-    '--visibility',
-    'private',
-  ];
+describe('thesis help and removed commands', () => {
   const REMOVED = [
-    ['thesis', 'close', '--id', '1', '--expected-author-version-id', '2'],
-    ['thesis', 'delete', '--id', '1'],
+    [
+      'thesis',
+      'close',
+      '--id',
+      THESIS,
+      '--expected-author-version-id',
+      VERSION,
+    ],
+    ['thesis', 'delete', '--id', THESIS],
     [
       'thesis',
       'version',
       'delete',
       '--id',
-      '1',
+      THESIS,
       '--author-version-id',
-      '2',
+      VERSION,
       '--expected-author-version-id',
-      '3',
+      VERSION,
+    ],
+    [
+      'thesis',
+      'version',
+      'get',
+      '--id',
+      THESIS,
+      '--author-version-id',
+      VERSION,
     ],
   ];
 
-  for (const [name, dispatch] of [
-    ['terminal', dispatchTerminal],
-    ['embedded', dispatchEmbedded],
-  ] as const) {
+  for (const [name, dispatch] of RUNTIMES) {
     it.each(REMOVED)(
       `${name} rejects %s %s before any request`,
       async (...argv) => {
         const value = client();
-        const request = vi.spyOn(value, '_request');
+        const request = vi.spyOn(value, '_v2Request');
         await expect(dispatch(value, argv)).rejects.toBeInstanceOf(
           CliUsageError
         );
@@ -850,128 +682,22 @@ describe('removed thesis commands', () => {
       }
     );
 
-    it(`${name} rejects update --editorial before any request`, async () => {
-      const value = client();
-      const calls = mockLifecycle(value);
-      await expect(
-        dispatch(value, [...UPDATE_ARGS, '--editorial'])
-      ).rejects.toBeInstanceOf(CliUsageError);
-      expect(calls.update).not.toHaveBeenCalled();
-    });
-
-    it(`${name} help no longer offers close, delete, or editorial edits`, async () => {
-      const result = (await dispatch(client(), ['thesis', '--help'])) as {
+    it(`${name} help documents the v2 output, keys and inputs`, async () => {
+      const { text } = (await dispatch(client(), ['thesis', '--help'])) as {
         text: string;
       };
-      expect(result.text).not.toMatch(/\bclose\b|version delete|--editorial/);
-      expect(result.text).not.toMatch(/^\s+delete\b/m);
-    });
-  }
-});
-
-describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return-preview)', () => {
-  for (const [name, run] of [
-    ['terminal', dispatchTerminal],
-    ['embedded', dispatchEmbedded],
-  ] as const) {
-    it(`${name}: asset-candidates passes known tickers, the Thesis and no-discovery`, async () => {
-      const value = client();
-      const calls = mockLifecycle(value);
-      await run(value, [
-        'thesis',
-        'asset-candidates',
-        '--text',
-        'body',
-        '--entity-ids',
-        '745337,1',
-        '--thesis-id',
-        '9451',
-        '--no-discovery',
-      ]);
-      expect(calls.assetCandidates).toHaveBeenLastCalledWith('body', {
-        entityIds: ['745337', '1'],
-        thesisId: '9451',
-        discover: false,
-      });
-      await run(value, ['thesis', 'asset-candidates', '--text', 'body']);
-      expect(calls.assetCandidates).toHaveBeenLastCalledWith('body', {
-        entityIds: [],
-        thesisId: undefined,
-        discover: true,
-      });
-    });
-
-    it(`${name}: create and update pass --track-return`, async () => {
-      const value = client();
-      const calls = mockLifecycle(value);
-      await run(value, [
-        'thesis',
-        'create',
-        '--request-id',
-        REQUEST_ID,
-        '--body',
-        'body',
-        '--track-return',
-        'false',
-      ]);
-      expect(calls.create).toHaveBeenLastCalledWith(
-        expect.objectContaining({ track_return: false })
+      expect(text).toContain('nextPageToken');
+      expect(text).toContain('"assetId":"asset_0abc","stance":"BEARISH"');
+      expect(text).toContain('Idempotency-Key');
+      expect(text).toContain('RELATED_THESES_GENERATING');
+      expect(text).toContain('PAID_RENEWALS_END_CONFIRMATION_REQUIRED');
+      expect(text).toContain(
+        '--number <thesis-number> --version <update-number>'
       );
-      await run(value, [
-        'thesis',
-        'update',
-        '--id',
-        '1',
-        '--request-id',
-        REQUEST_ID,
-        '--expected-author-version-id',
-        '2',
-        '--body',
-        'body',
-        '--visibility',
-        'public',
-      ]);
-      expect(calls.update).toHaveBeenLastCalledWith(
-        '1',
-        expect.objectContaining({ track_return: undefined })
-      );
-      await expect(
-        run(value, [
-          'thesis',
-          'create',
-          '--request-id',
-          REQUEST_ID,
-          '--body',
-          'body',
-          '--track-return',
-          'off',
-        ])
-      ).rejects.toBeInstanceOf(CliUsageError);
-    });
-
-    it(`${name}: return reads the Thesis return`, async () => {
-      const value = client();
-      const read = vi.spyOn(value.theses, 'thesisReturn').mockResolvedValue({
-        playbookId: '9451',
-        returnTracking: 'ON',
-        thesisReturn: null,
-      });
-      await run(value, ['thesis', 'return', '--id', '9451', '--detail']);
-      expect(read).toHaveBeenLastCalledWith('9451', { detail: true });
-      await run(value, ['thesis', 'return', '--id', '9451']);
-      expect(read).toHaveBeenLastCalledWith('9451', { detail: false });
-    });
-
-    it(`${name}: watchpoints reads the Thesis's watchpoints`, async () => {
-      const value = client();
-      const read = vi
-        .spyOn(value.theses, 'watchpoints')
-        .mockResolvedValue({ playbookId: '9451', watchpoints: [] });
-      await run(value, ['thesis', 'watchpoints', '--id', '9451']);
-      expect(read).toHaveBeenLastCalledWith('9451');
-      await expect(
-        run(value, ['thesis', 'watchpoints'])
-      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(text).toContain('--mode reformat|shorten|enrich');
+      expect(text).toContain('candidate only');
+      expect(text).not.toMatch(/\bclose\b|version delete|--editorial/);
+      expect(text).not.toMatch(/nextCursor|entity_id|unchanged: true/);
     });
   }
 });

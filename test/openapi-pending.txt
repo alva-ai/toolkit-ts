@@ -8,6 +8,3 @@ src/resources/fs.ts: POST <`/fs/${op}`> (not literal)
 
 src/resources/schedules.ts: DELETE <await this.schedulePath(params)> (not literal)
 src/resources/schedules.ts: POST <`${path}/${action}`> (not literal)
-
-src/resources/theses.ts: <isStarred ? 'POST' : 'DELETE'> /me/followed-theses (not literal)
-src/resources/theses.ts: <isStarred ? 'POST' : 'DELETE'> /me/followed-theses/{} (not literal)

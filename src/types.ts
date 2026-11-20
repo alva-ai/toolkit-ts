@@ -339,66 +339,11 @@ export interface CronjobTriggerResponse {
   workflow_run_id: string;
 }
 
-// --- Release ---
-
-export interface FeedReleaseRequest {
-  name: string;
-  version: string;
-  /** Cronjob ID of the producer. */
-  cronjob_id: AlvaId;
-  view_json?: Record<string, unknown>;
-  description?: string;
-  changelog?: string;
-  /**
-   * Agent kind that produces this feed (e.g. "alpi"). Optional. Marks the feed
-   * as an agent feed whose prompt is editable; an empty/omitted value means a
-   * regular (non-agent) feed. The backend validates it against its catalog.
-   */
-  agent_type?: string;
-  /** Suppress ReleaseFeed's default publish-time first run. */
-  skip_auto_trigger?: boolean;
-}
-
-export interface FeedReleaseResponse {
-  /** Automation ID of the feed. */
-  feed_id: AlvaId;
-  name: string;
-  feed_major: number;
-  /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
-  feed_path: string;
-}
+// --- Feeds ---
 
 export interface FeedDeleteRequest {
   /** Feed (Automation) ID. */
   id: AlvaId;
-}
-
-export type FeedListStatus = 'active' | 'paused' | 'all';
-
-export interface FeedListParams {
-  /** Page size, default 50, max 100 server-side. */
-  limit?: number;
-  /** Opaque cursor token from the previous page. */
-  cursor?: string;
-  /** Runtime status filter; defaults to active on the gateway. */
-  status?: FeedListStatus;
-}
-
-export interface FeedListItem {
-  /** Feed (Automation) ID. */
-  id: AlvaId;
-  name: string;
-  /** Feed runtime status. */
-  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
-  cron_expression?: string;
-  total_runs: number;
-  used_by_total: number;
-}
-
-export interface FeedListResponse {
-  feeds: FeedListItem[];
-  next_cursor?: string;
-  has_more: boolean;
 }
 
 export interface AutomationInspectRequest {
@@ -501,93 +446,6 @@ export interface FeedStatusUpdateRequest {
   id: AlvaId;
 }
 
-export interface FeedStatusUpdateResponse {
-  /** Echoed feed (Automation) ID. */
-  id: AlvaId;
-  /** Feed runtime status after the update. */
-  status: 'ACTIVE' | 'PAUSED' | 'UNSPECIFIED' | (string & {});
-}
-
-export interface FeedDeleteResponse {
-  /** Echoed feed (Automation) ID. */
-  id: AlvaId;
-}
-
-/** Feed visibility: 'public' publishes the feed, 'private' unpublishes it. */
-export type FeedVisibility = 'public' | 'private';
-
-export interface FeedSetVisibilityRequest {
-  /** Feed (Automation) ID. */
-  id: AlvaId;
-  /** Target visibility. */
-  visibility: FeedVisibility;
-}
-
-export interface FeedSetVisibilityResponse {
-  /** Echoed feed (Automation) ID. */
-  id: AlvaId;
-  /** Feed visibility after the update. */
-  visibility: FeedVisibility;
-}
-
-export interface PlaybookDraftRequest {
-  name: string;
-  display_name: string;
-  description?: string;
-  /** Bundled feeds by Automation ID. */
-  feeds: Array<{ feed_id: AlvaId; feed_major?: number }>;
-  trading_symbols?: string[];
-  /**
-   * Optional source-skill reference in "username/name" form (e.g.
-   * "alva/screener"). The value identifies a playbook skill published to
-   * Skillhub; discover available skills via `alva skillhub list`.
-   * Persisted set-once on the playbook's first draft; subsequent drafts
-   * ignore the field.
-   */
-  skill_id?: string;
-  /**
-   * Optional discovery tags (max 10, each up to 32 characters). On a
-   * playbook's first draft these merge with any template-inherited tags;
-   * on a re-draft of an existing playbook they replace the current tag
-   * set. Omitted/empty leaves tags unchanged.
-   */
-  tags?: string[];
-}
-
-export interface PlaybookDraftResponse {
-  playbook_id: AlvaId;
-  /** Draft ID of this draft. */
-  playbook_version_id: AlvaId;
-  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
-  playbook_path: string;
-}
-
-export interface PlaybookReleaseRequest {
-  /** Explicit consent to deliver bundled non-public Feeds to the Playbook audience. */
-  confirm_bundled_feed_exposure?: boolean;
-  name: string;
-  version: string;
-  /** Bundled feeds by Automation ID. */
-  feeds: Array<{ feed_id: AlvaId; feed_major?: number }>;
-  changelog: string;
-  /**
-   * Owner-attested README location. Server validates the value is one of:
-   *   - relative: `<name>/README.md`
-   *   - absolute: `/alva/home/<username>/playbooks/<name>/README.md`
-   * The owner is responsible for placing the README at that path on ALFS
-   * before publish; the server does not write the file.
-   */
-  readme_url: string;
-}
-
-export interface PlaybookReleaseResponse {
-  playbook_id: AlvaId;
-  version: string;
-  published_url: string;
-  /** Canonical alfs path: `/alva/home/<username>/playbooks/<name>`. */
-  playbook_path: string;
-}
-
 // --- Secrets ---
 
 export interface CreateSecretRequest {
@@ -610,56 +468,6 @@ export interface Secret {
   value: string;
   createdAt: string;
   updatedAt: string;
-}
-
-// --- SDK Docs ---
-
-export interface ModuleDoc {
-  name: string;
-  doc: string;
-}
-
-export interface PartitionsResponse {
-  partitions: string[];
-}
-
-export interface PartitionSummaryResponse {
-  summary: string;
-}
-
-// --- Playbook Comments ---
-
-export interface CreateCommentRequest {
-  username: string;
-  name: string;
-  content: string;
-  /** Comment ID of the comment this replies to. */
-  parent_id?: AlvaId;
-}
-
-export interface Comment {
-  id: AlvaId;
-  playbook_id: AlvaId;
-  content: string;
-  pin_at: number | null;
-  created_at: number;
-  updated_at: number;
-  creator?: {
-    /** Profile ID of the author. */
-    id: AlvaId;
-    name: string;
-    avatar: string;
-  };
-  agent?: {
-    name: string;
-  };
-}
-
-// --- Remix ---
-
-export interface RemixRequest {
-  child: { username: string; name: string };
-  parents: Array<{ username: string; name: string }>;
 }
 
 // --- Screenshot ---

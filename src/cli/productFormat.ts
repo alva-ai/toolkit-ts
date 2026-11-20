@@ -1,29 +1,30 @@
+import type { Schema } from '../platformApi.js';
 import type {
   AutomationInspectResponse,
   ChannelGroupSubscriptionListResponse,
-  FeedListResponse,
   PushSubscriptionListResponse,
 } from '../types.js';
 
-export function formatAutomationList(result: FeedListResponse): string {
-  const automations = result.feeds ?? [];
+export function formatAutomationList(
+  result: Schema<'AutomationSummaryList'>
+): string {
+  const automations = result.items;
   if (automations.length === 0) return '(no automations)\n';
 
   const lines: string[] = [`${automations.length} automation(s):`, ''];
   for (const automation of automations) {
-    const status = automation.status ? `  [${automation.status}]` : '';
-    lines.push(`• ${automation.name || '(unnamed)'}${status}`);
+    lines.push(`• ${automation.name || '(unnamed)'}  [${automation.status}]`);
     lines.push(`    id: ${automation.id}`);
-    if (automation.cron_expression) {
-      lines.push(`    schedule: ${automation.cron_expression}`);
+    if (automation.schedule.cron) {
+      lines.push(`    schedule: ${automation.schedule.cron}`);
     }
-    lines.push(`    runs: ${automation.total_runs ?? 0}`);
-    lines.push(`    used by: ${automation.used_by_total ?? 0}`);
+    lines.push(`    runs: ${automation.totalRuns}`);
+    lines.push(`    used by: ${automation.usedByCount}`);
     lines.push('');
   }
-  if (result.has_more) {
-    lines.push('(more results — pass --cursor <next_cursor> to page)');
-    if (result.next_cursor) lines.push(`next_cursor: ${result.next_cursor}`);
+  if (result.nextPageToken !== null) {
+    lines.push('(more results — pass --cursor <nextPageToken> to page)');
+    lines.push(`nextPageToken: ${result.nextPageToken}`);
     lines.push('');
   }
   return lines.join('\n');

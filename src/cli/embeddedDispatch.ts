@@ -129,7 +129,10 @@ async function dispatchEmbeddedAutomation(
           'automation'
         );
       }
-      return client.feed.setVisibility({ id, visibility });
+      return client.feed.setVisibility(
+        id,
+        visibility === 'public' ? 'PUBLIC' : 'PRIVATE'
+      );
     }
 
     case 'automation-create': {

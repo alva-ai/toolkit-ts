@@ -13,6 +13,46 @@ import { AlvaClient } from '../src/client.js';
 import { CliUsageError } from '../src/error.js';
 import { allowance } from './billingV2.js';
 import { FUNCTION, functionInvocation, playbookFunction } from './runtimeV2.js';
+import { aPlaybook } from './contentV2.js';
+import { v2 } from './v2Schema.js';
+
+const AUTOMATION = v2('Automation', {
+  id: 'automation_0a',
+  name: 'btc-ema',
+  description: null,
+  status: 'PAUSED',
+  schedule: { cron: '0 * * * *', timezone: 'UTC' },
+  stats: {
+    totalRuns: 3,
+    succeededRuns: 3,
+    failedRuns: 0,
+    lastRunAt: null,
+    lastRunStatus: null,
+  },
+  sendsAlerts: true,
+  agentType: null,
+  cronjobId: 'cronjob_0a',
+  flow: null,
+  flowConfigPath: null,
+});
+const AUTOMATION_VERSION = v2('AutomationVersion', {
+  automationId: 'automation_0a',
+  cronjobId: 'cronjob_0a',
+  major: 1,
+  name: 'btc-ema',
+  version: '1.0.0',
+});
+const COMMENT = v2('Comment', {
+  id: 'comment_0a',
+  playbookId: 'playbook_0abc',
+  parentId: null,
+  body: 'Great',
+  author: null,
+  agentName: null,
+  pinnedAt: null,
+  createdAt: null,
+  updatedAt: null,
+});
 
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -120,29 +160,31 @@ function makeClient(
   client.run._executeSerializedArgs = vi
     .fn()
     .mockResolvedValue({ returnValue: '2', status: 'SUCCEEDED' });
-  client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
-  client.feed.list = vi.fn().mockResolvedValue({ feeds: [], has_more: false });
-  client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
-  client.feed.resume = vi
-    .fn()
-    .mockResolvedValue({ id: '42', status: 'ACTIVE' });
-  client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+  client.release.feed = vi.fn().mockResolvedValue(AUTOMATION_VERSION);
+  client.feed.list = vi.fn().mockResolvedValue({
+    items: [],
+    nextPageToken: null,
+  });
+  client.feed.stop = vi.fn().mockResolvedValue(AUTOMATION);
+  client.feed.resume = vi.fn().mockResolvedValue(AUTOMATION);
+  client.feed.delete = vi.fn().mockResolvedValue({});
   client.feed.setVisibility = vi
     .fn()
-    .mockResolvedValue({ id: '42', visibility: 'public' });
+    .mockResolvedValue({ id: 'automation_0a', visibility: 'PUBLIC' });
   client.automation.list = vi.fn().mockResolvedValue({
-    feeds: [
+    items: [
       {
-        id: '42',
+        id: 'automation_0a',
         name: 'btc-ema',
         status: 'ACTIVE',
-        cron_expression: '0 * * * *',
-        total_runs: 3,
-        used_by_total: 1,
+        schedule: { cron: '0 * * * *', timezone: 'UTC' },
+        flow: null,
+        lastRunAt: null,
+        totalRuns: 3,
+        usedByCount: 1,
       },
     ],
-    next_cursor: 'next',
-    has_more: true,
+    nextPageToken: 'next',
   });
   client.automation.inspect = vi.fn().mockResolvedValue({
     id: '42',
@@ -213,15 +255,18 @@ function makeClient(
     .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbooks.trending = vi
     .fn()
-    .mockResolvedValue({ playbooks: [], has_next: false });
-  client.playbooks.getByIds = vi.fn().mockResolvedValue({ items: [] });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.playbooks.getByIds = vi.fn().mockResolvedValue([]);
   client.playbooks.get = vi.fn().mockResolvedValue(null);
+  client.playbooks.getBySlug = vi.fn().mockResolvedValue(aPlaybook());
+  client.playbooks.update = vi.fn().mockResolvedValue(aPlaybook());
   client.playbooks.listByOwner = vi
     .fn()
-    .mockResolvedValue({ items: [], has_next: false });
+    .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbooks.listOwn = vi
     .fn()
-    .mockResolvedValue({ playbooks: [], has_next: false });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.user._username = vi.fn().mockResolvedValue('alice');
   client.subscriptions.follows = vi
     .fn()
     .mockResolvedValue({ items: [], has_next: false });
@@ -314,11 +359,26 @@ function makeClient(
   client.alerts.updatePreference = vi.fn().mockResolvedValue({
     setting: { key: 'session_completed', enabled: false },
   });
-  client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
-  client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
+  client.release.playbookDraft = vi.fn().mockResolvedValue({
+    id: 'draft_0a',
+    playbook: aPlaybook(),
+    url: null,
+  });
+  client.release.playbook = vi.fn().mockResolvedValue({
+    id: 'release_0a',
+    playbook: aPlaybook(),
+    url: null,
+    version: 'v1.0.0',
+  });
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
-  client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
-  client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
+  client.sdk.partitions = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.sdk.partitionSummary = vi.fn().mockResolvedValue({
+    id: 'sdk_partition_0a',
+    name: 'feed_widgets',
+    summary: '',
+  });
   client.dataSkills.list = vi.fn().mockResolvedValue({ skills: [] });
   client.dataSkills.summary = vi
     .fn()
@@ -326,24 +386,30 @@ function makeClient(
   client.dataSkills.endpoint = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
-  client.playbookSkills.list = vi.fn().mockResolvedValue({ skills: [] });
-  client.playbookSkills.tags = vi.fn().mockResolvedValue({ tags: [] });
+  client.playbookSkills.list = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.playbookSkills.tags = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbookSkills.get = vi.fn().mockResolvedValue({
-    username: 'alva',
+    id: 'skill_0a',
     name: 'ai-digest',
-    display_name: 'AI Digest',
+    displayName: 'AI Digest',
     description: '',
     tags: [],
-    creator_uid: 1,
-    updated_at: '',
+    owner: { id: null, handle: 'alva', displayName: null, avatarUrl: null },
+    header: null,
+    iconUrl: null,
+    promptTemplate: null,
+    updatedAt: null,
     files: [],
   });
   client.playbookSkills.file = vi.fn().mockResolvedValue({
-    username: 'alva',
-    name: 'ai-digest',
+    skillId: 'skill_0a',
     path: 'README.md',
     content: '',
-    updated_at: '',
+    updatedAt: null,
   });
   client.arraysJwt.status = vi.fn().mockResolvedValue({
     exists: true,
@@ -351,9 +417,9 @@ function makeClient(
     renewalNeeded: false,
     tier: 'PRO',
   });
-  client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
-  client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
-  client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
+  client.comments.create = vi.fn().mockResolvedValue(COMMENT);
+  client.comments.pin = vi.fn().mockResolvedValue(COMMENT);
+  client.comments.unpin = vi.fn().mockResolvedValue(COMMENT);
   client.notifications.listFeed = vi
     .fn()
     .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
@@ -380,7 +446,7 @@ function makeClient(
   client.channelGroupSubscriptions.unsubscribe = vi
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
-  client.remix.save = vi.fn().mockResolvedValue(undefined);
+  client.remix.save = vi.fn().mockResolvedValue(aPlaybook());
   client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
   client.functions.register = vi.fn().mockResolvedValue(playbookFunction());
   client.functions.list = vi.fn().mockResolvedValue({
@@ -1725,7 +1791,7 @@ describe('CLI dispatch', () => {
   it('dispatches feed delete', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);
-    expect(client.feed.delete).toHaveBeenCalledWith({ id: '42' });
+    expect(client.feed.delete).toHaveBeenCalledWith('42');
   });
 
   it('dispatches feed list with filters', async () => {
@@ -1741,55 +1807,54 @@ describe('CLI dispatch', () => {
       'abc',
     ]);
     expect(client.feed.list).toHaveBeenCalledWith({
-      status: 'all',
-      limit: 20,
-      cursor: 'abc',
+      status: undefined,
+      pageSize: 20,
+      pageToken: 'abc',
+    });
+    await dispatch(client, ['feed', 'list', '--status', 'PAUSED']);
+    expect(client.feed.list).toHaveBeenLastCalledWith({
+      status: 'PAUSED',
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
-  it('returns raw feed list for legacy feed list', async () => {
+  it('prints the /api/v2 page for feed list, active feeds by default', async () => {
     const client = makeClient();
-    client.feed.list = vi.fn().mockResolvedValue({
-      feeds: [
+    const page = {
+      items: [
         {
-          id: '42',
+          id: 'automation_0a',
           name: 'btc-ema',
           status: 'ACTIVE',
-          cron_expression: '0 * * * *',
-          total_runs: 3,
-          used_by_total: 1,
+          schedule: { cron: '0 * * * *', timezone: 'UTC' },
+          flow: null,
+          lastRunAt: null,
+          totalRuns: 3,
+          usedByCount: 1,
         },
       ],
-      next_cursor: 'next',
-      has_more: true,
-    });
-    const result = await dispatch(client, ['feed', 'list']);
-    expect(result).toEqual({
-      feeds: [
-        {
-          id: '42',
-          name: 'btc-ema',
-          status: 'ACTIVE',
-          cron_expression: '0 * * * *',
-          total_runs: 3,
-          used_by_total: 1,
-        },
-      ],
-      next_cursor: 'next',
-      has_more: true,
+      nextPageToken: 'next',
+    };
+    client.feed.list = vi.fn().mockResolvedValue(page);
+    await expect(dispatch(client, ['feed', 'list'])).resolves.toEqual(page);
+    expect(client.feed.list).toHaveBeenCalledWith({
+      status: 'ACTIVE',
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
   it('dispatches feed stop', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'stop', '--id', '42']);
-    expect(client.feed.stop).toHaveBeenCalledWith({ id: '42' });
+    expect(client.feed.stop).toHaveBeenCalledWith('42');
   });
 
   it('dispatches feed resume', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'resume', '--id', '42']);
-    expect(client.feed.resume).toHaveBeenCalledWith({ id: '42' });
+    expect(client.feed.resume).toHaveBeenCalledWith('42');
   });
 
   it('feed stop requires --id', async () => {
@@ -1816,7 +1881,7 @@ describe('CLI dispatch', () => {
   it('feed delete passes an opaque --id and rejects a padded one', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', 'automation_0abc']);
-    expect(client.feed.delete).toHaveBeenCalledWith({ id: 'automation_0abc' });
+    expect(client.feed.delete).toHaveBeenCalledWith('automation_0abc');
     await expect(
       dispatch(client, ['feed', 'delete', '--id', ' automation_0abc'])
     ).rejects.toThrow("--id must be a feed ID for 'feed delete'");
@@ -1832,10 +1897,7 @@ describe('CLI dispatch', () => {
       '--visibility',
       'public',
     ]);
-    expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id: '42',
-      visibility: 'public',
-    });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith('42', 'PUBLIC');
   });
 
   it('dispatches feed set-visibility private', async () => {
@@ -1848,10 +1910,7 @@ describe('CLI dispatch', () => {
       '--visibility',
       'private',
     ]);
-    expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id: '42',
-      visibility: 'private',
-    });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith('42', 'PRIVATE');
   });
 
   it('feed set-visibility requires --id', async () => {
@@ -1899,32 +1958,24 @@ describe('CLI dispatch', () => {
       'abc',
     ]);
     expect(client.automation.list).toHaveBeenCalledWith({
-      status: 'all',
-      limit: 20,
-      cursor: 'abc',
+      status: undefined,
+      pageSize: 20,
+      pageToken: 'abc',
     });
     expect(result).toEqual(expect.stringContaining('1 automation(s):'));
-    expect(result).toEqual(expect.stringContaining('btc-ema'));
-    expect(result).toEqual(expect.stringContaining('next_cursor: next'));
+    expect(result).toEqual(expect.stringContaining('btc-ema  [ACTIVE]'));
+    expect(result).toEqual(expect.stringContaining('schedule: 0 * * * *'));
+    expect(result).toEqual(expect.stringContaining('used by: 1'));
+    expect(result).toEqual(expect.stringContaining('nextPageToken: next'));
   });
 
   it('returns raw automation list with --json', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['automation', 'list', '--json']);
-    expect(result).toEqual({
-      feeds: [
-        {
-          id: '42',
-          name: 'btc-ema',
-          status: 'ACTIVE',
-          cron_expression: '0 * * * *',
-          total_runs: 3,
-          used_by_total: 1,
-        },
-      ],
-      next_cursor: 'next',
-      has_more: true,
-    });
+    expect(result).toEqual(
+      await vi.mocked(client.automation.list).mock.results[0].value
+    );
+    expect(result).toMatchObject({ nextPageToken: 'next' });
   });
 
   it('renders automation inspect as readable text by default', async () => {
@@ -1992,12 +2043,12 @@ describe('CLI dispatch', () => {
     expect(client.automation.publish).toHaveBeenCalledWith({
       name: 'btc',
       version: '1.0',
-      cronjob_id: 'cronjob_05',
-      view_json: { chart: 'line' },
+      cronjobId: 'cronjob_05',
+      viewJson: '{"chart":"line"}',
       description: 'BTC signal',
       changelog: 'Initial',
-      agent_type: 'alpi',
-      skip_auto_trigger: true,
+      agentType: 'alpi',
+      skipFirstRun: true,
     });
   });
 
@@ -2153,13 +2204,29 @@ describe('CLI dispatch', () => {
       'abc',
     ]);
     expect(client.playbooks.trending).toHaveBeenCalledWith({
-      keyword: 'scanner',
+      query: 'scanner',
       tags: ['macro', 'ai'],
-      sort: 'RECENT',
-      limit: 5,
-      cursor: 'abc',
-      current: undefined,
+      orderBy: 'NEWEST',
+      pageSize: 5,
+      pageToken: 'abc',
     });
+  });
+
+  it('reads keyless playbooks trending from client.v1 with the 0.x output', async () => {
+    const client = new AlvaClient({});
+    const v1 = { playbooks: [], has_next: false };
+    const trending = vi
+      .spyOn(client.v1.playbooks, 'trending')
+      .mockResolvedValue(v1);
+    const v2 = vi.spyOn(client.playbooks, 'trending');
+
+    await expect(
+      dispatch(client, ['playbooks', 'trending', '--sort', 'follows', '--json'])
+    ).resolves.toEqual(v1);
+    expect(trending).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'FOLLOWS' })
+    );
+    expect(v2).not.toHaveBeenCalled();
   });
 
   it('dispatches functions register with inline params schema', async () => {
@@ -2461,14 +2528,12 @@ describe('CLI dispatch', () => {
       'cronjob_05',
       '--skip-auto-trigger',
     ]);
-    expect(client.release.feed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc',
-        version: '1.0',
-        cronjob_id: 'cronjob_05',
-        skip_auto_trigger: true,
-      })
-    );
+    expect(client.release.feed).toHaveBeenCalledWith({
+      name: 'btc',
+      version: '1.0',
+      cronjobId: 'cronjob_05',
+      skipFirstRun: true,
+    });
   });
 
   it('dispatches release playbook-draft', async () => {
@@ -2481,15 +2546,32 @@ describe('CLI dispatch', () => {
       '--display-name',
       'BTC Trend Dashboard',
       '--feeds',
-      '[{"feed_id":100}]',
+      '[{"automationId":"automation_0a","major":2}]',
     ]);
-    expect(client.release.playbookDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc-dashboard',
-        display_name: 'BTC Trend Dashboard',
-        feeds: [{ feed_id: 100 }],
-      })
+    expect(client.release.playbookDraft).toHaveBeenCalledWith({
+      slug: 'btc-dashboard',
+      title: 'BTC Trend Dashboard',
+      automations: [{ automationId: 'automation_0a', major: 2 }],
+    });
+  });
+
+  it('refuses 0.x --feeds members before any request', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'release',
+        'playbook-draft',
+        '--name',
+        'btc-dashboard',
+        '--display-name',
+        'BTC',
+        '--feeds',
+        '[{"feed_id":"automation_0a"}]',
+      ])
+    ).rejects.toThrow(
+      /--feeds must be a JSON array of \{automationId, major\?\}/
     );
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
   });
 
   it('dispatches release playbook-draft with --skill-id', async () => {
@@ -2502,15 +2584,30 @@ describe('CLI dispatch', () => {
       '--display-name',
       'BTC Trend Dashboard',
       '--feeds',
-      '[{"feed_id":100}]',
+      '[{"automationId":"automation_0a","major":2}]',
       '--skill-id',
       'alva/screener',
     ]);
+    expect(client.playbookSkills.get).toHaveBeenCalledWith('alva/screener');
     expect(client.release.playbookDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc-dashboard',
-        skill_id: 'alva/screener',
-      })
+      expect.objectContaining({ slug: 'btc-dashboard', skillId: 'skill_0a' })
+    );
+
+    await dispatch(client, [
+      'release',
+      'playbook-draft',
+      '--name',
+      'btc-dashboard',
+      '--display-name',
+      'BTC Trend Dashboard',
+      '--feeds',
+      '[]',
+      '--skill-id',
+      'skill_0b',
+    ]);
+    expect(client.playbookSkills.get).toHaveBeenCalledTimes(1);
+    expect(client.release.playbookDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ automations: [], skillId: 'skill_0b' })
     );
   });
 
@@ -2525,7 +2622,7 @@ describe('CLI dispatch', () => {
         '--version',
         'v1.0.0',
         '--feeds',
-        '[{"feed_id":100}]',
+        '[{"automationId":"automation_0a","major":2}]',
       ])
     ).rejects.toThrow(/changelog/);
   });
@@ -2541,7 +2638,7 @@ describe('CLI dispatch', () => {
         '--version',
         'v1.0.0',
         '--feeds',
-        '[{"feed_id":100}]',
+        '[{"automationId":"automation_0a","major":2}]',
         '--changelog',
         'Initial release',
       ])
@@ -2589,23 +2686,24 @@ components: {}
         '--version',
         'v1.0.0',
         '--feeds',
-        '[{"feed_id":100}]',
+        '[{"automationId":"automation_0a","major":2}]',
         '--changelog',
         'Initial release',
         '--readme-url',
         '/alva/home/alice/playbooks/btc-dashboard/README.md',
         ...confirmationFlags,
       ]);
-      expect(client.release.playbook).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'btc-dashboard',
-          version: 'v1.0.0',
-          feeds: [{ feed_id: 100 }],
-          changelog: 'Initial release',
-          readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
-          confirm_bundled_feed_exposure: confirmation,
-        })
+      expect(client.playbooks.getBySlug).toHaveBeenCalledWith(
+        'alice',
+        'btc-dashboard'
       );
+      expect(client.release.playbook).toHaveBeenCalledWith('playbook_0abc', {
+        version: 'v1.0.0',
+        automations: [{ automationId: 'automation_0a', major: 2 }],
+        changelog: 'Initial release',
+        readmePath: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+        confirmBundledFeedExposure: confirmation,
+      });
       expect(client.fs.read).toHaveBeenCalledWith({
         path: '~/playbooks/btc-dashboard/index.html',
       });
@@ -2615,14 +2713,30 @@ components: {}
 
   it('dispatches sdk partitions', async () => {
     const client = makeClient();
-    await dispatch(client, ['sdk', 'partitions']);
-    expect(client.sdk.partitions).toHaveBeenCalled();
+    const first = { id: 'sdk_partition_0a', name: 'feed_widgets' };
+    const second = { id: 'sdk_partition_0b', name: 'unified_search' };
+    client.sdk.partitions = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [first], nextPageToken: 'p2' })
+      .mockResolvedValueOnce({ items: [second], nextPageToken: null });
+    await expect(dispatch(client, ['sdk', 'partitions'])).resolves.toEqual({
+      items: [first, second],
+      nextPageToken: null,
+    });
+    expect(client.sdk.partitions).toHaveBeenNthCalledWith(1, {
+      pageSize: 100,
+      pageToken: undefined,
+    });
+    expect(client.sdk.partitions).toHaveBeenNthCalledWith(2, {
+      pageSize: 100,
+      pageToken: 'p2',
+    });
   });
 
   it('dispatches sdk doc with --name', async () => {
     const client = makeClient();
     await dispatch(client, ['sdk', 'doc', '--name', 'ohlcv']);
-    expect(client.sdk.doc).toHaveBeenCalledWith({ name: 'ohlcv' });
+    expect(client.sdk.doc).toHaveBeenCalledWith('ohlcv');
   });
 
   it('dispatches comments create', async () => {
@@ -2637,13 +2751,11 @@ components: {}
       '--content',
       'Nice!',
     ]);
-    expect(client.comments.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: 'alice',
-        name: 'pb',
-        content: 'Nice!',
-      })
-    );
+    expect(client.playbooks.getBySlug).toHaveBeenCalledWith('alice', 'pb');
+    expect(client.comments.create).toHaveBeenCalledWith('playbook_0abc', {
+      body: 'Nice!',
+      parentId: undefined,
+    });
   });
 
   it('dispatches notification-history list-feed', async () => {
@@ -2830,10 +2942,25 @@ components: {}
       '--parents',
       '[{"username":"bob","name":"src"}]',
     ]);
-    expect(client.remix.save).toHaveBeenCalledWith({
-      child: { username: 'alice', name: 'my-pb' },
-      parents: [{ username: 'bob', name: 'src' }],
-    });
+    expect(vi.mocked(client.playbooks.getBySlug).mock.calls).toEqual([
+      ['alice', 'my-pb'],
+      ['bob', 'src'],
+    ]);
+    expect(client.remix.save).toHaveBeenCalledWith('playbook_0abc', [
+      'playbook_0abc',
+    ]);
+    await expect(
+      dispatch(client, [
+        'remix',
+        '--child-username',
+        'alice',
+        '--child-name',
+        'my-pb',
+        '--parents',
+        '["bob/src"]',
+      ])
+    ).rejects.toThrow(/--parents must be a JSON array of \{username, name\}/);
+    expect(client.remix.save).toHaveBeenCalledTimes(1);
   });
 
   it('dispatches deploy create with --no-push-notify', async () => {
@@ -4197,8 +4324,54 @@ describe('skillhub dispatch', () => {
     await dispatch(client, ['skillhub', 'list', '--tag', 'research']);
     expect(client.playbookSkills.list).toHaveBeenCalledWith({
       tag: 'research',
-      username: undefined,
+      owner: undefined,
+      pageSize: 100,
+      pageToken: undefined,
     });
+  });
+
+  it('reads every skillhub page into one list', async () => {
+    const client = makeClient();
+    const skill = (name: string) => ({
+      id: 'skill_0a',
+      name,
+      displayName: name,
+      description: `${name} skill`,
+      tags: ['research'],
+      owner: { id: null, handle: 'alva', displayName: null, avatarUrl: null },
+      header: null,
+      iconUrl: null,
+      promptTemplate: null,
+      updatedAt: null,
+    });
+    client.playbookSkills.list = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [skill('a')], nextPageToken: 'p2' })
+      .mockResolvedValueOnce({ items: [skill('b')], nextPageToken: null });
+
+    const text = await dispatch(client, [
+      'skillhub',
+      'list',
+      '--username',
+      'alva',
+    ]);
+    expect(text).toBe(
+      '• alva/a\n  a skill\n  tags: research\n• alva/b\n  b skill\n  tags: research\n'
+    );
+    expect(client.playbookSkills.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ owner: 'alva', pageToken: 'p2' })
+    );
+  });
+
+  it('reads keyless skillhub from client.v1', async () => {
+    const client = new AlvaClient({});
+    const list = vi
+      .spyOn(client.v1.playbookSkills, 'list')
+      .mockResolvedValue({ skills: [] });
+    await expect(dispatch(client, ['skillhub', 'list'])).resolves.toBe(
+      'No playbook skills found.\n'
+    );
+    expect(list).toHaveBeenCalledWith({ tag: undefined, username: undefined });
   });
 
   it('dispatches skillhub tags', async () => {
@@ -5154,40 +5327,32 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
   it('renders playbooks trending as readable text by default', async () => {
     const client = makeClient();
     client.playbooks.trending = vi.fn().mockResolvedValue({
-      playbooks: [
-        {
-          id: '1',
-          ref: 'alice/macro',
-          username: 'alice',
-          name: 'macro',
-          display_name: 'Macro',
-          description: 'Macro dashboard',
-          tags: ['macro'],
-          follow_count: 2,
-          url_path: '/u/alice/playbooks/macro',
-          url: 'https://alva.ai/u/alice/playbooks/macro',
-          cursor: 'c1',
-        },
-      ],
-      has_next: false,
+      items: [aPlaybook({ slug: 'macro', title: 'Macro' })],
+      nextPageToken: 'next',
     });
     const result = await dispatch(client, ['playbooks', 'trending']);
     expect(typeof result).toBe('string');
+    expect(result).toContain('• Macro  [public]  ★ 7');
+    expect(result).toContain('alice/macro');
     expect(result).toContain('https://alva.ai/u/alice/playbooks/macro');
+    expect(result).toContain('--cursor <nextPageToken>');
   });
 
-  it('returns the raw envelope for playbooks trending --json', async () => {
+  it('returns the /api/v2 page for playbooks trending --json', async () => {
     const client = makeClient();
-    const envelope = { playbooks: [], has_next: false };
-    client.playbooks.trending = vi.fn().mockResolvedValue(envelope);
+    const page = { items: [aPlaybook()], nextPageToken: null };
+    client.playbooks.trending = vi.fn().mockResolvedValue(page);
     const result = await dispatch(client, ['playbooks', 'trending', '--json']);
-    expect(result).toBe(envelope);
+    expect(result).toBe(page);
   });
 
   it('dispatches playbooks get --ref', async () => {
     const client = makeClient();
     await dispatch(client, ['playbooks', 'get', '--ref', 'alice/macro']);
-    expect(client.playbooks.get).toHaveBeenCalledWith({ ref: 'alice/macro' });
+    expect(client.playbooks.get).toHaveBeenCalledWith({
+      id: undefined,
+      ref: 'alice/macro',
+    });
   });
 
   it('dispatches playbooks list --owner', async () => {
@@ -5200,10 +5365,9 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--limit',
       '10',
     ]);
-    expect(client.playbooks.listByOwner).toHaveBeenCalledWith({
-      owner: 'alice',
-      limit: 10,
-      cursor: undefined,
+    expect(client.playbooks.listByOwner).toHaveBeenCalledWith('alice', {
+      pageSize: 10,
+      pageToken: undefined,
     });
   });
 
@@ -5211,19 +5375,19 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     const client = makeClient();
     await dispatch(client, ['playbooks', 'mine']);
     expect(client.playbooks.listOwn).toHaveBeenCalledWith({
-      filter: undefined,
-      limit: undefined,
-      cursor: undefined,
+      status: undefined,
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
   it('passes a validated --filter to playbooks mine', async () => {
     const client = makeClient();
-    await dispatch(client, ['playbooks', 'mine', '--filter', 'DRAFT']);
+    await dispatch(client, ['playbooks', 'mine', '--filter', 'draft']);
     expect(client.playbooks.listOwn).toHaveBeenCalledWith({
-      filter: 'draft',
-      limit: undefined,
-      cursor: undefined,
+      status: 'DRAFT',
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
@@ -5237,17 +5401,12 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
 
   it('auto-paginates playbooks list --all across pages', async () => {
     const client = makeClient();
+    const a = aPlaybook({ id: 'playbook_0a', slug: 'a' });
+    const b = aPlaybook({ id: 'playbook_0b', slug: 'b' });
     client.playbooks.listByOwner = vi
       .fn()
-      .mockResolvedValueOnce({
-        items: [{ id: '1', owner_username: 'alice', name: 'a' }],
-        has_next: true,
-        next_cursor: 'c1',
-      })
-      .mockResolvedValueOnce({
-        items: [{ id: '2', owner_username: 'alice', name: 'b' }],
-        has_next: false,
-      });
+      .mockResolvedValueOnce({ items: [a], nextPageToken: 'c1' })
+      .mockResolvedValueOnce({ items: [b], nextPageToken: null });
     const out = await dispatch(client, [
       'playbooks',
       'list',
@@ -5257,38 +5416,22 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--json',
     ]);
     expect(client.playbooks.listByOwner).toHaveBeenCalledTimes(2);
-    expect(client.playbooks.listByOwner).toHaveBeenLastCalledWith({
-      owner: 'alice',
-      limit: undefined,
-      cursor: 'c1',
+    expect(client.playbooks.listByOwner).toHaveBeenLastCalledWith('alice', {
+      pageSize: undefined,
+      pageToken: 'c1',
     });
-    expect(out).toEqual({
-      items: [
-        { id: '1', owner_username: 'alice', name: 'a' },
-        { id: '2', owner_username: 'alice', name: 'b' },
-      ],
-      has_next: false,
-    });
+    expect(out).toEqual({ items: [a, b], nextPageToken: null });
   });
 
-  it('auto-paginates playbooks mine --all with the page cursor, past an empty page', async () => {
+  it('auto-paginates playbooks mine --all with the page token, past an empty page', async () => {
     const client = makeClient();
+    const a = aPlaybook({ id: 'playbook_0a', slug: 'a' });
+    const b = aPlaybook({ id: 'playbook_0b', slug: 'b' });
     client.playbooks.listOwn = vi
       .fn()
-      .mockResolvedValueOnce({
-        playbooks: [{ id: 'playbook_01', name: 'a', cursor: 'c1' }],
-        has_next: true,
-        next_cursor: 'c1',
-      })
-      .mockResolvedValueOnce({
-        playbooks: [],
-        has_next: true,
-        next_cursor: 'c2',
-      })
-      .mockResolvedValueOnce({
-        playbooks: [{ id: 'playbook_02', name: 'b', cursor: '' }],
-        has_next: false,
-      });
+      .mockResolvedValueOnce({ items: [a], nextPageToken: 'c1' })
+      .mockResolvedValueOnce({ items: [], nextPageToken: 'c2' })
+      .mockResolvedValueOnce({ items: [b], nextPageToken: null });
     const out = await dispatch(client, [
       'playbooks',
       'mine',
@@ -5297,17 +5440,45 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     ]);
     expect(client.playbooks.listOwn).toHaveBeenCalledTimes(3);
     expect(client.playbooks.listOwn).toHaveBeenLastCalledWith({
-      filter: undefined,
-      limit: undefined,
-      cursor: 'c2',
+      status: undefined,
+      pageSize: undefined,
+      pageToken: 'c2',
     });
-    expect(out).toEqual({
-      playbooks: [
-        { id: 'playbook_01', name: 'a', cursor: 'c1' },
-        { id: 'playbook_02', name: 'b', cursor: '' },
-      ],
-      has_next: false,
+    expect(out).toEqual({ items: [a, b], nextPageToken: null });
+  });
+
+  it('sets a playbook visibility by its name, confirming bundled feeds', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'playbooks',
+      'set-visibility',
+      '--name',
+      'scanner',
+      '--visibility',
+      'Paid',
+    ]);
+    expect(client.playbooks.getBySlug).toHaveBeenCalledWith('alice', 'scanner');
+    expect(client.playbooks.update).toHaveBeenCalledWith('playbook_0abc', {
+      visibility: 'PAID',
+      confirmBundledFeedExposure: true,
+      confirmEndPaidRenewals: undefined,
     });
+    await dispatch(client, [
+      'playbooks',
+      'set-visibility',
+      '--name',
+      'scanner',
+      '--visibility',
+      'public',
+      '--confirm-end-paid-renewals',
+    ]);
+    expect(client.playbooks.update).toHaveBeenLastCalledWith(
+      'playbook_0abc',
+      expect.objectContaining({
+        visibility: 'PUBLIC',
+        confirmEndPaidRenewals: true,
+      })
+    );
   });
 });
 
@@ -5513,7 +5684,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       expect.objectContaining({
         name: 'pulse',
         version: '1.0.0',
-        cronjob_id: 'cronjob_0p1',
+        cronjobId: 'cronjob_0p1',
         description: 'Market pulse',
       })
     );
@@ -5765,10 +5936,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     );
 
     expect(client.automation.inspect).toHaveBeenCalledWith({ id });
-    expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id,
-      visibility: 'public',
-    });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith(id, 'PUBLIC');
   });
 
   it('lets automation deletion cascade a paused producer', async () => {
