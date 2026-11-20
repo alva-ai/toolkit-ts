@@ -133,7 +133,7 @@ function makeBaseDeps(
       readline: readline.fn,
       oobRedirectUrl:
         overrides.oobRedirectUrl ?? 'https://alva.ai/oauth/code/callback',
-      computerName: () => 'Mac mini',
+      keyName: () => 'Mac mini',
     },
   };
 }

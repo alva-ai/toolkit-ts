@@ -1,7 +1,8 @@
-# feat(auth): name the signed-in key after this computer
+# feat(auth): name the signed-in key after the agent and computer
 
 本地记录。连接用户自己的 AI agent 的主记录在 frontend-monorepo `docs/changelogs/2026-11-12-connect-your-ai-agent.md`。
 
 - `alva auth login` 换 key 时把本机名作为 key 名发给网关（CLI 登录没有让用户起名的步骤）。macOS 取「共享」里的电脑名称（`scutil --get ComputerName`，1 秒超时），其余系统取 hostname 并去掉 `.local`；取不到就不发，网关保持「cli」。浏览器回调和粘贴两条路径都带上。名字只出现在用户自己的 key 列表里（Web /apikey、App 状态弹窗）。本机实测取到「MacBook Pro (2)」。
 - 11-20 收窄：原先还有 `alva people follows activity`，删掉。agent 读关注的人的 Thesis 改用现有的 `alva people follows list` 加 `alva thesis list --user/--person`。
 - 验证（11-20）：`npx vitest run` 1465 通过，`tsc --noEmit`、`npm run lint` 无报错。
+- 11-20：key 名改为「<agent> · <电脑名>」。agent 先看新参数 `alva auth login --agent <名字>`（BOOTSTRAP 让 agent 自报，清洗空白、最多 32 字符），没给再从环境识别：主机名以 `grok-bot-vm-` 开头是 Grok bot，有 `HATCH_API_SOCKET` 或 `JARVIS_HATCHLING_ID` 是 Muse（两者都是自带云端电脑，虚拟机名对用户没意义，只用 agent 名）；然后读 `AI_AGENT`（取 `@`/`_` 前的 slug，Claude Code 发 `claude-code_2-1-326_agent`）；再看各家变量：`CLAUDECODE`（`CLAUDE_CODE_ENTRYPOINT=claude-desktop` 写 Claude，其余写 Claude Code）、`CODEX_THREAD_ID`/`CODEX_SANDBOX`、`OPENCLAW_SHELL=exec`、`HERMES_AGENT`/`HERMES_SESSION_ID`、`CURSOR_AGENT`、`GEMINI_CLI`。云端平台先判断：Grok bot 的虚拟机里也有 `CURSOR_AGENT`，后判会误认成 Cursor。Grok bot、Muse 的信号来自 11-20 在两者里实跑命令只看变量名；Hatch/Jarvis 是对方内部代号，可能变，所以以 `--agent` 为主。只上报拼好的名字，不传任何变量值。验证：`npx vitest run` 1470 通过（新增 `detectAgent`、`keyName`、`--agent` 透传用例），`tsc --noEmit`、`npm run lint` 无报错；本机实测得到「Claude · MacBook Pro (2)」。
