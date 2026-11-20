@@ -3,6 +3,7 @@ import { AlvaClient } from '../../src/client.js';
 import { CliUsageError } from '../../src/error.js';
 import { dispatch as dispatchTerminal } from '../../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../../src/cli/embeddedDispatch.js';
+import { companyNewsFeed } from '../marketV2.js';
 
 for (const [surface, dispatch] of [
   ['terminal', dispatchTerminal],
@@ -61,10 +62,7 @@ for (const [surface, dispatch] of [
     }
     it('creates a multi-ticker managed feed with one call and returns its IDs unchanged', async () => {
       const client = new AlvaClient({ apiKey: 'key' });
-      const result = {
-        feed_id: 'automation_0news',
-        cronjob_id: 'cronjob_0news',
-      };
+      const result = companyNewsFeed();
       const create = vi
         .spyOn(client.companyNews, 'create')
         .mockResolvedValue(result);
@@ -84,17 +82,16 @@ for (const [surface, dispatch] of [
       expect(create).toHaveBeenCalledExactlyOnceWith({
         name: 'my-news',
         tickers: ['NVDA', 'AMD'],
-        initial_lookback_hours: 48,
-        page_size: 30,
+        initialLookbackHours: 48,
+        batchSize: 30,
       });
     });
 
     it('leaves optional limits to the backend', async () => {
       const client = new AlvaClient({ apiKey: 'key' });
-      const create = vi.spyOn(client.companyNews, 'create').mockResolvedValue({
-        feed_id: 'automation_0a',
-        cronjob_id: 'cronjob_0a',
-      });
+      const create = vi
+        .spyOn(client.companyNews, 'create')
+        .mockResolvedValue(companyNewsFeed());
       await dispatch(client, [
         'company-news',
         'create',
@@ -113,7 +110,6 @@ for (const [surface, dispatch] of [
       [],
       ['--name', 'my-news'],
       ['--tickers', 'NVDA'],
-      ['--name', 'my-news', '--tickers', 'NVDA,,AMD'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--page-size', '1.5'],
       [
         '--name',
@@ -123,7 +119,6 @@ for (const [surface, dispatch] of [
         '--initial-lookback-hours',
         '-1',
       ],
-      ['--name', 'my-news', '--tickers', 'NVDA', '--page-size', '101'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--path', '~/pipeline.js'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--uid', '42'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--start'],

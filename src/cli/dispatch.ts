@@ -19,10 +19,6 @@ import {
   validateForYouThesesParams,
 } from '../resources/forYou.js';
 import { requireDecision } from '../resources/steward.js';
-import {
-  validateCompanyNewsCreateParams,
-  type CreateCompanyNewsParams,
-} from '../resources/companyNews.js';
 import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import type { Schema } from '../platformApi.js';
@@ -199,9 +195,10 @@ Options:
   --initial-lookback-hours <0-168> Initial history window (default: 24; 0 selects default)
   --page-size <0-100>              Editorial batch size (default: 20; 0 selects default)
 
-New feeds are paused. Returns feed_id (an Automation ID) and cronjob_id.
-Creation does not run the model or resume the producer. After reviewing the
-configuration, use 'alva feed resume --id <feed_id>' to start paid execution.
+New feeds are paused. Returns the /api/v2 CompanyNewsFeed: id (the feed's
+Automation ID) and cronjobId (its producer). Creation does not run the model
+or resume the producer. After reviewing the configuration, use
+'alva feed resume --id <id>' to start paid execution.
 Model credits are charged to the authenticated creator, not the platform.
 This is pull-only: starting the producer does not enable push notifications.
 Retry an unclear result with the same name and configuration; an existing
@@ -3830,15 +3827,15 @@ export async function executeParsedCommand(
       if (subcommand !== 'create') {
         throw new CliUsageError('Expected company-news create', 'company-news');
       }
-      const params: CreateCompanyNewsParams = {
+      const config: Schema<'CompanyNewsFeedConfig'> = {
         name: requireFlag(flags, 'name', 'company-news create'),
         tickers: requireFlag(flags, 'tickers', 'company-news create')
           .split(',')
           .map((ticker) => ticker.trim()),
       };
       for (const [flag, field] of [
-        ['initial-lookback-hours', 'initial_lookback_hours'],
-        ['page-size', 'page_size'],
+        ['initial-lookback-hours', 'initialLookbackHours'],
+        ['page-size', 'batchSize'],
       ] as const) {
         const value = flags[flag];
         if (value === undefined) continue;
@@ -3848,19 +3845,9 @@ export async function executeParsedCommand(
             'company-news'
           );
         }
-        params[field] = Number(value);
+        config[field] = Number(value);
       }
-      try {
-        validateCompanyNewsCreateParams(params);
-      } catch (error) {
-        throw new CliUsageError(
-          error instanceof Error
-            ? error.message
-            : 'Invalid company news configuration',
-          'company-news'
-        );
-      }
-      return client.companyNews.create(params);
+      return client.companyNews.create(config);
     }
 
     case 'thesis': {

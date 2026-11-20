@@ -21,11 +21,7 @@ export {
   AutomationResource,
 } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
-export {
-  CompanyNewsResource,
-  type CreateCompanyNewsParams,
-  type CreateCompanyNewsResponse,
-} from './resources/companyNews.js';
+export { CompanyNewsResource } from './resources/companyNews.js';
 export {
   ThesesResource,
   type Thesis,
