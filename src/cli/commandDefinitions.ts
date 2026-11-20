@@ -70,7 +70,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   // deeper leaves.
   command('auth'),
   command('auth login', {
-    values: ['profile', 'auth-url', 'base-url'],
+    values: ['profile', 'auth-url', 'base-url', 'agent'],
     booleans: ['browser', 'no-browser'],
   }),
   command('whoami'),

@@ -271,7 +271,7 @@ Examples:
   alva configure --profile staging --api-key alva_stg_key --base-url https://api-llm.stg.alva.ai
   alva --profile staging whoami`,
 
-  auth: `Usage: alva auth login [--browser | --no-browser] [--profile <name>]
+  auth: `Usage: alva auth login [--browser | --no-browser] [--profile <name>] [--agent <name>]
 
 By default, opens a browser locally and listens for the OAuth callback. Use
 --no-browser for SSH / container / headless environments — alva will print
@@ -288,12 +288,16 @@ Flags:
   --browser           Force the local browser + 127.0.0.1 callback flow
   --no-browser        Force the paste-code flow (no local listener)
   --profile <name>    Profile name to save credentials under (default: "default")
+  --agent <name>      The AI agent signing in, e.g. "Claude Code" or "Grok bot".
+                      The new key is named "<agent> · <computer>"; without it
+                      the agent is detected from the environment when it can be.
 
 Examples:
   alva auth login                       # auto-detect
   alva auth login --no-browser          # force paste-code flow
   alva auth login --browser             # force browser flow
-  alva auth login --profile staging`,
+  alva auth login --profile staging
+  alva auth login --agent "Codex"`,
 
   whoami: `Usage: alva whoami [--profile <name>]
 
