@@ -82,6 +82,26 @@ under `client.v1`, and move back when their route exists:
   `--newer-than` stays removed.
 - `getByIds([])` returns `[]` without a request; reads that return `null`
   for a missing resource do so only on 404 (403 is thrown).
+- Renamed: `markets.earningsPeriods` is `earningsCalendar`,
+  `credits.items` is `entries`, `portfolio.summary` is `snapshot`,
+  `trading.equityHistory` is `equity`, `deploy.getRunStatus` is
+  `getDispatch`, `notificationPreferences.list` is `get`,
+  `alerts.historyAutomation` is `history`, `alerts.updatePreference` is
+  `updatePreferences`, `theses.setArchived` is `archive` and `unarchive`,
+  and `playbooks.setVisibility` is `update`.
+- Removed: `trading.accounts` and `trading.portfolio` (use
+  `portfolio.accounts` and `portfolio.snapshot`), `fs.rawWrite` (`fs.write`
+  takes bytes), `follows.addToWatchlist` and `removeFromWatchlist` (use
+  `followAssets` and `unfollowAssets` with Asset IDs), and the methods moved
+  to `client.v1` (above). The 0.x request and response types are gone: use
+  the generated `Schema<'…'>` and `V2Query<…>` types.
+- New: `asks`, `markets.assetBySymbol`, `tradingPairs.list`,
+  `theses.getByNumber` and `getVersionByNumber`, `playbooks.getBySlug`,
+  `deploy.runStats`, the `schedules` Session Inbox methods
+  (`listSession`, `putSession`, `pauseSession`, `resumeSession`,
+  `deleteSession`), `follows.followAssets`, `unfollowAsset`,
+  `unfollowAssets` and `followCounts`, `subscriptions.unsubscribe` and
+  `notifications.list`.
 
 ### Per resource
 
