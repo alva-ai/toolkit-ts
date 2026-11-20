@@ -1,4 +1,5 @@
 import type { AlvaClient } from '../client.js';
+import { V1FsResource } from './fs.js';
 import { V1NotificationsResource } from './notifications.js';
 import { V1PlaybooksResource } from './playbooks.js';
 import { V1PlaybookSkillsResource } from './playbookSkills.js';
@@ -12,6 +13,7 @@ import { V1TradingResource } from './trading.js';
  * CHANGELOG 1.0.0 lists them.
  */
 export class V1Resources {
+  private _fs?: V1FsResource;
   private _notifications?: V1NotificationsResource;
   private _playbooks?: V1PlaybooksResource;
   private _playbookSkills?: V1PlaybookSkillsResource;
@@ -19,6 +21,11 @@ export class V1Resources {
   private _trading?: V1TradingResource;
 
   constructor(private readonly client: AlvaClient) {}
+
+  /** ALFS files with a PBSV or viewer token, or public reads without a credential. */
+  get fs(): V1FsResource {
+    return (this._fs ??= new V1FsResource(this.client));
+  }
 
   /** A feed's notification history by owner and name. */
   get notifications(): V1NotificationsResource {

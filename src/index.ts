@@ -15,6 +15,15 @@ export {
 export type { Page, Schema, V2Query } from './platformApi.js';
 export type { components, paths } from './generated/platform-v2.js';
 export { V1Resources } from './v1/index.js';
+export type {
+  FsChangeOptions,
+  FsReadOptions,
+  FsReadResult,
+  FsWriteOptions,
+} from './resources/fs.js';
+export type { SecretWriteOptions } from './resources/secrets.js';
+export type { ServiceAccountWriteOptions } from './resources/serviceAccount.js';
+export { V1FsResource } from './v1/fs.js';
 export { V1NotificationsResource } from './v1/notifications.js';
 export { V1SecretsResource } from './v1/secrets.js';
 export * from './playbookRuntime.js';

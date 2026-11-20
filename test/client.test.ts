@@ -234,7 +234,7 @@ describe('AlvaClient', () => {
       });
       const client = new AlvaClient({});
 
-      const result = await client.fs.read({ path: '~/hello.txt' });
+      const result = await client.v1.fs.read({ path: '~/hello.txt' });
 
       expect(result).toBe(text);
     });
@@ -249,7 +249,7 @@ describe('AlvaClient', () => {
       });
       const client = new AlvaClient({});
 
-      const result = await client.fs.read({ path: '~/image.bin' });
+      const result = await client.v1.fs.read({ path: '~/image.bin' });
 
       expect(result).toBe(bytes);
     });

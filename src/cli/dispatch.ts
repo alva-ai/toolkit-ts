@@ -397,9 +397,10 @@ Examples:
   fs: `Usage: alva fs <subcommand> [options]
 
 Subcommands:
-  read       Read a file or time series data
+  read       Read a file or time series data (prints the bytes: text as is)
   write      Write content to a file (use --data for inline, --file for upload)
-  stat       Get file metadata (name, size, mode, mod_time, is_dir)
+  stat       Get file metadata (the /api/v2 FileInfo: name, sizeBytes, mode,
+             updatedAt, isDirectory, contentType, meta)
   readdir    List directory contents
   mkdir      Create a directory (recursive by default)
   remove     Delete a file or directory
@@ -412,7 +413,8 @@ Subcommands:
   revoke     Revoke access permission
 
 Subcommand flags:
-  read       --path (required), [--offset <n>], [--size <n>]
+  read       --path (required), [--offset <n>], [--size <n>] (one byte range;
+             a file over 32 MiB needs one)
   write      --path (required), --data <text> OR --file <local-path> (one required),
              [--append], [--mkdir-parents | --no-mkdir-parents]
   stat       --path (required)
@@ -429,7 +431,8 @@ Subcommand flags:
 
 Path conventions:
   ~/...                  Home-relative filesystem location (for example, --path and --link-path)
-  /alva/home/alice/...   Absolute path (required for public/unauthenticated reads)
+  /alva/home/alice/...   Absolute path (required for public reads without an API
+                         key, which read /api/v1)
   Quote tilde paths to prevent shell expansion: --path "~/data" (not --path ~/data).
 
 Symlink targets:
@@ -2147,6 +2150,27 @@ function projectNotificationHistoryForCLI(response: unknown): unknown {
   };
 }
 
+/** The Range header of --offset and --size, or undefined for the whole file. */
+function byteRange(
+  offset: number | undefined,
+  size: number | undefined
+): string | undefined {
+  if (offset === undefined && size === undefined) return undefined;
+  const start = offset ?? 0;
+  return size === undefined
+    ? `bytes=${start}-`
+    : `bytes=${start}-${start + size - 1}`;
+}
+
+/** Text when the bytes are UTF-8 (printed as is), else the bytes. */
+function utf8OrBytes(data: ArrayBuffer): string | ArrayBuffer {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(data);
+  } catch {
+    return data;
+  }
+}
+
 /** An RFC 3339 --since/--until for a /api/v1 route that takes Unix seconds. */
 function unixSecondsFlag(
   flags: Record<string, string>,
@@ -3620,33 +3644,40 @@ export async function executeParsedCommand(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for fs', 'fs');
       switch (subcommand) {
-        case 'read':
-          return client.fs.read({
-            path: requireFlag(flags, 'path', 'fs read'),
-            offset: num(flags['offset']),
-            size: num(flags['size']),
-          });
-        case 'write':
+        case 'read': {
+          const path = requireFlag(flags, 'path', 'fs read');
+          const offset = num(flags['offset']);
+          const size = num(flags['size']);
+          // A public read without an API key keeps /api/v1.
+          if (!client.apiKey) return client.v1.fs.read({ path, offset, size });
+          const file = await client.fs.read(
+            { path },
+            { range: byteRange(offset, size) }
+          );
+          return utf8OrBytes(file.data);
+        }
+        case 'write': {
+          const query = {
+            path: requireFlag(flags, 'path', 'fs write'),
+            mode: boolFlag(flags['append']) ? 'APPEND' : undefined,
+            mkdirParents: boolFlag(flags['mkdir-parents']) ?? true,
+          } as const;
           if (flags['file']) {
-            const fileData = readLocalFileBytes(
+            // The Node adapter reads a Buffer.
+            const bytes = readLocalFileBytes(
               flags['file'],
               'fs write',
               'file',
               deps
-            );
-            return client.fs.rawWrite({
-              path: requireFlag(flags, 'path', 'fs write'),
-              body: fileData,
-              mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
-              append: boolFlag(flags['append']),
-            });
+            ) as BufferSource;
+            return client.fs.write(query, bytes);
           }
-          return client.fs.write({
-            path: requireFlag(flags, 'path', 'fs write'),
-            data: requireFlag(flags, 'data', 'fs write'),
-            mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
-            append: boolFlag(flags['append']),
-          });
+          return client.fs.write(
+            query,
+            requireFlag(flags, 'data', 'fs write'),
+            { contentType: 'text/plain; charset=utf-8' }
+          );
+        }
         case 'stat':
           return client.fs.stat({
             path: requireFlag(flags, 'path', 'fs stat'),
@@ -3667,18 +3698,18 @@ export async function executeParsedCommand(
           });
         case 'rename':
           return client.fs.rename({
-            old_path: requireFlag(flags, 'old-path', 'fs rename'),
-            new_path: requireFlag(flags, 'new-path', 'fs rename'),
+            oldPath: requireFlag(flags, 'old-path', 'fs rename'),
+            newPath: requireFlag(flags, 'new-path', 'fs rename'),
           });
         case 'copy':
           return client.fs.copy({
-            src_path: requireFlag(flags, 'src-path', 'fs copy'),
-            dst_path: requireFlag(flags, 'dst-path', 'fs copy'),
+            srcPath: requireFlag(flags, 'src-path', 'fs copy'),
+            dstPath: requireFlag(flags, 'dst-path', 'fs copy'),
           });
         case 'symlink':
           return client.fs.symlink({
-            target_path: requireFlag(flags, 'target-path', 'fs symlink'),
-            link_path: requireFlag(flags, 'link-path', 'fs symlink'),
+            targetPath: requireFlag(flags, 'target-path', 'fs symlink'),
+            linkPath: requireFlag(flags, 'link-path', 'fs symlink'),
           });
         case 'readlink':
           return client.fs.readlink({

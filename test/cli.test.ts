@@ -101,6 +101,20 @@ afterEach(() => {
   }
 });
 
+/** An fs.read answer of `content`: text, or bytes. */
+function fileContent(content: string | Uint8Array) {
+  const bytes =
+    typeof content === 'string' ? new TextEncoder().encode(content) : content;
+  return {
+    data: bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    ),
+    contentType: 'application/octet-stream',
+    contentRange: null,
+  };
+}
+
 function makeClient(
   originSessionId?: string,
   originSessionKind?: string
@@ -114,20 +128,19 @@ function makeClient(
   client.user.me = vi
     .fn()
     .mockResolvedValue(aMe({ toolkitMinVersion: '0.1.0' }));
-  client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
-  client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
+  client.fs.read = vi.fn().mockResolvedValue(fileContent('hello'));
+  client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', sizeBytes: 0 });
   client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
-  client.fs.write = vi.fn().mockResolvedValue({ bytes_written: 2 });
-  client.fs.rawWrite = vi.fn().mockResolvedValue({ bytes_written: 2 });
-  client.fs.mkdir = vi.fn().mockResolvedValue(undefined);
-  client.fs.remove = vi.fn().mockResolvedValue(undefined);
-  client.fs.rename = vi.fn().mockResolvedValue(undefined);
-  client.fs.copy = vi.fn().mockResolvedValue(undefined);
-  client.fs.symlink = vi.fn().mockResolvedValue(undefined);
-  client.fs.readlink = vi.fn().mockResolvedValue({ target: '/t' });
-  client.fs.chmod = vi.fn().mockResolvedValue(undefined);
-  client.fs.grant = vi.fn().mockResolvedValue(undefined);
-  client.fs.revoke = vi.fn().mockResolvedValue(undefined);
+  client.fs.write = vi.fn().mockResolvedValue({ bytesWritten: 2 });
+  client.fs.mkdir = vi.fn().mockResolvedValue({});
+  client.fs.remove = vi.fn().mockResolvedValue({});
+  client.fs.rename = vi.fn().mockResolvedValue({});
+  client.fs.copy = vi.fn().mockResolvedValue({});
+  client.fs.symlink = vi.fn().mockResolvedValue({});
+  client.fs.readlink = vi.fn().mockResolvedValue({ targetPath: '/t' });
+  client.fs.chmod = vi.fn().mockResolvedValue({});
+  client.fs.grant = vi.fn().mockResolvedValue({});
+  client.fs.revoke = vi.fn().mockResolvedValue({});
   client.deploy.list = vi.fn().mockResolvedValue({ cronjobs: [] });
   client.deploy.create = vi.fn().mockResolvedValue({ id: 'cronjob_0p1' });
   client.deploy._createSerializedArgs = vi
@@ -472,12 +485,60 @@ describe('CLI dispatch', () => {
     expect(result).toEqual(aMe({ toolkitMinVersion: '0.1.0' }));
   });
 
-  it('dispatches fs read with --path', async () => {
+  it('dispatches fs read with --path and prints UTF-8 bytes as text', async () => {
     const client = makeClient();
-    await dispatch(client, ['fs', 'read', '--path', '~/f']);
-    expect(client.fs.read).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '~/f' })
+    expect(await dispatch(client, ['fs', 'read', '--path', '~/f'])).toBe(
+      'hello'
     );
+    expect(client.fs.read).toHaveBeenCalledWith(
+      { path: '~/f' },
+      { range: undefined }
+    );
+  });
+
+  it('fs read turns --offset and --size into one byte range', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'fs',
+      'read',
+      '--path',
+      '~/f',
+      '--offset',
+      '10',
+      '--size',
+      '5',
+    ]);
+    await dispatch(client, ['fs', 'read', '--path', '~/f', '--offset', '10']);
+    await dispatch(client, ['fs', 'read', '--path', '~/f', '--size', '5']);
+    expect(vi.mocked(client.fs.read).mock.calls.map((c) => c[1])).toEqual([
+      { range: 'bytes=10-14' },
+      { range: 'bytes=10-' },
+      { range: 'bytes=0-4' },
+    ]);
+  });
+
+  it('fs read prints bytes that are not UTF-8 as bytes', async () => {
+    const client = makeClient();
+    client.fs.read = vi
+      .fn()
+      .mockResolvedValue(fileContent(new Uint8Array([0xff, 0xfe])));
+    const result = await dispatch(client, ['fs', 'read', '--path', '~/b']);
+    expect(new Uint8Array(result as ArrayBuffer)).toEqual(
+      new Uint8Array([0xff, 0xfe])
+    );
+  });
+
+  it('fs read without an API key reads publicly through client.v1', async () => {
+    const client = new AlvaClient({});
+    client.v1.fs.read = vi.fn().mockResolvedValue('public');
+    expect(
+      await dispatch(client, ['fs', 'read', '--path', '/alva/home/a/f'])
+    ).toBe('public');
+    expect(client.v1.fs.read).toHaveBeenCalledWith({
+      path: '/alva/home/a/f',
+      offset: undefined,
+      size: undefined,
+    });
   });
 
   it('dispatches fs write --append for text data', async () => {
@@ -491,12 +552,11 @@ describe('CLI dispatch', () => {
       'next',
       '--append',
     ]);
-    expect(client.fs.write).toHaveBeenCalledWith({
-      path: '~/f',
-      data: 'next',
-      mkdir_parents: true,
-      append: true,
-    });
+    expect(client.fs.write).toHaveBeenCalledWith(
+      { path: '~/f', mode: 'APPEND', mkdirParents: true },
+      'next',
+      { contentType: 'text/plain; charset=utf-8' }
+    );
   });
 
   it('dispatches fs write --append for local file data', async () => {
@@ -513,12 +573,10 @@ describe('CLI dispatch', () => {
       '/tmp/next.txt',
       '--append',
     ]);
-    expect(client.fs.rawWrite).toHaveBeenCalledWith({
-      path: '~/f',
-      body: Buffer.from('next'),
-      mkdir_parents: true,
-      append: true,
-    });
+    expect(client.fs.write).toHaveBeenCalledWith(
+      { path: '~/f', mode: 'APPEND', mkdirParents: true },
+      Buffer.from('next')
+    );
     mock.mockReset();
   });
 
@@ -2673,8 +2731,10 @@ describe('CLI dispatch', () => {
       client.fs.read = vi
         .fn()
         .mockResolvedValue(
-          '<html><head><style>body{font-family:Delight}</style></head>' +
-            '<body><div class="playbook-container"><p>ok</p></div></body></html>'
+          fileContent(
+            '<html><head><style>body{font-family:Delight}</style></head>' +
+              '<body><div class="playbook-container"><p>ok</p></div></body></html>'
+          )
         );
       const TEST_CONTRACT_YAML = `
 version: 1
@@ -4724,7 +4784,9 @@ components: {}
     const client = makeClient();
     client.fs.read = vi
       .fn()
-      .mockResolvedValue('<html><body><p>no container</p></body></html>');
+      .mockResolvedValue(
+        fileContent('<html><body><p>no container</p></body></html>')
+      );
     vi.mocked(fs.readFileSync).mockClear();
 
     const result = await handleLintPlaybook({
@@ -4755,11 +4817,10 @@ components: {}
     const client = makeClient();
     const html = '<html><body><p>no container</p></body></html>';
     const bytes = [...new TextEncoder().encode(html)];
-    client.fs.read = vi
-      .fn()
-      .mockResolvedValue(
-        runInNewContext(`new Uint8Array(${JSON.stringify(bytes)}).buffer`)
-      );
+    client.fs.read = vi.fn().mockResolvedValue({
+      ...fileContent(''),
+      data: runInNewContext(`new Uint8Array(${JSON.stringify(bytes)}).buffer`),
+    });
 
     const result = await handleLintPlaybook({
       file: '~/playbooks/demo/index.html',
