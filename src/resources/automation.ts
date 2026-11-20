@@ -2,10 +2,6 @@ import type { AlvaClient } from '../client.js';
 import { v2Path, type Schema } from '../platformApi.js';
 import type { FeedListQuery } from './feed.js';
 import type { ReleaseWriteOptions } from './release.js';
-import type {
-  FeedDeleteRequest,
-  FeedStatusUpdateRequest,
-} from '../types.js';
 
 export interface AutomationWriteOptions {
   /** Idempotency-Key of the write; a new UUID when omitted. */
@@ -51,16 +47,16 @@ export class AutomationResource {
     );
   }
 
-  stop(params: FeedStatusUpdateRequest): Promise<Schema<'Automation'>> {
-    return this.client.feed.stop(params.id);
+  stop(automationId: string): Promise<Schema<'Automation'>> {
+    return this.client.feed.stop(automationId);
   }
 
-  resume(params: FeedStatusUpdateRequest): Promise<Schema<'Automation'>> {
-    return this.client.feed.resume(params.id);
+  resume(automationId: string): Promise<Schema<'Automation'>> {
+    return this.client.feed.resume(automationId);
   }
 
-  delete(params: FeedDeleteRequest): Promise<Record<string, never>> {
-    return this.client.feed.delete(params.id);
+  delete(automationId: string): Promise<Record<string, never>> {
+    return this.client.feed.delete(automationId);
   }
 
   publish(

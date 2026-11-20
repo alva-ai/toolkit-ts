@@ -4574,17 +4574,17 @@ export async function executeParsedCommand(
           }
         }
         case 'stop':
-          return client.automation.stop({
-            id: requireFlag(flags, 'id', 'automation stop'),
-          });
+          return client.automation.stop(
+            requireFlag(flags, 'id', 'automation stop')
+          );
         case 'resume':
-          return client.automation.resume({
-            id: requireFlag(flags, 'id', 'automation resume'),
-          });
+          return client.automation.resume(
+            requireFlag(flags, 'id', 'automation resume')
+          );
         case 'delete':
-          return client.automation.delete({
-            id: requireFlag(flags, 'id', 'automation delete'),
-          });
+          return client.automation.delete(
+            requireFlag(flags, 'id', 'automation delete')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: automation ${subcommand}`,

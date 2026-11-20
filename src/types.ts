@@ -137,16 +137,6 @@ export interface FsRevokeParams {
   permission: string;
 }
 
-export interface FeedDeleteRequest {
-  /** Feed (Automation) ID. */
-  id: AlvaId;
-}
-
-export interface FeedStatusUpdateRequest {
-  /** Feed (Automation) ID. */
-  id: AlvaId;
-}
-
 // --- Secrets ---
 
 /** A secret with its value, as /api/v1 returns it (`client.v1.secrets.get`). */

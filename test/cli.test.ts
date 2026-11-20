@@ -225,7 +225,7 @@ function makeClient(
     nextPageToken: 'next',
   });
   client.automation.inspect = vi.fn().mockResolvedValue(anAutomation());
-  client.automation.publish = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.automation.publish = vi.fn().mockResolvedValue(AUTOMATION_VERSION);
   client.automation.update = vi.fn().mockResolvedValue({
     automationId: 'automation_0abc',
     name: 'btc',
@@ -237,13 +237,11 @@ function makeClient(
     .fn()
     .mockResolvedValue(anAutomationDelivery());
   client.automation.delivery.update = vi.fn().mockResolvedValue(anAutomation());
-  client.automation.stop = vi
-    .fn()
-    .mockResolvedValue({ id: '42', status: 'PAUSED' });
+  client.automation.stop = vi.fn().mockResolvedValue(AUTOMATION);
   client.automation.resume = vi
     .fn()
-    .mockResolvedValue({ id: '42', status: 'ACTIVE' });
-  client.automation.delete = vi.fn().mockResolvedValue({ id: '42' });
+    .mockResolvedValue({ ...AUTOMATION, status: 'ACTIVE' });
+  client.automation.delete = vi.fn().mockResolvedValue({});
   client.schedules.agentChannelId = vi.fn().mockResolvedValue('channel_0ch');
   client.schedules.list = vi
     .fn()
@@ -2205,15 +2203,9 @@ describe('CLI dispatch', () => {
     await dispatch(client, ['automation', 'stop', '--id', 'automation_0a']);
     await dispatch(client, ['automation', 'resume', '--id', 'automation_0b']);
     await dispatch(client, ['automation', 'delete', '--id', 'automation_0c']);
-    expect(client.automation.stop).toHaveBeenCalledWith({
-      id: 'automation_0a',
-    });
-    expect(client.automation.resume).toHaveBeenCalledWith({
-      id: 'automation_0b',
-    });
-    expect(client.automation.delete).toHaveBeenCalledWith({
-      id: 'automation_0c',
-    });
+    expect(client.automation.stop).toHaveBeenCalledWith('automation_0a');
+    expect(client.automation.resume).toHaveBeenCalledWith('automation_0b');
+    expect(client.automation.delete).toHaveBeenCalledWith('automation_0c');
   });
 
   it('dispatches playbooks trending with agent-friendly filters', async () => {
@@ -5833,7 +5825,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       })
     );
     expect(result).toEqual({
-      automation: { feed_id: 1 },
+      automation: AUTOMATION_VERSION,
       producer: aCronjob({ id: 'cronjob_0p1' }),
     });
   });
@@ -6083,7 +6075,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.pause).toHaveBeenCalledWith('cronjob_0p420');
-    expect(client.automation.delete).toHaveBeenCalledWith({ id: '42' });
+    expect(client.automation.delete).toHaveBeenCalledWith('42');
     expect(client.deploy.delete).not.toHaveBeenCalled();
     expect(result).toEqual({
       automation_id: '42',
@@ -6111,7 +6103,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
     );
 
     expect(client.automation.inspect).toHaveBeenCalledWith(id);
-    expect(client.automation.delete).toHaveBeenCalledWith({ id });
+    expect(client.automation.delete).toHaveBeenCalledWith(id);
     expect(client.deploy.pause).not.toHaveBeenCalled();
     expect(client.deploy.delete).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -6130,7 +6122,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.pause).toHaveBeenCalledWith('cronjob_0p420');
-    expect(client.automation.stop).toHaveBeenCalledWith({ id: '42' });
+    expect(client.automation.stop).toHaveBeenCalledWith('42');
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
     await dispatchEmbedded(
@@ -6139,7 +6131,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.automation.resume).toHaveBeenCalledWith({ id: '42' });
+    expect(client.automation.resume).toHaveBeenCalledWith('42');
     expect(client.deploy.resume).toHaveBeenCalledWith('cronjob_0p420');
     expect(client.automation.resume).toHaveBeenCalledBefore(
       client.deploy.resume

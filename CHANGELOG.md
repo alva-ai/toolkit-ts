@@ -375,7 +375,8 @@ resource:
 - `automation.inspect(id)` returns the `Automation`,
   `update(id, PublishVersionBody)` the `AutomationVersion`,
   `delivery.get(id)` the `AutomationDelivery` and
-  `delivery.update(id, DeliveryPatch)` the `Automation`.
+  `delivery.update(id, DeliveryPatch)` the `Automation`. `stop`, `resume`
+  and `delete` take the Automation ID (were `{ id }`), as `feed` does.
 
 #### Follows
 

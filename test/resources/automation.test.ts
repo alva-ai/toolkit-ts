@@ -24,9 +24,9 @@ describe('AutomationResource', () => {
     client.release.feed = vi.fn().mockResolvedValue({});
     const id = 'automation_0a';
     await client.automation.list({ pageSize: 20, pageToken: 'abc' });
-    await client.automation.stop({ id });
-    await client.automation.resume({ id });
-    await client.automation.delete({ id });
+    await client.automation.stop(id);
+    await client.automation.resume(id);
+    await client.automation.delete(id);
     const release = {
       name: 'btc-ema',
       version: '1.0.0',

@@ -266,7 +266,7 @@ async function dispatchEmbeddedAutomation(
         deps
       );
       try {
-        await client.automation.stop({ id });
+        await client.automation.stop(id);
       } catch (error) {
         throw new Error(
           `Automation ${id} delivery pause failed after producer ${cronjobId} was paused: ${error instanceof Error ? error.message : String(error)}`
@@ -282,7 +282,7 @@ async function dispatchEmbeddedAutomation(
     case 'automation-resume': {
       const id = automationID(parsed, 'automation resume');
       const cronjobId = await resolveAutomationProducer(client, id);
-      await client.automation.resume({ id });
+      await client.automation.resume(id);
       try {
         await executeParsedCommand(
           client,
@@ -306,7 +306,7 @@ async function dispatchEmbeddedAutomation(
       const id = automationID(parsed, 'automation delete');
       const cronjobId = await findAutomationProducer(client, id);
       if (cronjobId === undefined) {
-        await client.automation.delete({ id });
+        await client.automation.delete(id);
         return {
           automation_id: id,
           status: 'deleted',
@@ -319,7 +319,7 @@ async function dispatchEmbeddedAutomation(
         deps
       );
       try {
-        await client.automation.delete({ id });
+        await client.automation.delete(id);
       } catch (error) {
         throw new Error(
           `Automation ${id} delete failed after producer ${cronjobId} was paused; the producer remains paused: ${error instanceof Error ? error.message : String(error)}`
