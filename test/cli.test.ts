@@ -202,24 +202,13 @@ function makeClient(
   client.schedules.resume = vi.fn().mockResolvedValue(schedule);
   client.schedules.delete = vi.fn().mockResolvedValue(undefined);
   client.credits.wallet = vi.fn().mockResolvedValue({
-    balance: 100,
-    totalRemaining: 100,
-    todayUsed: 3,
+    balance: '100',
+    todayUsed: '3',
+    balances: [],
   });
-  client.credits.items = vi.fn().mockResolvedValue({
-    balance: 100,
-    totalRemaining: 100,
-    todayUsed: 3,
-    items: {
-      pageInfo: {
-        hasNextPage: false,
-        hasPreviousPage: false,
-        startCursor: null,
-        endCursor: null,
-      },
-      edges: [],
-    },
-  });
+  client.credits.entries = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbooks.trending = vi
     .fn()
     .mockResolvedValue({ playbooks: [], has_next: false });
@@ -1208,11 +1197,7 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     const result = await dispatch(client, ['credits', 'wallet']);
     expect(client.credits.wallet).toHaveBeenCalled();
-    expect(result).toEqual({
-      balance: 100,
-      totalRemaining: 100,
-      todayUsed: 3,
-    });
+    expect(result).toEqual({ balance: '100', todayUsed: '3', balances: [] });
   });
 
   it('rejects mixed markets earnings selectors', async () => {
@@ -1284,12 +1269,12 @@ describe('CLI dispatch', () => {
       '--after',
       'cursor-1',
     ]);
-    expect(client.credits.items).toHaveBeenCalledWith({
-      startAtMs: 1782172800000,
-      endAtMs: 1782259200000,
+    expect(client.credits.entries).toHaveBeenCalledWith({
+      from: '2026-06-23T00:00:00.000Z',
+      to: '2026-06-24T00:00:00.000Z',
       sessionId: 'session_0abc',
-      first: 10,
-      after: 'cursor-1',
+      pageSize: 10,
+      pageToken: 'cursor-1',
     });
   });
 
@@ -1303,12 +1288,12 @@ describe('CLI dispatch', () => {
       '--end',
       '2026-06-24',
     ]);
-    expect(client.credits.items).toHaveBeenCalledWith({
-      startAtMs: 1782172800000,
-      endAtMs: 1782259200000,
+    expect(client.credits.entries).toHaveBeenCalledWith({
+      from: '2026-06-23T00:00:00.000Z',
+      to: '2026-06-24T00:00:00.000Z',
       sessionId: undefined,
-      first: undefined,
-      after: undefined,
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
@@ -1318,12 +1303,12 @@ describe('CLI dispatch', () => {
       vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
       const client = makeClient();
       await dispatch(client, ['credits', 'items', '--today', '--first', '3']);
-      expect(client.credits.items).toHaveBeenCalledWith({
-        startAtMs: 1782172800000,
-        endAtMs: 1782259200000,
+      expect(client.credits.entries).toHaveBeenCalledWith({
+        from: '2026-06-23T00:00:00.000Z',
+        to: '2026-06-24T00:00:00.000Z',
         sessionId: undefined,
-        first: 3,
-        after: undefined,
+        pageSize: 3,
+        pageToken: undefined,
       });
     } finally {
       vi.useRealTimers();
@@ -1336,12 +1321,12 @@ describe('CLI dispatch', () => {
       vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
       const client = makeClient();
       await dispatch(client, ['credits', 'items', '--last', '24h']);
-      expect(client.credits.items).toHaveBeenCalledWith({
-        startAtMs: 1782127353000,
-        endAtMs: 1782213753000,
+      expect(client.credits.entries).toHaveBeenCalledWith({
+        from: '2026-06-22T11:22:33.000Z',
+        to: '2026-06-23T11:22:33.000Z',
         sessionId: undefined,
-        first: undefined,
-        after: undefined,
+        pageSize: undefined,
+        pageToken: undefined,
       });
     } finally {
       vi.useRealTimers();

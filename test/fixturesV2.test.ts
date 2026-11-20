@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { shapeErrors } from './contractShape.js';
+import { BILLING_FIXTURES } from './billingV2.js';
 import { asset, MARKET_FIXTURES } from './marketV2.js';
+
+const FIXTURES = [...MARKET_FIXTURES, ...BILLING_FIXTURES];
 
 // The fakes of the resource tests answer contract shapes.
 
 describe('the /api/v2 test fixtures', () => {
-  it.each(MARKET_FIXTURES.map(([name, value]) => [name, value]))(
+  it.each(FIXTURES.map(([name, value]) => [name, value]))(
     '%s conforms to the contract',
     (name, value) => {
       expect(shapeErrors(name as never, value as never)).toEqual([]);

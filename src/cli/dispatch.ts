@@ -20,7 +20,7 @@ import {
 import { requireDecision } from '../resources/steward.js';
 import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { AlvaError, CliUsageError } from '../error.js';
-import type { Schema } from '../platformApi.js';
+import type { Schema, V2Query } from '../platformApi.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
   COMMAND_DEFINITIONS,
@@ -378,8 +378,10 @@ Examples:
 Read the authenticated user's own credit wallet and consumption history.
 
 Subcommands:
-  wallet      Show current wallet balance, total remaining, and UTC today usage
-  items       List raw credit consumption records in a time window
+  wallet      Show the wallet (the /api/v2 Wallet): balance, balances by grant,
+              and UTC today usage, as decimal strings
+  items       List credit entries in a time window (a CreditEntryList page;
+              a debit's amount is negative)
 
 Items window flags (choose exactly one):
   --today                   UTC day containing the current time
@@ -389,7 +391,9 @@ Items window flags (choose exactly one):
 Items optional flags:
   --session-id <id>         Filter to one chat/session (a Session ID)
   --first <n>               Page size (1-500)
-  --after <cursor>          Opaque cursor from pageInfo.endCursor
+  --after <token>           nextPageToken of the previous page, with the same
+                            window and filters (--last moves with the clock:
+                            page an explicit --start/--end window)
 
 Notes:
   - Results are viewer-scoped by the backend; there is no --user-id override.
@@ -2636,13 +2640,9 @@ function scheduleBoundsFromFlags(flags: Record<string, string>):
     : undefined;
 }
 
-function parseCreditsItemsParams(flags: Record<string, string>): {
-  startAtMs: number;
-  endAtMs: number;
-  sessionId?: string;
-  first?: number;
-  after?: string;
-} {
+function parseCreditsItemsParams(
+  flags: Record<string, string>
+): V2Query<'/me/credit-entries', 'get'> {
   const command = 'credits items';
   const hasToday = boolFlag(flags['today']) === true;
   const hasLast = flags['last'] !== undefined;
@@ -2691,11 +2691,11 @@ function parseCreditsItemsParams(flags: Record<string, string>): {
   }
 
   return {
-    startAtMs,
-    endAtMs,
+    from: new Date(startAtMs).toISOString(),
+    to: new Date(endAtMs).toISOString(),
     sessionId: flags['session-id'],
-    first: optionalBoundedIntegerFlag(flags, 'first', command, 1, 500),
-    after: flags['after'],
+    pageSize: optionalBoundedIntegerFlag(flags, 'first', command, 1, 500),
+    pageToken: flags['after'],
   };
 }
 
@@ -4256,7 +4256,7 @@ export async function executeParsedCommand(
         case 'wallet':
           return client.credits.wallet();
         case 'items':
-          return client.credits.items(parseCreditsItemsParams(flags));
+          return client.credits.entries(parseCreditsItemsParams(flags));
         default:
           throw new CliUsageError(
             `Unknown subcommand: credits ${subcommand}`,

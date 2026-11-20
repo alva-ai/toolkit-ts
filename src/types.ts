@@ -44,63 +44,6 @@ export interface UserProfile {
   home_path: string;
 }
 
-// --- Credits ---
-
-export interface CreditWallet {
-  balance: number;
-  totalRemaining: number;
-  todayUsed: number;
-}
-
-export interface CreditWalletItemsParams {
-  /** Inclusive UTC lower bound, Unix milliseconds. */
-  startAtMs: number;
-  /** Exclusive UTC upper bound, Unix milliseconds. */
-  endAtMs: number;
-  /** Optional Session ID to filter consumption records. */
-  sessionId?: AlvaId;
-  /** Page size, defaulted and capped by the gateway. */
-  first?: number;
-  /** Opaque cursor from a previous page's `pageInfo.endCursor`. */
-  after?: string;
-}
-
-export interface CreditWalletItem {
-  id: AlvaId;
-  sessionId: AlvaId | null;
-  playbookId: AlvaId | null;
-  /** The Automation ID of the feed the entry belongs to. */
-  feedId: AlvaId | null;
-  op: 'credit' | 'debit';
-  source: string;
-  amount: number;
-  /** What the entry was for, as the wallet shows it. */
-  title?: string;
-  /** Creation timestamp, Unix milliseconds. */
-  createdAtMs: number;
-}
-
-export interface CreditWalletPageInfo {
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-  startCursor: string | null;
-  endCursor: string | null;
-}
-
-export interface CreditWalletItemEdge {
-  cursor: string;
-  node: CreditWalletItem;
-}
-
-export interface CreditWalletItemConnection {
-  pageInfo: CreditWalletPageInfo;
-  edges: CreditWalletItemEdge[];
-}
-
-export interface CreditWalletItemsResponse extends CreditWallet {
-  items: CreditWalletItemConnection;
-}
-
 // --- Arrays JWT ---
 
 export type SubscriptionTier =

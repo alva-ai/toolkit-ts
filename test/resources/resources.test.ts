@@ -8,6 +8,8 @@ import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
 import { fakeV2, problem } from '../fakeV2.js';
+import { creditEntry, wallet } from '../billingV2.js';
+import { page } from '../marketV2.js';
 
 function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
@@ -18,149 +20,34 @@ function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
 }
 
 describe('CreditsResource', () => {
-  const WALLET = {
-    balance: '100',
-    todayUsed: '3',
-    balances: [{ kind: 'DAILY', remaining: '100', expiresAt: null }],
-  };
   let fake: ReturnType<typeof fakeV2> | undefined;
   afterEach(() => fake?.restore());
   const credits = () => new CreditsResource(new AlvaClient({ apiKey: 'key' }));
 
-  it('wallet() reads GET /api/v2/me/wallet and keeps the v1 totals', async () => {
-    fake = fakeV2({ 'GET /me/wallet': () => WALLET });
+  it('wallet() returns GET /api/v2/me/wallet as the API answers it', async () => {
+    fake = fakeV2({ 'GET /me/wallet': () => wallet() });
 
-    await expect(credits().wallet()).resolves.toEqual({
-      balance: 100,
-      totalRemaining: 100,
-      todayUsed: 3,
-    });
+    await expect(credits().wallet()).resolves.toEqual(wallet());
   });
 
-  it('items() sends the window, session and page, and rebuilds the v1 connection', async () => {
-    fake = fakeV2({
-      'GET /me/wallet': () => WALLET,
-      'GET /me/credit-entries': () => ({
-        items: [
-          {
-            id: 'credit_entry_0a',
-            amount: '-5',
-            reason: 'CHAT',
-            title: 'Ask',
-            grantKind: null,
-            sessionId: 'session_0a',
-            playbookId: null,
-            automationId: null,
-            occurredAt: '2026-06-23T01:00:00.000Z',
-          },
-          {
-            id: 'credit_entry_0b',
-            amount: '200',
-            reason: 'DAILY_GRANT',
-            title: null,
-            grantKind: 'DAILY',
-            sessionId: null,
-            playbookId: 'playbook_0p',
-            automationId: 'automation_0f',
-            occurredAt: '2026-06-23T00:00:00.000Z',
-          },
-          {
-            id: 'credit_entry_0c',
-            amount: '-1',
-            reason: 'OTHER',
-            title: null,
-            grantKind: null,
-            sessionId: null,
-            playbookId: null,
-            automationId: null,
-            occurredAt: '2026-06-22T23:00:00.000Z',
-          },
-        ],
-        nextPageToken: 'page-2',
-      }),
-    });
+  it('entries() sends the route query and returns the page unchanged', async () => {
+    const entries = page([creditEntry()], 'page-2');
+    fake = fakeV2({ 'GET /me/credit-entries': () => entries });
 
-    const result = await credits().items({
-      startAtMs: 1782172800000,
-      endAtMs: 1782259200000,
-      sessionId: 'session_0a',
-      first: 10,
-      after: 'page-1',
-    });
-
-    const entries = fake.calls.find((c) => c.path === '/me/credit-entries');
-    expect(Object.fromEntries(entries!.query)).toEqual({
-      from: '2026-06-23T00:00:00.000Z',
-      to: '2026-06-24T00:00:00.000Z',
-      sessionId: 'session_0a',
-      pageSize: '10',
-      pageToken: 'page-1',
-    });
-    expect(result).toEqual({
-      balance: 100,
-      totalRemaining: 100,
-      todayUsed: 3,
-      items: {
-        pageInfo: {
-          hasNextPage: true,
-          hasPreviousPage: false,
-          startCursor: null,
-          endCursor: 'page-2',
-        },
-        edges: [
-          {
-            cursor: '',
-            node: {
-              id: 'credit_entry_0a',
-              sessionId: 'session_0a',
-              playbookId: null,
-              feedId: null,
-              op: 'debit',
-              source: 'ask',
-              amount: 5,
-              title: 'Ask',
-              createdAtMs: Date.UTC(2026, 5, 23, 1),
-            },
-          },
-          {
-            cursor: '',
-            node: {
-              id: 'credit_entry_0b',
-              sessionId: null,
-              playbookId: 'playbook_0p',
-              feedId: 'automation_0f',
-              op: 'credit',
-              source: 'daily_reset',
-              amount: 200,
-              createdAtMs: Date.UTC(2026, 5, 23),
-            },
-          },
-          {
-            cursor: 'page-2',
-            node: expect.objectContaining({ op: 'debit', source: 'other' }),
-          },
-        ],
-      },
-    });
-  });
-
-  it('items() ends the list on a null next token', async () => {
-    fake = fakeV2({
-      'GET /me/wallet': () => WALLET,
-      'GET /me/credit-entries': () => ({ items: [], nextPageToken: null }),
-    });
-
-    const result = await credits().items({ startAtMs: 0, endAtMs: 1 });
-
-    expect(result.items).toEqual({
-      pageInfo: {
-        hasNextPage: false,
-        hasPreviousPage: false,
-        startCursor: null,
-        endCursor: null,
-      },
-      edges: [],
-    });
+    await expect(
+      credits().entries({
+        from: '2026-06-23T00:00:00.000Z',
+        to: '2026-06-24T00:00:00.000Z',
+        sessionId: 'session_0a1',
+        reason: ['CHAT', 'PLAYBOOK'],
+        direction: 'DEBIT',
+        pageSize: 10,
+        pageToken: 'page-1',
+      })
+    ).resolves.toEqual(entries);
+    expect(fake.calls[0].query.toString()).toBe(
+      'from=2026-06-23T00%3A00%3A00.000Z&to=2026-06-24T00%3A00%3A00.000Z&sessionId=session_0a1&reason=CHAT&reason=PLAYBOOK&direction=DEBIT&pageSize=10&pageToken=page-1'
+    );
   });
 
   it('surfaces problems as AlvaError', async () => {
