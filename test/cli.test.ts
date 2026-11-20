@@ -11,6 +11,8 @@ import {
 import { dispatch as dispatchEmbedded } from '../src/cli/embeddedDispatch.js';
 import { AlvaClient } from '../src/client.js';
 import { CliUsageError } from '../src/error.js';
+import { allowance } from './billingV2.js';
+import { FUNCTION, functionInvocation, playbookFunction } from './runtimeV2.js';
 
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -380,42 +382,19 @@ function makeClient(
     .mockResolvedValue({ ok: true, subscriptions: [] });
   client.remix.save = vi.fn().mockResolvedValue(undefined);
   client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
-  client.functions.register = vi.fn().mockResolvedValue({
-    function: { function_name: 'analyze', playbook_id: 'playbook_0abc' },
+  client.functions.register = vi.fn().mockResolvedValue(playbookFunction());
+  client.functions.list = vi.fn().mockResolvedValue({
+    items: [playbookFunction({ name: 'analyze' })],
+    nextPageToken: null,
   });
-  client.functions.list = vi.fn().mockResolvedValue({ functions: [] });
   client.functions.delete = vi.fn().mockResolvedValue(undefined);
-  client.functions.invoke = vi.fn().mockResolvedValue({
-    result: { ok: true },
-    logs: '',
-    credits_used_total: 0,
-    credits_charged_owner: 0,
-    credits_charged_consumer: 0,
-  });
-  client.functions.getAllowance = vi.fn().mockResolvedValue({
-    id: 'allowance_0a',
-    playbook_id: 'playbook_0abc',
-    amount: 25,
-    used: 0,
-    remaining: 25,
-    created_at_ms: 1700000000000,
-    updated_at_ms: 1700000000000,
-  });
+  client.functions.invoke = vi.fn().mockResolvedValue(functionInvocation());
+  client.functions.getAllowance = vi.fn().mockResolvedValue(allowance());
   client.functions.listAllowances = vi
     .fn()
-    .mockResolvedValue({ allowances: [] });
-  client.functions.createAllowance = vi.fn().mockResolvedValue({
-    allowance: {
-      id: 'allowance_0a',
-      playbook_id: 'playbook_0abc',
-      amount: 25,
-      used: 0,
-      remaining: 25,
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-  });
-  client.functions.revokeAllowance = vi.fn().mockResolvedValue({ ok: true });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.functions.createAllowance = vi.fn().mockResolvedValue(allowance());
+  client.functions.revokeAllowance = vi.fn().mockResolvedValue(undefined);
   return client;
 }
 
@@ -2198,13 +2177,11 @@ describe('CLI dispatch', () => {
       '{"type":"object"}',
       '--no-allow-charges',
     ]);
-    expect(client.functions.register).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
-      function_name: 'analyze',
-      entry_script_path:
-        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-      params_schema: '{"type":"object"}',
-      allow_charges: false,
+    expect(client.functions.register).toHaveBeenCalledWith('playbook_0abc', {
+      name: 'analyze',
+      entryScriptPath: '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      paramsSchema: '{"type":"object"}',
+      allowCharges: false,
     });
   });
 
@@ -2223,7 +2200,8 @@ describe('CLI dispatch', () => {
       'account_0sa',
     ]);
     expect(client.functions.register).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: 'account_0sa' })
+      'playbook_0abc',
+      expect.objectContaining({ runAsAccountId: 'account_0sa' })
     );
   });
 
@@ -2265,9 +2243,10 @@ describe('CLI dispatch', () => {
     ]);
     expect(mock).toHaveBeenCalledWith('/tmp/schema.json', 'utf-8');
     expect(client.functions.register).toHaveBeenCalledWith(
+      'playbook_0abc',
       expect.objectContaining({
-        params_schema: '{"type":"object"}',
-        allow_charges: true,
+        paramsSchema: '{"type":"object"}',
+        allowCharges: true,
       })
     );
     mock.mockReset();
@@ -2303,8 +2282,8 @@ describe('CLI dispatch', () => {
       '--playbook-id',
       'playbook_0abc',
     ]);
-    expect(client.functions.list).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
+    expect(client.functions.list).toHaveBeenCalledWith('playbook_0abc', {
+      pageSize: 100,
     });
   });
 
@@ -2318,10 +2297,10 @@ describe('CLI dispatch', () => {
       '--function-name',
       'analyze',
     ]);
-    expect(client.functions.delete).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
-      function_name: 'analyze',
+    expect(client.functions.list).toHaveBeenCalledWith('playbook_0abc', {
+      name: 'analyze',
     });
+    expect(client.functions.delete).toHaveBeenCalledWith(FUNCTION);
   });
 
   it('dispatches functions invoke with params JSON', async () => {
@@ -2336,11 +2315,32 @@ describe('CLI dispatch', () => {
       '--params',
       '{"ticker":"AAPL"}',
     ]);
-    expect(client.functions.invoke).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
-      function_name: 'analyze',
-      parameters: { ticker: 'AAPL' },
+    expect(client.functions.invoke).toHaveBeenCalledWith(FUNCTION, {
+      parametersJson: '{"ticker":"AAPL"}',
     });
+  });
+
+  it('refuses functions invoke params that are not an object, and a missing function', async () => {
+    const client = makeClient();
+    const invoke = [
+      'functions',
+      'invoke',
+      '--playbook-id',
+      'playbook_0abc',
+      '--function-name',
+      'analyze',
+    ];
+    await expect(
+      dispatch(client, [...invoke, '--params', '[1]'])
+    ).rejects.toThrow("--params must be a JSON object for 'functions invoke'");
+    client.functions.list = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    await expect(dispatch(client, invoke)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Playbook playbook_0abc has no function named analyze',
+    });
+    expect(client.functions.invoke).not.toHaveBeenCalled();
   });
 
   it('functions invoke rejects invalid params JSON', async () => {
@@ -2368,9 +2368,7 @@ describe('CLI dispatch', () => {
       '--playbook-id',
       'playbook_0abc',
     ]);
-    expect(client.functions.getAllowance).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
-    });
+    expect(client.functions.getAllowance).toHaveBeenCalledWith('playbook_0abc');
   });
 
   it('dispatches functions allowance list', async () => {
@@ -2391,8 +2389,8 @@ describe('CLI dispatch', () => {
       '25',
     ]);
     expect(client.functions.createAllowance).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
-      amount: 25,
+      playbookId: 'playbook_0abc',
+      credits: '25',
     });
   });
 
@@ -2422,9 +2420,21 @@ describe('CLI dispatch', () => {
       '--playbook-id',
       'playbook_0abc',
     ]);
-    expect(client.functions.revokeAllowance).toHaveBeenCalledWith({
-      playbook_id: 'playbook_0abc',
-    });
+    expect(client.functions.getAllowance).toHaveBeenCalledWith('playbook_0abc');
+    expect(client.functions.revokeAllowance).toHaveBeenCalledWith(
+      'allowance_0a1'
+    );
+    client.functions.getAllowance = vi.fn().mockResolvedValue(null);
+    await expect(
+      dispatch(client, [
+        'functions',
+        'allowance',
+        'revoke',
+        '--playbook-id',
+        'playbook_0abc',
+      ])
+    ).resolves.toBeUndefined();
+    expect(client.functions.revokeAllowance).toHaveBeenCalledTimes(1);
   });
 
   it('functions --help documents register and allowance', async () => {

@@ -186,23 +186,8 @@ export type {
   PlaybookSkillSummary,
   PlaybookSkillTagEntry,
 } from './resources/playbookSkills.js';
-export type {
-  CreateAllowanceParams,
-  CreateAllowanceResponse,
-  CreditAllowance,
-  DeleteFunctionParams,
-  GetAllowanceParams,
-  InvokeFunctionParams,
-  InvokeFunctionResponse,
-  ListAllowancesResponse,
-  ListFunctionsParams,
-  ListFunctionsResponse,
-  PlaybookFunction,
-  RegisterFunctionParams,
-  RegisterFunctionResponse,
-  RevokeAllowanceParams,
-  RevokeAllowanceResponse,
-} from './resources/functions.js';
+export type { InvokeFunctionOptions } from './resources/functions.js';
+export type { RunOptions } from './resources/run.js';
 
 export type {
   ListThesesParams,

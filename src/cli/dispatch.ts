@@ -960,7 +960,7 @@ Register flags:
   --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name exposed to window.alva.udf (required)
   --entry-script-path <path>  Absolute ALFS path to a .js entry script (required)
-  --params-schema <json>      JSON Schema object/string for parameters_json
+  --params-schema <json>      JSON Schema object/string for parametersJson
   --params-schema-file <path> Read JSON Schema from a local file
   --allow-charges             Allow this function to charge viewer allowance
   --no-allow-charges          Explicitly register as no-charge
@@ -981,7 +981,7 @@ Delete flags:
 Invoke flags:
   --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name to invoke (required)
-  --params <json>             Parameters object passed as parameters_json
+  --params <json>             Parameters object, sent as parametersJson
 
 Allowance subcommands:
   allowance get      Get your allowance for a playbook
@@ -993,8 +993,14 @@ Allowance flags:
   --playbook-id <id>          Playbook ID (required for get/create/revoke)
   --amount <credits>          Positive integer allowance amount (required for create)
 
+Output: the /api/v2 shapes: register prints the PlaybookFunction, list a
+PlaybookFunctionList page, invoke the FunctionInvocation (resultJson is the
+result's JSON text; credits are decimal strings), allowance get an Allowance
+or null, allowance list an AllowanceList page. delete and allowance revoke
+print nothing; revoke without an allowance does nothing.
+
 Notes:
-  entry_script_path must be an absolute ALFS path under your home, such as
+  --entry-script-path must be an absolute ALFS path under your home, such as
   /alva/home/alice/playbooks/my-playbook/udf/analyze.js. Use alva whoami to
   discover home_path. Use the browser runtime window.alva.udf for released
   playbook UI; this CLI is mainly for creator-side setup and smoke tests.
@@ -2788,6 +2794,42 @@ function jsonSchemaStringFlag(
 
 // The service account a function runs as: an Account ID, passed unchanged.
 // /api/v2 cannot clear it, so --clear-run-as is refused rather than ignored.
+/** The ID of the Playbook function --playbook-id and --function-name name. */
+async function functionIdByName(
+  client: AlvaClient,
+  flags: Record<string, string>,
+  command: string
+): Promise<string> {
+  const playbookId = requireFlag(flags, 'playbook-id', command);
+  const name = requireFlag(flags, 'function-name', command);
+  const page = await client.functions.list(playbookId, { name });
+  const fn = page.items.find((f) => f.name === name);
+  if (fn === undefined) {
+    throw new AlvaError(
+      'NOT_FOUND',
+      `Playbook ${playbookId} has no function named ${name}`,
+      404
+    );
+  }
+  return fn.id;
+}
+
+/** A JSON object flag, sent as the text it was given. */
+function jsonObjectTextFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): string {
+  const value = jsonRequiredFlag(flags, name, command);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new CliUsageError(
+      `--${name} must be a JSON object for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return flags[name];
+}
+
 function functionRunAsFlag(
   flags: Record<string, string>,
   command: string
@@ -4418,36 +4460,35 @@ export async function executeParsedCommand(
           }
           switch (leaf) {
             case 'get':
-              return client.functions.getAllowance({
-                playbook_id: requireFlag(
-                  flags,
-                  'playbook-id',
-                  'functions allowance get'
-                ),
-              });
+              return client.functions.getAllowance(
+                requireFlag(flags, 'playbook-id', 'functions allowance get')
+              );
             case 'list':
               return client.functions.listAllowances();
             case 'create':
               return client.functions.createAllowance({
-                playbook_id: requireFlag(
+                playbookId: requireFlag(
                   flags,
                   'playbook-id',
                   'functions allowance create'
                 ),
-                amount: requirePositiveIntegerFlag(
-                  flags,
-                  'amount',
-                  'functions allowance create'
+                credits: String(
+                  requirePositiveIntegerFlag(
+                    flags,
+                    'amount',
+                    'functions allowance create'
+                  )
                 ),
               });
-            case 'revoke':
-              return client.functions.revokeAllowance({
-                playbook_id: requireFlag(
-                  flags,
-                  'playbook-id',
-                  'functions allowance revoke'
-                ),
-              });
+            case 'revoke': {
+              const allowance = await client.functions.getAllowance(
+                requireFlag(flags, 'playbook-id', 'functions allowance revoke')
+              );
+              if (allowance !== null) {
+                await client.functions.revokeAllowance(allowance.id);
+              }
+              return undefined;
+            }
             default:
               throw new CliUsageError(
                 `Unknown subcommand: functions allowance ${leaf}`,
@@ -4456,56 +4497,44 @@ export async function executeParsedCommand(
           }
         }
         case 'register':
-          return client.functions.register({
-            playbook_id: requireFlag(
-              flags,
-              'playbook-id',
-              'functions register'
-            ),
-            function_name: requireFlag(
-              flags,
-              'function-name',
-              'functions register'
-            ),
-            entry_script_path: requireFlag(
-              flags,
-              'entry-script-path',
-              'functions register'
-            ),
-            params_schema: jsonSchemaStringFlag(
-              flags,
-              'functions register',
-              deps
-            ),
-            allow_charges: boolFlag(flags['allow-charges']),
-            run_as_user_id: functionRunAsFlag(flags, 'functions register'),
-          });
+          return client.functions.register(
+            requireFlag(flags, 'playbook-id', 'functions register'),
+            {
+              name: requireFlag(flags, 'function-name', 'functions register'),
+              entryScriptPath: requireFlag(
+                flags,
+                'entry-script-path',
+                'functions register'
+              ),
+              paramsSchema: jsonSchemaStringFlag(
+                flags,
+                'functions register',
+                deps
+              ),
+              allowCharges: boolFlag(flags['allow-charges']),
+              runAsAccountId: functionRunAsFlag(flags, 'functions register'),
+            }
+          );
         case 'list':
-          return client.functions.list({
-            playbook_id: requireFlag(flags, 'playbook-id', 'functions list'),
-          });
+          return client.functions.list(
+            requireFlag(flags, 'playbook-id', 'functions list'),
+            { pageSize: 100 }
+          );
         case 'delete':
-          return client.functions.delete({
-            playbook_id: requireFlag(flags, 'playbook-id', 'functions delete'),
-            function_name: requireFlag(
-              flags,
-              'function-name',
-              'functions delete'
-            ),
-          });
-        case 'invoke':
-          return client.functions.invoke({
-            playbook_id: requireFlag(flags, 'playbook-id', 'functions invoke'),
-            function_name: requireFlag(
-              flags,
-              'function-name',
-              'functions invoke'
-            ),
-            parameters:
-              flags['params'] === undefined
-                ? undefined
-                : jsonRequiredFlag(flags, 'params', 'functions invoke'),
-          });
+          await client.functions.delete(
+            await functionIdByName(client, flags, 'functions delete')
+          );
+          return undefined;
+        case 'invoke': {
+          const params =
+            flags['params'] === undefined
+              ? undefined
+              : jsonObjectTextFlag(flags, 'params', 'functions invoke');
+          return client.functions.invoke(
+            await functionIdByName(client, flags, 'functions invoke'),
+            { parametersJson: params }
+          );
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: functions ${subcommand}`,
