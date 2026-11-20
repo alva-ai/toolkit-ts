@@ -6201,7 +6201,7 @@ describe('CLI dispatch — broker', () => {
     });
 
     expect(client.portfolio.accounts).toHaveBeenCalledWith({
-      copyTradingOnly: true,
+      modes: ['PAPER_TRADING', 'LIVE_TRADING', 'BROKER_CONFIRMATION'],
     });
     expect(client.trading.riskRules).toHaveBeenCalled();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

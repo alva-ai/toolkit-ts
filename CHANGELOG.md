@@ -176,9 +176,9 @@ Each resource lists its changes here as it moves to the `/api/v2` shapes.
 
 - One account ID: every method and CLI flag takes the BrokerAccount ID
   (`broker_account_0…`) that `portfolio.accounts` lists. `trading.accounts`
-  is `portfolio.accounts({ copyTradingOnly: true })` and
-  `trading.portfolio` is `portfolio.snapshot(accountId)` (one list, one
-  snapshot).
+  is `portfolio.accounts({ modes })` with every mode but `READ_ONLY` (what
+  `alva trading accounts` sends), and `trading.portfolio` is
+  `portfolio.snapshot(accountId)` (one list, one snapshot).
 - `portfolio.accounts(query)`, `snapshot(accountId)` (was `summary`) and
   `activities(accountId, query)` return `BrokerAccountList`,
   `PortfolioSnapshot` and `BrokerActivityList` (Money with decimal amounts,

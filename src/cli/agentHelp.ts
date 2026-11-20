@@ -395,7 +395,7 @@ Results are the /api/v2 shapes; pages are {items, nextPageToken}.`,
   trading: `Usage: alva trading <subcommand>
 
 Subcommands:
-  accounts    List the accounts that can copy trade (BrokerAccount IDs)
+  accounts    List the accounts that trade, not read-only (BrokerAccount IDs)
   risk-rules  Read the admission limits enforced by Broker and Signal
   signals     Legacy Signal subscriptions and execution
   broker      Venue-native reads and order execution

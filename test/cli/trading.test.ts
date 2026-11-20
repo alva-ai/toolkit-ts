@@ -26,7 +26,7 @@ let restore = () => {};
 afterEach(() => restore());
 
 describe('trading CLI on /api/v2', () => {
-  it('lists the copy-trading accounts and reads a snapshot, terminal and embedded', async () => {
+  it('lists the trading accounts and reads a snapshot, terminal and embedded', async () => {
     const accounts = page([brokerAccount()]);
     const fake = fakeV2({
       'GET /me/broker-accounts': () => accounts,
@@ -45,8 +45,8 @@ describe('trading CLI on /api/v2', () => {
       dispatchCli(client(), ['trading', 'portfolio', '--account-id', ACCOUNT])
     ).resolves.toEqual(snapshot());
     expect(fake.calls.map((c) => `${c.path}?${c.query}`)).toEqual([
-      '/me/broker-accounts?copyTradingOnly=true',
-      '/me/broker-accounts?copyTradingOnly=true',
+      '/me/broker-accounts?modes=PAPER_TRADING&modes=LIVE_TRADING&modes=BROKER_CONFIRMATION',
+      '/me/broker-accounts?modes=PAPER_TRADING&modes=LIVE_TRADING&modes=BROKER_CONFIRMATION',
       '/me/broker-accounts?',
       `/broker-accounts/${ACCOUNT}/snapshot?`,
     ]);

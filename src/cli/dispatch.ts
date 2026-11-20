@@ -1551,7 +1551,7 @@ the /api/v2 shapes; every account flag takes the BrokerAccount ID
 'alva trading accounts' lists (broker_account_0…).
 
 Subcommands:
-  accounts             List the accounts that can copy trade (a page)
+  accounts             List the accounts that trade (not read-only; a page)
   portfolio            Get an account's PortfolioSnapshot
   orders               List an account's orders (an OrderList page)
   subscriptions        List an account's trade subscriptions (a page)
@@ -2864,6 +2864,14 @@ function tradingEnumFlag<T extends string>(
   }
   return value;
 }
+
+// The accounts orders can be placed in: every mode but READ_ONLY (SnapTrade
+// and read-only trex accounts).
+const TRADING_MODES: Schema<'BrokerAccountMode'>[] = [
+  'PAPER_TRADING',
+  'LIVE_TRADING',
+  'BROKER_CONFIRMATION',
+];
 
 /** Refuses flags 1.0 removed, naming what replaces each. */
 function retiredFlags(
@@ -5502,7 +5510,7 @@ export async function executeParsedCommand(
         throw new CliUsageError('Missing subcommand for trading', 'trading');
       switch (subcommand) {
         case 'accounts':
-          return client.portfolio.accounts({ copyTradingOnly: true });
+          return client.portfolio.accounts({ modes: TRADING_MODES });
         case 'portfolio':
           return client.portfolio.snapshot(
             requireFlag(flags, 'account-id', 'trading portfolio')
