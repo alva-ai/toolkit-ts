@@ -300,8 +300,9 @@ username, subscription tier, and which profile/endpoint is being used.
 Use this after 'alva configure' to confirm everything works.
 
 Output includes active_im_provider (telegram, discord, slack, whatsapp,
-imessage, or empty) and _meta.arrays_jwt (exists, expires_at, renewal_needed,
-tier). arrays_jwt is omitted when the backend status call fails.
+imessage, or empty) and _meta.arrays_jwt (the /api/v2 DataSkillsToken: exists,
+expiresAt, renewalNeeded, tier). arrays_jwt is omitted when the backend status
+call fails.
 
 Examples:
   alva whoami
@@ -1611,8 +1612,10 @@ The JWT is stored server-side as a jagent secret; the CLI never receives the
 token itself. 'alva configure' auto-runs 'token ensure' after saving credentials.
 
 Subcommands:
-  token ensure    Provision or refresh the Arrays JWT (idempotent)
-  token status    Show Arrays JWT presence, expiry, tier, and renewal hint
+  token ensure    Provision or refresh the Arrays JWT (idempotent); returns
+                  the /api/v2 DataSkillsTokenRefresh (expiresAt, tier, renewed)
+  token status    Show the Arrays JWT state, the /api/v2 DataSkillsToken
+                  (exists, expiresAt, tier, renewalNeeded)
 
 Examples:
   alva arrays token ensure

@@ -44,27 +44,6 @@ export interface UserProfile {
   home_path: string;
 }
 
-// --- Arrays JWT ---
-
-export type SubscriptionTier =
-  | 'SUBSCRIPTION_TIER_UNSPECIFIED'
-  | 'SUBSCRIPTION_TIER_FREE'
-  | 'SUBSCRIPTION_TIER_PRO'
-  | 'SUBSCRIPTION_TIER_MAX';
-
-export interface EnsureArraysJwtResponse {
-  expires_at: number;
-  tier: SubscriptionTier;
-  renewed: boolean;
-}
-
-export interface ArraysJwtStatusResponse {
-  exists: boolean;
-  expires_at: number;
-  tier: SubscriptionTier;
-  renewal_needed: boolean;
-}
-
 // --- Filesystem ---
 
 export interface FsReadParams {

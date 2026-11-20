@@ -345,9 +345,9 @@ function makeClient(
   });
   client.arraysJwt.status = vi.fn().mockResolvedValue({
     exists: true,
-    expires_at: 1800000000,
-    renewal_needed: false,
-    tier: 'SUBSCRIPTION_TIER_PRO',
+    expiresAt: '2027-01-15T08:00:00.000Z',
+    renewalNeeded: false,
+    tier: 'PRO',
   });
   client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
   client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
@@ -3166,9 +3166,9 @@ describe('whoami', () => {
     const meta = result._meta as Record<string, unknown>;
     expect(meta.arrays_jwt).toEqual({
       exists: true,
-      expires_at: 1800000000,
-      renewal_needed: false,
-      tier: 'SUBSCRIPTION_TIER_PRO',
+      expiresAt: '2027-01-15T08:00:00.000Z',
+      renewalNeeded: false,
+      tier: 'PRO',
     });
   });
 
@@ -4405,8 +4405,8 @@ describe('arrays token dispatch', () => {
   it('dispatches arrays token ensure', async () => {
     const client = makeClient();
     const mockResp = {
-      expires_at: 1,
-      tier: 'SUBSCRIPTION_TIER_FREE',
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      tier: 'FREE',
       renewed: true,
     };
     client.arraysJwt.ensure = vi.fn().mockResolvedValue(mockResp);
@@ -4419,9 +4419,9 @@ describe('arrays token dispatch', () => {
     const client = makeClient();
     const mockResp = {
       exists: true,
-      expires_at: 1,
-      tier: 'SUBSCRIPTION_TIER_FREE',
-      renewal_needed: false,
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      tier: 'FREE',
+      renewalNeeded: false,
     };
     client.arraysJwt.status = vi.fn().mockResolvedValue(mockResp);
     const result = await dispatch(client, ['arrays', 'token', 'status']);
