@@ -57,7 +57,8 @@ under `client.v1`, and move back when their route exists:
 - feed subscriptions (`subscriptions.subscribeFeed`, `unsubscribeFeed`);
 - channel group subscriptions (`channelGroupSubscriptions`, CLI
   `alert group`);
-- `trading.subscribe({ executeLatest: true })`;
+- `trading.subscribe({ executeLatest: true })`, as
+  `client.v1.trading.subscribe(params)` with v1's numeric IDs;
 - Playbook and Skillhub discovery without an API key;
 - the `auth login` token exchange (`/api/v1/oauth/token`).
 
@@ -76,3 +77,134 @@ under `client.v1`, and move back when their route exists:
 ### Per resource
 
 Each resource lists its changes here as it moves to the `/api/v2` shapes.
+
+#### Markets
+
+- `markets.assetBySymbol(symbol, { assetClass })` returns the `Asset`;
+  `narrative(assetId)`, `earningsCalendar(assetId)` (was
+  `earningsPeriods(ticker)`) and
+  `earnings(assetId, { fiscalYear, fiscalQuarter })` take its ID and return
+  `AssetNarrative` (`latest`, `history`, `changes`), `EarningsCalendar` and
+  `EarningsReport` (`preview`, `release`, `transcript`, `recap`, each with
+  its `availability`). A
+  narrative or report without coverage is the 404 problem; the empty context
+  and the `MARKETS_*` codes are gone. `earnings` without a period reads the
+  calendar's default one.
+- The CLI keeps `--ticker` (the US listing, else the non-US one) and
+  `--event` (selected from the calendar; `NOT_FOUND` when the calendar lacks
+  it, never another quarter) and prints the `/api/v2` objects.
+
+#### Trading pairs
+
+- `tradingPairs.list(query)` returns one page of `GET /api/v2/trading-pairs`
+  (exactly one of `q`, `symbol`, `base` with `instrumentType`, or
+  `underlyingType`).
+- `search` returns `TradingPair[]` (was `{ query, candidates, truncated }`)
+  and `resolve` one `TradingPair`, still matched exactly and filtered by
+  `market`, `instrumentType`, `underlyingType` and `quote`; `resolve` looks a
+  complete pair up by its symbol. A pair's `symbol` is the canonical pair
+  (was `tradingPair`), `base` the ticker (was `symbol`), `exchange` the
+  market, `feeRate` a decimal string and `logo` the icon. The CLI prints the
+  `/api/v2` fields; `--limit` cuts the list without a truncation note.
+
+#### Company news
+
+- `companyNews.create` takes a `CompanyNewsFeedConfig` (`initialLookbackHours`,
+  `batchSize`; were `initial_lookback_hours`, `page_size`) and returns the
+  `CompanyNewsFeed` (`id`, `cronjobId`; were `feed_id`, `cronjob_id`). The
+  gateway validates the configuration (no client validator).
+
+#### X
+
+- `x.status()` returns the `XConnection`; `x.following(query)` and
+  `x.posts(query)` take `{ pageSize, pageToken }` (were `{ first, after }`)
+  and return `{ items, nextPageToken }` pages (no `edges`, `pageInfo` or
+  `retrievedAt`); a post's `authorId` and `createdAt` are `null` when X
+  reported none (were `''`). CLI `--limit` takes 1 to 100 and `--cursor` the
+  `nextPageToken`.
+
+#### Credits
+
+- `credits.wallet()` returns the `Wallet` (`balance` and `todayUsed` as
+  decimal strings, `balances` by grant; no `totalRemaining`).
+- `credits.items(params)` is `credits.entries(query)`, returning a
+  `CreditEntryList` page: a signed decimal `amount`, `reason` (was `op` and
+  `source`), `automationId` (was `feedId`) and `occurredAt` (was
+  `createdAtMs`); it no longer carries the wallet. The filters are the
+  route's (`from`, `to`, `sessionId`, `playbookId`, `automationId`, `reason`,
+  `direction`). `alva credits items` sends its window as RFC 3339 and
+  `--after` takes the `nextPageToken` of the same window.
+
+#### Arrays token
+
+- `arraysJwt.ensure()` and `status()` return `DataSkillsTokenRefresh` and
+  `DataSkillsToken`: `expiresAt` is RFC 3339 or `null` (was Unix seconds or
+  0), `tier` is `FREE`, `PRO`, `MAX` or `null` (was `SUBSCRIPTION_TIER_*`),
+  and `renewalNeeded` was `renewal_needed`. `alva whoami` reports the same
+  object under `_meta.arrays_jwt`.
+
+#### Run
+
+- `run.execute(request, { idempotencyKey, timeoutMs })` takes a `RunRequest`
+  (`code`, `entryPath`, `workingDir`, `args`, `maxHeapSizeMb`; were
+  snake_case, with `timeout_ms` in the request) and returns the `Run`:
+  `status` `SUCCEEDED` or `FAILED` (was `completed` or `failed`),
+  `returnValue` (was `result`), `durationMs` and a decimal `creditsUsed`
+  (were `stats`), `subscriptionRequired` and `entitlementFailure` (were
+  `reject_reason`, `upgrade_url` and `entitlement_failure`).
+- `alva run` prints the `Run` with `returnValue` decoded from its JSON text,
+  as 0.x decoded `result`.
+
+#### Functions and allowances
+
+- Functions are addressed by their ID:
+  `functions.register(playbookId, body)` and `list(playbookId, query)`
+  return the `PlaybookFunction` and a `PlaybookFunctionList` page (find one
+  with `{ name }`); `delete(functionId)`
+  and `invoke(functionId, { parametersJson }, { idempotencyKey })` take the
+  ID, and `invoke` returns the `FunctionInvocation` (`resultJson` as text,
+  credits as decimal strings). The name cache and `{ function }` wrapper are
+  gone.
+- `getAllowance(playbookId)` returns the `Allowance` or `null`;
+  `listAllowances(query)` an `AllowanceList` page;
+  `createAllowance({ playbookId, credits })` the `Allowance`;
+  `revokeAllowance(allowanceId)` deletes by ID. The CLI finds a function by
+  `--function-name`, sends `--params` as written, and prints nothing for
+  `delete` and `allowance revoke`.
+
+#### Portfolio and trading
+
+- One account ID: every method and CLI flag takes the BrokerAccount ID
+  (`broker_account_0…`) that `portfolio.accounts` lists. `trading.accounts`
+  is `portfolio.accounts({ copyTradingOnly: true })` and
+  `trading.portfolio` is `portfolio.snapshot(accountId)` (one list, one
+  snapshot).
+- `portfolio.accounts(query)`, `snapshot(accountId)` (was `summary`) and
+  `activities(accountId, query)` return `BrokerAccountList`,
+  `PortfolioSnapshot` and `BrokerActivityList` (Money with decimal amounts,
+  RFC 3339 times); the embedded subscriptions and Playbook names are gone
+  (read `trading.subscriptions`).
+- `trading.orders(accountId, query)` returns an `OrderList` page: `status`
+  adds `EXPIRED` and `ERROR`, `positionEffect` is `OPEN`, `CLOSE` or `null`,
+  and the filters are `origin` and the RFC 3339 `from` and `to` (no
+  `source` or `since`). `trading.equity(accountId, { range })` (was
+  `equityHistory`) returns the `EquitySeries`, whose points carry `equity`,
+  `change` (against the previous point) and `changePercent`; the
+  client-side window filter and `timeframe` are gone.
+- `trading.placeOrders(accountId, instruction, { idempotencyKey })` executes
+  an `OrderInstruction` (`ORDERS`, `ALLOCATE` or `PREDICT`; `dryRun`) and
+  returns the `OrderExecution`. `subscribe(accountId, body, options)` takes a
+  `CreateTradeSubscriptionBody` (`signalSourceId` is required; a feed is no
+  longer found by owner and name), `unsubscribe(tradeSubscriptionId)`
+  returns the stopped `TradeSubscription`, and `riskRules()` and
+  `updateRiskRules(patch)` use `RiskRules` and a merge-patch
+  `RiskRulesPatch` with decimal values.
+- CLI: `trading execute` takes `--instruction` and `--idempotency-key` and
+  refuses `--signal`, `--source-username` and `--source-feed`;
+  `trading orders --since` takes RFC 3339 only; `trading equity-history`
+  refuses `--timeframe`, `--since-ms` and `--until-ms`; embedded
+  `trading accounts` and `trading risk-rules` read `/api/v2` instead of the
+  broker.
+- Broker: `alva broker … --account-id <BrokerAccount ID>` names the account
+  as the invocation's `accountId`; the gateway refuses an argv `--account`
+  and the `accounts` command (use `alva trading accounts`).

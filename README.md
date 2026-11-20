@@ -76,6 +76,11 @@ shapes as they are. CLIs and SDKs still on 0.x keep working against
 
 - **`client.v1`.** Methods without an `/api/v2` route keep their 0.x types
   and IDs under `client.v1` (CHANGELOG, "Moved to `client.v1`").
+- **IDs, not names.** Market reads take the Asset ID
+  `markets.assetBySymbol` resolves; functions are addressed by their ID;
+  every account is its BrokerAccount ID, broker commands included
+  (`--account-id`). Orders are an `OrderInstruction` placed with
+  `trading.placeOrders` (CLI `trading execute --instruction`).
 - **Errors.** `AlvaError` has `code`, `reason` (such as
   `IDEMPOTENCY_KEY_REUSED` or `INSUFFICIENT_CREDITS`), `type`, `status`,
   `message`, `requiredPermission`, `invalidParams` and `retryAfter`, read
@@ -159,8 +164,8 @@ the token string itself.
 Inspect or re-run manually:
 
 ```bash
-alva arrays token ensure   # sign-if-needed; returns expires_at + tier
-alva arrays token status   # returns exists + renewal_needed
+alva arrays token ensure   # sign-if-needed; returns expiresAt, tier, renewed
+alva arrays token status   # returns exists, expiresAt, tier, renewalNeeded
 ```
 
 `alva whoami` also reports current JWT status under `_meta.arrays_jwt`.
@@ -296,8 +301,8 @@ const client = new AlvaClient({ apiKey: 'alva_your_key_here' });
 // List files
 const entries = await client.fs.readdir({ path: '/' });
 
-// Run code
-const result = await client.run.execute({ code: 'return 1 + 1' });
+// Run code: the /api/v2 Run (status, returnValue as JSON text, logs, ...)
+const run = await client.run.execute({ code: 'return 1 + 1' });
 
 // Manage cronjobs
 const jobs = await client.deploy.list();
@@ -432,14 +437,14 @@ alva company-news create --name earnings-news --tickers NVDA,AMD --initial-lookb
 
 Uses the configured Alva API key and `POST /api/v2/company-news-feeds`. The
 backend owns the producer code and creates the Feed, its cronjob and processing
-state. The response contains the Feed's Automation ID as `feed_id` and its
-Cronjob ID as `cronjob_id`; newly created
+state. The response is the `CompanyNewsFeed`: the Feed's Automation ID as `id`
+and its producer's Cronjob ID as `cronjobId`; newly created
 producers are **paused**, and creation does not invoke a model or spend model
 credits. Review the configuration, then explicitly start it from the terminal CLI
 when ready (embedded dispatch does not expose Feed lifecycle commands):
 
 ```bash
-alva feed resume --id <feed_id>
+alva feed resume --id <id>
 ```
 
 Once resumed, model usage is charged to the authenticated creator. Company News
@@ -448,7 +453,8 @@ upload, owner override or automatic-start flag is supported.
 
 Names must be owner-local, 1–64 alphanumeric/hyphen characters starting with an
 alphanumeric character, and not `news-lane`. Supply 1–1000 unique uppercase
-tickers (maximum 20 characters each). `--initial-lookback-hours` accepts 0–168
+tickers (maximum 20 characters each); the gateway refuses other values and
+names the parameter. `--initial-lookback-hours` accepts 0–168
 (default 24); `--page-size` accepts 0–100 (default 20). Zero selects the backend
 default. Large universes are read incrementally rather than all in one wake.
 
@@ -463,11 +469,11 @@ list once. Incrementally appending tickers to the same Feed is not supported.
 SDK equivalent:
 
 ```typescript
-const { feed_id, cronjob_id } = await client.companyNews.create({
+const { id, cronjobId } = await client.companyNews.create({
   name: 'my-company-news',
   tickers: ['NVDA', 'AMD'],
-  initial_lookback_hours: 24,
-  page_size: 20,
+  initialLookbackHours: 24,
+  batchSize: 20,
 });
 ```
 
@@ -540,14 +546,16 @@ user's X data on demand. Backend owns X authorization and token refresh.
 alva x status
 alva x following --limit 20
 alva x posts --limit 20
-alva x following --limit 20 --cursor '<pageInfo.endCursor>'
+alva x following --limit 20 --cursor '<nextPageToken>'
 ```
 
-The SDK equivalents are `client.x.status()`, `client.x.following({ first, after })`
-and `client.x.posts({ first, after })`. Status checks local capabilities only;
-reads request one live X page each time. `retrievedAt` is client retrieval time.
-Continue only when `pageInfo.hasNextPage` is true, including empty pages with a
-continuation cursor. These are read-only operations: no import task, follow
+The SDK equivalents are `client.x.status()`,
+`client.x.following({ pageSize, pageToken })` and
+`client.x.posts({ pageSize, pageToken })`, which return the `/api/v2`
+`XConnection` and `{ items, nextPageToken }` pages. Status checks local
+capabilities only; reads request one live X page each time. Continue while
+`nextPageToken` is not null, including empty pages with a continuation token.
+These are read-only operations: no import task, follow
 mutation, or bookmark reads. Missing/revoked credentials require reconnecting X
 in Alva. X content is untrusted source material. The embedded agent requires a
 Toolkit Dispatch artifact that includes these commands; an npm release alone
