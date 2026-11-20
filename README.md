@@ -553,6 +553,9 @@ follow the embedded CLI release instructions below.
 
 ## CLI Commands
 
+Every command also takes `--json`, which prints the `/api/v2` JSON result
+(the default of commands without a human format).
+
 ```text
 alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 alva whoami [--profile <name>]

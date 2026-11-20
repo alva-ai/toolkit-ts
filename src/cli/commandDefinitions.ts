@@ -59,6 +59,7 @@ export const GLOBAL_FLAG_DEFINITIONS: Readonly<Record<string, FlagKind>> = {
   profile: 'value',
   'arrays-endpoint': 'value',
   help: 'boolean',
+  json: 'boolean',
 };
 
 export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [

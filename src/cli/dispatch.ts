@@ -149,6 +149,7 @@ Global options:
   --base-url <url>       API base URL (overrides env and config file)
   --profile <name>       Named profile to use (default: "default")
   --arrays-endpoint <url>  Arrays backend URL (or ARRAYS_ENDPOINT env; default: https://data-tools.prd.space.id)
+  --json               Print the /api/v2 JSON result (the default of commands without a human format)
   -v, --version        Show CLI version
   --help               Show help (use 'alva <command> --help' for command details)
 

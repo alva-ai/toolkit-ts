@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { embeddedCommandArgv } from '../../src/cli/agentCommandDefinitions.js';
+import { COMMAND_DEFINITIONS } from '../../src/cli/commandDefinitions.js';
 import { parseCommand } from '../../src/cli/commandSchema.js';
+import { EMBEDDED_COMMAND_DEFINITIONS } from '../../src/cli/embeddedCommandDefinitions.js';
+import { parseEmbeddedCommand } from '../../src/cli/embeddedCommandSchema.js';
 import { CliUsageError } from '../../src/error.js';
 
 describe('declarative CLI command parser', () => {
@@ -157,6 +161,31 @@ describe('declarative CLI command parser', () => {
       '--venue-native-future-flag',
     ]);
     expect(parsed.flags).toEqual({});
+  });
+
+  it('accepts --json on every command of both catalogs', () => {
+    const catalogs = [
+      [COMMAND_DEFINITIONS, parseCommand],
+      [EMBEDDED_COMMAND_DEFINITIONS, parseEmbeddedCommand],
+    ] as const;
+    for (const [definitions, parse] of catalogs) {
+      for (const { path, positionals, passthrough } of definitions) {
+        if (passthrough) continue;
+        const parsed = parse([
+          ...path,
+          ...positionals.names.map(() => 'x'),
+          '--json',
+        ]);
+        expect(parsed.flags.json, path.join(' ')).toBe('true');
+      }
+    }
+  });
+
+  it('forwards an embedded --json to the terminal command as a switch', () => {
+    expect(
+      embeddedCommandArgv(parseEmbeddedCommand(['account', 'whoami', '--json']))
+    ).toEqual(['whoami', '--json']);
+    expect(parseCommand(['whoami', '--json']).flags).toEqual({ json: 'true' });
   });
 
   it('uses CliUsageError with the top-level command for parser failures', () => {

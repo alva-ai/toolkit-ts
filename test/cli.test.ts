@@ -432,6 +432,13 @@ describe('CLI dispatch', () => {
     expect(result).toEqual(aMe({ toolkitMinVersion: '0.1.0' }));
   });
 
+  it('accepts --json on a command without a human format and prints the same result', async () => {
+    const client = makeClient();
+    expect(await dispatch(client, ['user', 'me', '--json'])).toEqual(
+      await dispatch(client, ['user', 'me'])
+    );
+  });
+
   it('dispatches fs read with --path and prints UTF-8 bytes as text', async () => {
     const client = makeClient();
     expect(await dispatch(client, ['fs', 'read', '--path', '~/f'])).toBe(
