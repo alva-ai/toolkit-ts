@@ -26,7 +26,7 @@ describe('CompanyNewsResource', () => {
     expect(fake.calls).toHaveLength(1);
     const [call] = fake.calls;
     expect(call.headers['X-Alva-Api-Key']).toBe('test-key');
-    expect(call.headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/);
+    expect(call.headers['Idempotency-Key']).toMatch(/^"[0-9a-f-]{36}"$/);
     expect(call.body).toEqual({
       name: 'my-news',
       tickers: ['NVDA', 'AMD'],

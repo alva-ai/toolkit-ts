@@ -1,11 +1,32 @@
-import { AlvaError, type InvalidParam } from './error.js';
+import { AlvaError } from './error.js';
+import type { components, paths } from './generated/platform-v2.js';
 
-// The /api/v2 platform API transport (alva-gateway
-// docs/changelogs/2026-11-19-agent-api-permissions.md, D10;
-// doc/api-v2-conventions.md). AlvaClient._v2Request and _v2Pages send; this
-// module holds the parts that do not need a client.
+// The /api/v2 platform API transport. The contract is
+// openapi/alva-platform-v2.json (alva-gateway pkg/v2/api/openapi/openapi.json,
+// served at GET /api/v2/openapi.json); src/generated/platform-v2.ts holds its
+// types. AlvaClient._v2Fetch, _v2Request and _v2Pages send; this module holds
+// the parts that do not need a client.
 
-export type V2Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+/** A schema of the /api/v2 contract: `Schema<'Thesis'>`. */
+export type Schema<Name extends keyof components['schemas']> =
+  components['schemas'][Name];
+
+export type V2Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
+/** The methods the contract declares for a path. */
+type V2Operation<Path extends keyof paths> = {
+  [M in Lowercase<V2Method>]: paths[Path][M] extends { parameters: unknown }
+    ? M
+    : never;
+}[Lowercase<V2Method>];
+
+/** The query parameters of a route: `V2Query<'/me/credit-entries', 'get'>`. */
+export type V2Query<
+  Path extends keyof paths,
+  Method extends V2Operation<Path>,
+> = paths[Path][Method] extends { parameters: { query?: infer Q } }
+  ? NonNullable<Q>
+  : never;
 
 /** A query parameter value; an array is sent as one parameter per element. */
 export type QueryValue =
@@ -24,13 +45,18 @@ export interface V2RequestOptions {
   body?: unknown;
   /** Raw JSON text, for bodies that must keep their literals as written. */
   jsonBody?: string;
-  /** Raw bytes, sent as application/octet-stream. */
-  rawBody?: BodyInit;
+  /** Raw bytes (fs/write, uploads). Sent unchanged on every attempt. */
+  rawBody?: Blob | BufferSource | string;
+  /** Content-Type of rawBody; application/octet-stream when omitted. */
+  contentType?: string;
+  /** One byte range (`bytes=0-99`), for routes that read raw bytes. */
+  range?: string;
   /**
-   * Idempotency-Key of a write. Pass the same key to every attempt of one
-   * logical write; when omitted, each call sends a new UUID.
+   * Idempotency-Key of a POST or PATCH: one key per logical call, sent on
+   * every retry of it. When omitted, the call gets a new UUID.
    */
   idempotencyKey?: string;
+  /** Timeout of each attempt, in milliseconds. */
   timeoutMs?: number;
   signal?: AbortSignal;
 }
@@ -108,100 +134,61 @@ export function generateRequestId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stringOrUndefined(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined;
-}
-
-function seconds(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0
-    ? value
-    : undefined;
-}
-
-function invalidParams(value: unknown): InvalidParam[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.filter(isRecord).map((p) => ({
-    name: String(p.name ?? ''),
-    reason: String(p.reason ?? ''),
-  }));
-}
-
-/** Delta-seconds of a Retry-After header, the form the gateway sends. */
-function retryAfterHeader(value: string | null): number | undefined {
-  const v = value?.trim();
-  return v && /^[0-9]+$/.test(v) ? Number(v) : undefined;
-}
-
 /**
- * Turns a failed /api/v2 response into an AlvaError: an RFC 9457 problem
- * gives code, detail and its extension members; the v1 error envelope, which
- * middleware in front of the routes may still write, and any other body are
- * read as `_request` reads them.
+ * The Idempotency-Key header value of a key: an RFC 9651 sf-string
+ * (`"<key>"`, draft-ietf-httpapi-idempotency-key-header). The gateway takes
+ * 1 to 255 printable ASCII characters without `"` or `\`.
  */
-export async function v2ResponseError(response: Response): Promise<AlvaError> {
-  let bodyText = '';
-  try {
-    bodyText = await Promise.resolve(response.text());
-  } catch {
-    bodyText = '';
-  }
-  const status = response.status;
-  const headerRetryAfter = retryAfterHeader(
-    response.headers.get('retry-after')
-  );
-  const contentType = (
-    response.headers.get('content-type') ?? ''
-  ).toLowerCase();
-  let data: unknown;
-  if (
-    bodyText &&
-    (contentType.includes('application/json') || contentType.includes('+json'))
-  ) {
-    try {
-      data = JSON.parse(bodyText);
-    } catch {
-      data = undefined;
-    }
-  }
-  if (isRecord(data) && isRecord(data.error)) {
-    return new AlvaError(
-      stringOrUndefined(data.error.code) ?? 'UNKNOWN',
-      stringOrUndefined(data.error.message) ?? `HTTP ${status}`,
-      status,
-      data.details,
-      { retryAfter: headerRetryAfter }
-    );
-  }
-  if (
-    isRecord(data) &&
-    (contentType.includes('application/problem+json') ||
-      typeof data.code === 'string')
-  ) {
-    return new AlvaError(
-      stringOrUndefined(data.code) ?? 'UNKNOWN',
-      stringOrUndefined(data.detail) ??
-        stringOrUndefined(data.title) ??
-        `HTTP ${status}`,
-      status,
+export function idempotencyKeyHeader(key: string): string {
+  if (!/^[\x21\x23-\x5b\x5d-\x7e]{1,255}$/.test(key)) {
+    throw new AlvaError(
+      'INVALID_ARGUMENT',
+      'an idempotency key is 1 to 255 printable ASCII characters without " or \\',
+      400,
       undefined,
       {
-        requiredPermission: stringOrUndefined(data.requiredPermission),
-        invalidParams: invalidParams(data.invalidParams),
-        retryAfter: seconds(data.retryAfter) ?? headerRetryAfter,
+        reason: 'IDEMPOTENCY_KEY_INVALID',
+        invalidParams: [
+          { name: 'Idempotency-Key', reason: 'must be printable ASCII' },
+        ],
       }
     );
   }
-  return new AlvaError(
-    'UNKNOWN',
-    `HTTP ${status}: ${bodyText.slice(0, 200)}`,
-    status,
-    undefined,
-    { retryAfter: headerRetryAfter }
-  );
+  return `"${key}"`;
+}
+
+export const RETRY_MAX_ATTEMPTS = 3;
+export const RETRY_BUDGET_MS = 60_000;
+const RETRY_BASE_MS = 500;
+const RETRY_AFTER_MAX_SECONDS = 30;
+
+/**
+ * The wait before attempt `attempt + 1` after `error`, in milliseconds, or
+ * undefined when the failure is not retried. Retried: a network error, 409
+ * IDEMPOTENCY_KEY_IN_USE, 429 with a Retry-After of at most 30 s, and 502,
+ * 503 and 504, except RELATED_THESES_GENERATING. The wait is 0.5 s ×
+ * 2^(attempt-1) ±20 %, and never shorter than the server's Retry-After.
+ */
+export function retryDelayMs(
+  error: AlvaError,
+  attempt: number,
+  random: () => number = Math.random
+): number | undefined {
+  const retryAfterMs = (error.retryAfter ?? 0) * 1000;
+  // RELATED_THESES_GENERATING is the Related read's own state.
+  const retried =
+    error.reason !== 'RELATED_THESES_GENERATING' &&
+    (error.code === 'NETWORK_ERROR' ||
+      error.status === 502 ||
+      error.status === 503 ||
+      error.status === 504 ||
+      (error.status === 409 && error.reason === 'IDEMPOTENCY_KEY_IN_USE') ||
+      (error.status === 429 &&
+        error.retryAfter !== undefined &&
+        error.retryAfter <= RETRY_AFTER_MAX_SECONDS));
+  if (!retried) return undefined;
+  const backoff = RETRY_BASE_MS * 2 ** (attempt - 1) * (0.8 + 0.4 * random());
+  return Math.max(retryAfterMs, Math.round(backoff));
 }
 
 /** Reads every page and returns their items in order. */
@@ -213,4 +200,14 @@ export async function collectAll<T>(
     for (const item of page.items) items.push(item);
   }
   return items;
+}
+
+/** The result, or null when the resource does not exist (404). Other failures, 403 included, are thrown. */
+export async function orNull<T>(request: Promise<T>): Promise<T | null> {
+  try {
+    return await request;
+  } catch (err) {
+    if (err instanceof AlvaError && err.status === 404) return null;
+    throw err;
+  }
 }

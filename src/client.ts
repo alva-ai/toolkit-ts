@@ -1,8 +1,11 @@
-import { AlvaError } from './error.js';
+import { AlvaError, responseError } from './error.js';
 import {
   encodeQuery,
   generateRequestId,
-  v2ResponseError,
+  idempotencyKeyHeader,
+  retryDelayMs,
+  RETRY_BUDGET_MS,
+  RETRY_MAX_ATTEMPTS,
   type Page,
   type V2Method,
   type V2PageOptions,
@@ -395,58 +398,35 @@ export class AlvaClient {
       options
     );
 
-    if (!response.ok) {
-      // Read body as text first to avoid double consumption
-      let bodyText = '';
-      try {
-        bodyText = await Promise.resolve(response.text());
-      } catch {
-        bodyText = '';
-      }
-      const contentType = response.headers.get('content-type') ?? '';
-      if (contentType.includes('application/json') && bodyText) {
-        try {
-          const data = JSON.parse(bodyText) as {
-            error?: { code?: string; message?: string };
-            details?: unknown;
-          };
-          if (data.error) {
-            // details carries the typed reason (domain, reason, metadata) of
-            // rejections such as THESIS_RETURN_LAST_LEG.
-            throw new AlvaError(
-              data.error.code ?? 'UNKNOWN',
-              data.error.message ?? `HTTP ${response.status}`,
-              response.status,
-              data.details
-            );
-          }
-        } catch (e) {
-          if (e instanceof AlvaError) throw e;
-          // JSON parse failed or no error envelope — fall through
-        }
-      }
-      throw new AlvaError(
-        'UNKNOWN',
-        `HTTP ${response.status}: ${bodyText.slice(0, 200)}`,
-        response.status
-      );
-    }
+    if (!response.ok) throw await responseError(response);
 
     return decodeResponse(response);
   }
 
   /**
-   * Sends one /api/v2 request. `path` is relative to /api/v2 (build it with
-   * v2Path); the query repeats a parameter per array element; PATCH sends a
-   * JSON Merge Patch; every write carries an Idempotency-Key; a failure is
-   * thrown as an AlvaError read from the RFC 9457 problem.
+   * Sends one /api/v2 call and returns its successful response. `path` is
+   * relative to /api/v2 (build it with v2Path). The query repeats a parameter
+   * per array element; PATCH sends a JSON Merge Patch; POST and PATCH carry
+   * one Idempotency-Key per call. A network error, 409
+   * IDEMPOTENCY_KEY_IN_USE, 429 with a short Retry-After, 502, 503 and 504
+   * are retried (retryDelayMs) with the same key and body, at most 3
+   * attempts within 60 s; any other failure is thrown as an AlvaError read
+   * from the problem. /api/v2 takes API keys: a client holding a PBSV or
+   * viewer token is refused with CREDENTIAL_REQUIRED before sending.
    */
-  async _v2Request<T = unknown>(
+  async _v2Fetch(
     method: V2Method,
     path: string,
     options: V2RequestOptions = {}
-  ): Promise<T> {
+  ): Promise<Response> {
     const fullPath = `/api/v2${path}`;
+    if (this.pbsvToken || this.viewer_token) {
+      throw new AlvaError(
+        'CREDENTIAL_REQUIRED',
+        `${method} ${fullPath} needs an API key: the 1.x SDK sends no PBSV or viewer token to /api/v2. Use client.v1, or @alva-ai/toolkit@0.36 in a browser page.`,
+        401
+      );
+    }
     const url = `${this.baseUrl}${fullPath}${encodeQuery(options.query)}`;
     const headers = this._headers(false);
     const jsonType =
@@ -454,7 +434,8 @@ export class AlvaClient {
 
     let fetchBody: BodyInit | undefined;
     if (options.rawBody !== undefined) {
-      headers['Content-Type'] = 'application/octet-stream';
+      headers['Content-Type'] =
+        options.contentType ?? 'application/octet-stream';
       fetchBody = options.rawBody;
     } else if (options.jsonBody !== undefined) {
       headers['Content-Type'] = jsonType;
@@ -463,21 +444,75 @@ export class AlvaClient {
       headers['Content-Type'] = jsonType;
       fetchBody = JSON.stringify(options.body);
     }
-    if (method !== 'GET') {
-      headers['Idempotency-Key'] =
-        options.idempotencyKey ?? generateRequestId();
+    if (options.range !== undefined) headers.Range = options.range;
+    if (method === 'POST' || method === 'PATCH') {
+      headers['Idempotency-Key'] = idempotencyKeyHeader(
+        options.idempotencyKey ?? generateRequestId()
+      );
     }
 
-    const response = await this._send(
-      method,
-      fullPath,
-      url,
-      headers,
-      fetchBody,
-      options
-    );
-    if (!response.ok) throw await v2ResponseError(response);
-    return (await decodeResponse(response)) as T;
+    const signal = options.signal ?? this.signal;
+    const started = Date.now();
+    for (let attempt = 1; ; attempt += 1) {
+      let failure: AlvaError;
+      try {
+        const response = await this._send(
+          method,
+          fullPath,
+          url,
+          headers,
+          fetchBody,
+          options
+        );
+        if (response.ok) return response;
+        failure = await responseError(response);
+      } catch (err) {
+        if (!(err instanceof AlvaError)) throw err;
+        failure = err;
+      }
+      const delay =
+        attempt < RETRY_MAX_ATTEMPTS
+          ? retryDelayMs(failure, attempt)
+          : undefined;
+      if (delay === undefined || Date.now() - started + delay > RETRY_BUDGET_MS)
+        throw failure;
+      await sleep(delay, signal, method, fullPath);
+    }
+  }
+
+  /**
+   * Sends one /api/v2 call to a JSON route (_v2Fetch) and returns its body,
+   * typed by the caller with the route's schema (`Schema<'Thesis'>`). A body
+   * that is not a JSON object is INVALID_RESPONSE.
+   */
+  async _v2Request<T = unknown>(
+    method: V2Method,
+    path: string,
+    options: V2RequestOptions = {}
+  ): Promise<T> {
+    const response = await this._v2Fetch(method, path, options);
+    const contentType = (
+      response.headers.get('content-type') ?? ''
+    ).toLowerCase();
+    let body: unknown;
+    if (
+      contentType.includes('application/json') ||
+      contentType.includes('+json')
+    ) {
+      try {
+        body = await response.json();
+      } catch {
+        body = undefined;
+      }
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new AlvaError(
+        'INVALID_RESPONSE',
+        `${method} /api/v2${path} did not return a JSON object`,
+        502
+      );
+    }
+    return body as T;
   }
 
   /**
@@ -491,12 +526,12 @@ export class AlvaClient {
   ): AsyncGenerator<Page<T>, void, undefined> {
     let pageToken = options.pageToken;
     for (;;) {
-      const page = await this._v2Request<Page<T> | undefined>('GET', path, {
+      const page = await this._v2Request<Page<T>>('GET', path, {
         query: { ...options.query, pageSize: options.pageSize, pageToken },
         timeoutMs: options.timeoutMs,
         signal: options.signal,
       });
-      if (!Array.isArray(page?.items)) {
+      if (!Array.isArray(page.items)) {
         throw new AlvaError(
           'INVALID_RESPONSE',
           `GET /api/v2${path} did not return a page`,
@@ -637,6 +672,34 @@ export class AlvaClient {
       }
     }
   }
+}
+
+/** Waits between two attempts of one call; an abort ends the wait. */
+function sleep(
+  ms: number,
+  signal: AbortSignal | undefined,
+  method: string,
+  path: string
+): Promise<void> {
+  const aborted = () =>
+    new AlvaError(
+      'NETWORK_ABORTED',
+      `Request aborted while calling ${method} ${path}`,
+      0,
+      { method, path }
+    );
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(aborted());
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(aborted());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 async function decodeResponse(response: Response): Promise<unknown> {

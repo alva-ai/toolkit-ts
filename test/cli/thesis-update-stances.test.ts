@@ -118,7 +118,7 @@ for (const [name, dispatch] of [
         expect(calls).toHaveLength(2);
         expect(calls[1].method).toBe('POST');
         expect(calls[1].path).toBe(`/theses/${THESIS}/updates`);
-        expect(calls[1].headers['Idempotency-Key']).toBe(REQUEST_ID);
+        expect(calls[1].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
         expect(calls[1].body).toEqual({
           expectedVersionId: VERSION,
           body: 'Edited body',

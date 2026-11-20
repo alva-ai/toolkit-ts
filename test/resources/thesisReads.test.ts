@@ -418,7 +418,7 @@ describe('Thesis read contracts', () => {
         503,
         'UNAVAILABLE',
         'related Theses are being prepared; retry later',
-        { retryAfter: 30 }
+        { reason: 'RELATED_THESES_GENERATING', retryAfter: 30 }
       ),
     });
     expect(await client().theses.related(THESIS)).toEqual({

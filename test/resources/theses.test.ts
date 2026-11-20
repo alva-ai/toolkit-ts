@@ -88,7 +88,7 @@ describe('ThesesResource', () => {
     ).resolves.toEqual({ thesis: restThesis() });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].headers['Idempotency-Key']).toBe(REQUEST_ID);
+    expect(calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
     expect(calls[0].body).toEqual({
       title: 'Thesis',
       body: 'line one\r\nline two',
@@ -465,7 +465,7 @@ describe('ThesesResource', () => {
       `POST /theses/${THESIS}/updates`,
     ]);
     expect(calls[1].body).toEqual({ visibility: 'PRIVATE' });
-    expect(calls[2].headers['Idempotency-Key']).toBe(REQUEST_ID);
+    expect(calls[2].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
     expect(calls[2].body).toEqual({
       expectedVersionId: VERSION,
       title: '',
@@ -572,8 +572,8 @@ describe('ThesesResource', () => {
       note: 'returning',
     });
     // The Update is the write the caller's request ID names.
-    expect(calls[1].headers['Idempotency-Key']).not.toBe(REQUEST_ID);
-    expect(calls[2].headers['Idempotency-Key']).toBe(REQUEST_ID);
+    expect(calls[1].headers['Idempotency-Key']).not.toBe(`"${REQUEST_ID}"`);
+    expect(calls[2].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
     expect(calls[2].body).toMatchObject({
       expectedVersionId: 'thesis_version_0un',
     });
@@ -624,7 +624,7 @@ describe('ThesesResource', () => {
         note: 'review later',
       })
     ).resolves.toEqual({ thesis: restThesis({ archived: true }) });
-    expect(calls[1].headers['Idempotency-Key']).toBe(REQUEST_ID);
+    expect(calls[1].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
     expect(calls[1].body).toEqual({
       expectedVersionId: VERSION,
       note: 'review later',
@@ -824,9 +824,9 @@ describe('ThesesResource', () => {
     });
   });
 
-  it('does not retry a stable request ID after a backend error', async () => {
+  it('does not retry a stable request ID after an internal error', async () => {
     const { fetcher } = v2Fetch({
-      'POST /theses': problem(503, 'UNAVAILABLE', 'service unavailable'),
+      'POST /theses': problem(500, 'INTERNAL', 'internal error'),
     });
     await expect(
       client().theses.create({ request_id: REQUEST_ID, body: 'draft' })

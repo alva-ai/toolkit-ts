@@ -533,9 +533,9 @@ describe('FeedResource', () => {
       id,
       visibility: 'private',
     });
-    // Pause and resume require a UUID Idempotency-Key.
+    // Writes send a quoted UUID Idempotency-Key.
     expect(calls[0].headers['Idempotency-Key']).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      /^"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"$/
     );
   });
 

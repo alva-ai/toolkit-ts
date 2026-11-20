@@ -10,8 +10,10 @@ export {
   CliUsageError,
   type InvalidParam,
   type ProblemFields,
+  type ProblemReason,
 } from './error.js';
-export type { Page } from './platformApi.js';
+export type { Page, Schema, V2Query } from './platformApi.js';
+export type { components, paths } from './generated/platform-v2.js';
 export * from './playbookRuntime.js';
 export {
   AutomationAlertDeliveryResource,

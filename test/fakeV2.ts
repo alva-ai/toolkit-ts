@@ -13,18 +13,21 @@ export interface V2Call {
 /** A route's answer: a JSON body (200), or a Response as is. */
 type V2Handler = (call: V2Call) => unknown;
 
+/** An RFC 9457 problem as the gateway writes it: every member present. */
 export function problem(
   status: number,
   code: string,
   fields: Record<string, unknown> = {}
 ): Response {
+  const reason = typeof fields.reason === 'string' ? fields.reason : null;
   return new Response(
     JSON.stringify({
-      type: 'about:blank',
+      type: `https://alva.ai/problems/${(reason ?? code).toLowerCase().replaceAll('_', '-')}`,
       title: code,
       status,
       detail: `${code} detail`,
       code,
+      reason,
       requiredPermission: null,
       invalidParams: null,
       retryAfter: null,

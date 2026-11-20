@@ -77,7 +77,7 @@ for (const [name, dispatch] of [
         );
         const result = await dispatch(client, argv(JSON.stringify(images)));
         expect(calls).toHaveLength(1);
-        expect(calls[0].headers['Idempotency-Key']).toBe(requestId);
+        expect(calls[0].headers['Idempotency-Key']).toBe(`"${requestId}"`);
         expect(calls[0].body).toMatchObject({
           body: 'Original body',
           visibility: 'PUBLIC',

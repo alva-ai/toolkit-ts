@@ -442,7 +442,9 @@ describe('TradingResource', () => {
       playbookVersion: '1.0.0',
       initialOrders: 'NONE',
     });
-    expect(fake.calls[0].headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/);
+    expect(fake.calls[0].headers['Idempotency-Key']).toMatch(
+      /^"[0-9a-f-]{36}"$/
+    );
     expect(s).toMatchObject({
       id: 'trade_subscription_0a',
       sourceUsername: 'alice',

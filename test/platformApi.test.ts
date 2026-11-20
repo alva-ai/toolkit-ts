@@ -1,16 +1,21 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../src/client.js';
 import { AlvaError, alvaErrorOutput } from '../src/error.js';
 import {
   collectAll,
   encodeQuery,
   generateRequestId,
+  idempotencyKeyHeader,
+  orNull,
+  retryDelayMs,
   v2Path,
   type Page,
 } from '../src/platformApi.js';
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const QUOTED_UUID_V4 =
+  /^"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"$/;
 
 function json(
   status: number,
@@ -34,6 +39,7 @@ function problem(
       title: 'Problem',
       status,
       detail: 'problem detail',
+      reason: null,
       requiredPermission: null,
       invalidParams: null,
       retryAfter: null,
@@ -173,59 +179,344 @@ describe('AlvaClient._v2Request', () => {
     expect(call(fn, 1).init.body).toBe('{"description":null,"name":"m"}');
   });
 
-  it('returns undefined for 204 No Content', async () => {
-    mockFetch(new Response(null, { status: 204 }));
+  it('refuses an answer that is not a JSON object', async () => {
+    mockFetch(
+      new Response(null, { status: 204 }),
+      json(200, [1]),
+      json(200, null),
+      new Response('ok', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      }),
+      new Response('{', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
     const client = new AlvaClient({ apiKey: 'k' });
 
-    await expect(
-      client._v2Request('DELETE', '/cronjobs/cronjob_0x')
-    ).resolves.toBeUndefined();
+    for (let i = 0; i < 5; i += 1) {
+      const err = await rejection(
+        client._v2Request('DELETE', '/cronjobs/cronjob_0x')
+      );
+      expect([err.code, err.status, err.message]).toEqual([
+        'INVALID_RESPONSE',
+        502,
+        'DELETE /api/v2/cronjobs/cronjob_0x did not return a JSON object',
+      ]);
+    }
+  });
+
+  it('refuses a PBSV or viewer token before sending', async () => {
+    const fn = mockFetch();
+    for (const config of [
+      { pbsvToken: 'pbsv', apiKey: 'k' },
+      { viewer_token: 'viewer' },
+    ]) {
+      const err = await rejection(
+        new AlvaClient(config)._v2Request('GET', '/me')
+      );
+      expect([err.code, err.status]).toEqual(['CREDENTIAL_REQUIRED', 401]);
+      expect(err.message).toBe(
+        'GET /api/v2/me needs an API key: the 1.x SDK sends no PBSV or viewer token to /api/v2. Use client.v1, or @alva-ai/toolkit@0.36 in a browser page.'
+      );
+    }
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('sends a call without a credential as it is', async () => {
+    const fn = mockFetch(json(200, { openapi: '3.1.0' }));
+
+    await new AlvaClient({})._v2Request('GET', '/openapi.json');
+
+    expect(call(fn, 0).headers).toEqual({});
+  });
+});
+
+describe('AlvaClient._v2Fetch', () => {
+  it('returns the response of a raw-bytes route with its headers', async () => {
+    const fn = mockFetch(
+      new Response('bc', {
+        status: 206,
+        headers: {
+          'content-type': 'text/plain',
+          'content-range': 'bytes 1-2/3',
+        },
+      }),
+      json(200, { bytesWritten: 3 })
+    );
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    const read = await client._v2Fetch('GET', '/fs/read', {
+      query: { path: '~/a.txt' },
+      range: 'bytes=1-2',
+    });
+    const bytes = new Uint8Array([1, 2, 3]);
+    await client._v2Fetch('POST', '/fs/write', {
+      query: { path: '~/a.bin' },
+      rawBody: bytes,
+      contentType: 'image/png',
+    });
+
+    expect(await read.text()).toBe('bc');
+    expect(read.headers.get('content-range')).toBe('bytes 1-2/3');
+    expect(call(fn, 0).headers.Range).toBe('bytes=1-2');
+    expect(call(fn, 1).headers['Content-Type']).toBe('image/png');
+    expect(call(fn, 1).init.body).toBe(bytes);
   });
 });
 
 describe('Idempotency-Key', () => {
-  it('gives every logical write its own UUID', async () => {
-    const fn = mockFetch(json(200, {}), json(200, {}), json(200, {}));
-    const client = new AlvaClient({ apiKey: 'k' });
-
-    await client._v2Request('POST', '/search/web', { body: { query: 'a' } });
-    await client._v2Request('POST', '/search/web', { body: { query: 'a' } });
-    await client._v2Request('DELETE', '/cronjobs/cronjob_0x');
-
-    const keys = [0, 1, 2].map((i) => call(fn, i).headers['Idempotency-Key']);
-    for (const key of keys) expect(key).toMatch(UUID_V4);
-    expect(new Set(keys).size).toBe(3);
-  });
-
-  it('sends the same key on every attempt of one write', async () => {
+  it('gives every POST and PATCH its own quoted UUID, and GET and DELETE none', async () => {
     const fn = mockFetch(
-      problem(503, { code: 'UNAVAILABLE' }),
-      json(200, { id: 'order_0x' })
+      json(200, {}),
+      json(200, {}),
+      json(200, {}),
+      json(200, {}),
+      json(200, {})
     );
     const client = new AlvaClient({ apiKey: 'k' });
-    const idempotencyKey = 'request-7';
-    const place = () =>
-      client._v2Request('POST', '/me/orders', {
-        body: { symbol: 'NVDA' },
-        idempotencyKey,
-      });
 
-    const first = await rejection(place());
-    expect(first.code).toBe('UNAVAILABLE');
-    await expect(place()).resolves.toEqual({ id: 'order_0x' });
+    await client._v2Request('POST', '/web-searches', { body: { query: 'a' } });
+    await client._v2Request('POST', '/web-searches', { body: { query: 'a' } });
+    await client._v2Request('PATCH', '/cronjobs/cronjob_0x', { body: {} });
+    await client._v2Request('DELETE', '/cronjobs/cronjob_0x');
+    await client._v2Request('GET', '/me');
 
-    expect(call(fn, 0).headers['Idempotency-Key']).toBe('request-7');
-    expect(call(fn, 1).headers['Idempotency-Key']).toBe('request-7');
+    const keys = [0, 1, 2].map((i) => call(fn, i).headers['Idempotency-Key']);
+    for (const key of keys) expect(key).toMatch(QUOTED_UUID_V4);
+    expect(new Set(keys).size).toBe(3);
+    expect(call(fn, 3).headers['Idempotency-Key']).toBeUndefined();
+    expect(call(fn, 4).headers['Idempotency-Key']).toBeUndefined();
+  });
+
+  it("sends the caller's key quoted, and refuses one the gateway would", async () => {
+    const fn = mockFetch(json(200, {}));
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    await client._v2Request('POST', '/runs', { idempotencyKey: 'run-7' });
+    expect(call(fn, 0).headers['Idempotency-Key']).toBe('"run-7"');
+
+    for (const bad of ['', 'a"b', 'a\\b', 'a b', 'é', 'x'.repeat(256)]) {
+      const err = await rejection(
+        client._v2Request('POST', '/runs', { idempotencyKey: bad })
+      );
+      expect([err.code, err.reason]).toEqual([
+        'INVALID_ARGUMENT',
+        'IDEMPOTENCY_KEY_INVALID',
+      ]);
+    }
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('formats the header as an RFC 9651 sf-string', () => {
+    expect(idempotencyKeyHeader('8e03978e-40d5-43e8-bc93-6894a57f9324')).toBe(
+      '"8e03978e-40d5-43e8-bc93-6894a57f9324"'
+    );
+    expect(idempotencyKeyHeader('!#[]~')).toBe('"!#[]~"');
+  });
+});
+
+describe('retries', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runs a call to completion, advancing fake time through its waits. */
+  async function settle<T>(promise: Promise<T>): Promise<T> {
+    const settled = promise.then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error })
+    );
+    for (let i = 0; i < 20; i += 1) await vi.advanceTimersByTimeAsync(5_000);
+    const result = await settled;
+    if ('error' in result) throw result.error;
+    return result.value;
+  }
+
+  const networkError = () =>
+    Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'ECONNRESET' },
+    });
+
+  it.each([
+    ['a network error', () => Promise.reject(networkError())],
+    [
+      '409 IDEMPOTENCY_KEY_IN_USE',
+      () =>
+        problem(
+          409,
+          {
+            code: 'CONFLICT',
+            reason: 'IDEMPOTENCY_KEY_IN_USE',
+            retryAfter: 1,
+          },
+          { 'retry-after': '1' }
+        ),
+    ],
+    [
+      '429 with Retry-After 30',
+      () =>
+        problem(
+          429,
+          { code: 'RATE_LIMITED', reason: 'QUOTA_EXCEEDED', retryAfter: 30 },
+          { 'retry-after': '30' }
+        ),
+    ],
+    ['502', () => new Response('bad gateway', { status: 502 })],
+    ['503', () => problem(503, { code: 'UNAVAILABLE' })],
+    ['504', () => problem(504, { code: 'DEADLINE_EXCEEDED' })],
+  ])('retries %s with the same key and body bytes', async (_name, failure) => {
+    const fn = vi.fn();
+    fn.mockImplementationOnce(failure);
+    fn.mockResolvedValueOnce(json(200, { id: 'run_0x' }));
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    await expect(
+      settle(client._v2Request('POST', '/runs', { body: { code: '1+1' } }))
+    ).resolves.toEqual({ id: 'run_0x' });
+
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(call(fn, 1).headers['Idempotency-Key']).toBe(
+      call(fn, 0).headers['Idempotency-Key']
+    );
+    expect(call(fn, 1).init.body).toBe(call(fn, 0).init.body);
+  });
+
+  it.each([
+    ['500', () => problem(500, { code: 'INTERNAL' })],
+    ['400', () => problem(400, { code: 'INVALID_ARGUMENT' })],
+    [
+      'another 409',
+      () =>
+        problem(409, { code: 'CONFLICT', reason: 'IDEMPOTENCY_KEY_REUSED' }),
+    ],
+    ['429 without Retry-After', () => problem(429, { code: 'RATE_LIMITED' })],
+    [
+      '429 with Retry-After 31',
+      () => problem(429, { code: 'RATE_LIMITED' }, { 'retry-after': '31' }),
+    ],
+    [
+      '503 RELATED_THESES_GENERATING',
+      () =>
+        problem(503, {
+          code: 'UNAVAILABLE',
+          reason: 'RELATED_THESES_GENERATING',
+          retryAfter: 30,
+        }),
+    ],
+  ])('does not retry %s', async (_name, failure) => {
+    const fn = vi.fn().mockImplementation(failure);
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    await expect(
+      settle(client._v2Request('POST', '/runs', { body: {} }))
+    ).rejects.toBeInstanceOf(AlvaError);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes at most three attempts and throws the last failure', async () => {
+    const fn = vi
+      .fn()
+      .mockImplementation(() => problem(503, { code: 'UNAVAILABLE' }));
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    const err = await rejection(settle(client._v2Request('GET', '/me')));
+
+    expect([err.code, err.status]).toEqual(['UNAVAILABLE', 503]);
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
+
+  it('waits for Retry-After and stops when the next wait passes 60 s', async () => {
+    const times: number[] = [];
+    const fn = vi.fn().mockImplementation(() => {
+      times.push(Date.now());
+      return problem(
+        503,
+        { code: 'UNAVAILABLE', retryAfter: 40 },
+        { 'retry-after': '40' }
+      );
+    });
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    await expect(settle(client._v2Request('GET', '/me'))).rejects.toMatchObject(
+      { code: 'UNAVAILABLE' }
+    );
+
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(times[1] - times[0]).toBe(40_000);
+  });
+
+  it('ends the wait when the caller aborts', async () => {
+    const fn = vi
+      .fn()
+      .mockImplementation(() => problem(503, { code: 'UNAVAILABLE' }));
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const controller = new AbortController();
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    const request = rejection(
+      client._v2Request('GET', '/me', { signal: controller.signal })
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    const err = await request;
+
+    expect(err.code).toBe('NETWORK_ABORTED');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a timed-out attempt', async () => {
+    const fn = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(init.signal?.reason)
+          );
+        })
+    );
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    await expect(
+      settle(client._v2Request('GET', '/me', { timeoutMs: 50 }))
+    ).rejects.toMatchObject({ code: 'NETWORK_TIMEOUT' });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs off 0.5 s × 2^(n-1) with ±20 % jitter, never under Retry-After', () => {
+    const unavailable = new AlvaError('UNAVAILABLE', 'x', 503);
+    expect(retryDelayMs(unavailable, 1, () => 0)).toBe(400);
+    expect(retryDelayMs(unavailable, 1, () => 1)).toBe(600);
+    expect(retryDelayMs(unavailable, 2, () => 0.5)).toBe(1000);
+    const later = new AlvaError('UNAVAILABLE', 'x', 503, undefined, {
+      retryAfter: 2,
+    });
+    expect(retryDelayMs(later, 1, () => 1)).toBe(2000);
   });
 });
 
 describe('problem parsing', () => {
-  it('reads code, status, detail and requiredPermission', async () => {
+  it('reads code, reason, type, status, detail and requiredPermission', async () => {
     mockFetch(
       problem(403, {
+        type: 'https://alva.ai/problems/insufficient-permission',
         code: 'INSUFFICIENT_PERMISSION',
         detail: 'the credential lacks the trading_limits:write permission',
         requiredPermission: 'trading_limits:write',
+      }),
+      problem(422, {
+        type: 'https://alva.ai/problems/idempotency-key-reused',
+        code: 'INVALID_ARGUMENT',
+        reason: 'IDEMPOTENCY_KEY_REUSED',
+        detail: 'this Idempotency-Key was used for a different request',
       })
     );
     const client = new AlvaClient({ apiKey: 'k' });
@@ -233,15 +524,24 @@ describe('problem parsing', () => {
     const err = await rejection(
       client._v2Request('PATCH', '/me/risk-rules', { body: {} })
     );
-
     expect(err.code).toBe('INSUFFICIENT_PERMISSION');
     expect(err.status).toBe(403);
     expect(err.message).toBe(
       'the credential lacks the trading_limits:write permission'
     );
+    expect(err.type).toBe('https://alva.ai/problems/insufficient-permission');
     expect(err.requiredPermission).toBe('trading_limits:write');
+    expect('reason' in err).toBe(false);
     expect(err.invalidParams).toBeUndefined();
     expect(err.retryAfter).toBeUndefined();
+
+    const reused = await rejection(client._v2Request('POST', '/runs'));
+    expect([reused.code, reused.reason, reused.status, reused.type]).toEqual([
+      'INVALID_ARGUMENT',
+      'IDEMPOTENCY_KEY_REUSED',
+      422,
+      'https://alva.ai/problems/idempotency-key-reused',
+    ]);
   });
 
   it('reads invalidParams', async () => {
@@ -268,29 +568,30 @@ describe('problem parsing', () => {
   });
 
   it('reads retryAfter from the problem, else from Retry-After', async () => {
+    // Over 30 s, so none of them is retried.
     mockFetch(
       problem(
         429,
-        { code: 'RATE_LIMITED', retryAfter: 7 },
-        { 'retry-after': '30' }
+        { code: 'RATE_LIMITED', retryAfter: 45 },
+        { 'retry-after': '60' }
       ),
-      problem(429, { code: 'RATE_LIMITED' }, { 'retry-after': '30' }),
+      problem(429, { code: 'RATE_LIMITED' }, { 'retry-after': '60' }),
       new Response('slow down', {
         status: 429,
-        headers: { 'retry-after': '12', 'content-type': 'text/plain' },
+        headers: { 'retry-after': '40', 'content-type': 'text/plain' },
       })
     );
     const client = new AlvaClient({ apiKey: 'k' });
 
     expect((await rejection(client._v2Request('GET', '/a'))).retryAfter).toBe(
-      7
+      45
     );
     expect((await rejection(client._v2Request('GET', '/a'))).retryAfter).toBe(
-      30
+      60
     );
     const plain = await rejection(client._v2Request('GET', '/a'));
     expect(plain.code).toBe('UNKNOWN');
-    expect(plain.retryAfter).toBe(12);
+    expect(plain.retryAfter).toBe(40);
   });
 
   it('falls back to the title, the v1 envelope and the body text', async () => {
@@ -324,6 +625,35 @@ describe('problem parsing', () => {
     expect('requiredPermission' in text).toBe(false);
   });
 
+  it('reads /api/v1 failures with the same parser', async () => {
+    mockFetch(
+      problem(403, {
+        code: 'PERMISSION_DENIED',
+        reason: 'ACCOUNT_BANNED',
+        detail: 'banned',
+      }),
+      json(404, {
+        error: { code: 'NOT_FOUND', message: 'gone' },
+        details: { reason: 'X' },
+      })
+    );
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    const banned = await rejection(client._request('GET', '/api/v1/me'));
+    expect([banned.code, banned.reason, banned.message]).toEqual([
+      'PERMISSION_DENIED',
+      'ACCOUNT_BANNED',
+      'banned',
+    ]);
+    const gone = await rejection(client._request('GET', '/api/v1/me'));
+    expect([gone.code, gone.message, gone.details]).toEqual([
+      'NOT_FOUND',
+      'gone',
+      { reason: 'X' },
+    ]);
+    expect('reason' in gone).toBe(false);
+  });
+
   it('prints the problem members in the CLI error, and only when present', () => {
     const withProblem = new AlvaError(
       'INVALID_ARGUMENT',
@@ -331,15 +661,19 @@ describe('problem parsing', () => {
       400,
       undefined,
       {
-        invalidParams: [{ name: 'pageSize', reason: 'must be an integer' }],
+        reason: 'PAGE_TOKEN_INVALID',
+        type: 'https://alva.ai/problems/page-token-invalid',
+        invalidParams: [{ name: 'pageToken', reason: 'send it unchanged' }],
       }
     );
     expect(JSON.parse(JSON.stringify(alvaErrorOutput(withProblem)))).toEqual({
       error: {
         code: 'INVALID_ARGUMENT',
+        reason: 'PAGE_TOKEN_INVALID',
         message: 'bad',
         status: 400,
-        invalidParams: [{ name: 'pageSize', reason: 'must be an integer' }],
+        type: 'https://alva.ai/problems/page-token-invalid',
+        invalidParams: [{ name: 'pageToken', reason: 'send it unchanged' }],
       },
     });
     const v1 = new AlvaError('NOT_FOUND', 'gone', 404, { reason: 'X' });
@@ -351,6 +685,19 @@ describe('problem parsing', () => {
         details: { reason: 'X' },
       },
     });
+  });
+});
+
+describe('orNull', () => {
+  it('is null for 404 only', async () => {
+    const notFound = new AlvaError('NOT_FOUND', 'gone', 404);
+    const denied = new AlvaError('PERMISSION_DENIED', 'no', 403);
+
+    await expect(orNull(Promise.resolve({ id: 'x' }))).resolves.toEqual({
+      id: 'x',
+    });
+    await expect(orNull(Promise.reject(notFound))).resolves.toBeNull();
+    await expect(orNull(Promise.reject(denied))).rejects.toBe(denied);
   });
 });
 

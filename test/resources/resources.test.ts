@@ -468,8 +468,7 @@ describe('FunctionsResource', () => {
   it('delete() finds the function by name and deletes it by ID', async () => {
     fake = fakeV2({
       'GET /playbooks/playbook_0abc/functions': () => page([FN]),
-      'DELETE /functions/playbook_function_0analyze': () =>
-        new Response(null, { status: 204 }),
+      'DELETE /functions/playbook_function_0analyze': () => ({}),
     });
 
     await functions().delete({
@@ -563,8 +562,7 @@ describe('FunctionsResource', () => {
         () => page([FN]),
         () => page([NEW_FN]),
       ],
-      'DELETE /functions/playbook_function_0analyze': () =>
-        new Response(null, { status: 204 }),
+      'DELETE /functions/playbook_function_0analyze': () => ({}),
       'POST /functions/playbook_function_0new/invocations': emptyInvocation,
     });
     const resource = functions();
@@ -637,8 +635,7 @@ describe('FunctionsResource', () => {
   it('revokeAllowance() deletes the Playbook allowance by ID, and is done when there is none', async () => {
     fake = fakeV2({
       'GET /me/allowances': [() => page([ALLOWANCE]), () => page([])],
-      'DELETE /me/allowances/allowance_0a': () =>
-        new Response(null, { status: 204 }),
+      'DELETE /me/allowances/allowance_0a': () => ({}),
     });
     const resource = functions();
 

@@ -139,8 +139,20 @@ export function problem(
   detail = 'problem detail',
   extra: Record<string, unknown> = {}
 ): Response {
+  const reason = typeof extra.reason === 'string' ? extra.reason : null;
   return new Response(
-    JSON.stringify({ title: code, status, detail, code, ...extra }),
+    JSON.stringify({
+      type: `https://alva.ai/problems/${(reason ?? code).toLowerCase().replaceAll('_', '-')}`,
+      title: code,
+      status,
+      detail,
+      code,
+      reason,
+      requiredPermission: null,
+      invalidParams: null,
+      retryAfter: null,
+      ...extra,
+    }),
     { status, headers: { 'content-type': 'application/problem+json' } }
   );
 }
