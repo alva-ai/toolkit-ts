@@ -11,5 +11,3 @@ src/resources/schedules.ts: POST <`${path}/${action}`> (not literal)
 
 src/resources/theses.ts: <isStarred ? 'POST' : 'DELETE'> /me/followed-theses (not literal)
 src/resources/theses.ts: <isStarred ? 'POST' : 'DELETE'> /me/followed-theses/{} (not literal)
-
-src/resources/x.ts: GET <path> (not literal)

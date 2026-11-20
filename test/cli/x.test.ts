@@ -3,6 +3,7 @@ import { AlvaClient } from '../../src/client.js';
 import { dispatchCli } from '../../src/cli/dispatch.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 import { fakeV2, problem } from '../fakeV2.js';
+import { page, xAccount, xConnection, xPost } from '../marketV2.js';
 
 let restore = () => {};
 afterEach(() => restore());
@@ -15,19 +16,15 @@ for (const [name, dispatch] of [
     it('uses the real authenticated resource for defaults, continuation, and status', async () => {
       const client = new AlvaClient({ apiKey: 'host-key' });
       const fake = fakeV2({
-        'GET /me/x-following': () => ({ items: [], nextPageToken: 'next' }),
-        'GET /me/x-connection': () => ({
-          connected: true,
-          canReadFollowing: true,
-          canReadPosts: true,
-        }),
-        'GET /me/x-posts': () => ({ items: [], nextPageToken: null }),
+        'GET /me/x-following': () => page([xAccount()], 'next'),
+        'GET /me/x-connection': () => xConnection(),
+        'GET /me/x-posts': () => page([xPost()]),
       });
       restore = fake.restore;
-      expect(await dispatch(client, ['x', 'following'])).toMatchObject({
-        edges: [],
-        pageInfo: { endCursor: 'next', hasNextPage: true },
-      });
+      expect(await dispatch(client, ['x', 'following'])).toEqual(
+        page([xAccount()], 'next')
+      );
+      expect(fake.calls[0].query.toString()).toBe('');
       await dispatch(client, [
         'x',
         'following',
@@ -38,12 +35,8 @@ for (const [name, dispatch] of [
       ]);
       expect(fake.calls[1].query.toString()).toBe('pageSize=25&pageToken=next');
       expect(fake.calls[1].headers['X-Alva-Api-Key']).toBe('host-key');
-      expect(await dispatch(client, ['x', 'status'])).toMatchObject({
-        connected: true,
-      });
-      expect(await dispatch(client, ['x', 'posts'])).toMatchObject({
-        edges: [],
-      });
+      expect(await dispatch(client, ['x', 'status'])).toEqual(xConnection());
+      expect(await dispatch(client, ['x', 'posts'])).toEqual(page([xPost()]));
     });
     it.each(
       [

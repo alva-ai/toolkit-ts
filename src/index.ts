@@ -219,14 +219,7 @@ export type {
   RelatedThesesPage,
 } from './resources/thesisReads.js';
 
-export {
-  XResource,
-  type XReadParams,
-  type XConnectionStatus,
-  type XAccount,
-  type XPost,
-  type XReadPage,
-} from './resources/x.js';
+export { XResource } from './resources/x.js';
 
 export type { OrderOrigin, EquityRange } from './resources/trading.js';
 

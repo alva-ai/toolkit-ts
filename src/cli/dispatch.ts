@@ -1,4 +1,3 @@
-import { validateXReadParams } from '../resources/x.js';
 import {
   normalizeWatchlistTickersParams,
   parseTickerSpec,
@@ -330,11 +329,11 @@ Examples:
   x: `Usage: alva x <status|following|posts> [options]
 
 Read your connected X account on demand. status checks local credentials only;
-following and posts each fetch ONE live page from X (default 20, range 5-100).
-Use --limit <5-100> and --cursor <pageInfo.endCursor> to continue while
-pageInfo.hasNextPage is true, including after an empty intermediate page.
-Results include retrievedAt (client retrieval time); pages are not a stable
-snapshot. Do not claim a complete following list until pagination ends.
+following and posts each fetch ONE live page from X (default 20, range 1-100)
+as {items, nextPageToken}. Use --limit <1-100> and --cursor <nextPageToken> to
+continue while nextPageToken is not null, including after an empty
+intermediate page. Pages are live reads, not a stable snapshot. Do not claim
+a complete following list until pagination ends.
 Authorization and token refresh stay in Backend. If credentials or read scopes
 are missing/revoked, ask the user to reconnect X in Alva. Do not retry rate-limit
 errors in a tight loop. No bookmarks, identity override, import, or follow writes.
@@ -4187,25 +4186,16 @@ export async function executeParsedCommand(
           'x'
         );
       }
-      const params = {
-        first: optionalBoundedIntegerFlag(
+      return client.x[subcommand]({
+        pageSize: optionalBoundedIntegerFlag(
           flags,
           'limit',
           `x ${subcommand}`,
-          5,
+          1,
           100
         ),
-        after: flags.cursor,
-      };
-      try {
-        validateXReadParams(params);
-      } catch (error) {
-        throw new CliUsageError(
-          error instanceof Error ? error.message : String(error),
-          'x'
-        );
-      }
-      return client.x[subcommand](params);
+        pageToken: optionalCursorFlag(flags.cursor),
+      });
     }
 
     case 'for-you': {
