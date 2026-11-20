@@ -10,6 +10,9 @@ import { AlvaError } from '../../src/error.js';
 import { fakeV2, problem } from '../fakeV2.js';
 import { creditEntry, wallet } from '../billingV2.js';
 import { page } from '../marketV2.js';
+import { run, RUNTIME_FIXTURES } from '../runtimeV2.js';
+
+const REQUEST_ID = '123e4567-e89b-42d3-a456-426614174000';
 
 function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
@@ -67,73 +70,64 @@ describe('CreditsResource', () => {
 });
 
 describe('RunResource', () => {
-  const RUN = {
-    status: 'SUCCEEDED',
-    returnValue: '2',
-    logs: 'log line',
-    error: null,
-    durationMs: 12,
-    creditsUsed: '3',
-    subscriptionRequired: false,
-    entitlementFailure: null,
-  };
+  const RUN = run();
   let fake: ReturnType<typeof fakeV2>;
   beforeEach(() => {
     fake = fakeV2({ 'POST /runs': () => RUN });
   });
   afterEach(() => fake.restore());
-  const run = () => new RunResource(new AlvaClient({ apiKey: 'key' }));
+  const runs = () => new RunResource(new AlvaClient({ apiKey: 'key' }));
   const sent = () => fake.calls[0]?.body;
 
-  it('execute() with code sends POST /api/v2/runs and rebuilds the v1 result', async () => {
-    await expect(run().execute({ code: '1+1' })).resolves.toEqual({
-      result: '2',
-      logs: 'log line',
-      stats: { credits_used: 3, duration_ms: 12 },
-      status: 'completed',
-      error: null,
+  it('execute() sends the RunRequest and returns the Run unchanged', async () => {
+    await expect(
+      runs().execute({ entryPath: '~/s.js', maxHeapSizeMb: 512 })
+    ).resolves.toEqual(RUN);
+    expect(sent()).toEqual({ entryPath: '~/s.js', maxHeapSizeMb: 512 });
+  });
+
+  it('execute() returns a failed run that needs a higher plan as data', async () => {
+    const failed = RUNTIME_FIXTURES[1][1];
+    fake.restore();
+    fake = fakeV2({ 'POST /runs': () => failed });
+    await expect(runs().execute({ code: '1' })).resolves.toEqual(failed);
+  });
+
+  it('execute() sends the caller key on every attempt and the timeout per attempt', async () => {
+    const c = new AlvaClient({ apiKey: 'key' });
+    const request = vi.spyOn(c, '_v2Request').mockResolvedValue(RUN);
+    await new RunResource(c).execute(
+      { code: '1+1' },
+      { idempotencyKey: REQUEST_ID, timeoutMs: 900000 }
+    );
+    expect(request).toHaveBeenCalledWith('POST', '/runs', {
+      body: { code: '1+1' },
+      idempotencyKey: REQUEST_ID,
+      timeoutMs: 900000,
     });
-    expect(sent()).toEqual({ code: '1+1' });
-  });
-
-  it('execute() with entry_path drops working_dir, which /api/v2 refuses with it', async () => {
-    await run().execute({ entry_path: '~/s.js', working_dir: '~/w' });
-    expect(sent()).toEqual({ entryPath: '~/s.js' });
-    fake.calls.length = 0;
-    await run().execute({ code: '1', working_dir: '~/w' });
-    expect(sent()).toEqual({ code: '1', workingDir: '~/w' });
-  });
-
-  it('execute() reports a failed run that needs a higher plan', async () => {
     fake.restore();
     fake = fakeV2({
-      'POST /runs': () => ({
-        ...RUN,
-        status: 'FAILED',
-        error: 'needs pro',
-        subscriptionRequired: true,
-        entitlementFailure: {
-          resource: '@alva/data',
-          category: 'market',
-          requiredTier: 'PRO',
-        },
-      }),
+      'POST /runs': [() => problem(503, 'UNAVAILABLE'), () => RUN],
     });
-    await expect(run().execute({ code: '1' })).resolves.toMatchObject({
-      status: 'failed',
-      error: 'needs pro',
-      reject_reason: 'SUBSCRIPTION_ENTITLEMENT_REQUIRED',
-      upgrade_url: 'https://alva.ai/pricing',
-      entitlement_failure: {
-        resource: '@alva/data',
-        category: 'market',
-        required_tier: 'PRO',
-      },
-    });
+    vi.useFakeTimers();
+    try {
+      const pending = runs().execute(
+        { code: '1+1' },
+        { idempotencyKey: REQUEST_ID }
+      );
+      await vi.runAllTimersAsync();
+      await expect(pending).resolves.toEqual(RUN);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fake.calls.map((c) => c.headers['Idempotency-Key'])).toEqual([
+      `"${REQUEST_ID}"`,
+      `"${REQUEST_ID}"`,
+    ]);
   });
 
   it('execute() preserves serialized string IDs supplied by the CLI', async () => {
-    await run()._executeSerializedArgs(
+    await runs()._executeSerializedArgs(
       { code: '1+1' },
       '{"channel_id":"2087608331744604161"}'
     );
@@ -152,13 +146,14 @@ describe('RunResource', () => {
     );
     expect(request).toHaveBeenCalledWith('POST', '/runs', {
       jsonBody: '{"code":"1+1","args":{"fraction":1000000000000000.1}}',
+      idempotencyKey: undefined,
       timeoutMs: undefined,
     });
   });
 
   it('execute() rejects malformed serialized args before sending', async () => {
     await expect(
-      run()._executeSerializedArgs({ code: '1+1' }, '{"broken":')
+      runs()._executeSerializedArgs({ code: '1+1' }, '{"broken":')
     ).rejects.toThrow();
     expect(fake.calls).toHaveLength(0);
   });
@@ -188,7 +183,7 @@ describe('RunResource', () => {
     'execute() rejects $name from the structured SDK API',
     async ({ args }) => {
       await expect(
-        run().execute({
+        runs().execute({
           code: '1+1',
           args: args as Record<string, unknown>,
         })
@@ -206,7 +201,7 @@ describe('RunResource', () => {
     '1',
   ])('execute() rejects unsafe serialized args: %s', async (args) => {
     await expect(
-      run()._executeSerializedArgs({ code: '1+1' }, args)
+      runs()._executeSerializedArgs({ code: '1+1' }, args)
     ).rejects.toThrow();
     expect(fake.calls).toHaveLength(0);
   });
@@ -219,31 +214,10 @@ describe('RunResource', () => {
   ])(
     'execute() accepts serialized numbers within the safe range: %s',
     async (args) => {
-      await run()._executeSerializedArgs({ code: '1+1' }, args);
+      await runs()._executeSerializedArgs({ code: '1+1' }, args);
       expect(fake.calls).toHaveLength(1);
     }
   );
-
-  it('execute() forwards max_heap_size_mb when provided', async () => {
-    await run().execute({ code: '1+1', max_heap_size_mb: 512 });
-    expect(sent()).toEqual({ code: '1+1', maxHeapSizeMb: 512 });
-  });
-
-  it('execute() forwards timeout_ms as client timeout only', async () => {
-    const c = new AlvaClient({ apiKey: 'key' });
-    const request = vi.spyOn(c, '_v2Request').mockResolvedValue(RUN);
-    await new RunResource(c).execute({ code: '1+1', timeout_ms: 900000 });
-    expect(request).toHaveBeenCalledWith('POST', '/runs', {
-      body: {
-        code: '1+1',
-        entryPath: undefined,
-        workingDir: undefined,
-        args: undefined,
-        maxHeapSizeMb: undefined,
-      },
-      timeoutMs: 900000,
-    });
-  });
 });
 
 describe('FunctionsResource', () => {

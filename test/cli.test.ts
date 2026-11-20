@@ -114,10 +114,10 @@ function makeClient(
   client.secrets.delete = vi.fn().mockResolvedValue(undefined);
   client.run.execute = vi
     .fn()
-    .mockResolvedValue({ result: '2', status: 'completed' });
+    .mockResolvedValue({ returnValue: '2', status: 'SUCCEEDED' });
   client.run._executeSerializedArgs = vi
     .fn()
-    .mockResolvedValue({ result: '2', status: 'completed' });
+    .mockResolvedValue({ returnValue: '2', status: 'SUCCEEDED' });
   client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
   client.feed.list = vi.fn().mockResolvedValue({ feeds: [], has_more: false });
   client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
@@ -853,7 +853,8 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1' })
+      expect.objectContaining({ code: '1+1' }),
+      expect.anything()
     );
   });
 
@@ -865,7 +866,8 @@ describe('CLI dispatch', () => {
     await dispatch(client, ['run', '--local-file', '/tmp/script.js']);
     expect(mock).toHaveBeenCalledWith('/tmp/script.js', 'utf-8');
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'console.log("hello")' })
+      expect.objectContaining({ code: 'console.log("hello")' }),
+      expect.anything()
     );
     mock.mockReset();
   });
@@ -887,7 +889,8 @@ describe('CLI dispatch', () => {
       expect.objectContaining({
         code: 'require("env").args',
       }),
-      '{"symbol":"BTC"}'
+      '{"symbol":"BTC"}',
+      expect.anything()
     );
     mock.mockReset();
   });
@@ -898,7 +901,8 @@ describe('CLI dispatch', () => {
     await dispatch(client, ['run', '--code', '1+1', '--args', args]);
     expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
       expect.objectContaining({ code: '1+1' }),
-      args
+      args,
+      expect.anything()
     );
   });
 
@@ -922,7 +926,8 @@ describe('CLI dispatch', () => {
     expect(readStdin).toHaveBeenCalledTimes(1);
     expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'require("env").args' }),
-      args
+      args,
+      expect.anything()
     );
     expect(client.run.execute).not.toHaveBeenCalled();
   });
@@ -1010,18 +1015,17 @@ describe('CLI dispatch', () => {
       '512',
     ]);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', max_heap_size_mb: 512 })
+      expect.objectContaining({ code: '1+1', maxHeapSizeMb: 512 }),
+      expect.anything()
     );
   });
 
-  it('dispatches run with default timeout_ms', async () => {
+  it('dispatches run with the default timeout', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: '1+1',
-        timeout_ms: DEFAULT_RUN_TIMEOUT_MS,
-      })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: DEFAULT_RUN_TIMEOUT_MS }
     );
   });
 
@@ -1029,7 +1033,8 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '900000']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', timeout_ms: 900000 })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: 900000 }
     );
     expect(setGlobalDispatcher).toHaveBeenCalledTimes(1);
     const dispatcher = vi.mocked(setGlobalDispatcher).mock.calls[0][0] as {
@@ -1046,7 +1051,8 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', timeout_ms: 750000 })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: 750000 }
     );
   });
 
@@ -1055,16 +1061,34 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '900000']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', timeout_ms: 900000 })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: 900000 }
     );
   });
 
-  it('omits max_heap_size_mb when --max-heap-size-mb is not provided', async () => {
+  it('omits maxHeapSizeMb when --max-heap-size-mb is not provided', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ max_heap_size_mb: undefined })
+      expect.objectContaining({ maxHeapSizeMb: undefined }),
+      expect.anything()
     );
+  });
+
+  it('sends --working-dir with --code only, as 0.x did', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'run',
+      '--entry-path',
+      '~/s.js',
+      '--working-dir',
+      '~/w',
+    ]);
+    await dispatch(client, ['run', '--code', '1', '--working-dir', '~/w']);
+    expect(vi.mocked(client.run.execute).mock.calls.map(([r]) => r)).toEqual([
+      expect.objectContaining({ entryPath: '~/s.js', workingDir: undefined }),
+      expect.objectContaining({ code: '1', workingDir: '~/w' }),
+    ]);
   });
 
   it('throws CliUsageError when --max-heap-size-mb is below range', async () => {
@@ -1112,13 +1136,13 @@ describe('CLI dispatch', () => {
   });
 
   describe('run result decoding', () => {
-    function runResponse(result: string, status = 'completed') {
+    function runResponse(returnValue: string, status = 'SUCCEEDED') {
       return {
-        result,
+        returnValue,
         logs: 'log line',
-        stats: { duration_ms: 7 },
+        durationMs: 7,
         status,
-        ...(status === 'failed' ? { error: 'boom' } : {}),
+        error: status === 'FAILED' ? 'boom' : null,
       };
     }
 
@@ -1135,24 +1159,24 @@ describe('CLI dispatch', () => {
 
     it('prints a returned object as an object, not a JSON string', async () => {
       const out = await runWith('{"rows":[1,2],"name":"BTC"}');
-      expect(out.result).toEqual({ rows: [1, 2], name: 'BTC' });
+      expect(out.returnValue).toEqual({ rows: [1, 2], name: 'BTC' });
       expect(out).toMatchObject({
         logs: 'log line',
-        stats: { duration_ms: 7 },
-        status: 'completed',
+        durationMs: 7,
+        status: 'SUCCEEDED',
       });
     });
 
     it('decodes a script that returned JSON.stringify(obj)', async () => {
       const once = JSON.stringify({ income: [{ q: 'Q1', v: 1.5 }] });
       const out = await runWith(JSON.stringify(once));
-      expect(out.result).toEqual({ income: [{ q: 'Q1', v: 1.5 }] });
+      expect(out.returnValue).toEqual({ income: [{ q: 'Q1', v: 1.5 }] });
     });
 
     it('decodes a script that stringified twice', async () => {
       const twice = JSON.stringify(JSON.stringify([{ a: 'x"y' }]));
       const out = await runWith(JSON.stringify(twice));
-      expect(out.result).toEqual([{ a: 'x"y' }]);
+      expect(out.returnValue).toEqual([{ a: 'x"y' }]);
     });
 
     it.each([
@@ -1162,19 +1186,19 @@ describe('CLI dispatch', () => {
       ['quoted text', '"quoted"'],
     ])('keeps a returned %s string as written', async (_name, value) => {
       const out = await runWith(JSON.stringify(value));
-      expect(out.result).toBe(value);
+      expect(out.returnValue).toBe(value);
     });
 
     it('passes through a result that is not JSON', async () => {
       const out = await runWith('not json {');
-      expect(out.result).toBe('not json {');
+      expect(out.returnValue).toBe('not json {');
     });
 
     it('decodes failed runs too and keeps the error', async () => {
-      const out = await runWith('null', 'failed');
+      const out = await runWith('null', 'FAILED');
       expect(out).toMatchObject({
-        result: null,
-        status: 'failed',
+        returnValue: null,
+        status: 'FAILED',
         error: 'boom',
       });
     });
@@ -1189,7 +1213,7 @@ describe('CLI dispatch', () => {
         '--code',
         'x',
       ])) as Record<string, unknown>;
-      expect(out.result).toEqual({ a: 1 });
+      expect(out.returnValue).toEqual({ a: 1 });
     });
   });
 

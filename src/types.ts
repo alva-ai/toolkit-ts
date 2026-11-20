@@ -154,42 +154,6 @@ export interface FsRevokeParams {
   permission: string;
 }
 
-// --- Run ---
-
-export interface RunRequest {
-  code?: string;
-  entry_path?: string;
-  working_dir?: string;
-  args?: Record<string, unknown>;
-  /**
-   * Override the server's default V8 heap limit, in MB. Valid range is
-   * 1–2048. Omitted means the server uses its default heap (256 MB).
-   */
-  max_heap_size_mb?: number;
-  /**
-   * Client-side HTTP timeout for waiting on POST /api/v2/runs, in
-   * milliseconds. This is not sent to the server.
-   */
-  timeout_ms?: number;
-}
-
-export interface RunResponse {
-  result: string;
-  logs: string;
-  stats: { credits_used: number; duration_ms: number };
-  status: 'completed' | 'failed';
-  /** The script's failure; null when it succeeded. */
-  error?: string | null;
-  /** Set when the run failed because it needs a higher plan. */
-  reject_reason?: 'SUBSCRIPTION_ENTITLEMENT_REQUIRED';
-  upgrade_url?: string;
-  entitlement_failure?: {
-    resource: string;
-    category: string;
-    required_tier: string;
-  };
-}
-
 // --- Deploy (Cronjobs) ---
 
 export interface CronjobCreateRequest {

@@ -1,90 +1,58 @@
 import type { AlvaClient } from '../client.js';
-import type { RunRequest, RunResponse } from '../types.js';
+import type { Schema } from '../platformApi.js';
 import {
   objectWithRawJSONField,
   serializeStructuredArgs,
 } from '../jsonPayload.js';
 
-// POST /api/v2/runs (alva-gateway pkg/v2/api/runtime).
-interface WireRun {
-  status: 'SUCCEEDED' | 'FAILED';
-  returnValue: string;
-  logs: string;
-  error: string | null;
-  durationMs: number;
-  creditsUsed: string;
-  subscriptionRequired: boolean;
-  entitlementFailure: {
-    resource: string;
-    category: string;
-    requiredTier: string;
-  } | null;
+export interface RunOptions {
+  /** Idempotency-Key of the run: the same key never runs the script twice. */
+  idempotencyKey?: string;
+  /** Client-side HTTP timeout of each attempt, in milliseconds; not sent. */
+  timeoutMs?: number;
 }
 
-/** Where a run that needs a higher plan sends the user, as v1 did. */
-const UPGRADE_URL = 'https://alva.ai/pricing';
-
-function toRunResponse(r: WireRun): RunResponse {
-  const out: RunResponse = {
-    result: r.returnValue,
-    logs: r.logs,
-    stats: { credits_used: Number(r.creditsUsed), duration_ms: r.durationMs },
-    status: r.status === 'FAILED' ? 'failed' : 'completed',
-    error: r.error,
-  };
-  if (r.subscriptionRequired) {
-    out.reject_reason = 'SUBSCRIPTION_ENTITLEMENT_REQUIRED';
-    out.upgrade_url = UPGRADE_URL;
-    if (r.entitlementFailure) {
-      out.entitlement_failure = {
-        resource: r.entitlementFailure.resource,
-        category: r.entitlementFailure.category,
-        required_tier: r.entitlementFailure.requiredTier,
-      };
-    }
-  }
-  return out;
-}
-
+/** Runs JavaScript in the Jagent runtime (POST /api/v2/runs), synchronously. */
 export class RunResource {
   constructor(private client: AlvaClient) {}
 
-  async execute(params: RunRequest): Promise<RunResponse> {
+  /**
+   * Runs code or an ALFS entry path. args is a JSON object sent as is; the
+   * run's returnValue is the JSON text of the script's return value.
+   */
+  async execute(
+    request: Schema<'RunRequest'>,
+    options: RunOptions = {}
+  ): Promise<Schema<'Run'>> {
     this.client._requireAuth();
-    return params.args === undefined
-      ? this.request(params)
-      : this.request(params, serializeStructuredArgs(params.args));
+    return request.args === undefined
+      ? this.send(request, undefined, options)
+      : this.send(request, serializeStructuredArgs(request.args), options);
   }
 
-  /** @internal Used by the CLI to preserve the exact --args JSON text. */
+  /** @internal Used by the CLI to send the exact --args JSON text. */
   async _executeSerializedArgs(
-    params: RunRequest,
-    serializedArgs: string
-  ): Promise<RunResponse> {
+    request: Omit<Schema<'RunRequest'>, 'args'>,
+    serializedArgs: string,
+    options: RunOptions = {}
+  ): Promise<Schema<'Run'>> {
     this.client._requireAuth();
-    return this.request(params, serializedArgs);
+    return this.send(request, serializedArgs, options);
   }
 
-  private async request(
-    params: RunRequest,
-    serializedArgs?: string
-  ): Promise<RunResponse> {
-    // /api/v2 refuses workingDir with entryPath (v1 dropped it).
-    const body = {
-      code: params.code,
-      entryPath: params.entry_path,
-      workingDir: params.code === undefined ? undefined : params.working_dir,
-      args: params.args,
-      maxHeapSizeMb: params.max_heap_size_mb,
-    };
-    const run = await this.client._v2Request<WireRun>('POST', '/runs', {
+  private send(
+    request: Schema<'RunRequest'>,
+    serializedArgs: string | undefined,
+    options: RunOptions
+  ): Promise<Schema<'Run'>> {
+    return this.client._v2Request('POST', '/runs', {
       ...(serializedArgs === undefined
-        ? { body }
+        ? { body: request }
         : {
-            jsonBody: objectWithRawJSONField(body, 'args', serializedArgs),
+            jsonBody: objectWithRawJSONField(request, 'args', serializedArgs),
           }),
-      timeoutMs: params.timeout_ms,
+      idempotencyKey: options.idempotencyKey,
+      timeoutMs: options.timeoutMs,
     });
-    return toRunResponse(run);
   }
 }

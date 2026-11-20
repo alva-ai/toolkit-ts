@@ -501,12 +501,15 @@ Options:
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
 
-Response fields:
-  result    The script's return value. Return objects directly; a script
-            returning JSON.stringify(x) is shown as x.
-  logs      Captured stderr output
-  status    "completed" or "failed"
-  error     Error message (when status is "failed")
+Response fields (the /api/v2 Run):
+  returnValue  The script's return value, decoded from its JSON text. Return
+               objects directly; a script returning JSON.stringify(x) is
+               shown as x.
+  logs         Captured stderr output
+  status       SUCCEEDED or FAILED
+  error        Error message (null when the run succeeded)
+  durationMs, creditsUsed (a decimal string), subscriptionRequired and
+  entitlementFailure (the plan a refused run needs)
 
 Available runtime modules:
   require("alfs")            Cloud filesystem (absolute paths only)
@@ -532,7 +535,7 @@ Examples:
   printf '%s' '{"symbol":"BTC"}' | alva run --local-file ./my-script.js --args-stdin
   alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024
   alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000
-  alva run --local-file ./research.js > research.json && jq -c '.result.income[:4]' research.json`,
+  alva run --local-file ./research.js > research.json && jq -c '.returnValue.income[:4]' research.json`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
@@ -2882,9 +2885,9 @@ function earningsEventPeriod(
 }
 
 /**
- * decodeRunResult turns the wire `result` (the JSON encoding of the script's
- * return value) back into that value, so printed output carries no escaped
- * JSON-in-a-string. A script that returned JSON.stringify(x) nests x in
+ * decodeRunResult turns a run's returnValue (the JSON encoding of the
+ * script's return value) back into that value, so printed output carries no
+ * escaped JSON-in-a-string. A script that returned JSON.stringify(x) nests x in
  * string layers; those are unwrapped only when they end in an object or
  * array, so text such as "42" or "hello" stays exactly as returned.
  */
@@ -3491,20 +3494,20 @@ export async function executeParsedCommand(
           deps
         );
       }
-      const timeout_ms = runTimeoutMs(flags, deps);
-      configureRunFetchTimeout(timeout_ms, deps);
-      const params = {
+      const timeoutMs = runTimeoutMs(flags, deps);
+      configureRunFetchTimeout(timeoutMs, deps);
+      // /api/v2 refuses workingDir with entryPath; 0.x ignored it.
+      const request = {
         code,
-        entry_path: flags['entry-path'],
-        working_dir: flags['working-dir'],
-        max_heap_size_mb: optionalBoundedIntegerFlag(
+        entryPath: flags['entry-path'],
+        workingDir: code === undefined ? undefined : flags['working-dir'],
+        maxHeapSizeMb: optionalBoundedIntegerFlag(
           flags,
           'max-heap-size-mb',
           'run',
           1,
           2048
         ),
-        timeout_ms,
       };
       const argsFromStdin = boolFlag(flags['args-stdin']) === true;
       if (argsFromStdin && flags['args'] !== undefined) {
@@ -3530,11 +3533,13 @@ export async function executeParsedCommand(
           );
         }
       }
-      const response =
+      const run =
         serializedArgs === undefined
-          ? await client.run.execute(params)
-          : await client.run._executeSerializedArgs(params, serializedArgs);
-      return { ...response, result: decodeRunResult(response.result) };
+          ? await client.run.execute(request, { timeoutMs })
+          : await client.run._executeSerializedArgs(request, serializedArgs, {
+              timeoutMs,
+            });
+      return { ...run, returnValue: decodeRunResult(run.returnValue) };
     }
 
     case 'deploy': {
