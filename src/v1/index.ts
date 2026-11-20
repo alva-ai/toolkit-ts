@@ -1,6 +1,8 @@
 import type { AlvaClient } from '../client.js';
-import { V1PlaybookSkillsResource } from './playbookSkills.js';
+import { V1NotificationsResource } from './notifications.js';
 import { V1PlaybooksResource } from './playbooks.js';
+import { V1PlaybookSkillsResource } from './playbookSkills.js';
+import { V1SecretsResource } from './secrets.js';
 import { V1TradingResource } from './trading.js';
 
 /**
@@ -10,11 +12,18 @@ import { V1TradingResource } from './trading.js';
  * CHANGELOG 1.0.0 lists them.
  */
 export class V1Resources {
+  private _notifications?: V1NotificationsResource;
   private _playbooks?: V1PlaybooksResource;
   private _playbookSkills?: V1PlaybookSkillsResource;
+  private _secrets?: V1SecretsResource;
   private _trading?: V1TradingResource;
 
   constructor(private readonly client: AlvaClient) {}
+
+  /** A feed's notification history by owner and name. */
+  get notifications(): V1NotificationsResource {
+    return (this._notifications ??= new V1NotificationsResource(this.client));
+  }
 
   /** Playbook discovery without an API key. */
   get playbooks(): V1PlaybooksResource {
@@ -26,6 +35,12 @@ export class V1Resources {
     return (this._playbookSkills ??= new V1PlaybookSkillsResource(this.client));
   }
 
+  /** A secret's value. */
+  get secrets(): V1SecretsResource {
+    return (this._secrets ??= new V1SecretsResource(this.client));
+  }
+
+  /** Trade subscriptions that execute the latest signal at once. */
   get trading(): V1TradingResource {
     return (this._trading ??= new V1TradingResource(this.client));
   }

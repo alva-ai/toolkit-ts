@@ -561,6 +561,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('alert history', 'alert history', {
       values: [
         'automation',
+        'automation-id',
         'delivery-provider',
         'status',
         'since',

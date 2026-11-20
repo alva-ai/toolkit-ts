@@ -1,48 +1,35 @@
-import { describe, it, expect } from 'vitest';
-import { v2Client } from '../helpers/v2Client.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import { AlvaClient } from '../../src/client.js';
+import { fakeV2 } from '../fakeV2.js';
+import { v2 } from '../v2Schema.js';
+
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
+
+function client() {
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
+}
 
 describe('NotificationPreferencesResource', () => {
-  it('list() maps sessionCompleted to the session_completed setting', async () => {
-    const { client } = v2Client({
-      'GET /me/notification-preferences': { sessionCompleted: false },
-    });
-    expect(await client.notificationPreferences.list()).toEqual({
-      settings: [{ key: 'session_completed', enabled: false }],
-    });
+  it('get() returns the NotificationPreferences, null when unset', async () => {
+    const prefs = v2('NotificationPreferences', { sessionCompleted: null });
+    const fake = fakeV2({ 'GET /me/notification-preferences': () => prefs });
+    restore = fake.restore;
+    expect(await client().notificationPreferences.get()).toEqual(prefs);
   });
 
-  it('list() returns no settings when the preference is unset', async () => {
-    const { client } = v2Client({
-      'GET /me/notification-preferences': { sessionCompleted: null },
+  it('update() sends the patch as a merge patch', async () => {
+    const fake = fakeV2({
+      'PATCH /me/notification-preferences': () =>
+        v2('NotificationPreferences', { sessionCompleted: false }),
     });
-    expect(await client.notificationPreferences.list()).toEqual({
-      settings: [],
-    });
-  });
-
-  it('update() sends a merge patch of the one field', async () => {
-    const { client, v2 } = v2Client({
-      'PATCH /me/notification-preferences': { sessionCompleted: true },
-    });
+    restore = fake.restore;
     expect(
-      await client.notificationPreferences.update({
-        key: 'session_completed',
-        enabled: true,
-      })
-    ).toEqual({ setting: { key: 'session_completed', enabled: true } });
-    expect(v2).toHaveBeenCalledWith('PATCH', '/me/notification-preferences', {
-      body: { sessionCompleted: true },
-    });
-  });
-
-  it('update() refuses an unknown key before sending', async () => {
-    const { client, v2 } = v2Client({});
-    await expect(
-      client.notificationPreferences.update({
-        key: 'toString' as 'session_completed',
-        enabled: true,
-      })
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    expect(v2).not.toHaveBeenCalled();
+      await client().notificationPreferences.update({ sessionCompleted: false })
+    ).toEqual({ sessionCompleted: false });
+    expect(fake.calls[0].body).toEqual({ sessionCompleted: false });
+    expect(fake.calls[0].headers['Content-Type']).toBe(
+      'application/merge-patch+json'
+    );
   });
 });

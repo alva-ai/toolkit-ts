@@ -538,6 +538,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('alert history', {
     values: [
       'automation',
+      'automation-id',
       'playbook',
       'playbook-ids',
       'delivery-provider',

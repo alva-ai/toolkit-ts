@@ -10,6 +10,7 @@ import {
 } from '../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../src/cli/embeddedDispatch.js';
 import { AlvaClient } from '../src/client.js';
+import { encodeBase64 } from '../src/base64.js';
 import { CliUsageError } from '../src/error.js';
 import { allowance } from './billingV2.js';
 import { FUNCTION, functionInvocation, playbookFunction } from './runtimeV2.js';
@@ -53,6 +54,13 @@ const COMMENT = v2('Comment', {
   createdAt: null,
   updatedAt: null,
 });
+import {
+  aDelivery,
+  aFeedback,
+  aMe,
+  aScreenshot,
+  aSecret,
+} from './accountV2.js';
 
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -103,19 +111,9 @@ function makeClient(
     originSessionKind,
   });
   // Mock all resource methods
-  client.user.me = vi.fn().mockResolvedValue({
-    id: '9007199254740993',
-    username: 'alice',
-    subscription_tier: 'free',
-    telegram_username: 'alice_tg',
-    discord_username: 'alice_discord',
-    slack_username: 'Alice',
-    whatsapp_username: '+15555550123',
-    imessage_username: 'alice@example.com',
-    active_channel: 'slack',
-    toolkit_min_version: '0.1.0',
-    home_path: '/alva/home/alice',
-  });
+  client.user.me = vi
+    .fn()
+    .mockResolvedValue(aMe({ toolkitMinVersion: '0.1.0' }));
   client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
   client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
   client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
@@ -149,11 +147,13 @@ function makeClient(
     .fn()
     .mockResolvedValue({ workflow_run_id: 'wf-test', state: 'PENDING' });
   client.deploy.getRunLogs = vi.fn().mockResolvedValue({ logs: '' });
-  client.secrets.create = vi.fn().mockResolvedValue(undefined);
-  client.secrets.list = vi.fn().mockResolvedValue({ secrets: [] });
-  client.secrets.get = vi.fn().mockResolvedValue({ name: 'K', value: 'V' });
-  client.secrets.update = vi.fn().mockResolvedValue(undefined);
-  client.secrets.delete = vi.fn().mockResolvedValue(undefined);
+  client.secrets.create = vi.fn().mockResolvedValue(aSecret());
+  client.secrets.list = vi
+    .fn()
+    .mockResolvedValue({ items: [aSecret()], nextPageToken: null });
+  client.v1.secrets.get = vi.fn().mockResolvedValue({ name: 'K', value: 'V' });
+  client.secrets.update = vi.fn().mockResolvedValue(aSecret());
+  client.secrets.delete = vi.fn().mockResolvedValue({});
   client.run.execute = vi
     .fn()
     .mockResolvedValue({ returnValue: '2', status: 'SUCCEEDED' });
@@ -352,13 +352,15 @@ function makeClient(
   client.alerts.disableBatch = vi
     .fn()
     .mockResolvedValue({ results: [], ok_count: 0 });
-  client.alerts.historyAutomation = vi
+  client.alerts.history = vi
     .fn()
-    .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
-  client.alerts.preferences = vi.fn().mockResolvedValue({ settings: [] });
-  client.alerts.updatePreference = vi.fn().mockResolvedValue({
-    setting: { key: 'session_completed', enabled: false },
-  });
+    .mockResolvedValue({ items: [aDelivery()], nextPageToken: null });
+  client.alerts.preferences = vi
+    .fn()
+    .mockResolvedValue({ sessionCompleted: null });
+  client.alerts.updatePreferences = vi
+    .fn()
+    .mockResolvedValue({ sessionCompleted: false });
   client.release.playbookDraft = vi.fn().mockResolvedValue({
     id: 'draft_0a',
     playbook: aPlaybook(),
@@ -420,20 +422,16 @@ function makeClient(
   client.comments.create = vi.fn().mockResolvedValue(COMMENT);
   client.comments.pin = vi.fn().mockResolvedValue(COMMENT);
   client.comments.unpin = vi.fn().mockResolvedValue(COMMENT);
-  client.notifications.listFeed = vi
+  client.v1.notifications.listFeed = vi
     .fn()
     .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
-  client.notificationPreferences.list = vi
+  client.notificationPreferences.get = vi
     .fn()
-    .mockResolvedValue({ settings: [] });
-  client.notificationPreferences.update = vi.fn().mockResolvedValue({
-    setting: { key: 'session_completed', enabled: false },
-  });
-  client.feedback.submit = vi.fn().mockResolvedValue({
-    feedback_id: 123,
-    notion_page_id: 'page-123',
-    notion_url: 'https://notion.so/page-123',
-  });
+    .mockResolvedValue({ sessionCompleted: null });
+  client.notificationPreferences.update = vi
+    .fn()
+    .mockResolvedValue({ sessionCompleted: false });
+  client.feedback.submit = vi.fn().mockResolvedValue(aFeedback());
   client.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
@@ -447,7 +445,9 @@ function makeClient(
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
   client.remix.save = vi.fn().mockResolvedValue(aPlaybook());
-  client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
+  client.screenshot.capture = vi
+    .fn()
+    .mockResolvedValue(aScreenshot(encodeBase64(new Uint8Array(8))));
   client.functions.register = vi.fn().mockResolvedValue(playbookFunction());
   client.functions.list = vi.fn().mockResolvedValue({
     items: [playbookFunction({ name: 'analyze' })],
@@ -469,19 +469,7 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     const result = await dispatch(client, ['user', 'me']);
     expect(client.user.me).toHaveBeenCalled();
-    expect(result).toEqual({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      telegram_username: 'alice_tg',
-      discord_username: 'alice_discord',
-      slack_username: 'Alice',
-      whatsapp_username: '+15555550123',
-      imessage_username: 'alice@example.com',
-      active_im_provider: 'slack',
-      toolkit_min_version: '0.1.0',
-      home_path: '/alva/home/alice',
-    });
+    expect(result).toEqual(aMe({ toolkitMinVersion: '0.1.0' }));
   });
 
   it('dispatches fs read with --path', async () => {
@@ -874,9 +862,70 @@ describe('CLI dispatch', () => {
     });
   });
 
+  it('secrets list reads every page into one page that ends the list', async () => {
+    const client = makeClient();
+    const second = aSecret({ id: 'secret_0k2', name: 'B' });
+    client.secrets.list = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [aSecret()], nextPageToken: 'p2' })
+      .mockResolvedValueOnce({ items: [second], nextPageToken: null });
+    expect(await dispatch(client, ['secrets', 'list'])).toEqual({
+      items: [aSecret(), second],
+      nextPageToken: null,
+    });
+    expect(vi.mocked(client.secrets.list).mock.calls).toEqual([
+      [{ pageSize: 200, pageToken: undefined }],
+      [{ pageSize: 200, pageToken: 'p2' }],
+    ]);
+  });
+
+  it('secrets get reads the value through client.v1', async () => {
+    const client = makeClient();
+    expect(await dispatch(client, ['secrets', 'get', '--name', 'K'])).toEqual({
+      name: 'K',
+      value: 'V',
+    });
+    expect(client.v1.secrets.get).toHaveBeenCalledWith({ name: 'K' });
+  });
+
+  it('secrets delete finds the Secret ID by name', async () => {
+    const client = makeClient();
+    client.secrets.list = vi.fn().mockResolvedValue({
+      items: [aSecret({ id: 'secret_0x', name: 'OTHER' }), aSecret()],
+      nextPageToken: null,
+    });
+    expect(
+      await dispatch(client, ['secrets', 'delete', '--name', 'KEY'])
+    ).toEqual({});
+    expect(client.secrets.delete).toHaveBeenCalledWith('secret_0k1');
+    await expect(
+      dispatch(client, ['secrets', 'delete', '--name', 'NOPE'])
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(client.secrets.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches service-account grant with an upper-case permission', async () => {
+    const client = makeClient();
+    client.serviceAccount.grant = vi.fn().mockResolvedValue({});
+    await dispatch(client, [
+      'service-account',
+      'grant',
+      '--id',
+      'account_0sa',
+      '--path',
+      '~/feeds/x/',
+      '--permission',
+      'read',
+    ]);
+    expect(client.serviceAccount.grant).toHaveBeenCalledWith('account_0sa', {
+      path: '~/feeds/x/',
+      permission: 'READ',
+    });
+  });
+
   it('dispatches service-account revoke by grant ID', async () => {
     const client = makeClient();
-    client.serviceAccount.revoke = vi.fn().mockResolvedValue(undefined);
+    client.serviceAccount.revoke = vi.fn().mockResolvedValue({});
     await dispatch(client, [
       'service-account',
       'revoke',
@@ -885,10 +934,10 @@ describe('CLI dispatch', () => {
       '--grant-id',
       'service_account_grant_0g',
     ]);
-    expect(client.serviceAccount.revoke).toHaveBeenCalledWith({
-      id: 'account_0sa',
-      grant_id: 'service_account_grant_0g',
-    });
+    expect(client.serviceAccount.revoke).toHaveBeenCalledWith(
+      'account_0sa',
+      'service_account_grant_0g'
+    );
     await expect(
       dispatch(client, ['service-account', 'revoke', '--id', 'account_0sa'])
     ).rejects.toThrow(/--grant-id/);
@@ -1598,14 +1647,12 @@ describe('CLI dispatch', () => {
     expect(client.screenshot.capture).not.toHaveBeenCalled();
   });
 
-  it('returns a tagged _image result for screenshot --base64 (png)', async () => {
+  it('returns a tagged _image result for screenshot --base64', async () => {
     const client = makeClient();
-    const pngBytes = new Uint8Array([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-    ]);
+    const jpeg = encodeBase64(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]));
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(pngBytes.buffer.slice(0));
+      .mockResolvedValue({ contentType: 'image/jpeg', contentBase64: jpeg });
     const result = await dispatch(client, [
       'screenshot',
       '--url',
@@ -1614,64 +1661,19 @@ describe('CLI dispatch', () => {
     ]);
     expect(result).toEqual({
       _image: true,
-      mimeType: 'image/png',
-      data: Buffer.from(pngBytes).toString('base64'),
-      bytes: 8,
+      mimeType: 'image/jpeg',
+      data: jpeg,
+      bytes: 4,
     });
-  });
-
-  it('sniffs jpeg mime for screenshot --base64', async () => {
-    const client = makeClient();
-    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(bytes.buffer.slice(0));
-    const result = (await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ])) as { mimeType: string };
-    expect(result.mimeType).toBe('image/jpeg');
-  });
-
-  it('sniffs webp mime for screenshot --base64', async () => {
-    const client = makeClient();
-    const bytes = new Uint8Array([
-      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
-    ]);
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(bytes.buffer.slice(0));
-    const result = (await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ])) as { mimeType: string };
-    expect(result.mimeType).toBe('image/webp');
-  });
-
-  it('falls back to image/png mime for unknown bytes (--base64)', async () => {
-    const client = makeClient();
-    const bytes = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(bytes.buffer.slice(0));
-    const result = (await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ])) as { mimeType: string };
-    expect(result.mimeType).toBe('image/png');
   });
 
   it('applies default compression for screenshot --base64', async () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, ['screenshot', '--url', 'u', '--base64']);
     expect(client.screenshot.capture).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1686,7 +1688,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, [
       'screenshot',
       '--url',
@@ -1710,7 +1714,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--full']);
     expect(client.screenshot.capture).toHaveBeenCalledWith(
       expect.objectContaining({ compress: false })
@@ -1721,7 +1727,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, [
       'screenshot',
       '--url',
@@ -1758,7 +1766,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     const writeSpy = vi
       .spyOn(fs, 'writeFileSync')
       .mockImplementation(() => undefined);
@@ -1779,7 +1789,7 @@ describe('CLI dispatch', () => {
 
   it('throws CliUsageError for screenshot --base64 with empty bytes', async () => {
     const client = makeClient();
-    client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+    client.screenshot.capture = vi.fn().mockResolvedValue(aScreenshot(''));
     await expect(
       dispatch(client, ['screenshot', '--url', 'u', '--base64'])
     ).rejects.toSatisfy(
@@ -2760,7 +2770,7 @@ components: {}
 
   it('dispatches notification-history list-feed', async () => {
     const client = makeClient();
-    vi.mocked(client.notifications.listFeed).mockResolvedValueOnce({
+    vi.mocked(client.v1.notifications.listFeed).mockResolvedValueOnce({
       items: [
         {
           id: '1',
@@ -2784,13 +2794,15 @@ components: {}
       'btc-ema',
       '--delivery-provider',
       'telegram',
+      '--since',
+      '2023-11-14T22:13:20Z',
     ])) as { items: Array<Record<string, unknown>> };
-    expect(client.notifications.listFeed).toHaveBeenCalledWith({
+    expect(client.v1.notifications.listFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
       channel: 'telegram',
       status: undefined,
-      since_time: undefined,
+      since_time: 1700000000,
       first: undefined,
       cursor: undefined,
     });
@@ -2814,13 +2826,34 @@ components: {}
     ).rejects.toThrow(
       /--channel is no longer supported.*use --delivery-provider/
     );
-    expect(client.notifications.listFeed).not.toHaveBeenCalled();
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Unix-seconds notification-history --since, naming the change', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'notification-history',
+        'list-feed',
+        '--username',
+        'alice',
+        '--name',
+        'btc-ema',
+        '--since',
+        '1700000000',
+      ])
+    ).rejects.toThrow(
+      /--since takes an RFC 3339 time .* since toolkit 1\.0; Unix timestamps are no longer accepted/
+    );
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
   });
 
   it('dispatches notification-preferences list', async () => {
     const client = makeClient();
-    await dispatch(client, ['notification-preferences', 'list']);
-    expect(client.notificationPreferences.list).toHaveBeenCalled();
+    expect(
+      await dispatch(client, ['notification-preferences', 'list'])
+    ).toEqual({ sessionCompleted: null });
+    expect(client.notificationPreferences.get).toHaveBeenCalled();
   });
 
   it('dispatches notification-preferences disable-session-completed', async () => {
@@ -2830,8 +2863,7 @@ components: {}
       'disable-session-completed',
     ]);
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: false,
+      sessionCompleted: false,
     });
   });
 
@@ -2842,8 +2874,7 @@ components: {}
       'enable-session-completed',
     ]);
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: true,
+      sessionCompleted: true,
     });
   });
 
@@ -2867,18 +2898,14 @@ components: {}
     ]);
     expect(client.feedback.submit).toHaveBeenCalledWith({
       source: undefined,
-      category: 'runtime',
-      severity: 'high',
+      category: 'RUNTIME',
+      severity: 'HIGH',
       summary: 'runtime failed',
       details: 'command returned a platform error',
       evidence: { command: 'alva run foo.js' },
       context: { session_id: 's1' },
     });
-    expect(result).toEqual({
-      feedback_id: 123,
-      notion_page_id: 'page-123',
-      notion_url: 'https://notion.so/page-123',
-    });
+    expect(result).toEqual(aFeedback());
   });
 
   it('dispatches feedback submit with optional metadata omitted', async () => {
@@ -2898,11 +2925,7 @@ components: {}
       evidence: undefined,
       context: undefined,
     });
-    expect(result).toEqual({
-      feedback_id: 123,
-      notion_page_id: 'page-123',
-      notion_url: 'https://notion.so/page-123',
-    });
+    expect(result).toEqual(aFeedback());
   });
 
   it('rejects stale feedback dedupe flag', async () => {
@@ -3298,10 +3321,7 @@ describe('whoami', () => {
       baseUrl: 'http://staging',
     })) as Record<string, unknown>;
     expect(client.user.me).toHaveBeenCalled();
-    expect(result.username).toBe('alice');
-    expect(result.subscription_tier).toBe('free');
-    expect(result.active_im_provider).toBe('slack');
-    expect(result.active_channel).toBeUndefined();
+    expect(result).toMatchObject(aMe({ toolkitMinVersion: '0.1.0' }));
     expect(result._meta).toMatchObject({
       profile: 'staging',
       endpoint: 'http://staging',
@@ -3717,20 +3737,20 @@ describe('help text', () => {
     };
     expect(result._help).toBe(true);
     expect(result.text).toContain('whoami');
-    expect(result.text).toContain('active_im_provider');
-    expect(result.text).not.toContain('active_channel');
+    expect(result.text).toContain('preferredMessagingApp');
+    expect(result.text).not.toContain('active_im_provider');
     expect(result.text.toLowerCase()).toContain('arrays_jwt');
   });
 
-  it('returns per-command help for user --help with IM provider naming', async () => {
+  it('returns per-command help for user --help with the /api/v2 Me fields', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['user', '--help'])) as {
       _help: boolean;
       text: string;
     };
     expect(result._help).toBe(true);
-    expect(result.text).toContain('active_im_provider');
-    expect(result.text).not.toContain('active_channel');
+    expect(result.text).toContain('preferredMessagingApp');
+    expect(result.text).not.toContain('subscription_tier');
   });
 
   it('returns per-command help for sdk --help with partition names', async () => {
@@ -4553,12 +4573,9 @@ describe('isVersionOlderThan', () => {
 describe('whoami version check', () => {
   it('sets _warning when CLI is older than min version', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      toolkit_min_version: '99.0.0',
-    });
+    client.user.me = vi
+      .fn()
+      .mockResolvedValue(aMe({ toolkitMinVersion: '99.0.0' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
@@ -4568,25 +4585,18 @@ describe('whoami version check', () => {
 
   it('no _warning when CLI version >= min version', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      toolkit_min_version: '0.1.0',
-    });
+    client.user.me = vi
+      .fn()
+      .mockResolvedValue(aMe({ toolkitMinVersion: '0.1.0' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
     expect(result._warning).toBeUndefined();
   });
 
-  it('no _warning when server omits toolkit_min_version', async () => {
+  it('no _warning when the server sends no toolkitMinVersion', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-    });
+    client.user.me = vi.fn().mockResolvedValue(aMe({ toolkitMinVersion: '' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
@@ -4595,12 +4605,9 @@ describe('whoami version check', () => {
 
   it('no _warning when server returns malformed version', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      toolkit_min_version: 'bad',
-    });
+    client.user.me = vi
+      .fn()
+      .mockResolvedValue(aMe({ toolkitMinVersion: 'bad' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
@@ -5222,9 +5229,9 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     expect(client.alerts.disableBatch).not.toHaveBeenCalled();
   });
 
-  it('dispatches alert history for automation targets', async () => {
+  it('dispatches alert history by owner and name to /api/v1', async () => {
     const client = makeClient();
-    vi.mocked(client.alerts.historyAutomation).mockResolvedValueOnce({
+    vi.mocked(client.v1.notifications.listFeed).mockResolvedValueOnce({
       items: [
         {
           id: '1',
@@ -5249,13 +5256,13 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--status',
       'sent',
       '--since',
-      '1777355703',
+      '2026-04-28T05:55:03Z',
       '--first',
       '5',
       '--cursor',
       'c1',
     ])) as { items: Array<Record<string, unknown>> };
-    expect(client.alerts.historyAutomation).toHaveBeenCalledWith({
+    expect(client.v1.notifications.listFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
       channel: 'web',
@@ -5266,6 +5273,47 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     });
     expect(result.items[0]).toMatchObject({ delivery_provider: 'web' });
     expect(result.items[0]!.channel).toBeUndefined();
+    expect(client.alerts.history).not.toHaveBeenCalled();
+  });
+
+  it('dispatches alert history by automation ID to /api/v2', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'alert',
+      'history',
+      '--automation-id',
+      'automation_0abc',
+      '--delivery-provider',
+      'web',
+      '--status',
+      'sent',
+      '--since',
+      '2026-04-28T07:55:03+02:00',
+      '--first',
+      '5',
+      '--cursor',
+      'c1',
+    ]);
+    expect(client.alerts.history).toHaveBeenCalledWith({
+      automationId: 'automation_0abc',
+      deliveryProvider: 'web',
+      status: 'SENT',
+      since: '2026-04-28T05:55:03.000Z',
+      pageSize: 5,
+      pageToken: 'c1',
+    });
+    expect(result).toEqual({ items: [aDelivery()], nextPageToken: null });
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
+    await expect(
+      dispatch(client, [
+        'alert',
+        'history',
+        '--automation-id',
+        'automation_0abc',
+        '--since',
+        '1777355703',
+      ])
+    ).rejects.toThrow(/Unix timestamps are no longer accepted/);
   });
 
   it('rejects the legacy alert history --channel flag', async () => {
@@ -5282,7 +5330,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     ).rejects.toThrow(
       /--channel is no longer supported.*use --delivery-provider/
     );
-    expect(client.alerts.historyAutomation).not.toHaveBeenCalled();
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
   });
 
   it('dispatches alert preferences', async () => {
@@ -5291,13 +5339,11 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await dispatch(client, ['alert', 'enable-session-completed']);
     await dispatch(client, ['alert', 'disable-session-completed']);
     expect(client.alerts.preferences).toHaveBeenCalled();
-    expect(client.alerts.updatePreference).toHaveBeenNthCalledWith(1, {
-      key: 'session_completed',
-      enabled: true,
+    expect(client.alerts.updatePreferences).toHaveBeenNthCalledWith(1, {
+      sessionCompleted: true,
     });
-    expect(client.alerts.updatePreference).toHaveBeenNthCalledWith(2, {
-      key: 'session_completed',
-      enabled: false,
+    expect(client.alerts.updatePreferences).toHaveBeenNthCalledWith(2, {
+      sessionCompleted: false,
     });
   });
 
@@ -5622,8 +5668,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: false,
+      sessionCompleted: false,
     });
   });
 
@@ -5631,7 +5676,9 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])))
+      );
 
     const result = await dispatchEmbedded(
       client,

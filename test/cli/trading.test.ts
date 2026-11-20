@@ -71,11 +71,11 @@ describe('trading CLI on /api/v2', () => {
       ])
     ).resolves.toEqual(page([order()]));
     expect(fake.calls[0].query.toString()).toBe(
-      'origin=ALVA_DIRECT&from=2026-11-01T00%3A00%3A00Z&pageSize=10'
+      'origin=ALVA_DIRECT&from=2026-11-01T00%3A00%3A00.000Z&pageSize=10'
     );
     await expect(
       dispatchCli(client(), [...orders, '--since', '1761955200'])
-    ).rejects.toThrow(/RFC 3339.*Unix numbers are no longer accepted/);
+    ).rejects.toThrow(/RFC 3339.*Unix timestamps are no longer accepted/);
     await expect(
       dispatchEmbedded(client(), [
         'portfolio',

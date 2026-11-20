@@ -1,91 +1,76 @@
-import { describe, it, expect } from 'vitest';
-import { v2Client } from '../helpers/v2Client.js';
-import type { V2RequestOptions } from '../../src/platformApi.js';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { AlvaClient } from '../../src/client.js';
+import { aSecret, REQUEST_ID } from '../accountV2.js';
+import { fakeV2 } from '../fakeV2.js';
 
-const SECRET = {
-  id: 'secret_0k1',
-  name: 'KEY',
-  version: 2,
-  prefix: 'sk-',
-  valueLength: 12,
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-02T00:00:00.000Z',
-};
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
+
+function client() {
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
+}
 
 describe('SecretsResource', () => {
-  it('create sends POST /api/v2/me/secrets that must not overwrite', async () => {
-    const { client, v2 } = v2Client({ 'POST /me/secrets': SECRET });
-    await client.secrets.create({ name: 'KEY', value: 'val' });
-    expect(v2).toHaveBeenCalledWith('POST', '/me/secrets', {
-      body: { name: 'KEY', value: 'val', mustExist: false },
+  it('create() posts a secret that must not exist and returns the Secret', async () => {
+    const fake = fakeV2({ 'POST /me/secrets': () => aSecret() });
+    restore = fake.restore;
+    expect(
+      await client().secrets.create(
+        { name: 'KEY', value: 'val' },
+        { idempotencyKey: REQUEST_ID }
+      )
+    ).toEqual(aSecret());
+    expect(fake.calls[0].body).toEqual({
+      name: 'KEY',
+      value: 'val',
+      mustExist: false,
+    });
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
+  });
+
+  it('update() posts a secret that must exist', async () => {
+    const fake = fakeV2({ 'POST /me/secrets': () => aSecret() });
+    restore = fake.restore;
+    await client().secrets.update({ name: 'KEY', value: 'new' });
+    expect(fake.calls[0].body).toEqual({
+      name: 'KEY',
+      value: 'new',
+      mustExist: true,
     });
   });
 
-  it('update sends POST /api/v2/me/secrets that must exist', async () => {
-    const { client, v2 } = v2Client({ 'POST /me/secrets': SECRET });
-    await client.secrets.update({ name: 'KEY', value: 'new-val' });
-    expect(v2).toHaveBeenCalledWith('POST', '/me/secrets', {
-      body: { name: 'KEY', value: 'new-val', mustExist: true },
-    });
+  it('list() returns one SecretList page', async () => {
+    const page = { items: [aSecret()], nextPageToken: 'p2' };
+    const fake = fakeV2({ 'GET /me/secrets': () => page });
+    restore = fake.restore;
+    expect(await client().secrets.list({ pageSize: 1 })).toEqual(page);
+    expect(fake.calls[0].query.get('pageSize')).toBe('1');
   });
 
-  it('list reads every page and keeps the v1 metadata names', async () => {
-    const { client, v2 } = v2Client({
-      'GET /me/secrets': (o: V2RequestOptions) =>
-        o.query?.pageToken === undefined
-          ? { items: [SECRET], nextPageToken: 'p2' }
-          : {
-              items: [{ ...SECRET, id: 'secret_0k2', name: 'B' }],
-              nextPageToken: null,
-            },
-    });
-    expect(await client.secrets.list()).toEqual({
-      secrets: [
-        {
-          id: 'secret_0k1',
-          name: 'KEY',
-          keyVersion: 2,
-          createdAt: '2026-11-01T00:00:00.000Z',
-          updatedAt: '2026-11-02T00:00:00.000Z',
-          valueLength: 12,
-          keyPrefix: 'sk-',
-        },
-        expect.objectContaining({ id: 'secret_0k2', name: 'B' }),
-      ],
-    });
-    expect(v2.mock.calls[0][2]).toEqual({
-      query: { pageSize: 200, pageToken: undefined },
-      timeoutMs: undefined,
-      signal: undefined,
-    });
+  it('delete() deletes by Secret ID', async () => {
+    const fake = fakeV2({ 'DELETE /me/secrets/secret_0k1': () => ({}) });
+    restore = fake.restore;
+    expect(await client().secrets.delete('secret_0k1')).toEqual({});
   });
+});
 
-  it('get keeps the v1 value read', async () => {
-    const { client, legacy } = v2Client({});
-    legacy.mockResolvedValue({ name: 'KEY', value: 'v' } as never);
-    await client.secrets.get({ name: 'A/B' });
-    expect(legacy).toHaveBeenCalledWith('GET', '/api/v1/secrets/A%2FB');
-  });
-
-  it('delete finds the secret by name and deletes its ID', async () => {
-    const { client, v2 } = v2Client({
-      'GET /me/secrets': {
-        items: [{ ...SECRET, id: 'secret_0other', name: 'OTHER' }, SECRET],
-        nextPageToken: null,
-      },
-      'DELETE /me/secrets/secret_0k1': {},
+describe('client.v1.secrets', () => {
+  it('get() reads the value from /api/v1 with its 0.x shape', async () => {
+    const value = {
+      name: 'A/B',
+      value: 'v',
+      createdAt: '2026-11-01T00:00:00Z',
+      updatedAt: '2026-11-01T00:00:00Z',
+    };
+    const fetch = vi.fn(async (url: string) => {
+      void url;
+      return Response.json(value);
     });
-    await client.secrets.delete({ name: 'KEY' });
-    expect(v2).toHaveBeenLastCalledWith('DELETE', '/me/secrets/secret_0k1');
-  });
-
-  it('delete of an unknown name is NOT_FOUND without a delete', async () => {
-    const { client, v2 } = v2Client({
-      'GET /me/secrets': { items: [SECRET], nextPageToken: null },
-    });
-    await expect(client.secrets.delete({ name: 'NOPE' })).rejects.toMatchObject(
-      { code: 'NOT_FOUND', status: 404 }
+    vi.stubGlobal('fetch', fetch);
+    restore = () => vi.unstubAllGlobals();
+    expect(await client().v1.secrets.get({ name: 'A/B' })).toEqual(value);
+    expect(fetch.mock.calls[0][0]).toBe(
+      'https://api.test/api/v1/secrets/A%2FB'
     );
-    expect(v2).toHaveBeenCalledTimes(1);
   });
 });

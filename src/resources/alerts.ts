@@ -1,12 +1,8 @@
 import type { AlvaClient } from '../client.js';
+import type { Schema, V2Query } from '../platformApi.js';
 import type {
-  FeedNotificationListResponse,
   FollowsListParams,
   FollowsListResponse,
-  NotificationListParams,
-  NotificationPreferencesResponse,
-  NotificationPreferenceUpdateParams,
-  NotificationPreferenceUpdateResponse,
   PushSubscriptionFeedParams,
   PushSubscriptionListParams,
   PushSubscriptionListResponse,
@@ -58,19 +54,19 @@ export class AlertsResource {
     return this.client.subscriptions.unsubscribeBatch(params);
   }
 
-  historyAutomation(
-    params: NotificationListParams
-  ): Promise<FeedNotificationListResponse> {
-    return this.client.notifications.listFeed(params);
+  history(
+    query: V2Query<'/me/notification-deliveries', 'get'>
+  ): Promise<Schema<'NotificationDeliveryList'>> {
+    return this.client.notifications.list(query);
   }
 
-  preferences(): Promise<NotificationPreferencesResponse> {
-    return this.client.notificationPreferences.list();
+  preferences(): Promise<Schema<'NotificationPreferences'>> {
+    return this.client.notificationPreferences.get();
   }
 
-  updatePreference(
-    params: NotificationPreferenceUpdateParams
-  ): Promise<NotificationPreferenceUpdateResponse> {
-    return this.client.notificationPreferences.update(params);
+  updatePreferences(
+    patch: Schema<'NotificationPreferencesPatch'>
+  ): Promise<Schema<'NotificationPreferences'>> {
+    return this.client.notificationPreferences.update(patch);
   }
 }

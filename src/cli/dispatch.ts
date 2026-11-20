@@ -8,11 +8,13 @@ import {
 } from '../resources/follows.js';
 import type { ListThesesParams } from '../resources/theses.js';
 import { AlvaClient } from '../client.js';
-import { encodeBase64 } from '../base64.js';
+import { decodeBase64 } from '../base64.js';
 import { requireDecision } from '../resources/steward.js';
 import { parseRfc3339Milliseconds } from '../resources/schedules.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import type { Schema, V2Query } from '../platformApi.js';
+import { allPages } from './pages.js';
+import { optionalRfc3339Flag, rfc3339Flag } from './timeFlags.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
   COMMAND_DEFINITIONS,
@@ -282,10 +284,11 @@ Verify that your credentials are valid by calling the Alva API. Shows your
 username, subscription tier, and which profile/endpoint is being used.
 Use this after 'alva configure' to confirm everything works.
 
-Output includes active_im_provider (telegram, discord, slack, whatsapp,
-imessage, or empty) and _meta.arrays_jwt (the /api/v2 DataSkillsToken: exists,
-expiresAt, renewalNeeded, tier). arrays_jwt is omitted when the backend status
-call fails.
+Output is the /api/v2 Me (id, profileId, username, planTier,
+messagingBindings, preferredMessagingApp, toolkitMinVersion, homePath) and
+_meta.arrays_jwt (the /api/v2 DataSkillsToken: exists, expiresAt,
+renewalNeeded, tier). arrays_jwt is omitted when the backend status call
+fails.
 
 Examples:
   alva whoami
@@ -296,16 +299,15 @@ Examples:
 Subcommands:
   me    Get the authenticated user's profile
 
-Response fields:
-  id                  User ID
-  username            Username (used in ALFS paths and playbook URLs)
-  subscription_tier   "free", "pro", or "max" — determines release flow and feature gates
-  telegram_username   Telegram display name if connected, empty otherwise
-  discord_username    Discord display name if connected, empty otherwise
-  slack_username      Slack display name if connected, empty otherwise
-  whatsapp_username   WhatsApp display name if connected, empty otherwise
-  imessage_username   iMessage display name if connected, empty otherwise
-  active_im_provider  Currently selected IM provider
+Response fields (the /api/v2 Me):
+  id                     Account ID
+  profileId              Public Profile ID
+  username               Username (used in ALFS paths and playbook URLs)
+  planTier               FREE, PRO or MAX: determines release flow and feature gates
+  messagingBindings      Connected IM apps: [{id, app, displayName}]
+  preferredMessagingApp  Currently selected IM app (TELEGRAM, DISCORD, ...), or null
+  toolkitMinVersion      Minimum recommended toolkit version
+  homePath               ALFS home directory, /alva/home/<username>
 
 Examples:
   alva user me`,
@@ -800,9 +802,14 @@ Follows flags:
   --cursor <token> Optional cursor from previous response
 
 History flags:
+  --automation-id <id>        The automation by ID: prints the /api/v2
+                              NotificationDeliveryList page
+  --automation <owner/name>   The automation by owner and name (/api/v1 history)
   --delivery-provider <name>  Optional provider filter (telegram, web, ...)
-  --status <status>  Optional status filter (sent, failed, filtered)
-  --since <seconds>  Optional Unix seconds lower bound
+  --status <status>  Optional status filter (sent, failed, filtered, ...)
+  --since <time>     Optional RFC 3339 lower bound (2026-11-20T09:00:00Z)
+  --first <n>        Optional page size
+  --cursor <token>   Optional nextPageToken (or v1 cursor) of the previous page
 
 Examples:
   alva alert list
@@ -812,6 +819,7 @@ Examples:
   alva alert enable --automation-ids automation_0abc,automation_0abd
   alva alert disable --automation-ids automation_0abc
   alva alert group enable --automation-ids 13292
+  alva alert history --automation-id automation_0abc --since 2026-11-20T00:00:00Z
   alva alert history --automation alice/btc-ema --status sent
   alva alert preferences`,
 
@@ -1115,8 +1123,10 @@ Use the CLI for agent-managed CRUD operations.
 
 Subcommands:
   create     Create a new secret (fails if name already exists)
-  list       List all secrets (metadata only: name, keyPrefix, timestamps)
-  get        Get a secret's plaintext value
+  list       List all secrets: one {items, nextPageToken: null} page of the
+             /api/v2 Secret (metadata only: id, name, prefix, version,
+             valueLength, timestamps)
+  get        Get a secret's plaintext value (/api/v1: {name, value, ...})
   update     Update a secret's value (fails if name doesn't exist)
   delete     Delete a secret (fails if name doesn't exist)
 
@@ -1261,7 +1271,7 @@ Common flags:
   --name <name>      URL-safe feed name (required)
   --delivery-provider <name>  Optional provider filter (telegram, web, ...)
   --status <status>  Optional status filter (sent, failed, filtered)
-  --since <seconds>  Optional Unix seconds lower bound
+  --since <time>     Optional RFC 3339 lower bound (2026-11-20T09:00:00Z)
   --first <n>        Optional page size (default 50, max 200 server-side)
   --cursor <token>   Optional cursor from the previous page
 
@@ -2112,13 +2122,6 @@ function deliveryProviderFilter(
   return flags['delivery-provider'];
 }
 
-function projectUserProfileForCLI(
-  record: Record<string, unknown>
-): Record<string, unknown> {
-  const { active_channel: activeIMProvider, ...profile } = record;
-  return { ...profile, active_im_provider: activeIMProvider };
-}
-
 function projectNotificationHistoryForCLI(response: unknown): unknown {
   if (
     response === null ||
@@ -2142,6 +2145,30 @@ function projectNotificationHistoryForCLI(response: unknown): unknown {
       return { ...event, delivery_provider: deliveryProvider };
     }),
   };
+}
+
+/** An RFC 3339 --since/--until for a /api/v1 route that takes Unix seconds. */
+function unixSecondsFlag(
+  flags: Record<string, string>,
+  flag: string,
+  command: string
+): number | undefined {
+  const value = flags[flag];
+  return value === undefined
+    ? undefined
+    : Math.floor(rfc3339Flag(value, flag, command) / 1000);
+}
+
+/** The bytes of a screenshot; an empty image is a retryable service failure. */
+function screenshotBytes(contentBase64: string): Uint8Array {
+  const bytes = new Uint8Array(decodeBase64(contentBase64));
+  if (bytes.length === 0) {
+    throw new CliUsageError(
+      'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
+      'screenshot'
+    );
+  }
+  return bytes;
 }
 
 function num(val: string | undefined): number | undefined {
@@ -2379,26 +2406,6 @@ function automationPins(
     );
   }
   return pins as Schema<'AutomationPin'>[];
-}
-
-/** Reads every page from `pageToken` on, into one page that ends the list. */
-async function allPages<T>(
-  read: (
-    pageToken: string | undefined
-  ) => Promise<{ items: T[]; nextPageToken: string | null }>,
-  pageToken?: string
-): Promise<{ items: T[]; nextPageToken: null }> {
-  const items: T[] = [];
-  let token = pageToken || undefined;
-  for (;;) {
-    const page = await read(token);
-    items.push(...page.items);
-    if (!page.nextPageToken) return { items, nextPageToken: null };
-    if (page.nextPageToken === token) {
-      throw new CliUsageError('the list returned the page token it was sent');
-    }
-    token = page.nextPageToken;
-  }
 }
 
 function automationUpdateParams(flags: Record<string, string>) {
@@ -3006,24 +3013,6 @@ function retiredFlags(
 }
 
 /** An optional RFC 3339 time flag; 1.0 refuses the Unix numbers 0.x took. */
-function rfc3339Flag(
-  flags: Record<string, string>,
-  name: string,
-  command: string
-): string | undefined {
-  const value = flags[name];
-  if (value === undefined) return undefined;
-  try {
-    parseRfc3339Milliseconds(value);
-  } catch {
-    throw new CliUsageError(
-      `--${name} takes an RFC 3339 time with a timezone (2026-01-02T15:04:05Z) for '${command}'; Unix numbers are no longer accepted`,
-      command.split(' ')[0]
-    );
-  }
-  return value;
-}
-
 function localFileUnsupported(command: string, flag: string): CliUsageError {
   return new CliUsageError(
     `--${flag} reads or writes a local file, which is unavailable in jagent. ` +
@@ -3353,36 +3342,6 @@ function readLocalFileBytes(
   return deps.localFiles.readBytes(path);
 }
 
-function sniffImageMime(bytes: Uint8Array): string {
-  const b = bytes;
-  if (
-    b.length >= 4 &&
-    b[0] === 0x89 &&
-    b[1] === 0x50 &&
-    b[2] === 0x4e &&
-    b[3] === 0x47
-  ) {
-    return 'image/png';
-  }
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
-    return 'image/jpeg';
-  }
-  if (
-    b.length >= 12 &&
-    b[0] === 0x52 &&
-    b[1] === 0x49 &&
-    b[2] === 0x46 &&
-    b[3] === 0x46 &&
-    b[8] === 0x57 &&
-    b[9] === 0x45 &&
-    b[10] === 0x42 &&
-    b[11] === 0x50
-  ) {
-    return 'image/webp';
-  }
-  return 'image/png';
-}
-
 function writeLocalFileBytes(
   path: string,
   data: Uint8Array,
@@ -3618,9 +3577,6 @@ export async function executeParsedCommand(
   // whoami: verify credentials and show user info
   if (group === 'whoami') {
     const user = await client.user.me();
-    const record = projectUserProfileForCLI(
-      user as unknown as Record<string, unknown>
-    );
     const version = meta?.cliVersion ?? CLI_VERSION;
     let arraysJwtStatus: unknown;
     try {
@@ -3636,12 +3592,12 @@ export async function executeParsedCommand(
       metaBlock.arrays_jwt = arraysJwtStatus;
     }
     const result: Record<string, unknown> = {
-      ...record,
+      ...user,
       _meta: metaBlock,
     };
-    const minVersion = record.toolkit_min_version;
+    const minVersion = user.toolkitMinVersion;
     if (
-      typeof minVersion === 'string' &&
+      minVersion &&
       version &&
       version !== 'dev' &&
       isVersionOlderThan(version, minVersion)
@@ -3657,12 +3613,7 @@ export async function executeParsedCommand(
     case 'user':
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for user', 'user');
-      if (subcommand === 'me') {
-        const user = await client.user.me();
-        return projectUserProfileForCLI(
-          user as unknown as Record<string, unknown>
-        );
-      }
+      if (subcommand === 'me') return client.user.me();
       throw new CliUsageError(`Unknown subcommand: user ${subcommand}`, 'user');
 
     case 'fs': {
@@ -4335,33 +4286,33 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'create':
           return client.serviceAccount.create({
-            display_name: requireFlag(flags, 'name', 'service-account create'),
+            displayName: requireFlag(flags, 'name', 'service-account create'),
           });
         case 'list':
-          return client.serviceAccount.list();
+          return allPages((pageToken) =>
+            client.serviceAccount.list({ pageSize: 200, pageToken })
+          );
         case 'delete':
-          return client.serviceAccount.delete({
-            id: requireIdFlag(flags, 'id', 'service-account delete'),
-          });
+          return client.serviceAccount.delete(
+            requireIdFlag(flags, 'id', 'service-account delete')
+          );
         case 'grant':
-          return client.serviceAccount.grant({
-            id: requireIdFlag(flags, 'id', 'service-account grant'),
-            path: requireFlag(flags, 'path', 'service-account grant'),
-            permission: requireFlag(
-              flags,
-              'permission',
-              'service-account grant'
-            ),
-          });
+          return client.serviceAccount.grant(
+            requireIdFlag(flags, 'id', 'service-account grant'),
+            {
+              path: requireFlag(flags, 'path', 'service-account grant'),
+              permission: requireFlag(
+                flags,
+                'permission',
+                'service-account grant'
+              ).toUpperCase() as Schema<'GrantPermission'>,
+            }
+          );
         case 'revoke':
-          return client.serviceAccount.revoke({
-            id: requireIdFlag(flags, 'id', 'service-account revoke'),
-            grant_id: requireIdFlag(
-              flags,
-              'grant-id',
-              'service-account revoke'
-            ),
-          });
+          return client.serviceAccount.revoke(
+            requireIdFlag(flags, 'id', 'service-account revoke'),
+            requireIdFlag(flags, 'grant-id', 'service-account revoke')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: service-account ${subcommand}`,
@@ -4909,9 +4860,11 @@ export async function executeParsedCommand(
             value: requireFlag(flags, 'value', 'secrets create'),
           });
         case 'list':
-          return client.secrets.list();
+          return allPages((pageToken) =>
+            client.secrets.list({ pageSize: 200, pageToken })
+          );
         case 'get':
-          return client.secrets.get({
+          return client.v1.secrets.get({
             name: requireFlag(flags, 'name', 'secrets get'),
           });
         case 'update':
@@ -4919,10 +4872,21 @@ export async function executeParsedCommand(
             name: requireFlag(flags, 'name', 'secrets update'),
             value: requireFlag(flags, 'value', 'secrets update'),
           });
-        case 'delete':
-          return client.secrets.delete({
-            name: requireFlag(flags, 'name', 'secrets delete'),
-          });
+        case 'delete': {
+          const name = requireFlag(flags, 'name', 'secrets delete');
+          const { items } = await allPages((pageToken) =>
+            client.secrets.list({ pageSize: 200, pageToken })
+          );
+          const secret = items.find((s) => s.name === name);
+          if (!secret) {
+            throw new AlvaError(
+              'NOT_FOUND',
+              `secret ${JSON.stringify(name)} not found`,
+              404
+            );
+          }
+          return client.secrets.delete(secret.id);
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: secrets ${subcommand}`,
@@ -5092,13 +5056,17 @@ export async function executeParsedCommand(
           `notification-history ${subcommand}`
         ),
         status: flags['status'],
-        since_time: num(flags['since']),
+        since_time: unixSecondsFlag(
+          flags,
+          'since',
+          `notification-history ${subcommand}`
+        ),
         first: num(flags['first']),
         cursor: flags['cursor'],
       };
       switch (subcommand) {
         case 'list-feed': {
-          const response = await client.notifications.listFeed(params);
+          const response = await client.v1.notifications.listFeed(params);
           return projectNotificationHistoryForCLI(response);
         }
         default:
@@ -5117,16 +5085,14 @@ export async function executeParsedCommand(
         );
       switch (subcommand) {
         case 'list':
-          return client.notificationPreferences.list();
+          return client.notificationPreferences.get();
         case 'enable-session-completed':
           return client.notificationPreferences.update({
-            key: 'session_completed',
-            enabled: true,
+            sessionCompleted: true,
           });
         case 'disable-session-completed':
           return client.notificationPreferences.update({
-            key: 'session_completed',
-            enabled: false,
+            sessionCompleted: false,
           });
         default:
           throw new CliUsageError(
@@ -5148,9 +5114,13 @@ export async function executeParsedCommand(
             );
           }
           return client.feedback.submit({
-            source: flags['source'],
-            category: flags['category'],
-            severity: flags['severity'],
+            source: upperFlag(flags['source']) as Schema<'FeedbackSource'>,
+            category: upperFlag(
+              flags['category']
+            ) as Schema<'FeedbackCategory'>,
+            severity: upperFlag(
+              flags['severity']
+            ) as Schema<'FeedbackSeverity'>,
             summary: requireFlag(flags, 'summary', 'feedback submit'),
             details: flags['details'],
             evidence: jsonObjectFlag(flags, 'evidence-json', 'feedback submit'),
@@ -5362,32 +5332,45 @@ export async function executeParsedCommand(
           }
         }
         case 'history': {
-          rejectPlaybookAlertTarget(flags, 'alert history');
-          const target = requireAutomationAlertTarget(flags, 'alert history');
-          const params = {
+          const command = 'alert history';
+          rejectPlaybookAlertTarget(flags, command);
+          const deliveryProvider = deliveryProviderFilter(flags, command);
+          if (flags['automation-id'] !== undefined) {
+            if (flags['automation'] !== undefined) {
+              throw new CliUsageError(
+                "Provide either --automation or --automation-id for 'alert history'",
+                'alert'
+              );
+            }
+            return client.alerts.history({
+              automationId: requireIdFlag(flags, 'automation-id', command),
+              deliveryProvider,
+              status: upperFlag(
+                flags['status']
+              ) as Schema<'NotificationDeliveryStatus'>,
+              since: optionalRfc3339Flag(flags, 'since', command),
+              pageSize: num(flags['first']),
+              pageToken: flags['cursor'],
+            });
+          }
+          const target = requireAutomationAlertTarget(flags, command);
+          const response = await client.v1.notifications.listFeed({
             username: target.username,
             name: target.name,
-            channel: deliveryProviderFilter(flags, 'alert history'),
+            channel: deliveryProvider,
             status: flags['status'],
-            since_time: num(flags['since']),
+            since_time: unixSecondsFlag(flags, 'since', command),
             first: num(flags['first']),
             cursor: flags['cursor'],
-          };
-          const response = await client.alerts.historyAutomation(params);
+          });
           return projectNotificationHistoryForCLI(response);
         }
         case 'preferences':
           return client.alerts.preferences();
         case 'enable-session-completed':
-          return client.alerts.updatePreference({
-            key: 'session_completed',
-            enabled: true,
-          });
+          return client.alerts.updatePreferences({ sessionCompleted: true });
         case 'disable-session-completed':
-          return client.alerts.updatePreference({
-            key: 'session_completed',
-            enabled: false,
-          });
+          return client.alerts.updatePreferences({ sessionCompleted: false });
         default:
           throw new CliUsageError(
             `Unknown subcommand: alert ${subcommand}`,
@@ -5496,7 +5479,7 @@ export async function executeParsedCommand(
           compressMaxWidth =
             explicitMaxWidth !== undefined ? Number(explicitMaxWidth) : 1280;
         }
-        const result = await client.screenshot.capture({
+        const shot = await client.screenshot.capture({
           url,
           selector,
           xpath,
@@ -5504,17 +5487,11 @@ export async function executeParsedCommand(
           compressQuality,
           compressMaxWidth,
         });
-        const bytes = new Uint8Array(result as ArrayBuffer);
-        if (bytes.length === 0) {
-          throw new CliUsageError(
-            'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
-            'screenshot'
-          );
-        }
+        const bytes = screenshotBytes(shot.contentBase64);
         return {
           _image: true,
-          mimeType: sniffImageMime(bytes),
-          data: encodeBase64(bytes),
+          mimeType: shot.contentType,
+          data: shot.contentBase64,
           bytes: bytes.length,
         };
       }
@@ -5523,7 +5500,7 @@ export async function executeParsedCommand(
       assertLocalFileAvailable('screenshot', 'out', deps);
       const compressQuality = flags['compress-quality'];
       const compressMaxWidth = flags['compress-max-width'];
-      const result = await client.screenshot.capture({
+      const shot = await client.screenshot.capture({
         url,
         selector,
         xpath,
@@ -5533,13 +5510,7 @@ export async function executeParsedCommand(
         compressMaxWidth:
           compressMaxWidth !== undefined ? Number(compressMaxWidth) : undefined,
       });
-      const bytes = new Uint8Array(result as ArrayBuffer);
-      if (bytes.length === 0) {
-        throw new CliUsageError(
-          'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
-          'screenshot'
-        );
-      }
+      const bytes = screenshotBytes(shot.contentBase64);
       writeLocalFileBytes(outFile, bytes, 'screenshot', 'out', deps);
       return { written: outFile, bytes: bytes.length };
     }
@@ -5738,7 +5709,7 @@ export async function executeParsedCommand(
                 ['EXTERNAL', 'ALVA_DIRECT', 'ALVA_INSTRUCTION', 'UNKNOWN'],
                 'trading orders'
               ),
-              from: rfc3339Flag(flags, 'since', 'trading orders'),
+              from: optionalRfc3339Flag(flags, 'since', 'trading orders'),
               pageSize: num(flags['limit']),
             }
           );

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { RunResource } from '../../src/resources/run.js';
 import { AlertsResource } from '../../src/resources/alerts.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
-import { NotificationsResource } from '../../src/resources/notifications.js';
 import { FunctionsResource } from '../../src/resources/functions.js';
 import { CreditsResource } from '../../src/resources/credits.js';
 import { AlvaClient } from '../../src/client.js';
@@ -19,6 +18,7 @@ import {
 } from '../runtimeV2.js';
 
 const REQUEST_ID = '123e4567-e89b-42d3-a456-426614174000';
+import { aDelivery } from '../accountV2.js';
 
 function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
   const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
@@ -342,17 +342,39 @@ describe('FunctionsResource', () => {
 });
 
 describe('NotificationsResource', () => {
-  it('listFeed() sends GET /api/v1/feed/:username/:name/notifications', async () => {
+  let restore: (() => void) | undefined;
+  afterEach(() => restore?.());
+
+  it('list() returns the NotificationDeliveryList page of an automation', async () => {
+    const page = { items: [aDelivery()], nextPageToken: null };
+    const fake = fakeV2({ 'GET /me/notification-deliveries': () => page });
+    restore = fake.restore;
+    const client = new AlvaClient({ apiKey: 'key' });
+    expect(
+      await client.notifications.list({
+        automationId: 'automation_0abc',
+        status: 'SENT',
+        since: '2026-11-20T00:00:00Z',
+      })
+    ).toEqual(page);
+    expect(Object.fromEntries(fake.calls[0].query)).toEqual({
+      automationId: 'automation_0abc',
+      status: 'SENT',
+      since: '2026-11-20T00:00:00Z',
+    });
+  });
+
+  it('client.v1.notifications.listFeed() reads /api/v1 by owner and name', async () => {
     const client = makeClient();
-    const notifications = new NotificationsResource(client);
-    await notifications.listFeed({
+    await client.v1.notifications.listFeed({
       username: 'alice',
       name: 'btc-ema',
+      since_time: 1700000000,
     });
     expect(client._request).toHaveBeenCalledWith(
       'GET',
       '/api/v1/feed/alice/btc-ema/notifications',
-      { query: {} }
+      { query: { since_time: '1700000000' } }
     );
   });
 });
@@ -510,38 +532,35 @@ describe('AlertsResource', () => {
     });
   });
 
-  it('historyAutomation delegates to feed notification history', async () => {
+  it('history() delegates to notifications.list()', async () => {
     const client = makeClient();
-    client.notifications.listFeed = vi
+    client.notifications.list = vi
       .fn()
-      .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
+      .mockResolvedValue({ items: [], nextPageToken: null });
     const alerts = new AlertsResource(client);
+    const query = { automationId: 'automation_0abc' };
 
-    await alerts.historyAutomation({ username: 'alice', name: 'btc-ema' });
+    await alerts.history(query);
 
-    expect(client.notifications.listFeed).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-ema',
-    });
+    expect(client.notifications.list).toHaveBeenCalledWith(query);
   });
 
   it('preference methods delegate to notification preferences', async () => {
     const client = makeClient();
-    client.notificationPreferences.list = vi
+    client.notificationPreferences.get = vi
       .fn()
-      .mockResolvedValue({ settings: [] });
-    client.notificationPreferences.update = vi.fn().mockResolvedValue({
-      setting: { key: 'session_completed', enabled: false },
-    });
+      .mockResolvedValue({ sessionCompleted: null });
+    client.notificationPreferences.update = vi
+      .fn()
+      .mockResolvedValue({ sessionCompleted: false });
     const alerts = new AlertsResource(client);
 
     await alerts.preferences();
-    await alerts.updatePreference({ key: 'session_completed', enabled: false });
+    await alerts.updatePreferences({ sessionCompleted: false });
 
-    expect(client.notificationPreferences.list).toHaveBeenCalled();
+    expect(client.notificationPreferences.get).toHaveBeenCalled();
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: false,
+      sessionCompleted: false,
     });
   });
 });

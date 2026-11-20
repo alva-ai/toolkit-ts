@@ -27,23 +27,6 @@ export interface AlvaClientConfig {
   originInboxPath?: string;
 }
 
-// --- User ---
-
-export interface UserProfile {
-  id: AlvaId;
-  username: string;
-  subscription_tier: 'free' | 'pro' | 'max';
-  telegram_username: string;
-  discord_username: string;
-  slack_username: string;
-  whatsapp_username: string;
-  imessage_username: string;
-  active_channel: string;
-  toolkit_min_version: string;
-  /** Caller's alfs home directory, e.g. `/alva/home/<username>`. */
-  home_path: string;
-}
-
 // --- Filesystem ---
 
 export interface FsReadParams {
@@ -448,37 +431,12 @@ export interface FeedStatusUpdateRequest {
 
 // --- Secrets ---
 
-export interface CreateSecretRequest {
-  name: string;
-  value: string;
-}
-
-export interface SecretMetadata {
-  id: AlvaId;
-  name: string;
-  keyVersion: number;
-  createdAt: string;
-  updatedAt: string;
-  valueLength: number;
-  keyPrefix: string;
-}
-
+/** A secret with its value, as /api/v1 returns it (`client.v1.secrets.get`). */
 export interface Secret {
   name: string;
   value: string;
   createdAt: string;
   updatedAt: string;
-}
-
-// --- Screenshot ---
-
-export interface ScreenshotParams {
-  url: string;
-  selector?: string;
-  xpath?: string;
-  compress?: boolean;
-  compressQuality?: number;
-  compressMaxWidth?: number;
 }
 
 // --- Notifications ---
@@ -516,59 +474,6 @@ export interface FeedNotificationListResponse {
   next_cursor: string;
   /** Canonical alfs path: `/alva/home/<username>/feeds/<name>`. */
   feed_path: string;
-}
-
-// --- Notification Preferences ---
-
-export type NotificationPreferenceKey = 'session_completed';
-
-export interface NotificationPreference {
-  key: NotificationPreferenceKey;
-  enabled: boolean;
-}
-
-export interface NotificationPreferencesResponse {
-  settings: NotificationPreference[];
-}
-
-export interface NotificationPreferenceUpdateParams {
-  key: NotificationPreferenceKey;
-  enabled: boolean;
-}
-
-export interface NotificationPreferenceUpdateResponse {
-  setting: NotificationPreference;
-}
-
-// --- Feedback ---
-
-export interface SubmitFeedbackRequest {
-  /** Defaults to "agent_detected" on the server. */
-  source?: 'agent_detected' | 'user_reported' | 'system_detected' | string;
-  /** Defaults to "other" on the server. */
-  category?:
-    | 'api_error'
-    | 'data_quality'
-    | 'docs'
-    | 'runtime'
-    | 'auth'
-    | 'billing'
-    | 'other'
-    | string;
-  /** Defaults to "medium" on the server. */
-  severity?: 'low' | 'medium' | 'high' | 'critical' | string;
-  summary: string;
-  details?: string;
-  /** Optional structured diagnostics; omit unless the agent has useful metadata. */
-  evidence?: Record<string, unknown>;
-  /** Optional structured session metadata; omit unless relevant to triage. */
-  context?: Record<string, unknown>;
-}
-
-export interface SubmitFeedbackResponse {
-  feedback_id: AlvaId;
-  notion_page_id: string;
-  notion_url: string;
 }
 
 // --- Push Subscriptions ---
@@ -813,50 +718,4 @@ export interface GroupChatMessage {
 export interface ChannelGroupHistoryResponse {
   /** Chronological (ts ascending). */
   messages: GroupChatMessage[];
-}
-
-// --- Service accounts (restricted run-as identities, issue #602) ---
-
-export interface ServiceAccount {
-  /** Account ID; what `--run-as-service-account` takes (#602). */
-  id: AlvaId;
-  display_name: string;
-  username: string;
-  /** Account ID of the owner. */
-  parent_user_id: AlvaId;
-  /** Unix milliseconds. */
-  created_at?: number;
-}
-
-export interface ServiceAccountCreateRequest {
-  display_name: string;
-}
-
-export interface ServiceAccountCreateResponse {
-  service_account: ServiceAccount;
-}
-
-export interface ServiceAccountListResponse {
-  service_accounts: ServiceAccount[];
-}
-
-export interface ServiceAccountGrantRequest {
-  id: AlvaId;
-  path: string;
-  permission: string; // read | write | import
-}
-
-/** One permission a service account holds on one path. */
-export interface ServiceAccountGrant {
-  id: AlvaId;
-  service_account_id: AlvaId;
-  /** Absolute ALFS path. */
-  path: string;
-  permission: string; // read | write | import
-}
-
-export interface ServiceAccountRevokeRequest {
-  id: AlvaId;
-  /** The grant's ID, from `grant` (granting the same pair again returns it). */
-  grant_id: AlvaId;
 }

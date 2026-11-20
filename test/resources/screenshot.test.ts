@@ -1,42 +1,28 @@
-import { describe, it, expect } from 'vitest';
-import { encodeBase64 } from '../../src/base64.js';
-import { v2Client } from '../helpers/v2Client.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import { AlvaClient } from '../../src/client.js';
+import { aScreenshot, REQUEST_ID } from '../accountV2.js';
+import { fakeV2 } from '../fakeV2.js';
 
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
 
 describe('ScreenshotResource', () => {
-  it('capture() posts the options and returns the decoded image bytes', async () => {
-    const { client, v2 } = v2Client({
-      'POST /screenshots': {
-        contentType: 'image/png',
-        contentBase64: encodeBase64(PNG),
-      },
+  it('capture() posts the ScreenshotRequest with a key and returns the Screenshot', async () => {
+    const fake = fakeV2({ 'POST /screenshots': () => aScreenshot('iVBORw==') });
+    restore = fake.restore;
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api.test',
     });
-    const image = await client.screenshot.capture({
+    const body = {
       url: '/playbook/alice/btc-dashboard',
       compress: true,
       compressQuality: 70,
-      compressMaxWidth: 1280,
-    });
-    expect(new Uint8Array(image)).toEqual(PNG);
-    expect(v2).toHaveBeenCalledWith('POST', '/screenshots', {
-      body: {
-        url: '/playbook/alice/btc-dashboard',
-        selector: undefined,
-        xpath: undefined,
-        compress: true,
-        compressQuality: 70,
-        compressMaxWidth: 1280,
-      },
-    });
-  });
-
-  it('capture() refuses content that is not base64', async () => {
-    const { client } = v2Client({
-      'POST /screenshots': { contentType: 'image/png', contentBase64: 'a*b=' },
-    });
-    await expect(
-      client.screenshot.capture({ url: '/x' })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    };
+    expect(
+      await client.screenshot.capture(body, { idempotencyKey: REQUEST_ID })
+    ).toEqual(aScreenshot('iVBORw=='));
+    expect(fake.calls[0].body).toEqual(body);
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
   });
 });

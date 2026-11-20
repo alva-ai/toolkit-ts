@@ -15,6 +15,8 @@ export {
 export type { Page, Schema, V2Query } from './platformApi.js';
 export type { components, paths } from './generated/platform-v2.js';
 export { V1Resources } from './v1/index.js';
+export { V1NotificationsResource } from './v1/notifications.js';
+export { V1SecretsResource } from './v1/secrets.js';
 export * from './playbookRuntime.js';
 export {
   AutomationAlertDeliveryResource,
@@ -120,6 +122,10 @@ export {
 export type {
   AlvaId,
   AlvaClientConfig,
+  FeedNotificationListResponse,
+  NotificationEvent,
+  NotificationListParams,
+  Secret,
   FsReadParams,
   FsWriteParams,
   FsRawWriteParams,
@@ -151,13 +157,6 @@ export type {
   ChannelGroupHistoryParams,
   ChannelGroupHistoryResponse,
   GroupChatMessage,
-  NotificationPreferenceKey,
-  NotificationPreference,
-  NotificationPreferencesResponse,
-  NotificationPreferenceUpdateParams,
-  NotificationPreferenceUpdateResponse,
-  SubmitFeedbackRequest,
-  SubmitFeedbackResponse,
   AutomationEmailDelivery,
   AutomationAlertDelivery,
   AutomationAlertDeliveryGetRequest,

@@ -1,97 +1,68 @@
-import { describe, it, expect } from 'vitest';
-import { v2Client } from '../helpers/v2Client.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import { AlvaClient } from '../../src/client.js';
+import { aGrant, aServiceAccount, REQUEST_ID } from '../accountV2.js';
+import { fakeV2 } from '../fakeV2.js';
 
-const SA = {
-  id: 'account_0sa',
-  displayName: 'fintwit-bot',
-  username: 'alice-sa-1',
-  ownerId: 'account_0alice',
-  createdAt: '2026-11-19T10:00:00.000Z',
-};
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
+
+function client() {
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
+}
 
 describe('ServiceAccountResource', () => {
-  it('create maps the v2 ServiceAccount to the v1 shape', async () => {
-    const { client, v2 } = v2Client({ 'POST /me/service-accounts': SA });
+  it('create() posts the body and returns the ServiceAccount', async () => {
+    const fake = fakeV2({
+      'POST /me/service-accounts': () => aServiceAccount(),
+    });
+    restore = fake.restore;
     expect(
-      await client.serviceAccount.create({ display_name: 'fintwit-bot' })
-    ).toEqual({
-      service_account: {
-        id: 'account_0sa',
-        display_name: 'fintwit-bot',
-        username: 'alice-sa-1',
-        parent_user_id: 'account_0alice',
-        created_at: Date.parse('2026-11-19T10:00:00.000Z'),
-      },
-    });
-    expect(v2).toHaveBeenCalledWith('POST', '/me/service-accounts', {
-      body: { displayName: 'fintwit-bot' },
-    });
+      await client().serviceAccount.create(
+        { displayName: 'fintwit-bot' },
+        { idempotencyKey: REQUEST_ID }
+      )
+    ).toEqual(aServiceAccount());
+    expect(fake.calls[0].body).toEqual({ displayName: 'fintwit-bot' });
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
   });
 
-  it('list reads every page and omits an unknown creation time', async () => {
-    const { client } = v2Client({
-      'GET /me/service-accounts': {
-        items: [{ ...SA, createdAt: null }],
-        nextPageToken: null,
-      },
-    });
-    const { service_accounts } = await client.serviceAccount.list();
-    expect(service_accounts).toEqual([
-      {
-        id: 'account_0sa',
-        display_name: 'fintwit-bot',
-        username: 'alice-sa-1',
-        parent_user_id: 'account_0alice',
-      },
-    ]);
+  it('list() returns one ServiceAccountList page', async () => {
+    const page = { items: [aServiceAccount()], nextPageToken: null };
+    const fake = fakeV2({ 'GET /me/service-accounts': () => page });
+    restore = fake.restore;
+    expect(await client().serviceAccount.list()).toEqual(page);
   });
 
-  it('delete sends the Account ID as one path segment', async () => {
-    const { client, v2 } = v2Client({
-      'DELETE /me/service-accounts/account_0sa': {},
+  it('grant() posts the grant under the account and returns it', async () => {
+    const fake = fakeV2({
+      'POST /me/service-accounts/account_0sa/grants': () => aGrant(),
     });
-    await client.serviceAccount.delete({ id: 'account_0sa' });
-    expect(v2).toHaveBeenCalledWith(
-      'DELETE',
-      '/me/service-accounts/account_0sa'
-    );
-  });
-
-  it('grant upper-cases the permission and returns the grant', async () => {
-    const { client, v2 } = v2Client({
-      'POST /me/service-accounts/account_0sa/grants': {
-        id: 'service_account_grant_0g',
-        serviceAccountId: 'account_0sa',
-        path: '/alva/home/alice/feeds/x/v1',
+    restore = fake.restore;
+    expect(
+      await client().serviceAccount.grant('account_0sa', {
+        path: '~/feeds/x/',
         permission: 'READ',
-      },
-    });
-    expect(
-      await client.serviceAccount.grant({
-        id: 'account_0sa',
-        path: '~/feeds/x/v1',
-        permission: 'read',
       })
-    ).toEqual({
-      id: 'service_account_grant_0g',
-      service_account_id: 'account_0sa',
-      path: '/alva/home/alice/feeds/x/v1',
-      permission: 'read',
-    });
-    expect(v2.mock.calls[0][2]).toEqual({
-      body: { path: '~/feeds/x/v1', permission: 'READ' },
+    ).toEqual(aGrant());
+    expect(fake.calls[0].body).toEqual({
+      path: '~/feeds/x/',
+      permission: 'READ',
     });
   });
 
-  it('revoke deletes the grant by its ID', async () => {
-    const { client, v2 } = v2Client({
+  it('delete() and revoke() address the account and the grant by ID', async () => {
+    const fake = fakeV2({
+      'DELETE /me/service-accounts/account_0sa': () => ({}),
       'DELETE /me/service-accounts/account_0sa/grants/service_account_grant_0g':
-        {},
+        () => ({}),
     });
-    await client.serviceAccount.revoke({
-      id: 'account_0sa',
-      grant_id: 'service_account_grant_0g',
-    });
-    expect(v2).toHaveBeenCalledTimes(1);
+    restore = fake.restore;
+    const c = client();
+    await c.serviceAccount.revoke('account_0sa', 'service_account_grant_0g');
+    await c.serviceAccount.delete('account_0sa');
+    expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'DELETE /me/service-accounts/account_0sa/grants/service_account_grant_0g',
+      'DELETE /me/service-accounts/account_0sa',
+    ]);
   });
 });
