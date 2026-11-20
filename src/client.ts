@@ -344,15 +344,6 @@ export class AlvaClient {
     }
   }
 
-  /**
-   * Whether requests carry the API key, the one credential /api/v2 accepts.
-   * A PBSV or viewer token takes precedence (see _headers); /api/v2 treats it
-   * as a guest and sends no CORS headers, so browser callers keep /api/v1.
-   */
-  _sendsApiKey(): boolean {
-    return Boolean(this.apiKey && !this.pbsvToken && !this.viewer_token);
-  }
-
   get x(): XResource {
     return (this._x ??= new XResource(this));
   }
