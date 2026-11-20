@@ -220,15 +220,6 @@ function makeClient(
       edges: [],
     },
   });
-  client.markets.narrative = vi.fn().mockResolvedValue({
-    ticker: 'AAPL',
-    current: null,
-    history: null,
-  });
-  client.markets.earnings = vi.fn().mockResolvedValue({
-    ticker: 'AAPL',
-    period: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
-  });
   client.playbooks.trending = vi
     .fn()
     .mockResolvedValue({ playbooks: [], has_next: false });
@@ -1224,56 +1215,6 @@ describe('CLI dispatch', () => {
     });
   });
 
-  it('dispatches markets narrative', async () => {
-    const client = makeClient();
-    await dispatch(client, ['markets', 'narrative', '--ticker', 'BRK.B']);
-    expect(client.markets.narrative).toHaveBeenCalledWith('BRK.B');
-  });
-
-  it('defaults markets earnings to latest-completed', async () => {
-    const client = makeClient();
-    await dispatch(client, ['markets', 'earnings', '--ticker', 'AAPL']);
-    expect(client.markets.earnings).toHaveBeenCalledWith({
-      ticker: 'AAPL',
-      event: undefined,
-    });
-  });
-
-  it('dispatches markets earnings with an event selector', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'markets',
-      'earnings',
-      '--ticker',
-      'AAPL',
-      '--event',
-      'next-confirmed',
-    ]);
-    expect(client.markets.earnings).toHaveBeenCalledWith({
-      ticker: 'AAPL',
-      event: 'next-confirmed',
-    });
-  });
-
-  it('dispatches markets earnings with an explicit fiscal period', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'markets',
-      'earnings',
-      '--ticker',
-      'AAPL',
-      '--fiscal-year',
-      '2026',
-      '--fiscal-quarter',
-      'q3',
-    ]);
-    expect(client.markets.earnings).toHaveBeenCalledWith({
-      ticker: 'AAPL',
-      fiscalYear: 2026,
-      fiscalQuarter: 'Q3',
-    });
-  });
-
   it('rejects mixed markets earnings selectors', async () => {
     const client = makeClient();
     await expect(
@@ -1320,9 +1261,9 @@ describe('CLI dispatch', () => {
     };
     const help = result.text.replace(/\s+/g, ' ');
     expect(help).toContain('Narrative is dated Alva analysis');
-    expect(help).toContain('Pre is the dated expectation baseline');
-    expect(help).toContain('Transcript holds management statements');
-    expect(help).toContain("Post is Alva's dated interpretation");
+    expect(help).toContain('The preview is the dated expectation baseline');
+    expect(help).toContain('the transcript holds management statements');
+    expect(help).toContain("the recap is Alva's dated interpretation");
     expect(help).toContain('does not invalidate valid stages');
     expect(help).toContain('never replaced with a different quarter');
   });

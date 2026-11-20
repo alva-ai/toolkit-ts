@@ -24,7 +24,8 @@ import {
   type CreateCompanyNewsParams,
 } from '../resources/companyNews.js';
 import { parseRfc3339Milliseconds } from '../resources/schedules.js';
-import { CliUsageError } from '../error.js';
+import { AlvaError, CliUsageError } from '../error.js';
+import type { Schema } from '../platformApi.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
   COMMAND_DEFINITIONS,
@@ -1420,8 +1421,9 @@ earnings events through the backend period catalog; it does not construct ALFS
 owners, feed slugs, versions, or paths.
 
 Subcommands:
-  narrative    Get the current narrative, history, and narrative change log
-  earnings     Get Pre, Release, Transcript, and Post for one fiscal event
+  narrative    Get the latest narrative, its history, and its changes
+  earnings     Get the preview, release, transcript, and recap of one fiscal
+               event
   watchlist list|add|remove
                The user's ticker watchlist in the Alva App
 
@@ -1454,18 +1456,20 @@ Watchlist flags:
   remove is recorded even for symbols not in the watchlist, so holdings sync
   does not add them back; add re-adds a symbol the user removed earlier.
 
-Output semantics:
-  Narrative is dated Alva analysis. Use current for present-tense company
-  context and history only to explain changes; use separate sources for live
-  prices and official facts.
+Output semantics (the /api/v2 AssetNarrative and EarningsReport):
+  Narrative is dated Alva analysis. Use latest for present-tense company
+  context, and history and changes only to explain changes; use separate
+  sources for live prices and official facts. A ticker without coverage is
+  NOT_FOUND.
 
-  Earnings covers one fiscal event. Pre is the dated expectation baseline;
-  Release identifies the official source for reported facts; Transcript holds
-  management statements; Post is Alva's dated interpretation.
+  Earnings covers one fiscal event. The preview is the dated expectation
+  baseline; the release identifies the official source for reported facts;
+  the transcript holds management statements; the recap is Alva's dated
+  interpretation.
 
-  Each Earnings stage has its own status. A missing or unavailable stage does
-  not invalidate valid stages, and an unavailable requested event is never
-  replaced with a different quarter.
+  Each Earnings stage has its own availability. A missing or unavailable
+  stage does not invalidate valid stages, and an unavailable requested event
+  is never replaced with a different quarter.
 
 Examples:
   alva markets narrative --ticker AAPL
@@ -2830,6 +2834,52 @@ function assertLocalFileAvailable(
   if (deps?.runtime === 'jagent') {
     throw localFileUnsupported(command, flag);
   }
+}
+
+/**
+ * The stock Asset a --ticker names: its US listing, else its non-US one (the
+ * markets commands read company coverage, which only stocks have).
+ */
+async function stockAsset(
+  client: AlvaClient,
+  ticker: string
+): Promise<Schema<'Asset'>> {
+  const symbol = ticker.trim().toUpperCase();
+  try {
+    return await client.markets.assetBySymbol(symbol, {
+      assetClass: 'US_STOCK',
+    });
+  } catch (error) {
+    if (!(error instanceof AlvaError) || error.status !== 404) throw error;
+  }
+  return client.markets.assetBySymbol(symbol, { assetClass: 'NON_US_STOCK' });
+}
+
+/**
+ * The calendar period of an earnings event: the latest completed report, or
+ * the next one with a confirmed date. An event the calendar lacks is
+ * NOT_FOUND; another quarter is never read in its place.
+ */
+function earningsEventPeriod(
+  calendar: Schema<'EarningsCalendar'>,
+  event: 'latest-completed' | 'next-confirmed',
+  symbol: string
+): Schema<'EarningsPeriod'> {
+  const status = event === 'latest-completed' ? 'COMPLETED' : 'UPCOMING';
+  const dated = calendar.periods.filter(
+    (p): p is Schema<'EarningsPeriod'> & { reportsOn: string } =>
+      p.status === status && p.reportsOn !== null
+  );
+  dated.sort((a, b) => a.reportsOn.localeCompare(b.reportsOn));
+  const period = event === 'latest-completed' ? dated.at(-1) : dated[0];
+  if (period === undefined) {
+    throw new AlvaError(
+      'NOT_FOUND',
+      `No ${event} earnings event is available for ${symbol}`,
+      404
+    );
+  }
+  return period;
 }
 
 /**
@@ -5223,7 +5273,9 @@ export async function executeParsedCommand(
       const ticker = requireFlag(flags, 'ticker', `markets ${subcommand}`);
       switch (subcommand) {
         case 'narrative':
-          return client.markets.narrative(ticker);
+          return client.markets.narrative(
+            (await stockAsset(client, ticker)).id
+          );
         case 'earnings': {
           const event = flags['event'];
           const fiscalYear = optionalBoundedIntegerFlag(
@@ -5267,16 +5319,21 @@ export async function executeParsedCommand(
               'markets'
             );
           }
+          const asset = await stockAsset(client, ticker);
           if (fiscalYear !== undefined && fiscalQuarter !== undefined) {
-            return client.markets.earnings({
-              ticker,
+            return client.markets.earnings(asset.id, {
               fiscalYear,
-              fiscalQuarter: fiscalQuarter as 'Q1' | 'Q2' | 'Q3' | 'Q4',
+              fiscalQuarter: fiscalQuarter as Schema<'FiscalQuarter'>,
             });
           }
-          return client.markets.earnings({
-            ticker,
-            event: event as 'latest-completed' | 'next-confirmed' | undefined,
+          const period = earningsEventPeriod(
+            await client.markets.earningsCalendar(asset.id),
+            event ?? 'latest-completed',
+            asset.symbol
+          );
+          return client.markets.earnings(asset.id, {
+            fiscalYear: period.fiscalYear,
+            fiscalQuarter: period.fiscalQuarter,
           });
         }
         default:

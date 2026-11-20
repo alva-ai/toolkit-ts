@@ -214,28 +214,6 @@ export type {
   RevokeAllowanceParams,
   RevokeAllowanceResponse,
 } from './resources/functions.js';
-export type {
-  CompanyEarningsCatalog,
-  CompanyEarningsContentStatus,
-  CompanyEarningsContext,
-  CompanyEarningsEvent,
-  CompanyEarningsParams,
-  CompanyEarningsPeriod,
-  CompanyEarningsRelease,
-  CompanyEarningsSession,
-  CompanyEarningsStatus,
-  CompanyEarningsTranscript,
-  CompanyEarningsTranscriptEntry,
-  CompanyEarningsTranscriptSection,
-  CompanyFiscalQuarter,
-  CompanyNarrative,
-  CompanyNarrativeChangeLogEntry,
-  CompanyNarrativeContext,
-  CompanyNarrativeHistory,
-  CompanyNarrativeSnapshot,
-  CompanyPostEarningsSummary,
-  CompanyPreEarningsAnalysis,
-} from './resources/markets.js';
 
 export type {
   ListThesesParams,
