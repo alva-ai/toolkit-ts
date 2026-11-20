@@ -3,7 +3,7 @@ import { AlvaClient } from '../client.js';
 import { decodeBase64 } from '../base64.js';
 import { requireDecision } from '../v1/steward.js';
 import { AlvaError, CliUsageError } from '../error.js';
-import { v2Path, type Schema, type V2Query } from '../platformApi.js';
+import type { Schema, V2Query } from '../platformApi.js';
 import { allPages } from './pages.js';
 import { parseTickers, resolveTickers } from './watchlist.js';
 import { optionalRfc3339Flag, rfc3339Flag } from './timeFlags.js';
@@ -1038,7 +1038,7 @@ print nothing; revoke without an allowance does nothing.
 Notes:
   --entry-script-path must be an absolute ALFS path under your home, such as
   /alva/home/alice/playbooks/my-playbook/udf/analyze.js. Use alva whoami to
-  discover home_path. Use the browser runtime window.alva.udf for released
+  discover homePath. Use the browser runtime window.alva.udf for released
   playbook UI; this CLI is mainly for creator-side setup and smoke tests.
   Allowance commands act for the signed-in user and reject playbook-scoped
   viewer tokens.
@@ -2401,9 +2401,9 @@ async function playbookIdBySlug(
   flags: Record<string, string>,
   command: string
 ): Promise<string> {
-  const playbook = await client._v2Request<Schema<'Playbook'>>(
-    'GET',
-    v2Path`/playbooks/by-slug/${requireFlag(flags, 'username', command)}/${requireFlag(flags, 'name', command)}`
+  const playbook = await client.playbooks.getBySlug(
+    requireFlag(flags, 'username', command),
+    requireFlag(flags, 'name', command)
   );
   return playbook.id;
 }

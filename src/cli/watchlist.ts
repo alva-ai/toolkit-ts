@@ -1,6 +1,6 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError, CliUsageError } from '../error.js';
-import { v2Path, type Schema } from '../platformApi.js';
+import type { Schema } from '../platformApi.js';
 
 // Ticker symbols of `alva markets watchlist add|remove`: the watchlist holds
 // Asset follows, so the CLI resolves each symbol to its Asset first.
@@ -87,11 +87,7 @@ async function lookupTicker(
   for (const assetClass of kind ? KIND_ASSET_CLASSES[kind] : [undefined]) {
     let asset: Schema<'Asset'>;
     try {
-      asset = await client._v2Request<Schema<'Asset'>>(
-        'GET',
-        v2Path`/assets/by-symbol/${ticker}`,
-        { query: { assetClass } }
-      );
+      asset = await client.markets.assetBySymbol(ticker, { assetClass });
     } catch (error) {
       if (error instanceof AlvaError && error.status === 404) continue;
       throw error;

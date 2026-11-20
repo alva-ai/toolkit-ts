@@ -4938,9 +4938,9 @@ describe('alva ask', () => {
 describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)', () => {
   it('dispatches playbook follow without changing alerts', async () => {
     const client = makeClient();
-    client._v2Request = vi
-      .fn()
-      .mockResolvedValue({ id: 'playbook_0abc' }) as AlvaClient['_v2Request'];
+    vi.mocked(client.playbooks.getBySlug).mockResolvedValue(
+      aPlaybook({ id: 'playbook_0bcd' })
+    );
     expect(
       await dispatch(client, [
         'subscriptions',
@@ -4951,12 +4951,12 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
         'btc-dashboard',
       ])
     ).toEqual(aPlaybookFollow());
-    expect(client._v2Request).toHaveBeenCalledWith(
-      'GET',
-      '/playbooks/by-slug/alice/btc-dashboard'
+    expect(client.playbooks.getBySlug).toHaveBeenCalledWith(
+      'alice',
+      'btc-dashboard'
     );
     expect(client.subscriptions.followPlaybook).toHaveBeenCalledWith(
-      'playbook_0abc'
+      'playbook_0bcd'
     );
     expect(client.subscriptions.subscribeBatch).not.toHaveBeenCalled();
   });
