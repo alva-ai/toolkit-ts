@@ -51,15 +51,24 @@ Migration notes: [README](README.md#migrating-from-0x-to-10).
 Methods without an `/api/v2` route keep their 0.x types, IDs and credentials
 under `client.v1`, and move back when their route exists:
 
-- `steward` (GraphQL `/query`);
-- `secrets.get` (the secret's value);
-- `notifications.listFeed`;
-- feed subscriptions (`subscriptions.subscribeFeed`, `unsubscribeFeed`);
-- channel group subscriptions (`channelGroupSubscriptions`, CLI
-  `alert group`);
+- `steward` (GraphQL `/query`), as `client.v1.steward`;
+- `secrets.get` (the secret's value), as `client.v1.secrets.get`;
+- `notifications.listFeed` by owner and name, as
+  `client.v1.notifications.listFeed` (`notifications.list` takes the
+  Automation ID);
+- feed subscriptions by owner and name: `subscriptions.subscribeFeed` and
+  `unsubscribeFeed`, and `alerts.enableAutomation` and `disableAutomation`,
+  are `client.v1.subscriptions.subscribeFeed` and `unsubscribeFeed`;
+- channel group subscriptions by numeric origin session
+  (`channelGroupSubscriptions.context`, `list`, `subscribe`, `unsubscribe`;
+  CLI `alert group`), as `client.v1.channelGroupSubscriptions`;
+  `getGroupChatHistory` stays;
+- `fs` with a PBSV or viewer token, or a public read without a credential,
+  as `client.v1.fs` (the 0.x JSON and byte decoding);
 - `trading.subscribe({ executeLatest: true })`, as
   `client.v1.trading.subscribe(params)` with v1's numeric IDs;
-- Playbook and Skillhub discovery without an API key;
+- Playbook and Skillhub discovery without an API key, as `client.v1.playbooks`
+  and `client.v1.playbookSkills`;
 - the `auth login` token exchange (`/api/v1/oauth/token`).
 
 ### Renamed and removed
@@ -76,7 +85,8 @@ under `client.v1`, and move back when their route exists:
 
 ### Per resource
 
-Each resource lists its changes here as it moves to the `/api/v2` shapes.
+Every resource takes and returns the `/api/v2` shapes; the changes by
+resource:
 
 #### Markets
 
@@ -287,3 +297,100 @@ Each resource lists its changes here as it moves to the `/api/v2` shapes.
   `Playbook`. `sdk.doc(name)`, `sdk.partitions(query)` (one page) and
   `sdk.partitionSummary(name)` return `SDKModule`, `SDKPartitionList` and
   `SDKPartitionDetail`.
+
+#### Account
+
+- `user.me()` returns `Me` (`planTier`, `messagingBindings`,
+  `preferredMessagingApp`, `toolkitMinVersion`, `homePath`); CLI `whoami`
+  and `user me` print it (`whoami` adds `_meta`). The `*_username`,
+  `subscription_tier` and `active_im_provider` members are gone.
+- `secrets.create` and `update({ name, value })` return the `Secret`
+  (metadata), `list(query)` one `SecretList` page, `delete(secretId)` `{}`.
+  CLI `secrets list` prints every page as `{items, nextPageToken: null}`;
+  `secrets delete --name` finds the ID.
+- `serviceAccount.create({ displayName })`, `list(query)`, `delete(id)`,
+  `grant(id, { path, permission })` (`READ`, `WRITE`, `IMPORT`) and
+  `revoke(id, grantId)` return `ServiceAccount`, `ServiceAccountList`,
+  `ServiceAccountGrant` and `{}`.
+- `feedback.submit(SubmitFeedbackRequest)` returns `Feedback`
+  (`notionPageId`, `notionUrl` may be null); enums are upper case.
+- `screenshot.capture(ScreenshotRequest)` returns the `Screenshot`
+  (`contentType`, `contentBase64`), not bytes.
+
+#### Notifications and alerts
+
+- `notificationPreferences.get()` (was `list()`) and `update(patch)` use
+  `NotificationPreferences` (`sessionCompleted`, null for the default); the
+  `{key, enabled}` settings are gone. `alerts.preferences()` and
+  `updatePreferences(patch)` (was `updatePreference`) return the same.
+- `notifications.list(query)` reads `/me/notification-deliveries` by
+  `automationId` (`NotificationDeliveryList`, statuses upper case), and so
+  does `alerts.history(query)` (was `historyAutomation`). CLI
+  `alert history --automation-id` uses it; `--automation owner/name` and
+  `notification-history list-feed` keep `client.v1`. `--since` takes an RFC
+  3339 time on both (it was Unix seconds).
+- `subscriptions.followPlaybook` and `unfollowPlaybook(playbookId)` return
+  `PlaybookFollow`, `follows(query)` and `list(query)` their pages,
+  `subscribeBatch({ automationIds, channelId })` the `SubscribeResponse`,
+  `unsubscribe(id)` and `unsubscribeBatch(automationIds)` the removed
+  destinations. `alerts` delegates with the same shapes. CLI `alert list`
+  reads the `NotificationSubscription` fields.
+- `channelGroupSubscriptions.getGroupChatHistory(query)` takes
+  `{ app, remoteChat, from, to }` (RFC 3339) and returns `GroupChatHistory`.
+
+#### Files
+
+- `fs.read({ path }, { range })` returns `{ data, contentType, contentRange }`
+  (raw bytes; a file over 32 MiB needs a range);
+  `write({ path, mode, mkdirParents }, bytes | string)` replaces `write`
+  and `rawWrite` and returns `WriteResult`; `stat`, `readdir` and
+  `readlink` return `FileInfo` (`sizeBytes`, `updatedAt`, `isDirectory`,
+  `contentType`), `DirectoryListing` and `Symlink`; the other changes take
+  the camelCase request bodies and return `{}`. CLI `fs read` prints UTF-8
+  files as text.
+
+#### Cronjobs and schedules
+
+- `deploy.create(CreateCronjobBody)` (`entryPath`, `cronExpression`,
+  `argsJson` as written, `runAsAccountId`), `update(id, UpdateCronjobBody)`
+  (merge patch; `runAsAccountId: null` runs as the owner),
+  `get`, `delete`, `pause`, `resume(id)` and `list(query)` return the
+  `Cronjob` (absolute `entryPath`, upper-case `status`) and its pages;
+  `trigger(id)` returns `{ dispatchId }`; `listRuns(id, query)` returns the
+  `CronjobRunList` page and the stats are `runStats(id)`; `getRunStatus` is
+  `getDispatch(dispatchId)` (`CronjobDispatch`, states `QUEUED`,
+  `SUCCEEDED`, ...); `getRunLogs(runId)`. CLI: new `deploy run-stats`;
+  `run-logs` needs only `--run-id`; `run-status --workflow-run-id` takes the
+  `dispatchId`.
+- `schedules`: the Channel schedules are `list` and `put(channelId, ...)`
+  and `pause`, `resume`, `delete(scheduleId)`; the Session Inbox ones
+  `listSession`, `putSession`, `pauseSession`, `resumeSession` and
+  `deleteSession(id)`. They take `PutScheduleBody`
+  (`rule: {kind: AT|EVERY|CRON, ...}`, `message`, `endsAt`) and return
+  `Schedule` and `SessionSchedule`. The CLI keeps `--after`, `--every`,
+  `--at`, `--cron` and `--name`.
+
+#### Automations
+
+- `automation.inspect(id)` returns the `Automation`,
+  `update(id, PublishVersionBody)` the `AutomationVersion`,
+  `delivery.get(id)` the `AutomationDelivery` and
+  `delivery.update(id, DeliveryPatch)` the `Automation`.
+
+#### Follows
+
+- `follows.watchlist(query)` returns the `FollowedAssetList` page (the size
+  is `followCounts()`), `followAssets(assetIds)` and
+  `unfollowAssets(assetIds)` the `FollowAssetsResponse`;
+  `searchProfiles(query)` and `profiles(query)` return `ProfileList` pages,
+  `followProfile` and `unfollowProfile(profileId)` the `ProfileFollow`.
+  `addToWatchlist` and `removeFromWatchlist` by ticker are gone: CLI
+  `markets watchlist add|remove` resolves the tickers and refuses an
+  unknown one before writing.
+
+#### Asks
+
+- New `asks.create(NewAsk, { idempotencyKey })`, `get(askOperationId)` and
+  `wait(operation)`, and
+  `alva ask` (above): `--json` prints the finished `AskOperation`,
+  `--no-wait` the started one.

@@ -269,10 +269,11 @@ add or remove tickers. add/remove take --tickers <A,B> (1-50 exact symbols;
 suffix one with :stock, :etf, or :crypto to pick its kind, e.g. BTC:crypto)
 and optional --kind stock|etf|crypto as the default kind; add is one atomic
 write. A symbol resolves to its primary listing, or with a kind to that kind's
-listing. Report every group: added|removed (written now), unchanged (already
-in that state), unresolved (NOT_FOUND: ask the user or retry with another
-kind suffix). Nothing is written when no ticker resolves. add re-adds a ticker the user removed earlier. list takes
---limit <1-100> and --cursor <pageInfo.endCursor>.`,
+listing. A symbol without an Asset is NOT_FOUND and nothing is written: ask
+the user or retry with another kind suffix. The result lists every Asset with
+changed (written now) or not (already in that state). add re-adds a ticker
+the user removed earlier. list takes --limit <1-100> and --cursor
+<nextPageToken>.`,
 
   people: `Usage: alva people <subcommand> [options]
 
@@ -288,7 +289,7 @@ unfollow.`,
 
   'people follows': `Usage: alva people follows <list|follow|unfollow> [options]
 
-list: [--kind user|person] [--limit <1-50>] [--cursor <pageInfo.endCursor>]
+list: [--kind user|person] [--limit <1-50>] [--cursor <nextPageToken>]
 follow|unfollow: --id <profile id>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand>

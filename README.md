@@ -100,6 +100,29 @@ shapes as they are. CLIs and SDKs still on 0.x keep working against
   `null` only on 404. Publishing takes `PublishAutomationBody`, `NewDraft`
   and `NewRelease`; CLI `--feeds` takes `[{"automationId":"…","major":1}]`.
   Keyless discovery is `client.v1.playbooks` and `client.v1.playbookSkills`.
+- **Files.** `fs.read({ path }, { range })` returns the raw bytes with
+  their `contentType` (`new TextDecoder().decode(file.data)` for text);
+  `fs.write({ path, mode }, data)` takes bytes or a string; metadata calls
+  return `FileInfo` and friends. PBSV, viewer and keyless public reads use
+  `client.v1.fs`.
+- **Cronjobs, schedules and automations.** Methods take IDs and the
+  `/api/v2` bodies: `deploy.update(id, { cronExpression })` is a merge
+  patch, `deploy.trigger(id)` returns `{ dispatchId }` for
+  `deploy.getDispatch()`, and Channel schedules are
+  `schedules.put(channelId, body)`, Session Inbox ones
+  `schedules.putSession(body)`, both with a
+  `rule: { kind: 'AT' | 'EVERY' | 'CRON', ... }`. `steward` is
+  `client.v1.steward`.
+- **Follows and alerts.** The watchlist takes Asset IDs
+  (`follows.followAssets(ids)`; the CLI resolves tickers);
+  `subscriptions.subscribeBatch({ automationIds })` and alert history
+  `notifications.list({ automationId })` take Automation IDs. By owner and
+  name, use `client.v1.subscriptions` and `client.v1.notifications`.
+- **Asks.** `asks.create({ prompt })` starts an ask and
+  `asks.wait(operation)` polls it; `alva ask --prompt` waits.
+- **Account.** `user.me()` returns `Me`; secrets, service accounts,
+  feedback, screenshots and notification preferences return their
+  `/api/v2` schemas (a secret's value: `client.v1.secrets.get`).
 - **Errors.** `AlvaError` has `code`, `reason` (such as
   `IDEMPOTENCY_KEY_REUSED` or `INSUFFICIENT_CREDITS`), `type`, `status`,
   `message`, `requiredPermission`, `invalidParams` and `retryAfter`, read
@@ -409,21 +432,45 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 
 ### Resources
 
-| Resource            | Methods                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `client.user`       | `me()`                                                                                                                                                             |
-| `client.fs`         | `read()`, `write()`, `rawWrite()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()` |
-| `client.run`        | `execute()`                                                                                                                                                        |
-| `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
-| `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
-| `client.playbooks`  | `trending()`, `getByIds()`, `listByOwner()`, `listOwn()`, `get()`, `getBySlug()`, `update()`                                                                       |
-| `client.theses`     | `create()`, `get()`, `getVersion()`, `list()`, `listUpdates()`, `related()`, `signals()`, `update()`, `archive()`, `rewrite()`                                     |
-| `client.functions`  | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
-| `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
-| `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
-| `client.comments`   | `create()`, `pin()`, `unpin()`                                                                                                                                     |
-| `client.remix`      | `save()`                                                                                                                                                           |
-| `client.screenshot` | `capture()`                                                                                                                                                        |
+| Resource                           | Methods                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client.user`                      | `me()`                                                                                                                                                                                                                                                                                                  |
+| `client.fs`                        | `read()`, `write()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()`                                                                                                                                                    |
+| `client.asks`                      | `create()`, `get()`, `wait()`                                                                                                                                                                                                                                                                           |
+| `client.run`                       | `execute()`                                                                                                                                                                                                                                                                                             |
+| `client.deploy`                    | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`, `trigger()`, `listRuns()`, `runStats()`, `getDispatch()`, `getRunLogs()`                                                                                                                                                  |
+| `client.schedules`                 | `list()`, `put()`, `pause()`, `resume()`, `delete()`, `listSession()`, `putSession()`, `pauseSession()`, `resumeSession()`, `deleteSession()`, `agentChannelId()`                                                                                                                                       |
+| `client.automation`                | `list()`, `inspect()`, `update()`, `stop()`, `resume()`, `delete()`, `publish()`, `delivery.get()`, `delivery.update()`                                                                                                                                                                                 |
+| `client.feed`                      | `list()`, `stop()`, `resume()`, `delete()`, `setVisibility()`                                                                                                                                                                                                                                           |
+| `client.release`                   | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                                                                                                                                                               |
+| `client.playbooks`                 | `trending()`, `getByIds()`, `listByOwner()`, `listOwn()`, `get()`, `getBySlug()`, `update()`                                                                                                                                                                                                            |
+| `client.playbookSkills`            | `list()`, `tags()`, `get()`, `file()`                                                                                                                                                                                                                                                                   |
+| `client.theses`                    | `create()`, `get()`, `getByNumber()`, `getVersion()`, `getVersionByNumber()`, `list()`, `listUpdates()`, `related()`, `signals()`, `watchpoints()`, `thesisReturn()`, `assetCandidates()`, `update()`, `archive()`, `unarchive()`, `setVisibility()`, `setStarred()`, `setSignalEnabled()`, `rewrite()` |
+| `client.forYou`                    | `list()`, `theses()`                                                                                                                                                                                                                                                                                    |
+| `client.markets`                   | `assetBySymbol()`, `narrative()`, `earningsCalendar()`, `earnings()`                                                                                                                                                                                                                                    |
+| `client.tradingPairs`              | `list()`, `search()`, `resolve()`                                                                                                                                                                                                                                                                       |
+| `client.companyNews`               | `create()`                                                                                                                                                                                                                                                                                              |
+| `client.x`                         | `status()`, `following()`, `posts()`                                                                                                                                                                                                                                                                    |
+| `client.follows`                   | `watchlist()`, `followCounts()`, `followAssets()`, `unfollowAsset()`, `unfollowAssets()`, `searchProfiles()`, `profiles()`, `followProfile()`, `unfollowProfile()`                                                                                                                                      |
+| `client.subscriptions`             | `followPlaybook()`, `unfollowPlaybook()`, `follows()`, `list()`, `subscribeBatch()`, `unsubscribe()`, `unsubscribeBatch()`                                                                                                                                                                              |
+| `client.alerts`                    | `list()`, `follows()`, `enableBatch()`, `disableBatch()`, `history()`, `preferences()`, `updatePreferences()`                                                                                                                                                                                           |
+| `client.notifications`             | `list()`                                                                                                                                                                                                                                                                                                |
+| `client.notificationPreferences`   | `get()`, `update()`                                                                                                                                                                                                                                                                                     |
+| `client.channelGroupSubscriptions` | `getGroupChatHistory()`                                                                                                                                                                                                                                                                                 |
+| `client.portfolio`                 | `accounts()`, `snapshot()`, `activities()`                                                                                                                                                                                                                                                              |
+| `client.trading`                   | `orders()`, `placeOrders()`, `subscriptions()`, `subscribe()`, `unsubscribe()`, `equity()`, `riskRules()`, `updateRiskRules()`                                                                                                                                                                          |
+| `client.credits`                   | `wallet()`, `entries()`                                                                                                                                                                                                                                                                                 |
+| `client.functions`                 | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                                                                                                                                                          |
+| `client.arraysJwt`                 | `ensure()`, `status()`                                                                                                                                                                                                                                                                                  |
+| `client.dataSkills`                | `list()`, `summary()`, `endpoint()`                                                                                                                                                                                                                                                                     |
+| `client.secrets`                   | `create()`, `list()`, `update()`, `delete()`                                                                                                                                                                                                                                                            |
+| `client.serviceAccount`            | `create()`, `list()`, `delete()`, `grant()`, `revoke()`                                                                                                                                                                                                                                                 |
+| `client.feedback`                  | `submit()`                                                                                                                                                                                                                                                                                              |
+| `client.sdk`                       | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                                                                                                                                                           |
+| `client.comments`                  | `create()`, `pin()`, `unpin()`                                                                                                                                                                                                                                                                          |
+| `client.remix`                     | `save()`                                                                                                                                                                                                                                                                                                |
+| `client.screenshot`                | `capture()`                                                                                                                                                                                                                                                                                             |
+| `client.v1`                        | `steward`, `secrets.get()`, `notifications.listFeed()`, `subscriptions.subscribeFeed()`, `subscriptions.unsubscribeFeed()`, `channelGroupSubscriptions`, `fs`, `trading.subscribe()`, `playbooks`, `playbookSkills` (0.x shapes; CHANGELOG, "Moved to `client.v1`")                                     |
 
 ### Error Handling
 
@@ -512,8 +559,9 @@ alva whoami [--profile <name>]
 alva auth login [--browser | --no-browser] [--profile <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
+alva ask --prompt <text> [--system <text>] [--model <id>] [--effort <level>] [--json] [--no-wait]
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json> | --args-stdin] [--timeout-ms <ms>]
-alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
+alva deploy <create|list|get|update|delete|pause|resume|trigger|runs|run-stats|run-status|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
 alva thesis <list|related|create|get|signals|set-visibility|update|rewrite>
@@ -538,10 +586,10 @@ alva trading-pairs resolve --pair <trading-pair> [--json]
 alva trading-pairs resolve --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]
 alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
 alva markets watchlist <add|remove> --tickers <A,B:crypto> [--kind <stock|etf|crypto>]
-alva markets watchlist list [--limit <1-100>] [--cursor <endCursor>]
+alva markets watchlist list [--limit <1-100>] [--cursor <nextPageToken>]
 alva people search --query <text> [--kind <user|person>] [--limit <1-50>]
 alva people follows <follow|unfollow> --id <profile-id>
-alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <endCursor>]
+alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <nextPageToken>]
 ```
 
 ## Contributing
@@ -595,15 +643,17 @@ alva people follows follow --id profile_0abc
 alva people follows list
 ```
 
-The SDK equivalents live on `client.follows`: `addToWatchlist()`,
-`removeFromWatchlist()`, `watchlist()`, `searchProfiles()`, `followProfile()`,
-`unfollowProfile()` and `profiles()`. Tickers match exact symbols (1-50 per
-call); adding writes them in one atomic batch, removing one at a time. A
-symbol resolves to its primary listing; a `:stock`, `:etf` or `:crypto`
-suffix picks the kind of one symbol (`BTC:crypto`), and `--kind` is the
-default for unsuffixed symbols, so one call can mix kinds. Results separate
-changed, `unchanged` and `unresolved` (`NOT_FOUND`) tickers. Nothing is written
-when no ticker resolves. Removal is recorded even for tickers not in the
+The SDK equivalents live on `client.follows` and take Asset and Profile
+IDs: `followAssets()`, `unfollowAssets()`, `watchlist()`, `followCounts()`,
+`searchProfiles()`, `followProfile()`, `unfollowProfile()` and `profiles()`.
+The CLI matches tickers to exact symbols (1-50 per call) and resolves each
+to its Asset first: a symbol resolves to its primary listing; a `:stock`,
+`:etf` or `:crypto` suffix picks the kind of one symbol (`BTC:crypto`), and
+`--kind` is the default for unsuffixed symbols, so one call can mix kinds. A
+ticker without an Asset is `NOT_FOUND` and nothing is written. Adding writes
+the Assets in one atomic batch, removing one at a time; both print the
+`/api/v2` `FollowAssetsResponse`, where `changed` is false for an Asset
+already in that state. Removal is recorded even for tickers not in the
 watchlist, so holdings sync does not add them back; adding re-adds a ticker
 the user removed earlier. Profiles are `USER` (Alva user) or `PERSON`
 (curated person), addressed by the Profile ID from search or list results. The

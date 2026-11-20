@@ -1504,14 +1504,16 @@ Watchlist flags:
                                 :crypto to pick its kind (BTC:crypto)
   --kind <stock|etf|crypto>     add/remove: default kind for unsuffixed symbols
   --limit <1-100>               list: page size (default 20)
-  --cursor <endCursor>          list: pageInfo.endCursor of the previous page
+  --cursor <token>              list: nextPageToken of the previous page
 
-  add writes every resolved symbol in one atomic batch; remove removes them one
-  by one, and a failed removal leaves the earlier ones removed. A symbol
-  resolves to its primary listing, or with a kind to that kind's listing.
-  Result groups: added|removed (written now), unchanged (already in that
-  state), unresolved (NOT_FOUND: retry it with another kind suffix or none).
-  Nothing is written when no symbol resolves.
+  add and remove first resolve every symbol to its Asset: a symbol without
+  one is NOT_FOUND (retry it with another kind suffix or none) and nothing is
+  written. add writes them in one atomic batch; remove removes them one by
+  one, and a failed removal leaves the others removed. A symbol resolves to
+  its primary listing, or with a kind to that kind's listing. Both print the
+  /api/v2 FollowAssetsResponse {assets: [{asset, following, changed}]}
+  (changed false: already in that state); list prints a FollowedAssetList
+  page.
   remove is recorded even for symbols not in the watchlist, so holdings sync
   does not add them back; add re-adds a symbol the user removed earlier.
 
