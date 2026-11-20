@@ -11,6 +11,7 @@ import {
   type V2PageOptions,
   type V2RequestOptions,
 } from './platformApi.js';
+import { V1Resources } from './v1/index.js';
 import type { AlvaClientConfig } from './types.js';
 import { FsResource } from './resources/fs.js';
 import { RunResource } from './resources/run.js';
@@ -204,6 +205,7 @@ export class AlvaClient {
   private _tradingPairs?: TradingPairsResource;
   private _theses?: ThesesResource;
   private _companyNews?: CompanyNewsResource;
+  private _v1?: V1Resources;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -325,6 +327,11 @@ export class AlvaClient {
 
   get companyNews(): CompanyNewsResource {
     return (this._companyNews ??= new CompanyNewsResource(this));
+  }
+
+  /** The 0.x methods without an /api/v2 route, with their 0.x types. */
+  get v1(): V1Resources {
+    return (this._v1 ??= new V1Resources(this));
   }
 
   _requireAuth(): void {

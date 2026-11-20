@@ -14,6 +14,7 @@ export {
 } from './error.js';
 export type { Page, Schema, V2Query } from './platformApi.js';
 export type { components, paths } from './generated/platform-v2.js';
+export { V1Resources } from './v1/index.js';
 export * from './playbookRuntime.js';
 export {
   AutomationAlertDeliveryResource,

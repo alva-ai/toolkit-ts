@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AlvaClient } from '../src/client.js';
 import { AlvaError } from '../src/error.js';
+import { V1Resources } from '../src/v1/index.js';
 
 // Helper to create a mock fetch
 function mockFetch(response: {
@@ -615,6 +616,15 @@ describe('AlvaClient', () => {
     it('does not throw when apiKey is present', () => {
       const client = new AlvaClient({ apiKey: 'key' });
       expect(() => client._requireAuth()).not.toThrow();
+    });
+  });
+
+  describe('v1', () => {
+    it('is one V1Resources per client', () => {
+      const client = new AlvaClient({ apiKey: 'key' });
+      expect(client.v1).toBeInstanceOf(V1Resources);
+      expect(client.v1).toBe(client.v1);
+      expect(new AlvaClient({}).v1).not.toBe(client.v1);
     });
   });
 
