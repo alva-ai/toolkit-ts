@@ -1,0 +1,15 @@
+# Call sites test/openapi.test.ts cannot match to an operation of
+# openapi/alva-platform-v2.json yet. Delete a resource's lines when it moves to
+# the contract (literal method and v2Path path per call, _v2Fetch for raw
+# bytes); delete this file when it is empty.
+
+src/resources/fs.ts: GET /fs/read (not a JSON route: use _v2Fetch)
+src/resources/fs.ts: POST <`/fs/${op}`> (not literal)
+
+src/resources/schedules.ts: DELETE <await this.schedulePath(params)> (not literal)
+src/resources/schedules.ts: POST <`${path}/${action}`> (not literal)
+
+src/resources/theses.ts: <isStarred ? 'POST' : 'DELETE'> /me/followed-theses (not literal)
+src/resources/theses.ts: <isStarred ? 'POST' : 'DELETE'> /me/followed-theses/{} (not literal)
+
+src/resources/x.ts: GET <path> (not literal)

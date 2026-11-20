@@ -39,6 +39,8 @@
   },
   "scripts": {
     "vendor-contract": "tsx scripts/vendor-contract.ts",
+    "openapi:sync": "tsx scripts/openapi.ts sync",
+    "openapi:gen": "tsx scripts/openapi.ts gen",
     "prebuild": "npm run vendor-contract",
     "build": "tsup",
     "test": "vitest run",
@@ -85,6 +87,7 @@
     "eslint-config-prettier": "^10.1.5",
     "jiti": "^2.6.1",
     "node-html-parser": "^7.1.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.5.3",
     "tsup": "^8.5.0",
     "tsx": "^4.22.3",
