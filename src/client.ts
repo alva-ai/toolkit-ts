@@ -402,10 +402,11 @@ export class AlvaClient {
   }
 
   /**
-   * Sends one /api/v2 call and returns its successful response. `path` is
-   * relative to /api/v2 (build it with v2Path). The query repeats a parameter
-   * per array element; PATCH sends a JSON Merge Patch; POST and PATCH carry
-   * one Idempotency-Key per call. A network error, 409
+   * Sends one /api/v2 call and returns its successful response, with the
+   * body already read, so a body that fails to arrive fails the attempt.
+   * `path` is relative to /api/v2 (build it with v2Path). The query repeats
+   * a parameter per array element; PATCH sends a JSON Merge Patch; POST and
+   * PATCH carry one Idempotency-Key per call. A network error, 409
    * IDEMPOTENCY_KEY_IN_USE, 429 with a short Retry-After, 502, 503 and 504
    * are retried (retryDelayMs) with the same key and body, at most 3
    * attempts within 60 s; any other failure is thrown as an AlvaError read
@@ -462,7 +463,8 @@ export class AlvaClient {
           fetchBody,
           options
         );
-        if (response.ok) return response;
+        if (response.ok)
+          return await downloaded(response, signal, method, fullPath);
         failure = await responseError(response);
       } catch (err) {
         if (!(err instanceof AlvaError)) throw err;
@@ -670,6 +672,44 @@ export class AlvaClient {
       }
     }
   }
+}
+
+/**
+ * The successful response with its body read into memory. A body that fails
+ * to arrive is NETWORK_ABORTED after the caller's abort, else NETWORK_ERROR
+ * (retried); only a body that arrived can be INVALID_RESPONSE.
+ */
+async function downloaded(
+  response: Response,
+  signal: AbortSignal | undefined,
+  method: string,
+  path: string
+): Promise<Response> {
+  if (response.body === null) return response;
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await response.arrayBuffer();
+  } catch (err) {
+    if (signal?.aborted) {
+      throw new AlvaError(
+        'NETWORK_ABORTED',
+        `Request aborted while calling ${method} ${path}`,
+        0,
+        { method, path }
+      );
+    }
+    const failure = describeFetchFailure(err);
+    throw new AlvaError('NETWORK_ERROR', failure.message, 0, {
+      method,
+      path,
+      ...failure.details,
+    });
+  }
+  return new Response(bytes, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 /** Waits between two attempts of one call; an abort ends the wait. */

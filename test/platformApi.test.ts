@@ -342,8 +342,20 @@ describe('retries', () => {
       cause: { code: 'ECONNRESET' },
     });
 
+  /** A 200 JSON response whose body fails after the headers arrived. */
+  const brokenBody = (error: unknown = new TypeError('terminated')) =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          controller.error(error);
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } }
+    );
+
   it.each([
     ['a network error', () => Promise.reject(networkError())],
+    ['a body that fails to download', () => brokenBody()],
     [
       '409 IDEMPOTENCY_KEY_IN_USE',
       () =>
@@ -471,6 +483,25 @@ describe('retries', () => {
 
     expect(err.code).toBe('NETWORK_ABORTED');
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a body download the caller aborts as NETWORK_ABORTED, on the last attempt too', async () => {
+    const controller = new AbortController();
+    const fn = vi
+      .fn()
+      .mockImplementationOnce(() => problem(503, { code: 'UNAVAILABLE' }))
+      .mockImplementationOnce(() => problem(503, { code: 'UNAVAILABLE' }))
+      .mockImplementationOnce(() => {
+        controller.abort();
+        return brokenBody(new DOMException('aborted', 'AbortError'));
+      });
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const client = new AlvaClient({ apiKey: 'k' });
+
+    await expect(
+      settle(client._v2Request('GET', '/me', { signal: controller.signal }))
+    ).rejects.toMatchObject({ code: 'NETWORK_ABORTED', status: 0 });
+    expect(fn).toHaveBeenCalledTimes(3);
   });
 
   it('does not retry a timed-out attempt', async () => {

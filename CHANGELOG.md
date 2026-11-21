@@ -39,7 +39,8 @@ Migration notes: [README](README.md#migrating-from-0x-to-10).
   behavior. Pin `https://unpkg.com/@alva-ai/toolkit@0.36/dist/browser.global.js`.
 - Writes and retries: every POST and PATCH sends one `Idempotency-Key` per
   call, as an RFC 9651 string (`"<uuid>"`): the caller's `idempotencyKey`
-  (or request ID) or a new UUID. A network error, 409
+  (or request ID) or a new UUID. A network error (also while a response
+  body downloads), 409
   `IDEMPOTENCY_KEY_IN_USE`, 429 with a `Retry-After` of at most 30 s, and
   502, 503 and 504 are retried with the same key and body bytes: at most 3
   attempts within 60 s, waiting 0.5 s × 2^(n-1) ±20 % and at least
