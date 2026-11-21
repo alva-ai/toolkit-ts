@@ -415,7 +415,7 @@ resource:
 
 #### Asks
 
-- New `asks.create(NewAsk, { idempotencyKey })`, `get(askOperationId)` and
-  `wait(operation)`, and
+- New `asks.create(NewAsk, { idempotencyKey })`,
+  `get(askOperationId, { signal })` and `wait(operation, { signal })`, and
   `alva ask` (above): `--json` prints the finished `AskOperation`,
   `--no-wait` the started one.

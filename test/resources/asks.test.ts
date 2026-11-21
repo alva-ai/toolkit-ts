@@ -101,6 +101,48 @@ describe('AsksResource', () => {
     });
   });
 
+  it('wait() ends a stalled poll when its signal aborts', async () => {
+    const original = globalThis.fetch;
+    restore = () => void (globalThis.fetch = original);
+    let polled!: () => void;
+    const polling = new Promise<void>((resolve) => (polled = resolve));
+    globalThis.fetch = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          polled();
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          );
+        })
+    ) as unknown as typeof fetch;
+    const controller = new AbortController();
+    const waiting = client().asks.wait(operation(), {
+      signal: controller.signal,
+    });
+    const outcome = expect(waiting).rejects.toMatchObject({
+      code: 'NETWORK_ABORTED',
+      message: 'the ask wait was aborted',
+    });
+    await polling;
+    controller.abort();
+    await outcome;
+  });
+
+  it('wait() rejects a poll answered after its signal aborted', async () => {
+    const controller = new AbortController();
+    const fake = fakeV2({
+      [`GET /ask-operations/${ID}`]: () => {
+        controller.abort();
+        return operation(DONE);
+      },
+    });
+    restore = fake.restore;
+    await expect(
+      client().asks.wait(operation(), { signal: controller.signal })
+    ).rejects.toMatchObject({ code: 'NETWORK_ABORTED' });
+    expect(fake.calls).toHaveLength(1);
+  });
+
   it('wait() gives up after 35 minutes with DEADLINE_EXCEEDED', async () => {
     vi.useFakeTimers({ now: 0 });
     const fake = fakeV2({ [`GET /ask-operations/${ID}`]: () => operation() });

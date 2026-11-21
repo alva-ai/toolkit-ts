@@ -34,23 +34,29 @@ export class AsksResource {
   }
 
   /** The operation as it is now; NOT_FOUND once its stream is gone. */
-  async get(askOperationId: string): Promise<Schema<'AskOperation'>> {
+  async get(
+    askOperationId: string,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<Schema<'AskOperation'>> {
     this.client._requireAuth();
     return this.client._v2Request(
       'GET',
-      v2Path`/ask-operations/${askOperationId}`
+      v2Path`/ask-operations/${askOperationId}`,
+      { signal: options.signal }
     );
   }
 
   /**
    * Polls the operation until it is done and returns it with its response.
    * An operation that ended with an error throws that problem as an
-   * AlvaError; one not done after 35 minutes is DEADLINE_EXCEEDED.
+   * AlvaError; one not done after 35 minutes is DEADLINE_EXCEEDED. The
+   * signal ends the wait during a pause or a poll.
    */
   async wait(
     operation: Schema<'AskOperation'>,
     options: AskWaitOptions = {}
   ): Promise<Schema<'AskOperation'>> {
+    const signal = options.signal ?? this.client.signal;
     const started = Date.now();
     let current = operation;
     for (let poll = 0; !current.done; poll += 1) {
@@ -62,8 +68,13 @@ export class AsksResource {
           504
         );
       }
-      await pause(delay, options.signal ?? this.client.signal);
-      current = await this.get(current.id);
+      await pause(delay, signal);
+      try {
+        current = await this.get(current.id, { signal });
+      } catch (err) {
+        throw signal?.aborted ? waitAborted() : err;
+      }
+      if (signal?.aborted) throw waitAborted();
     }
     if (current.error) {
       // The operation's problem, read by the one problem parser.
@@ -78,14 +89,16 @@ export class AsksResource {
   }
 }
 
+function waitAborted(): AlvaError {
+  return new AlvaError('NETWORK_ABORTED', 'the ask wait was aborted', 0);
+}
+
 function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
-  const aborted = () =>
-    new AlvaError('NETWORK_ABORTED', 'the ask wait was aborted', 0);
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(aborted());
+    if (signal?.aborted) return reject(waitAborted());
     const onAbort = () => {
       clearTimeout(timer);
-      reject(aborted());
+      reject(waitAborted());
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
