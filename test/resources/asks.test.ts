@@ -31,6 +31,24 @@ function client() {
   return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
 }
 
+/** A fetch whose requests never answer and fail only when their signal aborts. */
+function stallingFetch(): Promise<void> {
+  const original = globalThis.fetch;
+  restore = () => void (globalThis.fetch = original);
+  let polled!: () => void;
+  const polling = new Promise<void>((resolve) => (polled = resolve));
+  globalThis.fetch = vi.fn(
+    (_input: unknown, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        polled();
+        init?.signal?.addEventListener('abort', () =>
+          reject(new DOMException('aborted', 'AbortError'))
+        );
+      })
+  ) as unknown as typeof fetch;
+  return polling;
+}
+
 describe('AsksResource', () => {
   it('create() posts the NewAsk with a key and returns the 202 AskOperation', async () => {
     const fake = fakeV2({
@@ -102,19 +120,7 @@ describe('AsksResource', () => {
   });
 
   it('wait() ends a stalled poll when its signal aborts', async () => {
-    const original = globalThis.fetch;
-    restore = () => void (globalThis.fetch = original);
-    let polled!: () => void;
-    const polling = new Promise<void>((resolve) => (polled = resolve));
-    globalThis.fetch = vi.fn(
-      (_input: unknown, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          polled();
-          init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('aborted', 'AbortError'))
-          );
-        })
-    ) as unknown as typeof fetch;
+    const polling = stallingFetch();
     const controller = new AbortController();
     const waiting = client().asks.wait(operation(), {
       signal: controller.signal,
@@ -126,6 +132,15 @@ describe('AsksResource', () => {
     await polling;
     controller.abort();
     await outcome;
+  });
+
+  it('wait() with an aborted signal polls nothing', async () => {
+    const fake = fakeV2({});
+    restore = fake.restore;
+    await expect(
+      client().asks.wait(operation(), { signal: AbortSignal.abort() })
+    ).rejects.toMatchObject({ code: 'NETWORK_ABORTED' });
+    expect(fake.calls).toHaveLength(0);
   });
 
   it('wait() rejects a poll answered after its signal aborted', async () => {
@@ -141,6 +156,18 @@ describe('AsksResource', () => {
       client().asks.wait(operation(), { signal: controller.signal })
     ).rejects.toMatchObject({ code: 'NETWORK_ABORTED' });
     expect(fake.calls).toHaveLength(1);
+  });
+
+  it('wait() ends a poll still in flight at 35 minutes with DEADLINE_EXCEEDED', async () => {
+    vi.useFakeTimers({ now: 0 });
+    stallingFetch();
+    const waiting = client().asks.wait(operation());
+    const outcome = expect(waiting).rejects.toMatchObject({
+      code: 'DEADLINE_EXCEEDED',
+      status: 504,
+    });
+    await vi.advanceTimersByTimeAsync(35 * 60_000);
+    await outcome;
   });
 
   it('wait() gives up after 35 minutes with DEADLINE_EXCEEDED', async () => {

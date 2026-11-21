@@ -49,32 +49,48 @@ export class AsksResource {
   /**
    * Polls the operation until it is done and returns it with its response.
    * An operation that ended with an error throws that problem as an
-   * AlvaError; one not done after 35 minutes is DEADLINE_EXCEEDED. The
-   * signal ends the wait during a pause or a poll.
+   * AlvaError; one not done after 35 minutes is DEADLINE_EXCEEDED, even
+   * while a poll is in flight. The signal ends the wait during a pause or a
+   * poll.
    */
   async wait(
     operation: Schema<'AskOperation'>,
     options: AskWaitOptions = {}
   ): Promise<Schema<'AskOperation'>> {
-    const signal = options.signal ?? this.client.signal;
+    // One signal for the pauses and the polls: the caller's abort or the
+    // deadline, whichever comes first.
+    const caller = options.signal ?? this.client.signal;
+    const stop = new AbortController();
+    const onAbort = () => stop.abort();
+    if (caller?.aborted) stop.abort();
+    caller?.addEventListener('abort', onAbort, { once: true });
+    let expired = false;
+    const deadline = setTimeout(() => {
+      expired = true;
+      stop.abort();
+    }, WAIT_LIMIT_MS);
+    const signal = stop.signal;
     const started = Date.now();
     let current = operation;
-    for (let poll = 0; !current.done; poll += 1) {
-      const delay = POLL_DELAYS_MS[poll] ?? POLL_INTERVAL_MS;
-      if (Date.now() - started + delay > WAIT_LIMIT_MS) {
-        throw new AlvaError(
-          'DEADLINE_EXCEEDED',
-          `ask ${current.id} is not done after 35 minutes`,
-          504
-        );
+    const stopped = () =>
+      expired ? deadlineExceeded(current.id) : waitAborted();
+    try {
+      for (let poll = 0; !current.done; poll += 1) {
+        const delay = POLL_DELAYS_MS[poll] ?? POLL_INTERVAL_MS;
+        if (Date.now() - started + delay > WAIT_LIMIT_MS) {
+          throw deadlineExceeded(current.id);
+        }
+        try {
+          await pause(delay, signal);
+          current = await this.get(current.id, { signal });
+        } catch (err) {
+          throw signal.aborted ? stopped() : err;
+        }
+        if (signal.aborted) throw stopped();
       }
-      await pause(delay, signal);
-      try {
-        current = await this.get(current.id, { signal });
-      } catch (err) {
-        throw signal?.aborted ? waitAborted() : err;
-      }
-      if (signal?.aborted) throw waitAborted();
+    } finally {
+      clearTimeout(deadline);
+      caller?.removeEventListener('abort', onAbort);
     }
     if (current.error) {
       // The operation's problem, read by the one problem parser.
@@ -87,6 +103,14 @@ export class AsksResource {
     }
     return current;
   }
+}
+
+function deadlineExceeded(id: string): AlvaError {
+  return new AlvaError(
+    'DEADLINE_EXCEEDED',
+    `ask ${id} is not done after 35 minutes`,
+    504
+  );
 }
 
 function waitAborted(): AlvaError {
