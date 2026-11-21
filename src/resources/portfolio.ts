@@ -1,39 +1,40 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  PortfolioAccount,
-  PortfolioSummary,
-  PortfolioActivityConnection,
-} from '../types.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
+/**
+ * The caller's broker accounts, trading and SnapTrade in one shape, their
+ * holdings and their activity. Amounts are Decimal strings in Money, times
+ * RFC 3339.
+ */
 export class PortfolioResource {
   constructor(private client: AlvaClient) {}
 
-  async accounts(): Promise<PortfolioAccount[]> {
+  /** One page of the accounts; copyTradingOnly keeps those that can copy a Playbook. */
+  async accounts(
+    query: V2Query<'/me/broker-accounts', 'get'> = {}
+  ): Promise<Schema<'BrokerAccountList'>> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/portfolio/accounts') as Promise<
-      PortfolioAccount[]
-    >;
+    return this.client._v2Request('GET', '/me/broker-accounts', { query });
   }
 
-  async summary(accountId: string): Promise<PortfolioSummary> {
+  /** An account's balance and positions from one read. */
+  async snapshot(accountId: string): Promise<Schema<'PortfolioSnapshot'>> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/portfolio/summary', {
-      query: { accountId },
-    }) as Promise<PortfolioSummary>;
+    return this.client._v2Request(
+      'GET',
+      v2Path`/broker-accounts/${accountId}/snapshot`
+    );
   }
 
-  async activities(params: {
-    accountId: string;
-    limit?: number;
-    pageToken?: string;
-  }): Promise<PortfolioActivityConnection> {
+  async activities(
+    accountId: string,
+    query: V2Query<'/broker-accounts/{accountId}/activities', 'get'> = {}
+  ): Promise<Schema<'BrokerActivityList'>> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/portfolio/activities', {
-      query: {
-        accountId: params.accountId,
-        limit: params.limit,
-        pageToken: params.pageToken,
-      },
-    }) as Promise<PortfolioActivityConnection>;
+    return this.client._v2Request(
+      'GET',
+      v2Path`/broker-accounts/${accountId}/activities`,
+      { query }
+    );
   }
 }

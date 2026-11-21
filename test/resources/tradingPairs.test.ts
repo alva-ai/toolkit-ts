@@ -1,220 +1,140 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { TradingPairsResource } from '../../src/resources/tradingPairs.js';
+import { fakeV2 } from '../fakeV2.js';
+import { page, tradingPair } from '../marketV2.js';
 
-function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
-  const client = new AlvaClient({ apiKey: 'test-key' }) as AlvaClient & {
-    _request: ReturnType<typeof vi.fn>;
-  };
-  client._request = vi.fn();
-  return client;
+function tradingPairs() {
+  return new TradingPairsResource(
+    new AlvaClient({ apiKey: 'test-key', baseUrl: 'https://api.test' })
+  );
 }
 
+const RKLB = tradingPair();
+const RKLB_PERP = tradingPair({
+  id: 'trading_pair_0a2',
+  symbol: 'HYPERLIQUID_PERP_RKLB_USDC',
+  quote: 'USDC',
+  exchange: 'HYPERLIQUID',
+  type: 'stock-perp',
+});
+const RKLBX = tradingPair({
+  id: 'trading_pair_0a3',
+  symbol: 'US_SPOT_RKLBX_USD',
+  base: 'RKLBX',
+});
+
+let restore = () => {};
+afterEach(() => restore());
+
 describe('TradingPairsResource', () => {
-  it('normalizes, filters, and deduplicates the gateway response', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      trading_pairs: [
-        {
-          base: 'RKLB',
-          quote: 'USD',
-          symbol: 'US_SPOT_RKLB_USD',
-          exchange: 'US',
-          type: 'stock-spot',
-        },
-        {
-          base: 'RKLB',
-          quote: 'USD',
-          symbol: 'US_SPOT_RKLB_USD',
-          exchange: 'US',
-          type: 'stock-spot',
-        },
-        {
-          base: 'RKLB',
-          quote: 'USDC',
-          symbol: 'HYPERLIQUID_PERP_RKLB_USDC',
-          exchange: 'HYPERLIQUID',
-          type: 'stock-perp',
-        },
-      ],
+  it('returns one page of the catalog as the API answers it', async () => {
+    const fake = fakeV2({
+      'GET /trading-pairs': () => page([RKLB], 'p2'),
     });
-
-    const result = await new TradingPairsResource(client).search({
-      symbol: 'RKLB',
-      market: 'US',
-      instrumentType: 'spot',
-      underlyingType: 'stock',
-      quote: 'USD',
-    });
-
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/trading-pairs/search',
-      { query: { q: 'RKLB', strict: true } }
-    );
-    expect(result).toEqual({
-      query: 'RKLB',
-      candidates: [
-        {
-          symbol: 'RKLB',
-          tradingPair: 'US_SPOT_RKLB_USD',
-          market: 'US',
-          instrumentType: 'spot',
-          underlyingType: 'stock',
-          quote: 'USD',
-          type: 'stock-spot',
-        },
-      ],
-    });
-  });
-
-  it('flattens the native Arrays response without changing tradingPair', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      success: true,
-      data: [
-        {
-          symbol: 'RKLB',
-          alias: [],
-          trading_pairs: [
-            {
-              instrument_type: 'spot',
-              pairs: [
-                {
-                  trading_pair: 'US_SPOT_RKLB_USD',
-                  underlying_type: 'stock',
-                  market: 'US',
-                  quote: 'USD',
-                  type: 'stock-spot',
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
+    restore = fake.restore;
 
     await expect(
-      new TradingPairsResource(client).resolve({
-        pair: 'US_SPOT_RKLB_USD',
-      })
-    ).resolves.toMatchObject({
-      tradingPair: 'US_SPOT_RKLB_USD',
-      symbol: 'RKLB',
-      market: 'US',
-      instrumentType: 'spot',
-      underlyingType: 'stock',
-      quote: 'USD',
-    });
-  });
-
-  it('resolves a complete pair through ticker search and exact matching', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      trading_pairs: [
-        {
-          base: 'M_COIN',
-          quote: 'USD',
-          symbol: 'COINBASE_SPOT_M_COIN_USD',
-          exchange: 'COINBASE',
-          type: 'spot',
-        },
-      ],
-    });
-
-    await expect(
-      new TradingPairsResource(client).resolve({
-        pair: 'COINBASE_SPOT_M_COIN_USD',
-      })
-    ).resolves.toMatchObject({ tradingPair: 'COINBASE_SPOT_M_COIN_USD' });
-
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/trading-pairs/search',
-      { query: { q: 'M_COIN', strict: true } }
+      tradingPairs().list({ symbol: ['US_SPOT_RKLB_USD', 'X'], pageSize: 5 })
+    ).resolves.toEqual(page([RKLB], 'p2'));
+    expect(fake.calls[0].query.toString()).toBe(
+      'symbol=US_SPOT_RKLB_USD&symbol=X&pageSize=5'
     );
   });
 
-  it('infers an underscored symbol when the gateway omits the base field', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      trading_pairs: [
-        {
-          trading_pair: 'COINBASE_SPOT_M_COIN_USD',
-          quote: 'USD',
-          exchange: 'COINBASE',
-          instrument_type: 'spot',
-        },
+  it('searches every page, keeps exact tickers and applies the filters', async () => {
+    const fake = fakeV2({
+      'GET /trading-pairs': [
+        () => page([RKLB, RKLBX], 'p2'),
+        () => page([RKLB_PERP]),
       ],
     });
+    restore = fake.restore;
 
+    await expect(tradingPairs().search({ symbol: ' rklb ' })).resolves.toEqual([
+      RKLB,
+      RKLB_PERP,
+    ]);
+    expect(fake.calls.map((c) => c.query.toString())).toEqual([
+      'q=rklb&pageSize=500',
+      'q=rklb&pageSize=500&pageToken=p2',
+    ]);
+
+    restore();
+    restore = fakeV2({
+      'GET /trading-pairs': () => page([RKLB, RKLBX, RKLB_PERP]),
+    }).restore;
     await expect(
-      new TradingPairsResource(client).search({ symbol: 'M_COIN' })
-    ).resolves.toMatchObject({
-      candidates: [
-        expect.objectContaining({
-          symbol: 'M_COIN',
-          tradingPair: 'COINBASE_SPOT_M_COIN_USD',
-        }),
-      ],
-    });
+      tradingPairs().search({
+        symbol: 'RKLB',
+        market: 'hyperliquid',
+        instrumentType: 'perp',
+        underlyingType: 'stock',
+        quote: 'usdc',
+      })
+    ).resolves.toEqual([RKLB_PERP]);
+    await expect(
+      tradingPairs().search({ symbol: 'RKLB', limit: 1 })
+    ).resolves.toEqual([RKLB]);
   });
 
-  it('returns a typed error for missing runtime parameters', async () => {
-    const client = makeClient();
-    const resource = new TradingPairsResource(client);
+  it('reads an underscored base from the pair symbol when the base is empty', async () => {
+    const coin = tradingPair({
+      symbol: 'COINBASE_SPOT_M_COIN_USD',
+      base: '',
+      exchange: 'COINBASE',
+      type: 'crypto-spot',
+    });
+    restore = fakeV2({ 'GET /trading-pairs': () => page([coin]) }).restore;
 
-    await expect(
-      resource.search({ symbol: undefined as never })
-    ).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-      status: 400,
-    });
-    await expect(
-      resource.resolve({ pair: undefined as never })
-    ).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-      status: 400,
-    });
-    expect(client._request).not.toHaveBeenCalled();
+    await expect(tradingPairs().search({ symbol: 'M_COIN' })).resolves.toEqual([
+      coin,
+    ]);
   });
 
-  it('fails closed when resolve is not unique', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      trading_pairs: [
-        {
-          base: 'BTC',
-          quote: 'USDT',
-          symbol: 'BINANCE_SPOT_BTC_USDT',
-          exchange: 'BINANCE',
-          type: 'crypto-spot',
-        },
-        {
-          base: 'BTC',
-          quote: 'USDC',
-          symbol: 'COINBASE_SPOT_BTC_USDC',
-          exchange: 'COINBASE',
-          type: 'crypto-spot',
-        },
-      ],
-    });
+  it('resolves a complete pair by its symbol', async () => {
+    const fake = fakeV2({ 'GET /trading-pairs': () => page([RKLB]) });
+    restore = fake.restore;
 
     await expect(
-      new TradingPairsResource(client).resolve({
-        symbol: 'BTC',
-        limit: 1,
-      } as never)
+      tradingPairs().resolve({ pair: 'US_SPOT_RKLB_USD' })
+    ).resolves.toEqual(RKLB);
+    expect(fake.calls[0].query.toString()).toBe('symbol=US_SPOT_RKLB_USD');
+    await expect(
+      tradingPairs().resolve({ pair: 'US_SPOT_RKLB_USD', market: 'HK' })
+    ).rejects.toMatchObject({ code: 'TRADING_PAIR_NOT_FOUND', status: 404 });
+  });
+
+  it('fails closed when a ticker resolves to several pairs', async () => {
+    restore = fakeV2({
+      'GET /trading-pairs': () => page([RKLB, RKLB_PERP]),
+    }).restore;
+
+    await expect(
+      tradingPairs().resolve({ symbol: 'RKLB' })
     ).rejects.toMatchObject({
       code: 'TRADING_PAIR_NOT_UNIQUE',
       status: 409,
       details: {
-        query: 'BTC',
-        candidates: expect.arrayContaining([
-          expect.objectContaining({ tradingPair: 'BINANCE_SPOT_BTC_USDT' }),
-          expect.objectContaining({ tradingPair: 'COINBASE_SPOT_BTC_USDC' }),
-        ]),
+        query: 'RKLB',
+        candidateCount: 2,
+        candidates: [RKLB, RKLB_PERP],
       },
     });
+  });
+
+  it('refuses a missing symbol or pair before any request', async () => {
+    const fake = fakeV2({});
+    restore = fake.restore;
+    const resource = tradingPairs();
+
+    await expect(
+      resource.search({ symbol: undefined as never })
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', status: 400 });
+    await expect(resource.resolve({ pair: ' ' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      status: 400,
+    });
+    expect(fake.calls).toHaveLength(0);
   });
 });

@@ -1,175 +1,123 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  FollowsListParams,
-  FollowsListResponse,
-  FollowPlaybookResponse,
-  PlaybookFollowParams,
-  PushSubscriptionFeedParams,
-  PushSubscriptionListParams,
-  PushSubscriptionListResponse,
-  SubscribeFeedParams,
-  SubscribeBatchParams,
-  SubscribeBatchResponse,
-  SubscribeFeedResponse,
-  UnsubscribeBatchParams,
-  UnsubscribeBatchResponse,
-  UnsubscribeResponse,
-  UnfollowPlaybookResponse,
-} from '../types.js';
+import {
+  collectAll,
+  v2Path,
+  type Schema,
+  type V2Query,
+} from '../platformApi.js';
+
+export interface SubscriptionWriteOptions {
+  /** Idempotency-Key of the write; a new UUID when omitted. */
+  idempotencyKey?: string;
+}
 
 /**
- * Playbook follows and FEED alert subscriptions.
+ * Playbook follows and automation alert subscriptions.
  *
  * Three DISTINCT concepts share the word "subscribe" in the product; this
  * resource touches the first two and never the third:
  *
- *   - **follow** — the social relation ("Subscribed Playbooks" in the UI).
- *     Enumerate with `follows()`.
- *   - **alerts** — push/notification opt-ins (what `list()` returns).
+ *   - **follow** — the social relation ("Subscribed Playbooks" in the UI):
+ *     `followPlaybook`, `unfollowPlaybook`, `follows`.
+ *   - **alerts** — push/notification opt-ins, one NotificationSubscription
+ *     per automation and destination: `list`, `subscribeBatch`,
+ *     `unsubscribe`, `unsubscribeBatch`.
  *   - **purchase** — paid playbook access / the SaaS plan. NOT this resource.
  *
- * Operations:
- *   - `followPlaybook` / `unfollowPlaybook` change only the social follow.
- *   - `subscribeFeed` / `unsubscribeFeed` toggle personal push for ONE feed
- *     (a single automation's alert) without touching the playbook follow.
- *   - `subscribeBatch` / `unsubscribeBatch` toggle FEED alerts by target id.
- *
- * Backed by alva-gateway REST under `/api/v1/follows/...` and
- * `/api/v1/subscriptions/...`.
+ * Subscribing to one feed by owner and name is
+ * `client.v1.subscriptions.subscribeFeed` (/api/v2 takes Automation IDs).
  */
 export class SubscriptionsResource {
   constructor(private client: AlvaClient) {}
 
-  /**
-   * Follow a playbook `(username, name)`. Alerts are independent and require
-   * explicit FEED subscriptions. Idempotent.
-   */
+  /** Follows a Playbook; alerts are independent. Idempotent. */
   async followPlaybook(
-    params: PlaybookFollowParams
-  ): Promise<FollowPlaybookResponse> {
+    playbookId: string,
+    options: SubscriptionWriteOptions = {}
+  ): Promise<Schema<'PlaybookFollow'>> {
     this.client._requireAuth();
-    const path = `/api/v1/follows/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
-    return this.client._request(
-      'POST',
-      path
-    ) as Promise<FollowPlaybookResponse>;
+    return this.client._v2Request('POST', '/me/followed-playbooks', {
+      body: { playbookId },
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
-  /**
-   * Unfollow a playbook `(username, name)` without changing FEED alerts.
-   */
+  /** Unfollows a Playbook without changing its alerts. Idempotent. */
   async unfollowPlaybook(
-    params: PlaybookFollowParams
-  ): Promise<UnfollowPlaybookResponse> {
+    playbookId: string
+  ): Promise<Schema<'PlaybookFollow'>> {
     this.client._requireAuth();
-    const path = `/api/v1/follows/playbook/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
-    return this.client._request(
+    return this.client._v2Request(
       'DELETE',
-      path
-    ) as Promise<UnfollowPlaybookResponse>;
+      v2Path`/me/followed-playbooks/${playbookId}`
+    );
   }
 
-  /**
-   * Subscribe to one feed `(username, name)` — enable personal push for that
-   * single automation's alerts, regardless of which playbook(s) consume it.
-   * Does NOT follow any playbook. Idempotent.
-   */
-  async subscribeFeed(
-    params: SubscribeFeedParams
-  ): Promise<SubscribeFeedResponse> {
+  /** One page of the Playbooks the caller follows. */
+  async follows(
+    query: V2Query<'/me/followed-playbooks', 'get'> = {}
+  ): Promise<Schema<'FollowedPlaybookList'>> {
     this.client._requireAuth();
-    const path = `/api/v1/subscriptions/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
-    if (params.channelId === undefined) {
-      return this.client._request(
-        'POST',
-        path
-      ) as Promise<SubscribeFeedResponse>;
-    }
-    return this.client._request('POST', path, {
-      body: { channel_id: params.channelId },
-    }) as Promise<SubscribeFeedResponse>;
+    return this.client._v2Request('GET', '/me/followed-playbooks', { query });
   }
 
-  /**
-   * Unsubscribe from one feed `(username, name)` — disable that automation's
-   * alerts for the caller. Idempotent.
-   */
-  async unsubscribeFeed(
-    params: PushSubscriptionFeedParams
-  ): Promise<UnsubscribeResponse> {
-    this.client._requireAuth();
-    const path = `/api/v1/subscriptions/feed/${encodeURIComponent(params.username)}/${encodeURIComponent(params.name)}`;
-    return this.client._request('DELETE', path) as Promise<UnsubscribeResponse>;
-  }
-
-  /**
-   * List the caller's currently active subscriptions.
-   * Results are cursor-paginated.
-   */
+  /** One page of the caller's alert subscriptions. */
   async list(
-    params: PushSubscriptionListParams = {}
-  ): Promise<PushSubscriptionListResponse> {
+    query: V2Query<'/me/notification-subscriptions', 'get'> = {}
+  ): Promise<Schema<'NotificationSubscriptionList'>> {
     this.client._requireAuth();
-    const query: Record<string, string> = {};
-    if (params.first !== undefined && params.first > 0) {
-      query.first = String(params.first);
-    }
-    if (params.cursor) query.cursor = params.cursor;
-    return this.client._request('GET', '/api/v1/me/subscriptions', {
+    return this.client._v2Request('GET', '/me/notification-subscriptions', {
       query,
-    }) as Promise<PushSubscriptionListResponse>;
+    });
   }
 
   /**
-   * List the playbooks the caller FOLLOWS (the social relation — the UI's
-   * "Subscribed Playbooks"). Rows carry the playbook identity; follows of
-   * deleted playbooks are filtered server-side. Cursor-paginated.
+   * Enables alerts of automations (at most 100) on one Alva channel, the
+   * Agent channel when `channelId` is absent. Atomic.
    */
-  async follows(params: FollowsListParams = {}): Promise<FollowsListResponse> {
+  async subscribeBatch(
+    body: Schema<'Subscription'>,
+    options: SubscriptionWriteOptions = {}
+  ): Promise<Schema<'SubscribeResponse'>> {
     this.client._requireAuth();
-    const query: Record<string, string> = {};
-    if (params.limit !== undefined && params.limit > 0) {
-      query.limit = String(params.limit);
-    }
-    if (params.cursor) query.cursor = params.cursor;
-    return this.client._request('GET', '/api/v1/me/follows', {
-      query,
-    }) as Promise<FollowsListResponse>;
+    return this.client._v2Request('POST', '/me/notification-subscriptions', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
-  /** Atomically enable alerts for FEED target ids (max 100). */
-  async subscribeBatch(
-    params: SubscribeBatchParams
-  ): Promise<SubscribeBatchResponse> {
+  /** Removes one alert destination. */
+  async unsubscribe(
+    notificationSubscriptionId: string
+  ): Promise<Schema<'Removed'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'POST',
-      '/api/v1/subscriptions/subscribe-batch',
-      {
-        body: {
-          feed_ids: params.feedIds,
-          channel_id: params.channelId,
-        },
-      }
-    ) as Promise<SubscribeBatchResponse>;
+    return this.client._v2Request(
+      'DELETE',
+      v2Path`/me/notification-subscriptions/${notificationSubscriptionId}`
+    );
   }
 
   /**
-   * Disable alerts for many FEED targets by id in one idempotent call (max
-   * 100 ids). The per-id results report `INVALID_ID` for malformed entries.
+   * Disables the alerts of automations on every channel: removes each of
+   * their subscriptions and returns them. An automation without one
+   * removes nothing.
    */
   async unsubscribeBatch(
-    params: UnsubscribeBatchParams
-  ): Promise<UnsubscribeBatchResponse> {
+    automationIds: string[]
+  ): Promise<Schema<'Removed'>[]> {
     this.client._requireAuth();
-    return this.client._request(
-      'POST',
-      '/api/v1/subscriptions/unsubscribe-batch',
-      {
-        body: {
-          feed_ids: params.feedIds,
-        },
-      }
-    ) as Promise<UnsubscribeBatchResponse>;
+    const wanted = new Set(automationIds);
+    const subscriptions = await collectAll(
+      this.client._v2Pages<Schema<'NotificationSubscription'>>(
+        '/me/notification-subscriptions',
+        { pageSize: 200 }
+      )
+    );
+    const removed: Schema<'Removed'>[] = [];
+    for (const s of subscriptions) {
+      if (wanted.has(s.automationId))
+        removed.push(await this.unsubscribe(s.id));
+    }
+    return removed;
   }
 }

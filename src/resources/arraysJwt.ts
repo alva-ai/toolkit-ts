@@ -1,27 +1,19 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  EnsureArraysJwtResponse,
-  ArraysJwtStatusResponse,
-} from '../types.js';
+import type { Schema } from '../platformApi.js';
 
+/** The data-skills token (the Arrays JWT), which Backend keeps. */
 export class ArraysJwtResource {
   constructor(private client: AlvaClient) {}
 
-  /** Idempotently sign-or-renew the Arrays JWT server-side. */
-  async ensure(): Promise<EnsureArraysJwtResponse> {
+  /** Signs the token, or renews it when renewal is due. */
+  async ensure(): Promise<Schema<'DataSkillsTokenRefresh'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'POST',
-      '/api/v1/arrays-jwt/ensure'
-    ) as Promise<EnsureArraysJwtResponse>;
+    return this.client._v2Request('POST', '/me/data-skills-token/refresh');
   }
 
-  /** Report the current Arrays JWT state for the authenticated user. */
-  async status(): Promise<ArraysJwtStatusResponse> {
+  /** The token's state for the authenticated user. */
+  async status(): Promise<Schema<'DataSkillsToken'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      '/api/v1/arrays-jwt/status'
-    ) as Promise<ArraysJwtStatusResponse>;
+    return this.client._v2Request('GET', '/me/data-skills-token');
   }
 }

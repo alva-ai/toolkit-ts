@@ -1,62 +1,53 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  FeedReleaseRequest,
-  FeedReleaseResponse,
-  PlaybookDraftRequest,
-  PlaybookDraftResponse,
-  PlaybookReleaseRequest,
-  PlaybookReleaseResponse,
-} from '../types.js';
+import { v2Path, type Schema } from '../platformApi.js';
 
+export interface ReleaseWriteOptions {
+  /** The write's Idempotency-Key; omitted, each call gets a new one. */
+  idempotencyKey?: string;
+}
+
+/** Feed and Playbook publishing on /api/v2. */
 export class ReleaseResource {
   constructor(private client: AlvaClient) {}
 
-  async feed(params: FeedReleaseRequest): Promise<FeedReleaseResponse> {
-    this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/release/feed', {
-      body: {
-        name: params.name,
-        version: params.version,
-        cronjob_id: params.cronjob_id,
-        view_json: params.view_json,
-        description: params.description,
-        changelog: params.changelog,
-        agent_type: params.agent_type,
-        skip_auto_trigger: params.skip_auto_trigger,
-      },
-    }) as Promise<FeedReleaseResponse>;
+  /**
+   * Publishes a feed (automation) version from a cronjob. A new feed is
+   * paused; `skipFirstRun` skips the run that publishing triggers.
+   */
+  async feed(
+    body: Schema<'PublishAutomationBody'>,
+    options: ReleaseWriteOptions = {}
+  ): Promise<Schema<'AutomationVersion'>> {
+    return this.client._v2Request('POST', '/me/automations', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
+  /** Creates a draft Playbook, or a new draft of one of the caller's. */
   async playbookDraft(
-    params: PlaybookDraftRequest
-  ): Promise<PlaybookDraftResponse> {
-    this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/draft/playbook', {
-      body: {
-        name: params.name,
-        display_name: params.display_name,
-        description: params.description,
-        feeds: params.feeds,
-        trading_symbols: params.trading_symbols,
-        skill_id: params.skill_id,
-        tags: params.tags,
-      },
-    }) as Promise<PlaybookDraftResponse>;
+    body: Schema<'NewDraft'>,
+    options: ReleaseWriteOptions = {}
+  ): Promise<Schema<'Draft'>> {
+    return this.client._v2Request('POST', '/drafts', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
+  /**
+   * Publishes a release of one of the caller's Playbooks. Publishing bundled
+   * private feeds needs `confirmBundledFeedExposure`.
+   */
   async playbook(
-    params: PlaybookReleaseRequest
-  ): Promise<PlaybookReleaseResponse> {
-    this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/release/playbook', {
-      body: {
-        name: params.name,
-        version: params.version,
-        feeds: params.feeds,
-        changelog: params.changelog,
-        readme_url: params.readme_url,
-        confirm_bundled_feed_exposure: params.confirm_bundled_feed_exposure,
-      },
-    }) as Promise<PlaybookReleaseResponse>;
+    playbookId: string,
+    body: Schema<'NewRelease'>,
+    options: ReleaseWriteOptions = {}
+  ): Promise<Schema<'Release'>> {
+    return this.client._v2Request(
+      'POST',
+      v2Path`/playbooks/${playbookId}/publish`,
+      { body, idempotencyKey: options.idempotencyKey }
+    );
   }
 }

@@ -1,5 +1,6 @@
 import { AlvaClient } from '../client.js';
 import { CliUsageError } from '../error.js';
+import type { Schema } from '../platformApi.js';
 import { embeddedCommandDefinition } from './agentCommandDefinitions.js';
 import {
   AGENT_COMMAND_HELP,
@@ -13,7 +14,7 @@ import {
   executeParsedCommand,
   handleBroker,
   requireFlag,
-  requirePositiveIntegerStringFlag,
+  requireIdFlag,
 } from './dispatch.js';
 import { EMBEDDED_COMMAND_DEFINITIONS } from './embeddedCommandDefinitions.js';
 import { formatAutomationDetail } from './productFormat.js';
@@ -51,30 +52,30 @@ function internalCommand(
 }
 
 function automationID(parsed: ParsedCommand, command: string): string {
-  return requirePositiveIntegerStringFlag(parsed.flags, 'id', command);
+  return requireIdFlag(parsed.flags, 'id', command);
 }
 
 function producerIDFromAutomationDetail(
   detail: unknown,
   automationId: string
-): number | undefined {
+): string | undefined {
   if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
     throw new Error(`Automation ${automationId} returned an invalid detail`);
   }
-  const raw = (detail as Record<string, unknown>).cronjob_id;
+  const raw = (detail as Record<string, unknown>).cronjobId;
   if (raw === undefined || raw === null) return undefined;
-  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
+  if (typeof raw !== 'string' || !raw) {
     throw new Error(`Automation ${automationId} returned an invalid producer`);
   }
   return raw;
 }
 
-function producerIDFromCreate(result: unknown): number {
+function producerIDFromCreate(result: unknown): string {
   if (typeof result !== 'object' || result === null) {
     throw new Error('Automation producer creation returned an invalid result');
   }
   const raw = (result as Record<string, unknown>).id;
-  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
+  if (typeof raw !== 'string' || !raw) {
     throw new Error('Automation producer creation returned an invalid id');
   }
   return raw;
@@ -83,8 +84,8 @@ function producerIDFromCreate(result: unknown): number {
 async function resolveAutomationProducer(
   client: AlvaClient,
   automationId: string
-): Promise<number> {
-  const detail = await client.automation.inspect({ id: automationId });
+): Promise<string> {
+  const detail = await client.automation.inspect(automationId);
   const producerId = producerIDFromAutomationDetail(detail, automationId);
   if (producerId === undefined) {
     throw new Error(`Automation ${automationId} has no active producer`);
@@ -95,8 +96,8 @@ async function resolveAutomationProducer(
 async function findAutomationProducer(
   client: AlvaClient,
   automationId: string
-): Promise<number | undefined> {
-  const detail = await client.automation.inspect({ id: automationId });
+): Promise<string | undefined> {
+  const detail = await client.automation.inspect(automationId);
   return producerIDFromAutomationDetail(detail, automationId);
 }
 
@@ -110,7 +111,7 @@ async function dispatchEmbeddedAutomation(
   switch (definition.action) {
     case 'automation-inspect': {
       const id = automationID(parsed, 'automation inspect');
-      const result = await client.automation.inspect({ id });
+      const result = await client.automation.inspect(id);
       return parsed.flags.json === 'true'
         ? result
         : formatAutomationDetail(result);
@@ -129,7 +130,10 @@ async function dispatchEmbeddedAutomation(
           'automation'
         );
       }
-      return client.feed.setVisibility({ id, visibility });
+      return client.feed.setVisibility(
+        id,
+        visibility === 'public' ? 'PUBLIC' : 'PRIVATE'
+      );
     }
 
     case 'automation-create': {
@@ -209,7 +213,7 @@ async function dispatchEmbeddedAutomation(
           'automation'
         );
       }
-      let cronjobId: number | undefined;
+      let cronjobId: string | undefined;
       let producer: unknown;
       if (Object.keys(producerFlags).length > 0) {
         cronjobId = await resolveAutomationProducer(client, id);
@@ -246,8 +250,8 @@ async function dispatchEmbeddedAutomation(
         }
       }
       return {
-        automation_id: String(id),
-        cronjob_id: cronjobId,
+        automationId: String(id),
+        cronjobId,
         automation,
         producer,
       };
@@ -262,24 +266,21 @@ async function dispatchEmbeddedAutomation(
         meta,
         deps
       );
+      let automation: Schema<'Automation'>;
       try {
-        await client.automation.stop({ id });
+        automation = await client.automation.stop(id);
       } catch (error) {
         throw new Error(
           `Automation ${id} delivery pause failed after producer ${cronjobId} was paused: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-      return {
-        automation_id: String(id),
-        cronjob_id: cronjobId,
-        status: 'paused',
-      };
+      return { automationId: String(id), cronjobId, automation };
     }
 
     case 'automation-resume': {
       const id = automationID(parsed, 'automation resume');
       const cronjobId = await resolveAutomationProducer(client, id);
-      await client.automation.resume({ id });
+      const automation = await client.automation.resume(id);
       try {
         await executeParsedCommand(
           client,
@@ -292,22 +293,15 @@ async function dispatchEmbeddedAutomation(
           `Producer ${cronjobId} resume failed after automation ${id} delivery was resumed: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-      return {
-        automation_id: String(id),
-        cronjob_id: cronjobId,
-        status: 'active',
-      };
+      return { automationId: String(id), cronjobId, automation };
     }
 
     case 'automation-delete': {
       const id = automationID(parsed, 'automation delete');
       const cronjobId = await findAutomationProducer(client, id);
       if (cronjobId === undefined) {
-        await client.automation.delete({ id });
-        return {
-          automation_id: id,
-          status: 'deleted',
-        };
+        await client.automation.delete(id);
+        return { automationId: id };
       }
       await executeParsedCommand(
         client,
@@ -316,17 +310,13 @@ async function dispatchEmbeddedAutomation(
         deps
       );
       try {
-        await client.automation.delete({ id });
+        await client.automation.delete(id);
       } catch (error) {
         throw new Error(
           `Automation ${id} delete failed after producer ${cronjobId} was paused; the producer remains paused: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-      return {
-        automation_id: String(id),
-        cronjob_id: cronjobId,
-        status: 'deleted',
-      };
+      return { automationId: String(id), cronjobId };
     }
 
     case 'automation-trigger': {

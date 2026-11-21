@@ -1,5 +1,6 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { generateRequestId } from '../platformApi.js';
 
 /**
  * Push steward tool commands (mono-meta #935). Every call names the steward by
@@ -292,26 +293,6 @@ export function requireDecision(value: string): StewardDecision {
   if (!DECISIONS.has(value))
     throw invalid('decision must be one of immediate, digest, suppress');
   return value as StewardDecision;
-}
-
-/** RFC 4122 v4 UUID without assuming `crypto.randomUUID` (absent on Node 18 and older browsers). */
-export function generateRequestId(): string {
-  const webcrypto = (globalThis as { crypto?: Crypto }).crypto;
-  if (typeof webcrypto?.randomUUID === 'function')
-    return webcrypto.randomUUID();
-  const bytes = new Uint8Array(16);
-  if (typeof webcrypto?.getRandomValues === 'function') {
-    webcrypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i += 1)
-      bytes[i] = Math.floor(Math.random() * 256);
-  }
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
-    ''
-  );
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function requireRequestId(value: string | undefined): string {

@@ -1,187 +1,126 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  CronjobCreateRequest,
-  Cronjob,
-  CronjobListParams,
-  CronjobListResponse,
-  CronjobUpdateRequest,
-  CronjobRunsListParams,
-  CronjobRunsListResponse,
-  CronjobRunStatusParams,
-  CronjobRunStatusResponse,
-  CronjobRunLogsResponse,
-  CronjobTriggerResponse,
-} from '../types.js';
-import {
-  objectWithRawJSONField,
-  serializeStructuredArgs,
-} from '../jsonPayload.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
+export interface CronjobWriteOptions {
+  /** Idempotency-Key of the write; a new UUID when omitted. */
+  idempotencyKey?: string;
+}
+
+/**
+ * Cronjobs: scripts that run on a schedule (the producers of automations).
+ * `argsJson` is the JSON text of the script's arguments, kept as written.
+ */
 export class DeployResource {
   constructor(private client: AlvaClient) {}
 
-  async create(params: CronjobCreateRequest): Promise<Cronjob> {
+  async create(
+    body: Schema<'CreateCronjobBody'>,
+    options: CronjobWriteOptions = {}
+  ): Promise<Schema<'Cronjob'>> {
     this.client._requireAuth();
-    return params.args === undefined
-      ? this.createRequest(params)
-      : this.createRequest(params, serializeStructuredArgs(params.args));
+    return this.client._v2Request('POST', '/me/cronjobs', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
-  /** @internal Used by the CLI to preserve the exact --args JSON text. */
-  async _createSerializedArgs(
-    params: CronjobCreateRequest,
-    serializedArgs: string
-  ): Promise<Cronjob> {
+  /** One page of the caller's cronjobs. */
+  async list(
+    query: V2Query<'/me/cronjobs', 'get'> = {}
+  ): Promise<Schema<'CronjobList'>> {
     this.client._requireAuth();
-    return this.createRequest(params, serializedArgs);
+    return this.client._v2Request('GET', '/me/cronjobs', { query });
   }
 
-  private createRequest(
-    params: CronjobCreateRequest,
-    serializedArgs?: string
-  ): Promise<Cronjob> {
-    const body = {
-      name: params.name,
-      path: params.path,
-      cron_expression: params.cron_expression,
-      args: params.args,
-      push_notify: params.push_notify,
-      max_heap_size_mb: params.max_heap_size_mb,
-      execution_timeout_seconds: params.execution_timeout_seconds,
-      run_as_user_id: params.run_as_user_id,
-      start_at: params.start_at,
-      end_at: params.end_at,
-      max_runs: params.max_runs,
-    };
-    return this.client._request('POST', '/api/v1/deploy/cronjob', {
-      ...(serializedArgs === undefined
-        ? { body }
-        : {
-            jsonBody: objectWithRawJSONField(body, 'args', serializedArgs),
-          }),
-    }) as Promise<Cronjob>;
-  }
-
-  async list(params?: CronjobListParams): Promise<CronjobListResponse> {
+  async get(cronjobId: string): Promise<Schema<'Cronjob'>> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/deploy/cronjobs', {
-      query: { limit: params?.limit, cursor: params?.cursor },
-    }) as Promise<CronjobListResponse>;
+    return this.client._v2Request('GET', v2Path`/cronjobs/${cronjobId}`);
   }
 
-  async get(params: { id: number }): Promise<Cronjob> {
+  /**
+   * A merge patch: absent members are unchanged; `runAsAccountId: null`
+   * runs the cronjob as its owner again.
+   */
+  async update(
+    cronjobId: string,
+    patch: Schema<'UpdateCronjobBody'>,
+    options: CronjobWriteOptions = {}
+  ): Promise<Schema<'Cronjob'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      `/api/v1/deploy/cronjob/${params.id}`
-    ) as Promise<Cronjob>;
+    return this.client._v2Request('PATCH', v2Path`/cronjobs/${cronjobId}`, {
+      body: patch,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
-  async update(params: CronjobUpdateRequest): Promise<Cronjob> {
+  async delete(cronjobId: string): Promise<Record<string, never>> {
     this.client._requireAuth();
-    return params.args === undefined
-      ? this.updateRequest(params)
-      : this.updateRequest(params, serializeStructuredArgs(params.args));
+    return this.client._v2Request('DELETE', v2Path`/cronjobs/${cronjobId}`);
   }
 
-  /** @internal Used by the CLI to preserve the exact --args JSON text. */
-  async _updateSerializedArgs(
-    params: CronjobUpdateRequest,
-    serializedArgs: string
-  ): Promise<Cronjob> {
+  async pause(cronjobId: string): Promise<Schema<'Cronjob'>> {
     this.client._requireAuth();
-    return this.updateRequest(params, serializedArgs);
+    return this.client._v2Request('POST', v2Path`/cronjobs/${cronjobId}/pause`);
   }
 
-  private updateRequest(
-    params: CronjobUpdateRequest,
-    serializedArgs?: string
-  ): Promise<Cronjob> {
-    const { id, ...body } = params;
-    return this.client._request('PATCH', `/api/v1/deploy/cronjob/${id}`, {
-      ...(serializedArgs === undefined
-        ? { body }
-        : {
-            jsonBody: objectWithRawJSONField(body, 'args', serializedArgs),
-          }),
-    }) as Promise<Cronjob>;
-  }
-
-  async delete(params: { id: number }): Promise<void> {
+  async resume(cronjobId: string): Promise<Schema<'Cronjob'>> {
     this.client._requireAuth();
-    await this.client._request('DELETE', `/api/v1/deploy/cronjob/${params.id}`);
-  }
-
-  async pause(params: { id: number }): Promise<void> {
-    this.client._requireAuth();
-    await this.client._request(
+    return this.client._v2Request(
       'POST',
-      `/api/v1/deploy/cronjob/${params.id}/pause`
-    );
-  }
-
-  async resume(params: { id: number }): Promise<void> {
-    this.client._requireAuth();
-    await this.client._request(
-      'POST',
-      `/api/v1/deploy/cronjob/${params.id}/resume`
+      v2Path`/cronjobs/${cronjobId}/resume`
     );
   }
 
   /**
-   * Fire the cronjob workflow once, immediately, bypassing the schedule.
-   * This is not a dry run: when publisher push and subscriber alert bindings
-   * are enabled, a successful Feed execution may send real notifications.
-   * Async — returns the Hatchet workflow run id at enqueue. The
-   * `cronjob_runs` row can appear as DISPATCHED/RUNNING before it reaches a
-   * terminal status; callers verify completion by polling
-   * `getRunStatus({cronjob_id, workflow_run_id})` with their own
-   * timeout/deadline.
-   *
-   * Surfaces backend status as HTTP errors (handled by AlvaClient):
-   * - 404 not found / cross-user
-   * - 412 cronjob is paused (resume before triggering)
-   * - 503 worker workflow handle not yet connected (startup race)
+   * Fires the cronjob once, now, outside its schedule. This is not a dry
+   * run: a Feed execution may send real notifications. Returns the dispatch
+   * at enqueue; poll `getDispatch(dispatchId)` until its run is terminal.
+   * A paused cronjob is CONFLICT (resume it first).
    */
-  async trigger(params: { id: number }): Promise<CronjobTriggerResponse> {
+  async trigger(
+    cronjobId: string,
+    options: CronjobWriteOptions = {}
+  ): Promise<Schema<'DispatchReceipt'>> {
     this.client._requireAuth();
-    return this.client._request(
+    return this.client._v2Request(
       'POST',
-      `/api/v1/deploy/cronjob/${params.id}/trigger`
-    ) as Promise<CronjobTriggerResponse>;
+      v2Path`/cronjobs/${cronjobId}/trigger`,
+      { idempotencyKey: options.idempotencyKey }
+    );
   }
 
+  /** One page of a cronjob's runs, newest first. */
   async listRuns(
-    params: CronjobRunsListParams
-  ): Promise<CronjobRunsListResponse> {
+    cronjobId: string,
+    query: V2Query<'/cronjobs/{cronjobId}/runs', 'get'> = {}
+  ): Promise<Schema<'CronjobRunList'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      `/api/v1/deploy/cronjob/${params.cronjob_id}/runs`,
-      {
-        query: { first: params.first, cursor: params.cursor },
-      }
-    ) as Promise<CronjobRunsListResponse>;
+    return this.client._v2Request('GET', v2Path`/cronjobs/${cronjobId}/runs`, {
+      query,
+    });
   }
 
-  async getRunStatus(
-    params: CronjobRunStatusParams
-  ): Promise<CronjobRunStatusResponse> {
+  async runStats(cronjobId: string): Promise<Schema<'CronjobRunStats'>> {
     this.client._requireAuth();
-    return this.client._request(
+    return this.client._v2Request(
       'GET',
-      `/api/v1/deploy/cronjob/${params.cronjob_id}/runs/by-workflow/${encodeURIComponent(params.workflow_run_id)}`
-    ) as Promise<CronjobRunStatusResponse>;
+      v2Path`/cronjobs/${cronjobId}/run-stats`
+    );
   }
 
-  async getRunLogs(params: {
-    cronjob_id: number;
-    run_id: number;
-  }): Promise<CronjobRunLogsResponse> {
+  /** A dispatch `trigger` returned, with its run once one started. */
+  async getDispatch(
+    cronjobDispatchId: string
+  ): Promise<Schema<'CronjobDispatch'>> {
     this.client._requireAuth();
-    return this.client._request(
+    return this.client._v2Request(
       'GET',
-      `/api/v1/deploy/cronjob/${params.cronjob_id}/runs/${params.run_id}/logs`
-    ) as Promise<CronjobRunLogsResponse>;
+      v2Path`/cronjob-dispatches/${cronjobDispatchId}`
+    );
+  }
+
+  async getRunLogs(runId: string): Promise<Schema<'CronjobRunLogs'>> {
+    this.client._requireAuth();
+    return this.client._v2Request('GET', v2Path`/cronjob-runs/${runId}/logs`);
   }
 }

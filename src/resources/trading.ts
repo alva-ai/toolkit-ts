@@ -1,121 +1,119 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  TradingAccount,
-  TradingPortfolio,
-  TradingOrder,
-  TradingSubscription,
-  EquityPoint,
-  TradingRiskRule,
-  TradingRiskRuleInput,
-  ExecuteSignalResult,
-} from '../types.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
+export interface TradeOptions {
+  /**
+   * Idempotency-Key of the write: a retry with the same key never trades
+   * twice. A UUID is recommended; without one, the call gets a new UUID.
+   */
+  idempotencyKey?: string;
+}
+
+/**
+ * Orders, copy trading and risk rules of the caller's trex trading accounts.
+ * Accounts and holdings are client.portfolio's.
+ */
 export class TradingResource {
   constructor(private client: AlvaClient) {}
 
-  async accounts(): Promise<TradingAccount[]> {
+  async orders(
+    accountId: string,
+    query: V2Query<'/broker-accounts/{accountId}/orders', 'get'> = {}
+  ): Promise<Schema<'OrderList'>> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/trading/accounts') as Promise<
-      TradingAccount[]
-    >;
-  }
-
-  async portfolio(accountId: string): Promise<TradingPortfolio> {
-    this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/trading/portfolio', {
-      query: { accountId },
-    }) as Promise<TradingPortfolio>;
-  }
-
-  async orders(params: {
-    accountId: string;
-    source?: string;
-    since?: number;
-    limit?: number;
-  }): Promise<TradingOrder[]> {
-    this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/trading/orders', {
-      query: {
-        accountId: params.accountId,
-        source: params.source,
-        since: params.since,
-        limit: params.limit,
-      },
-    }) as Promise<TradingOrder[]>;
-  }
-
-  async subscriptions(accountId: string): Promise<TradingSubscription[]> {
-    this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/trading/subscriptions', {
-      query: { accountId },
-    }) as Promise<TradingSubscription[]>;
-  }
-
-  async equityHistory(params: {
-    accountId: string;
-    timeframe?: string;
-    sinceMs?: number;
-    untilMs?: number;
-  }): Promise<EquityPoint[]> {
-    this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/trading/equity-history', {
-      query: {
-        accountId: params.accountId,
-        timeframe: params.timeframe,
-        sinceMs: params.sinceMs,
-        untilMs: params.untilMs,
-      },
-    }) as Promise<EquityPoint[]>;
-  }
-
-  async riskRules(): Promise<TradingRiskRule> {
-    this.client._requireAuth();
-    return this.client._request(
+    return this.client._v2Request(
       'GET',
-      '/api/v1/trading/risk-rules'
-    ) as Promise<TradingRiskRule>;
+      v2Path`/broker-accounts/${accountId}/orders`,
+      { query }
+    );
   }
 
-  async subscribe(params: {
-    accountId: string;
-    sourceUsername: string;
-    sourceFeed: string;
-    playbookId: string;
-    playbookVersion: string;
-    executeLatest?: boolean;
-  }): Promise<TradingSubscription> {
+  /**
+   * Executes an order instruction now: trex sizes the orders, checks them
+   * against the risk rules and places them, or with dryRun plans them only.
+   */
+  async placeOrders(
+    accountId: string,
+    instruction: Schema<'OrderInstruction'>,
+    options: TradeOptions = {}
+  ): Promise<Schema<'OrderExecution'>> {
     this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/trading/subscribe', {
-      body: params,
-    }) as Promise<TradingSubscription>;
+    return this.client._v2Request(
+      'POST',
+      v2Path`/broker-accounts/${accountId}/orders`,
+      { body: instruction, idempotencyKey: options.idempotencyKey }
+    );
   }
 
+  async subscriptions(
+    accountId: string,
+    query: V2Query<
+      '/broker-accounts/{accountId}/trade-subscriptions',
+      'get'
+    > = {}
+  ): Promise<Schema<'TradeSubscriptionList'>> {
+    this.client._requireAuth();
+    return this.client._v2Request(
+      'GET',
+      v2Path`/broker-accounts/${accountId}/trade-subscriptions`,
+      { query }
+    );
+  }
+
+  /** Copies a Playbook feed's signals (signalSourceId, its Automation ID) into the account. */
+  async subscribe(
+    accountId: string,
+    body: Schema<'CreateTradeSubscriptionBody'>,
+    options: TradeOptions = {}
+  ): Promise<Schema<'TradeSubscription'>> {
+    this.client._requireAuth();
+    return this.client._v2Request(
+      'POST',
+      v2Path`/broker-accounts/${accountId}/trade-subscriptions`,
+      { body, idempotencyKey: options.idempotencyKey }
+    );
+  }
+
+  /** Stops a trade subscription; returns it, STOPPED. */
   async unsubscribe(
-    subscriptionId: string
-  ): Promise<{ unsubscribedId: string }> {
+    tradeSubscriptionId: string,
+    options: TradeOptions = {}
+  ): Promise<Schema<'TradeSubscription'>> {
     this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/trading/unsubscribe', {
-      body: { subscriptionId },
-    }) as Promise<{ unsubscribedId: string }>;
+    return this.client._v2Request(
+      'POST',
+      v2Path`/trade-subscriptions/${tradeSubscriptionId}/cancel`,
+      { idempotencyKey: options.idempotencyKey }
+    );
   }
 
-  async execute(params: {
-    accountId: string;
-    signalJson: string;
-    dryRun: boolean;
-    sourceUsername?: string;
-    sourceFeed?: string;
-  }): Promise<ExecuteSignalResult> {
+  /** The account's value curve over a preset range; each point's change is against the previous one. */
+  async equity(
+    accountId: string,
+    query: V2Query<'/broker-accounts/{accountId}/equity', 'get'> = {}
+  ): Promise<Schema<'EquitySeries'>> {
     this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/trading/execute', {
-      body: params,
-    }) as Promise<ExecuteSignalResult>;
+    return this.client._v2Request(
+      'GET',
+      v2Path`/broker-accounts/${accountId}/equity`,
+      { query }
+    );
   }
 
-  async updateRiskRules(rules: TradingRiskRuleInput): Promise<TradingRiskRule> {
+  async riskRules(): Promise<Schema<'RiskRules'>> {
     this.client._requireAuth();
-    return this.client._request('PUT', '/api/v1/trading/risk-rules', {
-      body: rules,
-    }) as Promise<TradingRiskRule>;
+    return this.client._v2Request('GET', '/me/risk-rules');
+  }
+
+  /**
+   * Changes the risk rules (JSON Merge Patch: an absent rule is unchanged).
+   * Raising or lifting a cap needs trading_limits:write, which agent
+   * credentials lack; tightening needs trading:write.
+   */
+  async updateRiskRules(
+    patch: Schema<'RiskRulesPatch'>
+  ): Promise<Schema<'RiskRules'>> {
+    this.client._requireAuth();
+    return this.client._v2Request('PATCH', '/me/risk-rules', { body: patch });
   }
 }

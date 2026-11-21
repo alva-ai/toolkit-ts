@@ -7,6 +7,7 @@ import {
 
 export const EMBEDDED_GLOBAL_FLAG_DEFINITIONS = {
   help: 'boolean',
+  json: 'boolean',
 } as const;
 
 const embeddedDefinitions = new Map(
@@ -34,7 +35,12 @@ function serializedFlags(
   for (const [name, value] of Object.entries(parsed.flags)) {
     if (name === 'help' || omitted.has(name)) continue;
     const definition = embeddedCommandDefinition(parsed.path);
-    if (definition.flags[name] === 'boolean') {
+    const kind =
+      definition.flags[name] ??
+      EMBEDDED_GLOBAL_FLAG_DEFINITIONS[
+        name as keyof typeof EMBEDDED_GLOBAL_FLAG_DEFINITIONS
+      ];
+    if (kind === 'boolean') {
       argv.push(value === 'false' ? `--no-${name}` : `--${name}`);
     } else {
       argv.push(`--${name}`, value);

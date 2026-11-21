@@ -1,20 +1,21 @@
 import type { AlvaClient } from '../client.js';
-import type { ScreenshotParams } from '../types.js';
+import type { Schema } from '../platformApi.js';
 
 export class ScreenshotResource {
   constructor(private client: AlvaClient) {}
 
-  async capture(params: ScreenshotParams): Promise<ArrayBuffer> {
+  /**
+   * Captures a page: the image as base64 with its type. Paid: a retry with
+   * the same `idempotencyKey` is charged once.
+   */
+  async capture(
+    body: Schema<'ScreenshotRequest'>,
+    options: { idempotencyKey?: string } = {}
+  ): Promise<Schema<'Screenshot'>> {
     this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/screenshot', {
-      query: {
-        url: params.url,
-        selector: params.selector,
-        xpath: params.xpath,
-        compress: params.compress,
-        compress_quality: params.compressQuality,
-        compress_max_width: params.compressMaxWidth,
-      },
-    }) as Promise<ArrayBuffer>;
+    return this.client._v2Request('POST', '/screenshots', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 }

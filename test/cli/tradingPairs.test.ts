@@ -4,22 +4,13 @@ import { dispatchCli } from '../../src/cli/dispatch.js';
 import { dispatch as dispatchEmbedded } from '../../src/cli/embeddedDispatch.js';
 import { parseEmbeddedCommand } from '../../src/cli/embeddedCommandSchema.js';
 import { embeddedCommandArgv } from '../../src/cli/agentCommandDefinitions.js';
+import { tradingPair } from '../marketV2.js';
 
-const candidate = {
-  symbol: 'RKLB',
-  tradingPair: 'US_SPOT_RKLB_USD',
-  market: 'US',
-  instrumentType: 'spot',
-  underlyingType: 'stock',
-  quote: 'USD',
-};
+const candidate = tradingPair();
 
 function makeClient(): AlvaClient {
   const client = new AlvaClient({ apiKey: 'test-key' });
-  client.tradingPairs.search = vi.fn().mockResolvedValue({
-    query: 'RKLB',
-    candidates: [candidate],
-  });
+  client.tradingPairs.search = vi.fn().mockResolvedValue([candidate]);
   client.tradingPairs.resolve = vi.fn().mockResolvedValue(candidate);
   return client;
 }
@@ -51,7 +42,28 @@ describe('trading-pairs CLI', () => {
       quote: 'USD',
       limit: undefined,
     });
-    expect(result).toEqual({ query: 'RKLB', candidates: [candidate] });
+    expect(result).toEqual([candidate]);
+  });
+
+  it('prints the v2 pair fields without --json', async () => {
+    const client = makeClient();
+    await expect(
+      dispatchCli(client, ['trading-pairs', 'search', '--symbol', 'RKLB'])
+    ).resolves.toBe('US_SPOT_RKLB_USD (exchange=US type=stock-spot quote=USD)');
+    client.tradingPairs.search = vi.fn().mockResolvedValue([]);
+    await expect(
+      dispatchCli(client, ['trading-pairs', 'search', '--symbol', 'RKLB'])
+    ).resolves.toBe('No trading pairs found for "RKLB".');
+    await expect(
+      dispatchCli(client, [
+        'trading-pairs',
+        'resolve',
+        '--pair',
+        'US_SPOT_RKLB_USD',
+      ])
+    ).resolves.toBe(
+      'US_SPOT_RKLB_USD\nbase=RKLB\nexchange=US\ntype=stock-spot\nquote=USD'
+    );
   });
 
   it('routes the same commands through the Slim Agent profile', async () => {

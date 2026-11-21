@@ -1,32 +1,43 @@
 import type { AlvaClient } from '../client.js';
-import type { CreateCommentRequest, Comment } from '../types.js';
+import { v2Path, type Schema } from '../platformApi.js';
 
+export interface CommentWriteOptions {
+  /** The write's Idempotency-Key; omitted, each call gets a new one. */
+  idempotencyKey?: string;
+}
+
+/** Playbook comments on /api/v2. */
 export class CommentsResource {
   constructor(private client: AlvaClient) {}
 
-  async create(params: CreateCommentRequest): Promise<Comment> {
-    this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/playbook/comment', {
-      body: {
-        username: params.username,
-        name: params.name,
-        content: params.content,
-        parent_id: params.parent_id,
-      },
-    }) as Promise<Comment>;
+  /** Posts a comment, or a reply (`parentId`), on a Playbook. */
+  async create(
+    playbookId: string,
+    body: Schema<'NewComment'>,
+    options: CommentWriteOptions = {}
+  ): Promise<Schema<'Comment'>> {
+    return this.client._v2Request(
+      'POST',
+      v2Path`/playbooks/${playbookId}/comments`,
+      { body, idempotencyKey: options.idempotencyKey }
+    );
   }
 
-  async pin(params: { comment_id: number }): Promise<Comment> {
-    this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/playbook/comment/pin', {
-      body: { comment_id: params.comment_id },
-    }) as Promise<Comment>;
+  /** Pins a comment; the Playbook's owner may. */
+  async pin(id: string): Promise<Schema<'Comment'>> {
+    return this.setPinned(id, true);
   }
 
-  async unpin(params: { comment_id: number }): Promise<Comment> {
-    this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/playbook/comment/unpin', {
-      body: { comment_id: params.comment_id },
-    }) as Promise<Comment>;
+  async unpin(id: string): Promise<Schema<'Comment'>> {
+    return this.setPinned(id, false);
+  }
+
+  private async setPinned(
+    id: string,
+    pinned: boolean
+  ): Promise<Schema<'Comment'>> {
+    return this.client._v2Request('PATCH', v2Path`/comments/${id}`, {
+      body: { pinned },
+    });
   }
 }

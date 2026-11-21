@@ -1,8 +1,11 @@
+import type { Schema } from '../platformApi.js';
+import { playbookUrl } from '../resources/playbooks.js';
 import type {
-  TrendingPlaybooksResponse,
   PlaybookDiscoveryItem,
-  OwnedPlaybookItem,
-} from '../resources/playbooks.js';
+  TrendingPlaybooksResponse,
+} from '../v1/playbooks.js';
+
+type Playbook = Schema<'Playbook'>;
 
 const MAX_DESC = 200;
 
@@ -12,14 +15,76 @@ function truncate(text: string, max = MAX_DESC): string {
   return `${trimmed.slice(0, max - 1).trimEnd()}…`;
 }
 
-/** Build the absolute web URL for a discovery item lacking a server-sent one. */
-function discoveryUrl(item: PlaybookDiscoveryItem, webOrigin: string): string {
-  if (!item.owner_username || !item.name) return '';
-  return `${webOrigin}/u/${item.owner_username}/playbooks/${item.name}`;
+/** Pretty render of a Playbook list (`playbooks trending`, `get --ids`, `list`). */
+export function formatPlaybookList(
+  items: Playbook[],
+  webOrigin: string,
+  opts: { hasNext?: boolean } = {}
+): string {
+  if (items.length === 0) return '(no playbooks)\n';
+  const lines: string[] = [`${items.length} playbook(s):`, ''];
+  for (const item of items) lines.push(...playbookLines(item, webOrigin));
+  if (opts.hasNext) {
+    lines.push('(more results — pass --cursor <nextPageToken> to page)', '');
+  }
+  return lines.join('\n');
 }
 
-/** Pretty render of `playbooks trending` (search) results. */
-export function formatTrendingPlaybooks(
+/** Pretty render of one Playbook (`playbooks get --id/--ref`). */
+export function formatPlaybook(
+  item: Playbook | null,
+  webOrigin: string
+): string {
+  if (!item) return '(not found)\n';
+  return playbookLines(item, webOrigin).join('\n') + '\n';
+}
+
+function playbookLines(item: Playbook, webOrigin: string): string[] {
+  const title = item.title || item.slug || item.id;
+  const followed = item.followerCount ? `  ★ ${item.followerCount}` : '';
+  const out: string[] = [
+    `• ${title}  [${item.visibility.toLowerCase()}]${followed}`,
+  ];
+  if (item.owner?.handle) out.push(`    ${item.owner.handle}/${item.slug}`);
+  const url = playbookUrl(item, webOrigin);
+  if (url) out.push(`    ${url}`);
+  if (item.description) out.push(`    ${truncate(item.description)}`);
+  if (item.tags.length > 0) out.push(`    tags: ${item.tags.join(', ')}`);
+  out.push(`    id: ${item.id}`, '');
+  return out;
+}
+
+/**
+ * Pretty render of the owner-scoped list (`playbooks mine`): the caller's
+ * own Playbooks, drafts included, by title, slug and ID.
+ */
+export function formatOwnedPlaybookList(
+  items: Playbook[],
+  opts: { hasNext?: boolean; all?: boolean } = {}
+): string {
+  if (items.length === 0) return '(no playbooks)\n';
+  const lines: string[] = [`${items.length} playbook(s):`, ''];
+  for (const item of items) {
+    const title = item.title || item.slug || item.id;
+    lines.push(`• ${title}  [${item.visibility.toLowerCase()}]`);
+    // The slug gets its own line only when the title is not the slug.
+    if (item.slug && item.slug !== title) lines.push(`    ${item.slug}`);
+    lines.push(`    id: ${item.id}`);
+    lines.push('');
+  }
+  if (opts.hasNext && !opts.all) {
+    lines.push(
+      '(more results — pass --cursor <nextPageToken>, or --all for every page)',
+      ''
+    );
+  }
+  return lines.join('\n');
+}
+
+// Keyless discovery (client.v1.playbooks) answers with the 0.x shapes.
+
+/** Pretty render of keyless `playbooks trending` results. */
+export function formatV1TrendingPlaybooks(
   resp: TrendingPlaybooksResponse
 ): string {
   const items = resp.playbooks ?? [];
@@ -42,34 +107,31 @@ export function formatTrendingPlaybooks(
   return lines.join('\n');
 }
 
-/** Pretty render of one discovery item (`playbooks get --id/--ref`). */
-export function formatPlaybook(
+/** Pretty render of one keyless discovery item. */
+export function formatV1Playbook(
   item: PlaybookDiscoveryItem | null,
   webOrigin: string
 ): string {
   if (!item) return '(not found or not visible)\n';
-  return discoveryItemLines(item, webOrigin).join('\n') + '\n';
+  return v1ItemLines(item, webOrigin).join('\n') + '\n';
 }
 
-/** Pretty render of a discovery item list (`playbooks get --ids` / `list`). */
-export function formatPlaybookList(
+/** Pretty render of a keyless discovery item list. */
+export function formatV1PlaybookList(
   items: PlaybookDiscoveryItem[],
   webOrigin: string,
   opts: { hasNext?: boolean } = {}
 ): string {
   if (!items || items.length === 0) return '(no playbooks)\n';
   const lines: string[] = [`${items.length} playbook(s):`, ''];
-  for (const item of items) lines.push(...discoveryItemLines(item, webOrigin));
+  for (const item of items) lines.push(...v1ItemLines(item, webOrigin));
   if (opts.hasNext) {
     lines.push('(more results — pass --cursor <cursor> to page)', '');
   }
   return lines.join('\n');
 }
 
-function discoveryItemLines(
-  item: PlaybookDiscoveryItem,
-  webOrigin: string
-): string[] {
+function v1ItemLines(item: PlaybookDiscoveryItem, webOrigin: string): string[] {
   const title = item.display_name || item.name || item.ref || item.id;
   const visibility = item.visibility ? `  [${item.visibility}]` : '';
   const out: string[] = [`• ${title}${visibility}`];
@@ -79,39 +141,12 @@ function discoveryItemLines(
       ? `${item.owner_username}/${item.name}`
       : '');
   if (ref) out.push(`    ${ref}`);
-  const url = discoveryUrl(item, webOrigin);
-  if (url) out.push(`    ${url}`);
+  if (item.owner_username && item.name) {
+    out.push(
+      `    ${webOrigin}/u/${item.owner_username}/playbooks/${item.name}`
+    );
+  }
   if (item.id) out.push(`    id: ${item.id}`);
   out.push('');
   return out;
-}
-
-/**
- * Pretty render of the owner-scoped list (`playbooks mine`). These rows are
- * the caller's own playbooks — drafts included — so they carry no discovery
- * ref/url, only id / name / visibility.
- */
-export function formatOwnedPlaybookList(
-  items: OwnedPlaybookItem[],
-  opts: { hasNext?: boolean; all?: boolean } = {}
-): string {
-  if (!items || items.length === 0) return '(no playbooks)\n';
-  const lines: string[] = [`${items.length} playbook(s):`, ''];
-  for (const item of items) {
-    const title = item.display_name || item.name || item.id;
-    const visibility = item.visibility ? `  [${item.visibility}]` : '';
-    lines.push(`• ${title}${visibility}`);
-    // Only show the name on its own line when it isn't already the title
-    // (i.e. a display_name was present) — otherwise it prints twice.
-    if (item.name && item.name !== title) lines.push(`    ${item.name}`);
-    lines.push(`    id: ${item.id}`);
-    lines.push('');
-  }
-  if (opts.hasNext && !opts.all) {
-    lines.push(
-      '(more results — pass --cursor <last item cursor>, or --all for every page)',
-      ''
-    );
-  }
-  return lines.join('\n');
 }

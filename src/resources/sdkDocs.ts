@@ -1,36 +1,29 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  ModuleDoc,
-  PartitionsResponse,
-  PartitionSummaryResponse,
-} from '../types.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
+/** Docs of the SDK modules Playbook scripts import, on /api/v2. */
 export class SdkDocsResource {
   constructor(private client: AlvaClient) {}
 
-  async doc(params: { name: string }): Promise<ModuleDoc> {
-    this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/sdk/doc', {
-      query: { name: params.name },
-    }) as Promise<ModuleDoc>;
+  /** One module's doc, by its import name (`@arrays/...`). */
+  async doc(name: string): Promise<Schema<'SDKModule'>> {
+    return this.client._v2Request('GET', '/sdk-modules/by-name', {
+      query: { name },
+    });
   }
 
-  async partitions(): Promise<PartitionsResponse> {
-    this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      '/api/v1/sdk/partitions'
-    ) as Promise<PartitionsResponse>;
+  /** One page of the doc partitions. */
+  async partitions(
+    query: V2Query<'/sdk-partitions', 'get'> = {}
+  ): Promise<Schema<'SDKPartitionList'>> {
+    return this.client._v2Request('GET', '/sdk-partitions', { query });
   }
 
-  async partitionSummary(params: {
-    partition: string;
-  }): Promise<PartitionSummaryResponse> {
-    this.client._requireAuth();
-    const encoded = encodeURIComponent(params.partition);
-    return this.client._request(
+  /** One partition and its summary, by name. */
+  async partitionSummary(name: string): Promise<Schema<'SDKPartitionDetail'>> {
+    return this.client._v2Request(
       'GET',
-      `/api/v1/sdk/partitions/${encoded}/summary`
-    ) as Promise<PartitionSummaryResponse>;
+      v2Path`/sdk-partitions/by-name/${name}`
+    );
   }
 }

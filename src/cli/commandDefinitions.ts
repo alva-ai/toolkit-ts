@@ -59,6 +59,7 @@ export const GLOBAL_FLAG_DEFINITIONS: Readonly<Record<string, FlagKind>> = {
   profile: 'value',
   'arrays-endpoint': 'value',
   help: 'boolean',
+  json: 'boolean',
 };
 
 export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
@@ -99,6 +100,10 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('fs grant', { values: ['path', 'subject', 'permission'] }),
   command('fs revoke', { values: ['path', 'subject', 'permission'] }),
 
+  command('ask', {
+    values: ['prompt', 'system', 'model', 'effort'],
+    booleans: ['json', 'wait'],
+  }),
   command('run', {
     values: [
       'code',
@@ -143,6 +148,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('deploy resume', { values: ['id'] }),
   command('deploy trigger', { values: ['id'] }),
   command('deploy runs', { values: ['id', 'first', 'cursor'] }),
+  command('deploy run-stats', { values: ['id'] }),
   command('deploy run-status', {
     values: ['id', 'workflow-run-id'],
   }),
@@ -228,14 +234,19 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     ],
   }),
   command('thesis related', { values: ['id', 'first', 'cursor'] }),
-  command('thesis get', { values: ['id'] }),
+  command('thesis get', { values: ['id', 'number'] }),
   command('thesis version list', { values: ['id', 'first', 'cursor'] }),
   command('thesis version get', {
-    values: ['id', 'author-version-id'],
+    values: ['author-version-id', 'number', 'version'],
   }),
   command('thesis signals', { values: ['id', 'first', 'cursor'] }),
-  command('thesis set-visibility', { values: ['id', 'visibility'] }),
-  command('thesis archive', { values: ['id', 'request-id', 'note'] }),
+  command('thesis set-visibility', {
+    values: ['id', 'visibility'],
+    booleans: ['confirm-end-paid-renewals'],
+  }),
+  command('thesis archive', {
+    values: ['id', 'request-id', 'note', 'expected-author-version-id'],
+  }),
   command('thesis star', { values: ['id'] }),
   command('thesis unstar', { values: ['id'] }),
   command('thesis set-signal-enabled', { values: ['id', 'enabled'] }),
@@ -254,7 +265,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'track-return',
       'archived',
     ],
-    booleans: ['body-stdin'],
+    booleans: ['body-stdin', 'confirm-end-paid-renewals'],
   }),
   command('thesis rewrite', {
     values: ['body', 'body-file', 'mode'],
@@ -267,9 +278,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('service-account grant', {
     values: ['id', 'path', 'permission'],
   }),
-  command('service-account revoke', {
-    values: ['id', 'path', 'permission'],
-  }),
+  command('service-account revoke', { values: ['id', 'grant-id'] }),
 
   command('feed list', { values: ['limit', 'cursor', 'status'] }),
   command('feed stop', { values: ['id'] }),
@@ -339,6 +348,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('playbooks set-visibility', {
     values: ['name', 'visibility'],
+    booleans: ['confirm-end-paid-renewals'],
   }),
   command('playbooks get', {
     values: ['ids', 'id', 'ref'],
@@ -534,6 +544,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('alert history', {
     values: [
       'automation',
+      'automation-id',
       'playbook',
       'playbook-ids',
       'delivery-provider',
@@ -614,11 +625,11 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('trading accounts'),
   command('trading portfolio', { values: ['account-id'] }),
   command('trading orders', {
-    values: ['account-id', 'source', 'since', 'limit'],
+    values: ['account-id', 'origin', 'source', 'since', 'limit'],
   }),
   command('trading subscriptions', { values: ['account-id'] }),
   command('trading equity-history', {
-    values: ['account-id', 'timeframe', 'since-ms', 'until-ms'],
+    values: ['account-id', 'range', 'timeframe', 'since-ms', 'until-ms'],
   }),
   command('trading risk-rules'),
   command('trading subscribe', {
@@ -626,6 +637,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'account-id',
       'source-username',
       'source-feed',
+      'signal-source-id',
       'playbook-id',
       'playbook-version',
     ],
@@ -633,7 +645,15 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('trading unsubscribe', { values: ['subscription-id'] }),
   command('trading execute', {
-    values: ['account-id', 'signal', 'source-username', 'source-feed'],
+    values: [
+      'account-id',
+      'instruction',
+      'idempotency-key',
+      // Retained so the handler can name their replacement.
+      'signal',
+      'source-username',
+      'source-feed',
+    ],
     booleans: ['dry-run'],
   }),
   command('trading update-risk-rules', {

@@ -1,1381 +1,346 @@
-import {
-  listTheses,
-  relatedTheses,
-  thesisReturn,
-  thesisWatchpoints,
-  type ListThesesParams,
-  type ThesisPageParams,
-  type ThesisReturnParams,
-} from './thesisReads.js';
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
-/** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
-export type ThesisID = string;
-export type ThesisVisibility = 'public' | 'private' | 'paid';
-/** unknown: not judged; none: judged without a current long or short. */
-export type ThesisAssetStance = 'unknown' | 'bullish' | 'bearish' | 'none';
-export interface ThesisEntityStance {
-  entity_id: ThesisID;
-  stance: ThesisAssetStance;
-  /** Full direction in responses; stance reports none as unknown there. */
-  direction?: ThesisAssetStance;
-}
-/** GraphQL direction, including NONE. */
-export type ThesisDirection = 'UNKNOWN' | 'BULLISH' | 'BEARISH' | 'NONE';
-export interface ThesisSelectedDirection {
-  entityId: ThesisID;
-  direction: ThesisDirection;
-}
-export type ThesisReturnTracking = 'UNSET' | 'ON' | 'OFF';
-/** What publishing the selected entities with their directions would store. */
-export interface ThesisReturnPreview {
-  /** The Thesis's return switch now; UNSET for a new Thesis. */
-  tracking: ThesisReturnTracking;
-  /** Ask the author whether to keep the return on. */
-  askSwitch: boolean;
-  /** Directions publishing would store; UNKNOWN could not be judged. */
-  directions: ThesisSelectedDirection[];
-  /** Exits that keep the previous direction (last-leg rule). */
-  keptEntityIds: ThesisID[];
-  /** Publishing this draft fails with THESIS_RETURN_LAST_LEG. */
-  lastLegRemoved: boolean;
-}
-export interface ThesisAssetCandidatesParams {
-  /** Known catalog IDs to classify; with discover false, only these. */
-  entityIds?: ThesisID[];
-  /** The Thesis being updated: its current directions seed carried tickers. */
-  thesisId?: ThesisID;
-  /** False skips ticker discovery. Defaults to true. */
-  discover?: boolean;
-}
-export interface ThesisAssetCandidate {
-  entityId: ThesisID;
-  ticker: string;
-  name: string;
-  kind: 'STOCK' | 'ETF' | 'CRYPTO' | 'INDEX';
-}
-export interface ThesisAssetMention {
-  quote: string;
-  ticker: string;
-  resolution: 'RESOLVED' | 'AMBIGUOUS' | 'UNRESOLVED';
-  stance: 'UNKNOWN' | 'BULLISH' | 'BEARISH';
-  candidates: ThesisAssetCandidate[];
-}
-export interface ThesisAssetCandidatesResponse {
-  mentions: ThesisAssetMention[];
-  /** Null only from a server without the preview. */
-  returnPreview: ThesisReturnPreview | null;
-}
-/** Canonical server-supported candidate rewrite operation. */
-export type ThesisRewriteMode = 'reformat' | 'shorten' | 'enrich';
+/** pageSize and pageToken of a Thesis list. */
+export type ThesisPageQuery = V2Query<'/theses/{thesisId}/updates', 'get'>;
 
-export interface ThesisMedia {
-  type: 'image' | 'price_chart' | 'audio' | 'video';
-  cover_url: string;
-  url?: string | null;
+/** Options of a Thesis write. */
+export interface ThesisWriteOptions {
+  /**
+   * The write's Idempotency-Key, a UUID: reuse it to retry the same write
+   * safely. Omitted, each call gets a new one.
+   */
+  idempotencyKey?: string;
 }
-
-export interface Thesis {
-  id: ThesisID;
-  author_version_id: ThesisID;
-  material_version_id: ThesisID;
-  title: string;
-  body: string;
-  entity_ids: ThesisID[];
-  entity_stances?: ThesisEntityStance[];
-  visibility: ThesisVisibility;
-  medias?: ThesisMedia[];
-  closed: boolean;
-  closing_note: string;
-  author_kind: string;
-  author_ref: string;
-  archived: boolean;
-  version_archived?: boolean;
-  note?: string;
-}
-
-export interface ThesisResponse {
-  thesis: Thesis;
-}
-
-export interface ThesisAuthor {
-  id: ThesisID;
-  kind: string;
-  display_name: string;
-  avatar_url: string;
-  username: string;
-}
-
-export interface ThesisEntity {
-  id: ThesisID;
-  ticker: string;
-  name: string;
-  icon_url: string;
-  kind: string;
-}
-
-export interface ThesisGetResponse extends ThesisResponse {
-  author: ThesisAuthor;
-  entities: ThesisEntity[];
-}
-
-export interface ThesisResearchStatus {
-  state: string;
-  pending_work: number;
-  read_complete: boolean;
-  last_attempt_ms?: number;
-  last_completed_ms?: number;
-}
-
-export interface ThesisSignalEvidenceExcerpt {
-  text: string;
-  omitted_before: boolean;
-  omitted_after: boolean;
-}
-
-export interface ThesisSignalSource {
-  title: string;
-  url?: string;
-  published_at_ms?: number;
-}
-
-export interface ThesisSignal {
-  id: ThesisID;
-  thesis_id: ThesisID;
-  author_version_id: ThesisID;
-  statement_snapshot: string;
-  stance: string;
-  explanation: string;
-  information_kind: string;
-  evidence_excerpt?: ThesisSignalEvidenceExcerpt;
-  source: ThesisSignalSource;
-}
-
-export interface ThesisSignalEntry {
-  feed_entry_id: ThesisID;
-  cursor: string;
-  signal: ThesisSignal;
-}
-
-export interface ListThesisSignalsParams {
-  first?: number;
-  cursor?: string;
-}
-
-export interface ThesisSignalsResponse {
-  research: ThesisResearchStatus;
-  entries: ThesisSignalEntry[];
-  next_cursor: string;
-}
-
-export interface CreateThesisParams {
-  /** Public images already uploaded with the existing upload tool, in display order. */
-  images?: string[];
-  /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
-  request_id: string;
-  body: string;
-  title?: string;
-  entity_ids?: ThesisID[];
-  /** Author direction keyed by an entity ID also supplied in entity_ids. */
-  entity_stances?: ThesisEntityStance[];
-  /** Exact STOCK ticker symbols resolved by Backend during creation. */
-  tickers?: string[];
-  /** Omitted means public, as defined by the REST contract. */
-  visibility?: 'public' | 'private';
-  /** Thesis return switch; omitted keeps the default (on). */
-  track_return?: boolean;
-}
-
-export interface UpdateThesisParams {
-  /** Full media replacement; pass current medias for a text-only update. */
-  medias?: ThesisMedia[];
-  /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
-  request_id: string;
-  expected_author_version_id: ThesisID;
-  body: string;
-  title?: string;
-  entity_ids?: ThesisID[];
-  /** Full replacement: resubmit existing directions when only editing the body. */
-  entity_stances?: ThesisEntityStance[];
-  /** Required so an update cannot inadvertently publish a private thesis. */
-  visibility: ThesisVisibility;
-  archived?: boolean;
-  note?: string;
-  /** Thesis return switch; omitted keeps the current decision or default. */
-  track_return?: boolean;
-}
-
-export interface SetThesisArchivedParams {
-  /** Caller-supplied, stable non-zero UUID for this archive transition. */
-  request_id: string;
-  archived: boolean;
-  note?: string;
-}
-
-export interface ThesisStarredResponse {
-  thesis_id: ThesisID;
-  star_count: number;
-  is_starred: boolean;
-}
-
-export interface ThesisSignalEnabledResponse {
-  thesis_id: ThesisID;
-  author_version_id: ThesisID;
-  archived: boolean;
-  research_paused: boolean;
-  enabled: boolean;
-}
-
-export interface SetThesisVisibilityParams {
-  visibility: 'public' | 'private';
-}
-
-export interface RewriteThesisParams {
-  body: string;
-  /** Omitted selects the canonical `reformat` mode. */
-  mode?: ThesisRewriteMode;
-}
-
-export interface RewriteThesisResponse {
-  body: string;
-}
-
-const SET_THESIS_STARRED = `mutation SetThesisStarred($input: SetThesisStarredInput!) {
-  setThesisStarred(input: $input) {
-    thesisId
-    stats { starCount }
-    viewerState { isStarred }
-  }
-}`;
-
-const SET_THESIS_SIGNAL_ENABLED = `mutation SetThesisSignalEnabled($input: SetThesisSignalEnabledInput!) {
-  setThesisSignalEnabled(input: $input) {
-    publication { playbookId authorVersionId archived researchPaused }
-  }
-}`;
-
-const MAX_SIGNED_INT64 = 9_223_372_036_854_775_807n;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNPAIRED_SURROGATE =
-  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-const encoder = new TextEncoder();
 
 /**
- * Thesis CRUD and explicit text rewriting. This resource never retries,
- * starts Signal/Alert setup, or invokes rewrite as a side effect of CRUD.
+ * Whose Theses `list` reads: exactly one of person, personName, user,
+ * ticker or assetId, with the page query of the list it ends on.
+ */
+export interface ListThesesParams extends V2Query<
+  '/profiles/{profileId}/theses',
+  'get'
+> {
+  /** A Person's exact handle (a PERSON Profile's `handle`). */
+  person?: string;
+  /** A Person name search; it must match one Person. */
+  personName?: string;
+  /** A user's exact username (a USER Profile's `handle`). */
+  user?: string;
+  /** A catalog symbol. */
+  ticker?: string;
+  /** An Asset ID. */
+  assetId?: string;
+}
+
+const SELECTORS = [
+  'person',
+  'personName',
+  'user',
+  'ticker',
+  'assetId',
+] as const;
+
+/**
+ * Theses on /api/v2: reads, writes and explicit text rewriting. Methods
+ * return the routes' JSON (`Schema<'Thesis'>`, `Schema<'ThesisList'>`, ...).
+ * Writes send one Idempotency-Key per call (`idempotencyKey`, else a new
+ * UUID) and never start Signal or Alert setup as a side effect.
  */
 export class ThesesResource {
   constructor(private client: AlvaClient) {}
 
-  /** One visible page; no automatic pagination or content truncation. */
-  list(params: ListThesesParams) {
-    return listTheses(this.client, params);
-  }
-
-  /** Related publications always use the current source version. */
-  related(id: ThesisID, params: ThesisPageParams = {}) {
-    return relatedTheses(this.client, id, params);
-  }
-
-  async assetCandidates(
-    text: string,
-    params: ThesisAssetCandidatesParams = {}
-  ): Promise<ThesisAssetCandidatesResponse> {
-    this.client._requireAuth();
-    const source = requireBody(text);
-    const input: Record<string, unknown> = {
-      text: source,
-      selectedEntityIds: requireIDs(params.entityIds ?? [], 'entityIds'),
-    };
-    if (params.thesisId !== undefined)
-      input.thesisId = requireID(params.thesisId, 'thesisId');
-    if (params.discover !== undefined) {
-      if (typeof params.discover !== 'boolean')
-        throw invalidArgument('discover must be a boolean');
-      input.discover = params.discover;
+  /**
+   * One page of an author's or an asset's Theses. An author is named by an
+   * exact handle (person, user) or a Person name search that must match one
+   * Person (AMBIGUOUS_IDENTITY lists the candidates); `archived` applies to
+   * author lists only.
+   */
+  async list(params: ListThesesParams): Promise<Schema<'ThesisList'>> {
+    const chosen = SELECTORS.filter((key) => params[key] !== undefined);
+    if (chosen.length !== 1) {
+      throw invalidArgument(
+        'choose exactly one of person, personName, user, ticker or assetId'
+      );
     }
-    const response = (await this.client._request('POST', '/query', {
-      body: {
-        query: `query ThesisAssetCandidates($input: ThesisAssetCandidatesInput!) {
-          viewer { thesisAssetCandidates(input: $input) {
-            mentions { quote ticker resolution stance candidates { entityId ticker name kind } }
-            returnPreview { tracking askSwitch directions { entityId direction } keptEntityIds lastLegRemoved }
-          } }
-        }`,
-        variables: { input },
-      },
-    })) as Record<string, unknown>;
-    if (Array.isArray(response?.errors) && response.errors.length > 0) {
-      throw new AlvaError('GRAPHQL_ERROR', 'Asset extraction failed', 400, {
-        errors: response.errors,
-      });
-    }
-    const data = response?.data;
-    const viewer = isRecord(data) ? data.viewer : undefined;
-    const result = isRecord(viewer) ? viewer.thesisAssetCandidates : undefined;
-    if (!isRecord(result) || !Array.isArray(result.mentions)) {
-      throw invalidResponse('asset candidates response must contain mentions');
-    }
-    const mentions = result.mentions.map((item, index) => {
-      if (
-        !isRecord(item) ||
-        typeof item.quote !== 'string' ||
-        typeof item.ticker !== 'string' ||
-        !['RESOLVED', 'AMBIGUOUS', 'UNRESOLVED'].includes(
-          item.resolution as string
-        ) ||
-        !['UNKNOWN', 'BULLISH', 'BEARISH'].includes(item.stance as string) ||
-        !Array.isArray(item.candidates)
-      ) {
-        throw invalidResponse(`asset mention ${index} is invalid`);
+    const { person, personName, user, ticker, assetId, ...query } = params;
+    if (ticker !== undefined || assetId !== undefined) {
+      if (query.archived !== undefined) {
+        throw invalidArgument('archived applies only to author lists');
       }
-      const candidates = item.candidates.map((candidate: unknown) => {
-        if (
-          !isRecord(candidate) ||
-          typeof candidate.ticker !== 'string' ||
-          typeof candidate.name !== 'string' ||
-          !['STOCK', 'ETF', 'CRYPTO', 'INDEX'].includes(
-            candidate.kind as string
+      const id =
+        assetId ??
+        (
+          await this.client._v2Request<Schema<'Asset'>>(
+            'GET',
+            v2Path`/assets/by-symbol/${ticker as string}`
           )
-        ) {
-          throw invalidResponse(`asset mention ${index} has invalid candidate`);
-        }
-        return {
-          entityId: responseID(
-            candidate.entityId,
-            `asset mention ${index} candidate.entityId`
-          ),
-          ticker: candidate.ticker,
-          name: candidate.name,
-          kind: candidate.kind as ThesisAssetCandidate['kind'],
-        };
+        ).id;
+      return this.client._v2Request('GET', v2Path`/assets/${id}/theses`, {
+        query: { pageSize: query.pageSize, pageToken: query.pageToken },
       });
-      return { ...item, candidates } as unknown as ThesisAssetMention;
-    });
-    return { mentions, returnPreview: returnPreview(result.returnPreview) };
-  }
-
-  /** The Thesis return of a Playbook's current publication; detail revalues it. */
-  thesisReturn(id: ThesisID, params: ThesisReturnParams = {}) {
-    return thesisReturn(this.client, id, params);
-  }
-
-  /**
-   * List every watchpoint of a Thesis (its current set, in number order): the
-   * things the Thesis depends on, or that would show it right or wrong.
-   */
-  watchpoints(id: ThesisID) {
-    return thesisWatchpoints(this.client, id);
-  }
-
-  async create(params: CreateThesisParams): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    const body = createBody(params);
-    return thesisResponse(
-      await this.client._request('POST', '/api/v1/theses', { body })
-    );
-  }
-
-  async get(id: ThesisID): Promise<ThesisGetResponse> {
-    this.client._requireAuth();
-    const thesisID = requireID(id, 'id');
-    const response = thesisGetResponse(
-      await this.client._request('GET', `/api/v1/theses/${thesisID}`)
-    );
-    if (response.thesis.id !== thesisID) {
-      throw invalidResponse('get response must match the requested thesis');
     }
-    return response;
-  }
-
-  async getVersion(
-    id: ThesisID,
-    authorVersionID: ThesisID
-  ): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    const thesisID = requireID(id, 'id');
-    const versionID = requireID(authorVersionID, 'author_version_id');
-    const response = thesisResponse(
-      await this.client._request(
-        'GET',
-        `/api/v1/theses/${thesisID}/versions/${versionID}`
-      )
-    );
-    if (
-      response.thesis.id !== thesisID ||
-      response.thesis.author_version_id !== versionID
-    ) {
-      throw invalidResponse(
-        'version response must match the requested thesis and author version'
-      );
-    }
-    return response;
-  }
-
-  /** Lists reader-visible Updates, with editorial revisions folded together. */
-  async listUpdates(
-    id: ThesisID,
-    params: { first?: number; cursor?: string } = {}
-  ): Promise<{ versions: Thesis[]; next_cursor: string }> {
-    this.client._requireAuth();
-    const thesisID = requireID(id, 'id');
-    const first = params.first ?? 10;
-    if (!Number.isInteger(first) || first < 1 || first > 100)
-      throw invalidArgument('first must be between 1 and 100');
-    if (params.cursor !== undefined && typeof params.cursor !== 'string')
-      throw invalidArgument('cursor must be a string');
-    const response = await this.client._request(
-      'GET',
-      `/api/v1/theses/${thesisID}/versions`,
-      {
-        query: { first, cursor: params.cursor, updates_only: true },
-      }
-    );
-    if (
-      !isRecord(response) ||
-      !Array.isArray(response.versions) ||
-      typeof response.next_cursor !== 'string'
-    )
-      throw invalidResponse('invalid Update list');
-    const versions = response.versions.map(
-      (value) => thesisResponse({ thesis: value }).thesis
-    );
-    if (versions.some((version) => version.id !== thesisID))
-      throw invalidResponse('Update list must match requested Thesis');
-    return { versions, next_cursor: response.next_cursor };
-  }
-
-  async signals(
-    id: ThesisID,
-    params: ListThesisSignalsParams = {}
-  ): Promise<ThesisSignalsResponse> {
-    this.client._requireAuth();
-    const first = params.first ?? 20;
-    if (!Number.isInteger(first) || first < 1 || first > 50) {
-      throw invalidArgument('first must be an integer between 1 and 50');
-    }
-    if (params.cursor !== undefined && typeof params.cursor !== 'string') {
-      throw invalidArgument('cursor must be a string');
-    }
-    return thesisSignalsResponse(
-      await this.client._request(
-        'GET',
-        `/api/v1/theses/${requireID(id, 'id')}/signals`,
-        {
-          query: {
-            first,
-            ...(params.cursor === undefined ? {} : { cursor: params.cursor }),
-          },
-        }
-      ),
-      id,
-      first
-    );
-  }
-
-  async update(
-    id: ThesisID,
-    params: UpdateThesisParams
-  ): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    const body = updateBody(params);
-    const thesisID = requireID(id, 'id');
-    const response = thesisResponse(
-      await this.client._request('PUT', `/api/v1/theses/${thesisID}`, {
-        body,
-      })
-    );
-    if (response.thesis.id !== thesisID) {
-      throw invalidResponse('update response must match the requested thesis');
-    }
-    return response;
-  }
-
-  /**
-   * Archive or unarchive the current version without asking callers to resend
-   * its body. Unarchiving publishes the current content as a new Update; an
-   * archived Thesis takes no other Update.
-   */
-  async setArchived(
-    id: ThesisID,
-    params: SetThesisArchivedParams
-  ): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    if (!isRecord(params)) throw invalidArgument('params is required');
-    const thesisID = requireID(id, 'id');
-    const requestID = requireRequestID(params.request_id);
-    if (typeof params.archived !== 'boolean') {
-      throw invalidArgument('archived must be a boolean');
-    }
-    if (params.note !== undefined) requireText(params.note, 'note');
-
-    const current = await this.get(thesisID);
-    if (
-      current.thesis.archived === params.archived &&
-      params.note === undefined
-    ) {
-      return { thesis: current.thesis };
-    }
-    if (
-      !completeEntityStances(
-        current.thesis.entity_ids,
-        current.thesis.entity_stances
-      )
-    ) {
-      throw invalidResponse(
-        'archive requires one entity_stance for every Thesis entity'
-      );
-    }
-
-    const response = await this.update(thesisID, {
-      request_id: requestID,
-      expected_author_version_id: current.thesis.author_version_id,
-      body: current.thesis.body,
-      title: current.thesis.title,
-      entity_ids: current.thesis.entity_ids,
-      entity_stances: current.thesis.entity_stances,
-      visibility: current.thesis.visibility,
-      archived: params.archived,
-      medias: current.thesis.medias,
-      note: params.note,
-    });
-    if (
-      response.thesis.id !== thesisID ||
-      response.thesis.archived !== params.archived
-    ) {
-      throw invalidResponse('archive response must match the requested state');
-    }
-    return response;
-  }
-
-  async setStarred(
-    id: ThesisID,
-    isStarred: boolean
-  ): Promise<ThesisStarredResponse> {
-    this.client._requireAuth();
-    const thesisID = requireID(id, 'id');
-    if (typeof isStarred !== 'boolean') {
-      throw invalidArgument('isStarred must be a boolean');
-    }
-    const data = await thesisGraphql(this.client, SET_THESIS_STARRED, {
-      input: { thesisId: thesisID, isStarred },
-    });
-    const result = data.setThesisStarred;
-    if (
-      !isRecord(result) ||
-      !isRecord(result.stats) ||
-      !isRecord(result.viewerState)
-    ) {
-      throw invalidResponse('star response must contain stats and viewerState');
-    }
-    const returnedID = responseID(result.thesisId, 'thesisId');
-    if (returnedID !== thesisID) {
-      throw invalidResponse('star response must match the requested thesis');
-    }
-    const starCount = result.stats.starCount;
-    if (
-      typeof starCount !== 'number' ||
-      !Number.isInteger(starCount) ||
-      starCount < 0
-    ) {
-      throw invalidResponse(
-        'star response must contain a nonnegative star count'
-      );
-    }
-    const returnedStarred = responseBoolean(
-      result.viewerState.isStarred,
-      'viewerState.isStarred'
-    );
-    if (returnedStarred !== isStarred) {
-      throw invalidResponse('star response did not apply the requested state');
-    }
-    return {
-      thesis_id: returnedID,
-      star_count: starCount,
-      is_starred: returnedStarred,
-    };
-  }
-
-  async setSignalEnabled(
-    id: ThesisID,
-    enabled: boolean
-  ): Promise<ThesisSignalEnabledResponse> {
-    this.client._requireAuth();
-    const thesisID = requireID(id, 'id');
-    if (typeof enabled !== 'boolean') {
-      throw invalidArgument('enabled must be a boolean');
-    }
-    const data = await thesisGraphql(this.client, SET_THESIS_SIGNAL_ENABLED, {
-      input: { thesisId: thesisID, enabled },
-    });
-    const result = data.setThesisSignalEnabled;
-    if (!isRecord(result) || !isRecord(result.publication)) {
-      throw invalidResponse('Signal response must contain publication');
-    }
-    const publication = result.publication;
-    const returnedID = responseID(
-      publication.playbookId,
-      'publication.playbookId'
-    );
-    if (returnedID !== thesisID) {
-      throw invalidResponse('Signal response must match the requested thesis');
-    }
-    const researchPaused = responseBoolean(
-      publication.researchPaused,
-      'publication.researchPaused'
-    );
-    if (researchPaused === enabled) {
-      throw invalidResponse(
-        'Signal response did not apply the requested state'
-      );
-    }
-    return {
-      thesis_id: returnedID,
-      author_version_id: responseID(
-        publication.authorVersionId,
-        'publication.authorVersionId'
-      ),
-      archived: responseBoolean(publication.archived, 'publication.archived'),
-      research_paused: researchPaused,
-      enabled: !researchPaused,
-    };
-  }
-
-  async setVisibility(
-    id: ThesisID,
-    params: SetThesisVisibilityParams
-  ): Promise<ThesisResponse> {
-    this.client._requireAuth();
-    if (!params) {
-      throw invalidArgument('params is required');
-    }
-    const thesisID = requireID(id, 'id');
-    const visibility = requirePublicVisibility(params.visibility);
-    const response = thesisResponse(
-      await this.client._request(
-        'POST',
-        `/api/v1/theses/${thesisID}/visibility`,
-        { body: { visibility } }
-      )
-    );
-    if (
-      response.thesis.id !== thesisID ||
-      response.thesis.visibility !== visibility
-    ) {
-      throw invalidResponse(
-        'visibility response must match the requested thesis and visibility'
-      );
-    }
-    return response;
-  }
-
-  async rewrite(params: RewriteThesisParams): Promise<RewriteThesisResponse> {
-    this.client._requireAuth();
-    const body = requireBody(params.body);
-    // Only omission selects the default. Empty, whitespace, null, and unknown
-    // runtime values must remain visible validation failures.
-    const mode =
-      params.mode === undefined ? 'reformat' : requireRewriteMode(params.mode);
-    const response = await this.client._request(
-      'POST',
-      '/api/v1/theses/rewrite',
-      {
-        body: { body, mode },
-      }
-    );
-    if (!isRecord(response) || typeof response.body !== 'string') {
-      throw invalidResponse('rewrite response must contain a string body');
-    }
-    return { body: responseBody(response.body) };
-  }
-}
-
-function createBody(params: CreateThesisParams): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    request_id: requireRequestID(params.request_id),
-    body: requireBody(params.body),
-    title: requireTitle(params.title ?? ''),
-    entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
-    visibility: requirePublicVisibility(params.visibility ?? 'public'),
-  };
-  if (params.images !== undefined) {
-    if (!Array.isArray(params.images) || params.images.length > 20)
-      throw invalidArgument('images must contain at most 20 URLs');
-    if (params.images.length && body.visibility !== 'public')
-      throw invalidArgument(
-        'image publication currently requires public visibility'
-      );
-    body.medias = params.images.map((url) => {
-      if (!validMediaURL(url) || !url.startsWith('https://'))
-        throw invalidArgument(
-          'images must contain HTTPS URLs returned by the upload tool'
-        );
-      return { type: 'image', cover_url: url, url };
-    });
-  }
-  if (params.tickers !== undefined)
-    body.tickers = requireTickers(params.tickers);
-  if (params.track_return !== undefined)
-    body.track_return = requireTrackReturn(params.track_return);
-  if (params.entity_stances !== undefined) {
-    body.entity_stances = requireEntityStances(
-      params.entity_stances,
-      body.entity_ids as ThesisID[]
-    );
-  }
-  return body;
-}
-
-const ENTITY_STANCES: readonly string[] = [
-  'unknown',
-  'bullish',
-  'bearish',
-  'none',
-];
-const THESIS_DIRECTIONS: readonly string[] = [
-  'UNKNOWN',
-  'BULLISH',
-  'BEARISH',
-  'NONE',
-];
-const RETURN_TRACKING: readonly string[] = ['UNSET', 'ON', 'OFF'];
-
-function requireTrackReturn(value: unknown): boolean {
-  if (typeof value !== 'boolean')
-    throw invalidArgument('track_return must be a boolean');
-  return value;
-}
-
-function selectedDirections(
-  value: unknown,
-  field: string
-): ThesisSelectedDirection[] {
-  if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
-  return value.map((item: unknown, index) => {
-    if (
-      !isRecord(item) ||
-      !THESIS_DIRECTIONS.includes(item.direction as string)
-    )
-      throw invalidResponse(`${field}[${index}] is invalid`);
-    return {
-      entityId: responseID(item.entityId, `${field}[${index}].entityId`),
-      direction: item.direction as ThesisDirection,
-    };
-  });
-}
-
-function returnPreview(value: unknown): ThesisReturnPreview | null {
-  if (value === null || value === undefined) return null;
-  if (
-    !isRecord(value) ||
-    !RETURN_TRACKING.includes(value.tracking as string) ||
-    typeof value.askSwitch !== 'boolean' ||
-    typeof value.lastLegRemoved !== 'boolean' ||
-    !Array.isArray(value.keptEntityIds)
-  )
-    throw invalidResponse('returnPreview is invalid');
-  return {
-    tracking: value.tracking as ThesisReturnTracking,
-    askSwitch: value.askSwitch,
-    directions: selectedDirections(
-      value.directions,
-      'returnPreview.directions'
-    ),
-    keptEntityIds: value.keptEntityIds.map((id: unknown, index) =>
-      responseID(id, `returnPreview.keptEntityIds[${index}]`)
-    ),
-    lastLegRemoved: value.lastLegRemoved,
-  };
-}
-
-function requireEntityStances(
-  value: unknown,
-  entityIDs: ThesisID[]
-): ThesisEntityStance[] {
-  if (!Array.isArray(value) || value.length > MAX_ENTITY_IDS)
-    throw invalidArgument('entity_stances must contain at most 100 values');
-  const allowed = new Set(entityIDs);
-  const seen = new Set<string>();
-  return value.map((item, index) => {
-    if (!isRecord(item))
-      throw invalidArgument(`entity_stances[${index}] must be an object`);
-    const entityID = requireID(
-      item.entity_id,
-      `entity_stances[${index}].entity_id`
-    );
-    if (!allowed.has(entityID) || seen.has(entityID))
-      throw invalidArgument(
-        'entity stance must reference one unique entity_id'
-      );
-    seen.add(entityID);
-    if (!ENTITY_STANCES.includes(item.stance as string))
-      throw invalidArgument(`entity_stances[${index}].stance is invalid`);
-    return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
-  });
-}
-
-function updateBody(params: UpdateThesisParams): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    request_id: requireRequestID(params.request_id),
-    expected_author_version_id: requireID(
-      params.expected_author_version_id,
-      'expected_author_version_id'
-    ),
-    body: requireBody(params.body),
-    title: requireTitle(params.title ?? ''),
-    entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
-    visibility: requireVisibility(params.visibility),
-  };
-  if (params.medias !== undefined) {
-    if (!Array.isArray(params.medias) || params.medias.length > 20)
-      throw invalidArgument('medias must be an array of at most 20 items');
-    if (!params.medias.every(validMedia))
-      throw invalidArgument('medias contains invalid media');
-    body.medias = params.medias;
-  }
-  if (params.archived !== undefined) {
-    if (typeof params.archived !== 'boolean')
-      throw invalidArgument('archived must be a boolean');
-    body.archived = params.archived;
-  }
-  if (params.note !== undefined) body.note = requireText(params.note, 'note');
-  if (params.track_return !== undefined)
-    body.track_return = requireTrackReturn(params.track_return);
-
-  if (params.entity_stances !== undefined) {
-    body.entity_stances = requireEntityStances(
-      params.entity_stances,
-      body.entity_ids as ThesisID[]
-    );
-  }
-  return body;
-}
-
-function thesisResponse(response: unknown): ThesisResponse {
-  if (!isRecord(response) || !isRecord(response.thesis)) {
-    throw invalidResponse('response must contain thesis');
-  }
-  const thesis = response.thesis;
-  const value: Thesis = {
-    id: responseID(thesis.id, 'thesis.id'),
-    author_version_id: responseID(
-      thesis.author_version_id,
-      'thesis.author_version_id'
-    ),
-    material_version_id: responseID(
-      thesis.material_version_id,
-      'thesis.material_version_id'
-    ),
-    title: responseTitle(thesis.title),
-    body: responseBody(thesis.body),
-    entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
-    visibility: responseVisibility(thesis.visibility),
-    closed: responseBoolean(thesis.closed, 'thesis.closed'),
-    archived: responseBoolean(thesis.archived, 'thesis.archived'),
-    closing_note: responseClosingNote(thesis.closing_note),
-    author_kind: responseText(thesis.author_kind, 'thesis.author_kind'),
-    author_ref: responseText(thesis.author_ref, 'thesis.author_ref'),
-  };
-  if (thesis.medias !== undefined) {
-    if (!Array.isArray(thesis.medias) || thesis.medias.length > 20)
-      throw invalidResponse('thesis.medias must contain at most 20 items');
-    value.medias = thesis.medias.map((item: unknown) => {
-      if (!validMedia(item))
-        throw invalidResponse('thesis.medias contains invalid media');
-      return {
-        type: item.type as ThesisMedia['type'],
-        cover_url: item.cover_url as string,
-        ...(item.url === undefined ? {} : { url: item.url as string | null }),
-      };
-    });
-  }
-  if (thesis.version_archived !== undefined)
-    value.version_archived = responseBoolean(
-      thesis.version_archived,
-      'thesis.version_archived'
-    );
-  if (thesis.note !== undefined)
-    value.note = responseText(thesis.note, 'thesis.note');
-
-  if (thesis.entity_stances !== undefined) {
-    if (!Array.isArray(thesis.entity_stances))
-      throw invalidResponse('thesis.entity_stances must be an array');
-    value.entity_stances = thesis.entity_stances.map((item: unknown) => {
-      if (!isRecord(item))
-        throw invalidResponse('thesis.entity_stances contains invalid entry');
-      const entityID = responseID(item.entity_id, 'entity_stances.entity_id');
-      if (!value.entity_ids.includes(entityID))
-        throw invalidResponse('entity stance must reference a thesis entity');
-      if (!ENTITY_STANCES.includes(item.stance as string))
-        throw invalidResponse('thesis.entity_stances contains invalid stance');
-      const stance: ThesisEntityStance = {
-        entity_id: entityID,
-        stance: item.stance as ThesisAssetStance,
-      };
-      if (item.direction !== undefined) {
-        if (!ENTITY_STANCES.includes(item.direction as string))
-          throw invalidResponse(
-            'thesis.entity_stances contains invalid direction'
+    const profile =
+      personName !== undefined
+        ? await this.uniquePerson(personName)
+        : await this.exactProfile(
+            person === undefined ? 'USER' : 'PERSON',
+            (person ?? user) as string
           );
-        stance.direction = item.direction as ThesisAssetStance;
-      }
-      return stance;
+    return this.client._v2Request(
+      'GET',
+      v2Path`/profiles/${profile.id}/theses`,
+      { query }
+    );
+  }
+
+  /**
+   * One page of the Theses related to the current Update. While they are
+   * being prepared the read fails with reason RELATED_THESES_GENERATING
+   * (503, not retried): ask again later.
+   */
+  async related(
+    id: string,
+    query: ThesisPageQuery = {}
+  ): Promise<Schema<'RelatedThesisList'>> {
+    return this.client._v2Request('GET', v2Path`/theses/${id}/related`, {
+      query,
     });
   }
-  return { thesis: value };
-}
 
-function thesisGetResponse(response: unknown): ThesisGetResponse {
-  const base = thesisResponse(response);
-  if (!isRecord(response) || !isRecord(response.author)) {
-    throw invalidResponse('response must contain author');
+  /** The assets a text mentions, and what publishing them would store. */
+  async assetCandidates(
+    input: Schema<'AssetSuggestionsInput'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'AssetSuggestions'>> {
+    return this.client._v2Request('POST', '/thesis-asset-suggestions', {
+      body: input,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
-  const authorRecord = response.author;
-  const author: ThesisAuthor = {
-    id: responseID(authorRecord.id, 'author.id'),
-    kind: responseText(authorRecord.kind, 'author.kind'),
-    display_name: responseText(
-      authorRecord.display_name,
-      'author.display_name'
-    ),
-    avatar_url: responseText(authorRecord.avatar_url, 'author.avatar_url'),
-    username: responseText(authorRecord.username, 'author.username'),
-  };
-  if (!Array.isArray(response.entities)) {
-    throw invalidResponse('response must contain entities');
-  }
-  if (response.entities.length !== base.thesis.entity_ids.length) {
-    throw invalidResponse('entities must match thesis.entity_ids');
-  }
-  const entities = response.entities.map((item, index) => {
-    if (!isRecord(item))
-      throw invalidResponse(`entities[${index}] must be an object`);
-    const entity: ThesisEntity = {
-      id: responseID(item.id, `entities[${index}].id`),
-      ticker: responseText(item.ticker, `entities[${index}].ticker`),
-      name: responseText(item.name, `entities[${index}].name`),
-      icon_url: responseText(item.icon_url, `entities[${index}].icon_url`),
-      kind: responseText(item.kind, `entities[${index}].kind`),
-    };
-    if (entity.id !== base.thesis.entity_ids[index]) {
-      throw invalidResponse('entities must preserve thesis.entity_ids order');
-    }
-    return entity;
-  });
-  return { thesis: base.thesis, author, entities };
-}
 
-function thesisSignalsResponse(
-  response: unknown,
-  thesisID: ThesisID,
-  first: number
-): ThesisSignalsResponse {
-  if (
-    !isRecord(response) ||
-    !isRecord(response.research) ||
-    !Array.isArray(response.entries) ||
-    response.entries.length > first
-  ) {
-    throw invalidResponse('invalid Signal history response');
+  /** The Thesis return; `detail` revalues it and lists each Update's positions. */
+  async thesisReturn(
+    id: string,
+    query: V2Query<'/theses/{thesisId}/return', 'get'> = {}
+  ): Promise<Schema<'ThesisReturnInfo'>> {
+    return this.client._v2Request('GET', v2Path`/theses/${id}/return`, {
+      query,
+    });
   }
-  const research = response.research;
-  const status: ThesisResearchStatus = {
-    state: responseText(research.state, 'research.state'),
-    pending_work: responseNonnegativeInteger(
-      research.pending_work,
-      'research.pending_work'
-    ),
-    read_complete: responseBoolean(
-      research.read_complete,
-      'research.read_complete'
-    ),
-  };
-  if (research.last_attempt_ms !== undefined)
-    status.last_attempt_ms = responseNonnegativeInteger(
-      research.last_attempt_ms,
-      'research.last_attempt_ms'
-    );
-  if (research.last_completed_ms !== undefined)
-    status.last_completed_ms = responseNonnegativeInteger(
-      research.last_completed_ms,
-      'research.last_completed_ms'
-    );
 
-  const entries = response.entries.map((raw): ThesisSignalEntry => {
-    if (
-      !isRecord(raw) ||
-      !isRecord(raw.signal) ||
-      !isRecord(raw.signal.source)
-    ) {
-      throw invalidResponse('entry must include a Signal and source');
-    }
-    const signal = raw.signal;
-    const source = signal.source as Record<string, unknown>;
-    const signalID = responseID(signal.thesis_id, 'signal.thesis_id');
-    if (signalID !== thesisID)
-      throw invalidResponse('Signal belongs to another Thesis');
-    const cursor = responseNonemptyText(raw.cursor, 'entry.cursor');
-    const mappedSource: ThesisSignalSource = {
-      title: responseText(source.title, 'source.title'),
-    };
-    if (source.url !== undefined)
-      mappedSource.url = responseText(source.url, 'source.url');
-    if (source.published_at_ms !== undefined)
-      mappedSource.published_at_ms = responseNonnegativeInteger(
-        source.published_at_ms,
-        'source.published_at_ms'
-      );
-    const mappedSignal: ThesisSignal = {
-      id: responseID(signal.id, 'signal.id'),
-      thesis_id: signalID,
-      author_version_id: responseID(
-        signal.author_version_id,
-        'signal.author_version_id'
-      ),
-      statement_snapshot: responseNonemptyText(
-        signal.statement_snapshot,
-        'signal.statement_snapshot'
-      ),
-      stance: responseText(signal.stance, 'signal.stance'),
-      explanation: responseText(signal.explanation, 'signal.explanation'),
-      information_kind: responseText(
-        signal.information_kind,
-        'signal.information_kind'
-      ),
-      source: mappedSource,
-    };
-    if (signal.evidence_excerpt !== undefined) {
-      if (!isRecord(signal.evidence_excerpt))
-        throw invalidResponse('invalid evidence excerpt');
-      mappedSignal.evidence_excerpt = {
-        text: responseNonemptyText(
-          signal.evidence_excerpt.text,
-          'evidence_excerpt.text'
-        ),
-        omitted_before: responseBoolean(
-          signal.evidence_excerpt.omitted_before,
-          'evidence_excerpt.omitted_before'
-        ),
-        omitted_after: responseBoolean(
-          signal.evidence_excerpt.omitted_after,
-          'evidence_excerpt.omitted_after'
-        ),
-      };
-    }
-    return {
-      feed_entry_id: responseID(raw.feed_entry_id, 'feed_entry_id'),
-      cursor,
-      signal: mappedSignal,
-    };
-  });
-  const nextCursor = responseText(response.next_cursor, 'next_cursor');
-  if (nextCursor && nextCursor !== entries[entries.length - 1]?.cursor) {
-    throw invalidResponse('next_cursor must match the final entry');
+  /**
+   * Every watchpoint of the current Update, in number order: what the Thesis
+   * depends on, or what would show it right or wrong.
+   */
+  async watchpoints(id: string): Promise<Schema<'ThesisWatchpoints'>> {
+    return this.client._v2Request('GET', v2Path`/theses/${id}/watchpoints`);
   }
-  return { research: status, entries, next_cursor: nextCursor };
-}
 
-function responseNonnegativeInteger(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw invalidResponse(field + ' must be a nonnegative safe integer');
+  async create(
+    body: Schema<'NewThesis'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('POST', '/theses', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
-  return value;
-}
 
-function responseNonemptyText(value: unknown, field: string): string {
-  const valueText = responseText(value, field);
-  if (!valueText.trim()) throw invalidResponse(field + ' must be nonempty');
-  return valueText;
-}
-
-function requireRequestID(value: string): string {
-  if (!UUID.test(value) || /^0{8}-0{4}-0{4}-0{4}-0{12}$/i.test(value)) {
-    throw invalidArgument('request_id must be a non-zero RFC 4122 UUID');
+  async get(id: string): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('GET', v2Path`/theses/${id}`);
   }
-  return value;
-}
 
-function requireID(value: unknown, field: string): ThesisID {
-  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) {
-    throw invalidArgument(`${field} must be a positive int64 decimal string`);
+  /** The Thesis whose page is https://alva.ai/thesis/<number>. */
+  async getByNumber(number: number): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('GET', v2Path`/theses/by-number/${number}`);
   }
-  const parsed = BigInt(value);
-  if (parsed > MAX_SIGNED_INT64) {
-    throw invalidArgument(`${field} must be a positive int64 decimal string`);
+
+  /** One Update (Thesis version) by its ID. */
+  async getVersion(versionId: string): Promise<Schema<'ThesisVersion'>> {
+    return this.client._v2Request('GET', v2Path`/thesis-versions/${versionId}`);
   }
-  return value;
-}
 
-// MAX_ENTITY_IDS matches Backend's thesis.MaxEntities: a Thesis version carries
-// at most 100 canonical entities, the same as the ticker limit.
-const MAX_ENTITY_IDS = 100;
-
-function requireIDs(value: unknown, field: string): ThesisID[] {
-  if (!Array.isArray(value)) throw invalidArgument(`${field} must be an array`);
-  if (value.length > MAX_ENTITY_IDS) {
-    throw invalidArgument(
-      `${field} must contain at most ${MAX_ENTITY_IDS} IDs`
+  /** One Update by the Thesis number and the Update's number. */
+  async getVersionByNumber(
+    number: number,
+    versionNumber: number
+  ): Promise<Schema<'ThesisVersion'>> {
+    return this.client._v2Request(
+      'GET',
+      v2Path`/theses/by-number/${number}/versions/${versionNumber}`
     );
   }
-  return value.map((item, index) => requireID(item, `${field}[${index}]`));
-}
 
-function requireTickers(value: unknown): string[] {
-  if (!Array.isArray(value)) throw invalidArgument('tickers must be an array');
-  if (value.length > 100) {
-    throw invalidArgument('tickers must contain at most 100 values');
+  /** One page of reader-visible Updates, editorial revisions folded together. */
+  async listUpdates(
+    id: string,
+    query: ThesisPageQuery = {}
+  ): Promise<Schema<'ThesisVersionList'>> {
+    return this.client._v2Request('GET', v2Path`/theses/${id}/updates`, {
+      query,
+    });
   }
-  return value.map((item, index) => {
-    const ticker = requireText(item, `tickers[${index}]`);
-    if (ticker.trim() === '' || ticker.includes('\0')) {
-      throw invalidArgument(`tickers[${index}] must be non-empty`);
-    }
-    return ticker;
-  });
-}
 
-function requireBody(value: string): string {
-  const body = requireText(value, 'body');
-  if (body.trim().length === 0) throw invalidArgument('body must not be blank');
-  if (encoder.encode(body).byteLength > 65_536) {
-    throw invalidArgument('body must be at most 65536 UTF-8 bytes');
+  /** One page of the Thesis's Signals; its research state is `Thesis.research`. */
+  async signals(
+    id: string,
+    query: ThesisPageQuery = {}
+  ): Promise<Schema<'SignalList'>> {
+    return this.client._v2Request('GET', v2Path`/theses/${id}/signals`, {
+      query,
+    });
   }
-  return body;
-}
 
-function requireTitle(value: string): string {
-  const title = requireText(value, 'title');
-  if (encoder.encode(title).byteLength > 500) {
-    throw invalidArgument('title must be at most 500 UTF-8 bytes');
+  /**
+   * One write of a Thesis from the Update `expectedVersionId` names: absent
+   * members carry over, and assets, categoryIds and media replace the lists.
+   * `visibility` is set before the Update is published; `archived: false`
+   * unarchives the Thesis with this content, `archived: true` archives it.
+   * A stale `expectedVersionId` is CONFLICT and writes nothing. An Update
+   * identical to the current one writes nothing and returns the Thesis
+   * unchanged.
+   */
+  async update(
+    id: string,
+    body: Schema<'ThesisUpdate'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('POST', v2Path`/theses/${id}/updates`, {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
-  return title;
-}
 
-function requireVisibility(value: string): ThesisVisibility {
-  const visibility = requireText(value, 'visibility');
-  if (
-    visibility !== 'public' &&
-    visibility !== 'private' &&
-    visibility !== 'paid'
-  ) {
-    throw invalidArgument('visibility must be public, private or paid');
+  /** Archives the current Update (`expectedVersionId`) and pauses research. */
+  async archive(
+    id: string,
+    input: Schema<'ArchiveInput'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('POST', v2Path`/theses/${id}/archive`, {
+      body: input,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
-  return visibility;
-}
 
-function requirePublicVisibility(value: string): 'public' | 'private' {
-  const visibility = requireText(value, 'visibility');
-  if (visibility !== 'public' && visibility !== 'private') {
-    throw invalidArgument('visibility must be public or private');
+  /** Publishes the current content as a new Update and resumes research. */
+  async unarchive(
+    id: string,
+    input: Schema<'ArchiveInput'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('POST', v2Path`/theses/${id}/unarchive`, {
+      body: input,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
-  return visibility;
-}
 
-function requireRewriteMode(value: unknown): ThesisRewriteMode {
-  const mode = requireText(value, 'mode');
-  if (mode === 'reformat' || mode === 'shorten' || mode === 'enrich') {
-    return mode;
+  /** Follows (stars) or unfollows a Thesis. */
+  async setStarred(
+    id: string,
+    starred: boolean
+  ): Promise<Schema<'ThesisFollow'>> {
+    return starred
+      ? this.client._v2Request('POST', '/me/followed-theses', {
+          body: { thesisId: id },
+        })
+      : this.client._v2Request('DELETE', v2Path`/me/followed-theses/${id}`);
   }
-  throw invalidArgument('mode must be reformat, shorten, or enrich');
-}
 
-function requireText(value: unknown, field: string): string {
-  if (typeof value !== 'string')
-    throw invalidArgument(`${field} must be a string`);
-  if (UNPAIRED_SURROGATE.test(value)) {
-    throw invalidArgument(`${field} contains invalid Unicode`);
-  }
-  if (
-    (field === 'body' || field === 'title' || field === 'note') &&
-    value.includes('\0')
-  ) {
-    throw invalidArgument(`${field} must not contain NUL`);
-  }
-  return value;
-}
-
-function responseID(value: unknown, field: string): ThesisID {
-  if (typeof value === 'number') {
-    throw invalidResponse(
-      `${field} must be a decimal string; numeric IDs are unsafe`
+  /** Resumes (true) or pauses (false) the Thesis's Signal research. */
+  async setSignalEnabled(
+    id: string,
+    enabled: boolean
+  ): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request(
+      'POST',
+      enabled
+        ? v2Path`/theses/${id}/research/resume`
+        : v2Path`/theses/${id}/research/pause`
     );
   }
-  try {
-    return requireID(value, field);
-  } catch {
-    throw invalidResponse(`${field} must be a positive int64 decimal string`);
-  }
-}
 
-function responseIDs(value: unknown, field: string): ThesisID[] {
-  if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
-  if (value.length > MAX_ENTITY_IDS) {
-    throw invalidResponse(
-      `${field} must contain at most ${MAX_ENTITY_IDS} IDs`
+  /**
+   * Changes who can read the Thesis. Leaving PAID ends paid renewals and
+   * fails with reason PAID_RENEWALS_END_CONFIRMATION_REQUIRED until
+   * `confirmEndPaidRenewals` is true.
+   */
+  async setVisibility(
+    id: string,
+    patch: Schema<'ThesisPatch'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'Thesis'>> {
+    return this.client._v2Request('PATCH', v2Path`/theses/${id}`, {
+      body: patch,
+      idempotencyKey: options.idempotencyKey,
+    });
+  }
+
+  /** Rewrites a Thesis text; nothing is saved. */
+  async rewrite(
+    input: Schema<'RewriteInput'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'Rewrite'>> {
+    return this.client._v2Request('POST', '/thesis-rewrites', {
+      body: input,
+      idempotencyKey: options.idempotencyKey,
+    });
+  }
+
+  /** The profile whose handle is exactly `handle`, among the search matches. */
+  private async exactProfile(
+    kind: Schema<'ProfileKind'>,
+    handle: string
+  ): Promise<Schema<'Profile'>> {
+    const page = await this.profileSearch(kind, handle);
+    const wanted = handle.toLowerCase();
+    const hit = page.items.find((p) => p.handle.toLowerCase() === wanted);
+    if (!hit) throw notFound();
+    return hit;
+  }
+
+  /** The one Person a name search matches; never a guess among several. */
+  private async uniquePerson(name: string): Promise<Schema<'Profile'>> {
+    const page = await this.profileSearch('PERSON', name);
+    const more = page.nextPageToken !== null;
+    if (page.items.length === 1 && !more) return page.items[0];
+    if (page.items.length === 0 && !more) throw notFound();
+    const candidates = page.items.map((p) => ({
+      id: p.id,
+      handle: p.handle,
+      displayName: p.displayName,
+    }));
+    throw new AlvaError(
+      'AMBIGUOUS_IDENTITY',
+      // Agent hosts forward only Error.message, so it names the candidates.
+      `Choose an exact identity before reading theses. Candidates: ${JSON.stringify(candidates)}${
+        more ? ' More matches exist; refine the name.' : ''
+      }`,
+      400,
+      { candidates, more }
     );
   }
-  return value.map((item, index) => responseID(item, `${field}[${index}]`));
-}
 
-function responseText(value: unknown, field: string): string {
-  try {
-    return requireText(value, field);
-  } catch {
-    throw invalidResponse(`${field} must be valid text`);
+  private async profileSearch(
+    kind: Schema<'ProfileKind'>,
+    query: string
+  ): Promise<Schema<'ProfileList'>> {
+    return this.client._v2Request('GET', '/profiles', {
+      query: { query, kind, pageSize: 50 },
+    });
   }
-}
-
-function responseClosingNote(value: unknown): string {
-  try {
-    return requireText(value, 'note');
-  } catch {
-    throw invalidResponse('thesis.closing_note must be valid text');
-  }
-}
-
-function responseBoolean(value: unknown, field: string): boolean {
-  if (typeof value !== 'boolean')
-    throw invalidResponse(`${field} must be boolean`);
-  return value;
-}
-
-function responseVisibility(value: unknown): ThesisVisibility {
-  try {
-    return requireVisibility(value as string);
-  } catch {
-    throw invalidResponse('thesis.visibility must be public, private or paid');
-  }
-}
-
-function responseBody(value: unknown): string {
-  try {
-    return requireBody(value as string);
-  } catch {
-    throw invalidResponse(
-      'response body must be nonblank valid text at most 65536 UTF-8 bytes'
-    );
-  }
-}
-
-function responseTitle(value: unknown): string {
-  try {
-    return requireTitle(value as string);
-  } catch {
-    throw invalidResponse(
-      'response title must be valid text at most 500 UTF-8 bytes'
-    );
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function completeEntityStances(
-  entityIDs: ThesisID[],
-  stances: ThesisEntityStance[] | undefined
-): stances is ThesisEntityStance[] {
-  if (entityIDs.length === 0) return !stances || stances.length === 0;
-  if (!stances || stances.length !== entityIDs.length) return false;
-  const expected = new Set(entityIDs);
-  const seen = new Set<string>();
-  return stances.every(
-    (stance) =>
-      expected.has(stance.entity_id) &&
-      !seen.has(stance.entity_id) &&
-      seen.add(stance.entity_id)
-  );
 }
 
 function invalidArgument(message: string): AlvaError {
   return new AlvaError('INVALID_ARGUMENT', message, 400);
 }
 
-function invalidResponse(message: string): AlvaError {
-  return new AlvaError('INVALID_RESPONSE', message, 502);
-}
-
-function validMedia(item: unknown): item is ThesisMedia {
-  return (
-    isRecord(item) &&
-    ['image', 'price_chart', 'audio', 'video'].includes(item.type as string) &&
-    validMediaURL(item.cover_url) &&
-    (item.url == null || validMediaURL(item.url))
+function notFound(): AlvaError {
+  return new AlvaError(
+    'NOT_FOUND',
+    'No visible matching identity or Thesis found',
+    404
   );
-}
-
-function validMediaURL(value: unknown): value is string {
-  if (
-    typeof value !== 'string' ||
-    value.length > 2048 ||
-    /[\s\u0000]/.test(value)
-  )
-    return false;
-  try {
-    const url = new URL(value);
-    return (
-      ['http:', 'https:'].includes(url.protocol) &&
-      !!url.hostname &&
-      !url.username &&
-      !url.password
-    );
-  } catch {
-    return false;
-  }
-}
-
-async function thesisGraphql(
-  client: AlvaClient,
-  query: string,
-  variables: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  const response = await client._request('POST', '/query', {
-    body: { query, variables },
-  });
-  if (!isRecord(response))
-    throw invalidResponse('GraphQL response must be an object');
-  if (response.errors !== undefined) {
-    if (!Array.isArray(response.errors))
-      throw invalidResponse('GraphQL errors must be an array');
-    if (response.errors.length > 0) {
-      const messages = response.errors.flatMap((error) =>
-        isRecord(error) && typeof error.message === 'string'
-          ? [error.message]
-          : []
-      );
-      const codes = new Set(
-        response.errors.map((error) =>
-          isRecord(error) && isRecord(error.extensions)
-            ? error.extensions.code
-            : undefined
-        )
-      );
-      const [code] = codes;
-      const canonicalCode =
-        codes.size === 1 &&
-        (code === 'NOT_FOUND' ||
-          code === 'PERMISSION_DENIED' ||
-          code === 'UNAUTHENTICATED')
-          ? code
-          : undefined;
-      const status =
-        canonicalCode === 'NOT_FOUND'
-          ? 404
-          : canonicalCode === 'PERMISSION_DENIED'
-            ? 403
-            : canonicalCode === 'UNAUTHENTICATED'
-              ? 401
-              : 400;
-      throw new AlvaError(
-        canonicalCode ?? 'GRAPHQL_ERROR',
-        messages.join('; ') || 'GraphQL request failed',
-        status,
-        { errors: response.errors }
-      );
-    }
-  }
-  if (!isRecord(response.data))
-    throw invalidResponse('GraphQL response must contain data');
-  return response.data;
 }

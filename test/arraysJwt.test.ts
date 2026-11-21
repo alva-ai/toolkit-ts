@@ -1,78 +1,57 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { AlvaClient } from '../src/client.js';
 import { AlvaError } from '../src/error.js';
 import { ArraysJwtResource } from '../src/resources/arraysJwt.js';
+import { fakeV2 } from './fakeV2.js';
+import { dataSkillsToken, dataSkillsTokenRefresh } from './runtimeV2.js';
+
+let restore = () => {};
+afterEach(() => restore());
+
+function resource(config = { apiKey: 'alva_test' }) {
+  return new ArraysJwtResource(new AlvaClient(config));
+}
 
 describe('ArraysJwtResource.ensure', () => {
-  it('posts to correct path and returns passthrough', async () => {
-    const client = new AlvaClient({ apiKey: 'alva_test' });
-    const mockResponse = {
-      expires_at: 123,
-      tier: 'SUBSCRIPTION_TIER_PRO' as const,
-      renewed: true,
-    };
-    const requestSpy = vi.fn().mockResolvedValue(mockResponse);
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
+  it('refreshes the data-skills token and returns the refresh unchanged', async () => {
+    const fake = fakeV2({
+      'POST /me/data-skills-token/refresh': () => dataSkillsTokenRefresh(),
+    });
+    restore = fake.restore;
 
-    const result = await resource.ensure();
-
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    const callArgs = requestSpy.mock.calls[0];
-    expect(callArgs[0]).toBe('POST');
-    expect(callArgs[1]).toBe('/api/v1/arrays-jwt/ensure');
-    expect(result).toEqual(mockResponse);
+    await expect(resource().ensure()).resolves.toEqual(
+      dataSkillsTokenRefresh()
+    );
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0].body).toBeUndefined();
   });
 
-  it('requires auth — throws UNAUTHENTICATED before hitting _request', async () => {
+  it('requires auth — throws UNAUTHENTICATED before any request', async () => {
     const client = new AlvaClient({});
-    const requestSpy = vi.fn();
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
+    const requestSpy = vi.spyOn(client, '_v2Request');
+    const r = new ArraysJwtResource(client);
 
-    await expect(resource.ensure()).rejects.toMatchObject({
+    await expect(r.ensure()).rejects.toMatchObject({
       name: 'AlvaError',
       code: 'UNAUTHENTICATED',
     });
-    // Ensure the thrown error is an AlvaError instance.
-    await expect(resource.ensure()).rejects.toBeInstanceOf(AlvaError);
+    await expect(r.ensure()).rejects.toBeInstanceOf(AlvaError);
     expect(requestSpy).not.toHaveBeenCalled();
   });
 });
 
 describe('ArraysJwtResource.status', () => {
-  it('gets to correct path and returns passthrough', async () => {
-    const client = new AlvaClient({ apiKey: 'alva_test' });
-    const mockResponse = {
-      exists: true,
-      expires_at: 456,
-      tier: 'SUBSCRIPTION_TIER_FREE' as const,
-      renewal_needed: false,
-    };
-    const requestSpy = vi.fn().mockResolvedValue(mockResponse);
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
+  it.each([
+    dataSkillsToken(),
+    dataSkillsToken({
+      exists: false,
+      expiresAt: null,
+      tier: null,
+      renewalNeeded: true,
+    }),
+  ])('returns the token state unchanged: %j', async (token) => {
+    restore = fakeV2({ 'GET /me/data-skills-token': () => token }).restore;
 
-    const result = await resource.status();
-
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    const callArgs = requestSpy.mock.calls[0];
-    expect(callArgs[0]).toBe('GET');
-    expect(callArgs[1]).toBe('/api/v1/arrays-jwt/status');
-    expect(result).toEqual(mockResponse);
-  });
-
-  it('requires auth — throws UNAUTHENTICATED before hitting _request', async () => {
-    const client = new AlvaClient({});
-    const requestSpy = vi.fn();
-    client._request = requestSpy;
-    const resource = new ArraysJwtResource(client);
-
-    await expect(resource.status()).rejects.toMatchObject({
-      name: 'AlvaError',
-      code: 'UNAUTHENTICATED',
-    });
-    await expect(resource.status()).rejects.toBeInstanceOf(AlvaError);
-    expect(requestSpy).not.toHaveBeenCalled();
+    await expect(resource().status()).resolves.toEqual(token);
   });
 });

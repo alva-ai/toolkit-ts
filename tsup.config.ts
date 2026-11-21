@@ -1,3 +1,4 @@
+import { copyFile } from 'node:fs/promises';
 import { defineConfig } from 'tsup';
 import pkg from './package.json';
 
@@ -14,6 +15,11 @@ export default defineConfig([
     target: 'node18',
     define,
     external: ['css-tree', 'yaml'],
+    // 1.x has no browser entry: dist/browser.global.js stays the published
+    // 0.36.0 bundle, so unversioned unpkg URLs in Playbook pages keep working.
+    async onSuccess() {
+      await copyFile('legacy/browser-0.36.global.js', 'dist/browser.global.js');
+    },
   },
   {
     entry: { cli: 'src/cli/index.ts' },
@@ -36,16 +42,5 @@ export default defineConfig([
     platform: 'browser',
     define,
     external: ['css-tree', 'yaml'],
-  },
-  {
-    entry: { browser: 'src/browser.ts' },
-    format: ['iife'],
-    globalName: 'AlvaToolkit',
-    platform: 'browser',
-    minify: true,
-    keepNames: true,
-    sourcemap: true,
-    dts: false,
-    define,
   },
 ]);

@@ -2,7 +2,6 @@ import { lint, loadContract, formatReport } from '../lint/index.js';
 import { loadActiveDesignSystem } from '../lint/fetchContract.js';
 import type { AlvaClient } from '../client.js';
 import type { Report } from '../lint/types.js';
-import { isArrayBuffer } from '../arrayBuffer.js';
 
 export interface LintPlaybookOptions {
   file: string;
@@ -20,23 +19,14 @@ export interface LintResult {
   output: string;
 }
 
-function textContent(result: ArrayBuffer | unknown, path: string): string {
-  if (typeof result === 'string') return result;
-  if (isArrayBuffer(result)) {
-    return new TextDecoder('utf-8').decode(result);
-  }
-  throw new Error(
-    `Cannot lint ${path}: expected text content, got ${typeof result}.`
-  );
+/** The UTF-8 text of an ALFS file. */
+async function readText(client: AlvaClient, path: string): Promise<string> {
+  const file = await client.fs.read({ path });
+  return new TextDecoder('utf-8').decode(file.data);
 }
 
 async function readPlaybookHtml(opts: LintPlaybookOptions): Promise<string> {
-  if (opts.client) {
-    return textContent(
-      await opts.client.fs.read({ path: opts.file }),
-      opts.file
-    );
-  }
+  if (opts.client) return readText(opts.client, opts.file);
   if (!opts.readFile) {
     throw new Error('Local lint input requires a Node.js runtime adapter.');
   }
@@ -81,13 +71,10 @@ export async function lintBeforeRelease(
   if (opts.html !== undefined) {
     html = opts.html;
   } else {
-    // `fs.read` is typed `ArrayBuffer | unknown`: the resource layer decodes
-    // UTF-8 and returns a string for text bodies (and parsed JSON if the
-    // body happens to be valid JSON, which an HTML playbook never is).
-    const result = await opts.client.fs.read({
-      path: `~/playbooks/${opts.playbookName}/index.html`,
-    });
-    html = textContent(result, `~/playbooks/${opts.playbookName}/index.html`);
+    html = await readText(
+      opts.client,
+      `~/playbooks/${opts.playbookName}/index.html`
+    );
   }
 
   const contract = opts.contractYaml

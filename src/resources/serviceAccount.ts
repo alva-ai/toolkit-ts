@@ -1,15 +1,14 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  ServiceAccount,
-  ServiceAccountCreateRequest,
-  ServiceAccountCreateResponse,
-  ServiceAccountListResponse,
-  ServiceAccountGrantRequest,
-} from '../types.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
+
+export interface ServiceAccountWriteOptions {
+  /** Idempotency-Key of the write; a new UUID when omitted. */
+  idempotencyKey?: string;
+}
 
 /**
  * Service-account lifecycle: create a restricted run-as identity, list/delete
- * the ones you own, and grant/revoke its ALFS paths. Set the resulting id as
+ * the ones you own, and grant/revoke its ALFS paths. Pass its Account ID as
  * `--run-as-service-account` on a UDF or cronjob to run it under that scoped
  * identity (billing/audit stay with you). See the service-accounts skill
  * reference. Owner-gated by the backend — an SA cannot manage SAs.
@@ -18,53 +17,58 @@ export class ServiceAccountResource {
   constructor(private client: AlvaClient) {}
 
   async create(
-    params: ServiceAccountCreateRequest
-  ): Promise<ServiceAccountCreateResponse> {
+    body: Schema<'CreateServiceAccountRequest'>,
+    options: ServiceAccountWriteOptions = {}
+  ): Promise<Schema<'ServiceAccount'>> {
     this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/service-account', {
-      body: { display_name: params.display_name },
-    }) as Promise<ServiceAccountCreateResponse>;
+    return this.client._v2Request('POST', '/me/service-accounts', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
-  async list(): Promise<ServiceAccountListResponse> {
+  /** One page of the caller's service accounts. */
+  async list(
+    query: V2Query<'/me/service-accounts', 'get'> = {}
+  ): Promise<Schema<'ServiceAccountList'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      '/api/v1/service-accounts'
-    ) as Promise<ServiceAccountListResponse>;
+    return this.client._v2Request('GET', '/me/service-accounts', { query });
   }
 
-  async delete(params: { id: string }): Promise<void> {
+  async delete(serviceAccountId: string): Promise<Schema<'Deleted'>> {
     this.client._requireAuth();
-    await this.client._request(
+    return this.client._v2Request(
       'DELETE',
-      `/api/v1/service-account/${params.id}`
+      v2Path`/me/service-accounts/${serviceAccountId}`
     );
   }
 
-  async grant(params: ServiceAccountGrantRequest): Promise<void> {
+  /**
+   * Grants a permission on a path. Granting the same pair again returns the
+   * same grant; its `id` is what `revoke` takes.
+   */
+  async grant(
+    serviceAccountId: string,
+    body: Schema<'CreateServiceAccountGrantRequest'>,
+    options: ServiceAccountWriteOptions = {}
+  ): Promise<Schema<'ServiceAccountGrant'>> {
     this.client._requireAuth();
-    await this.client._request(
+    return this.client._v2Request(
       'POST',
-      `/api/v1/service-account/${params.id}/grant`,
-      { body: { path: params.path, permission: params.permission } }
+      v2Path`/me/service-accounts/${serviceAccountId}/grants`,
+      { body, idempotencyKey: options.idempotencyKey }
     );
   }
 
-  async revoke(params: ServiceAccountGrantRequest): Promise<void> {
+  /** Revokes one grant by the ID `grant` returned. */
+  async revoke(
+    serviceAccountId: string,
+    grantId: string
+  ): Promise<Schema<'Deleted'>> {
     this.client._requireAuth();
-    await this.client._request(
-      'POST',
-      `/api/v1/service-account/${params.id}/revoke`,
-      { body: { path: params.path, permission: params.permission } }
+    return this.client._v2Request(
+      'DELETE',
+      v2Path`/me/service-accounts/${serviceAccountId}/grants/${grantId}`
     );
   }
 }
-
-export type {
-  ServiceAccount,
-  ServiceAccountCreateRequest,
-  ServiceAccountCreateResponse,
-  ServiceAccountListResponse,
-  ServiceAccountGrantRequest,
-};

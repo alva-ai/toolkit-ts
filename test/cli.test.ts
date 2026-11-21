@@ -10,7 +10,65 @@ import {
 } from '../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../src/cli/embeddedDispatch.js';
 import { AlvaClient } from '../src/client.js';
+import { encodeBase64 } from '../src/base64.js';
 import { CliUsageError } from '../src/error.js';
+import { allowance } from './billingV2.js';
+import { FUNCTION, functionInvocation, playbookFunction } from './runtimeV2.js';
+import { aPlaybook } from './contentV2.js';
+import { v2 } from './v2Schema.js';
+
+const AUTOMATION = v2('Automation', {
+  id: 'automation_0a',
+  name: 'btc-ema',
+  description: null,
+  status: 'PAUSED',
+  schedule: { cron: '0 * * * *', timezone: 'UTC' },
+  stats: {
+    totalRuns: 3,
+    succeededRuns: 3,
+    failedRuns: 0,
+    lastRunAt: null,
+    lastRunStatus: null,
+  },
+  sendsAlerts: true,
+  agentType: null,
+  cronjobId: 'cronjob_0a',
+  flow: null,
+  flowConfigPath: null,
+});
+const AUTOMATION_VERSION = v2('AutomationVersion', {
+  automationId: 'automation_0a',
+  cronjobId: 'cronjob_0a',
+  major: 1,
+  name: 'btc-ema',
+  version: '1.0.0',
+});
+const COMMENT = v2('Comment', {
+  id: 'comment_0a',
+  playbookId: 'playbook_0abc',
+  parentId: null,
+  body: 'Great',
+  author: null,
+  agentName: null,
+  pinnedAt: null,
+  createdAt: null,
+  updatedAt: null,
+});
+import {
+  aDelivery,
+  aFeedback,
+  aMe,
+  aScreenshot,
+  aSecret,
+} from './accountV2.js';
+import {
+  aCronjob,
+  aDelivery as anAutomationDelivery,
+  anAutomation,
+  aSchedule,
+} from './automationV2.js';
+import { fakeV2 } from './fakeV2.js';
+import { aPlaybookFollow, aSubscription } from './socialV2.js';
 
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -51,6 +109,20 @@ afterEach(() => {
   }
 });
 
+/** An fs.read answer of `content`: text, or bytes. */
+function fileContent(content: string | Uint8Array) {
+  const bytes =
+    typeof content === 'string' ? new TextEncoder().encode(content) : content;
+  return {
+    data: bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    ),
+    contentType: 'application/octet-stream',
+    contentRange: null,
+  };
+}
+
 function makeClient(
   originSessionId?: string,
   originSessionKind?: string
@@ -61,200 +133,157 @@ function makeClient(
     originSessionKind,
   });
   // Mock all resource methods
-  client.user.me = vi.fn().mockResolvedValue({
-    id: '9007199254740993',
-    username: 'alice',
-    subscription_tier: 'free',
-    telegram_username: 'alice_tg',
-    discord_username: 'alice_discord',
-    slack_username: 'Alice',
-    whatsapp_username: '+15555550123',
-    imessage_username: 'alice@example.com',
-    active_channel: 'slack',
-    toolkit_min_version: '0.1.0',
-    home_path: '/alva/home/alice',
-  });
-  client.fs.read = vi.fn().mockResolvedValue({ data: 'hello' });
-  client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', size: 0 });
+  client.user.me = vi
+    .fn()
+    .mockResolvedValue(aMe({ toolkitMinVersion: '0.1.0' }));
+  client.fs.read = vi.fn().mockResolvedValue(fileContent('hello'));
+  client.fs.stat = vi.fn().mockResolvedValue({ name: 'f', sizeBytes: 0 });
   client.fs.readdir = vi.fn().mockResolvedValue({ entries: [] });
-  client.fs.write = vi.fn().mockResolvedValue({ bytes_written: 2 });
-  client.fs.rawWrite = vi.fn().mockResolvedValue({ bytes_written: 2 });
-  client.fs.mkdir = vi.fn().mockResolvedValue(undefined);
-  client.fs.remove = vi.fn().mockResolvedValue(undefined);
-  client.fs.rename = vi.fn().mockResolvedValue(undefined);
-  client.fs.copy = vi.fn().mockResolvedValue(undefined);
-  client.fs.symlink = vi.fn().mockResolvedValue(undefined);
-  client.fs.readlink = vi.fn().mockResolvedValue({ target: '/t' });
-  client.fs.chmod = vi.fn().mockResolvedValue(undefined);
-  client.fs.grant = vi.fn().mockResolvedValue(undefined);
-  client.fs.revoke = vi.fn().mockResolvedValue(undefined);
-  client.deploy.list = vi.fn().mockResolvedValue({ cronjobs: [] });
-  client.deploy.create = vi.fn().mockResolvedValue({ id: 1 });
-  client.deploy._createSerializedArgs = vi.fn().mockResolvedValue({ id: 1 });
-  client.deploy.get = vi.fn().mockResolvedValue({ id: 1 });
-  client.deploy.update = vi.fn().mockResolvedValue({ id: 1 });
-  client.deploy._updateSerializedArgs = vi.fn().mockResolvedValue({ id: 1 });
-  client.deploy.delete = vi.fn().mockResolvedValue(undefined);
-  client.deploy.pause = vi.fn().mockResolvedValue(undefined);
-  client.deploy.resume = vi.fn().mockResolvedValue(undefined);
+  client.fs.write = vi.fn().mockResolvedValue({ bytesWritten: 2 });
+  client.fs.mkdir = vi.fn().mockResolvedValue({});
+  client.fs.remove = vi.fn().mockResolvedValue({});
+  client.fs.rename = vi.fn().mockResolvedValue({});
+  client.fs.copy = vi.fn().mockResolvedValue({});
+  client.fs.symlink = vi.fn().mockResolvedValue({});
+  client.fs.readlink = vi.fn().mockResolvedValue({ targetPath: '/t' });
+  client.fs.chmod = vi.fn().mockResolvedValue({});
+  client.fs.grant = vi.fn().mockResolvedValue({});
+  client.fs.revoke = vi.fn().mockResolvedValue({});
+  client.deploy.list = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.deploy.create = vi
+    .fn()
+    .mockResolvedValue(aCronjob({ id: 'cronjob_0p1' }));
+  client.deploy.get = vi.fn().mockResolvedValue(aCronjob());
+  client.deploy.update = vi.fn().mockResolvedValue(aCronjob());
+  client.deploy.delete = vi.fn().mockResolvedValue({});
+  client.deploy.pause = vi
+    .fn()
+    .mockResolvedValue(aCronjob({ status: 'PAUSED' }));
+  client.deploy.resume = vi.fn().mockResolvedValue(aCronjob());
   client.deploy.trigger = vi
     .fn()
-    .mockResolvedValue({ workflow_run_id: 'wf-test' });
-  client.deploy.listRuns = vi.fn().mockResolvedValue({ runs: [] });
-  client.deploy.getRunStatus = vi
+    .mockResolvedValue({ dispatchId: 'cronjob_dispatch_0d' });
+  client.deploy.listRuns = vi
     .fn()
-    .mockResolvedValue({ workflow_run_id: 'wf-test', state: 'PENDING' });
-  client.deploy.getRunLogs = vi.fn().mockResolvedValue({ logs: '' });
-  client.secrets.create = vi.fn().mockResolvedValue(undefined);
-  client.secrets.list = vi.fn().mockResolvedValue({ secrets: [] });
-  client.secrets.get = vi.fn().mockResolvedValue({ name: 'K', value: 'V' });
-  client.secrets.update = vi.fn().mockResolvedValue(undefined);
-  client.secrets.delete = vi.fn().mockResolvedValue(undefined);
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.deploy.runStats = vi.fn().mockResolvedValue({
+    totalRuns: 0,
+    succeededRuns: 0,
+    failedRuns: 0,
+    skippedRuns: 0,
+    lastRunAt: null,
+    lastSucceededAt: null,
+  });
+  client.deploy.getDispatch = vi.fn().mockResolvedValue({
+    id: 'cronjob_dispatch_0d',
+    cronjobId: 'cronjob_0c',
+    state: 'PENDING',
+    run: null,
+  });
+  client.deploy.getRunLogs = vi
+    .fn()
+    .mockResolvedValue({ logs: '', error: null });
+  client.secrets.create = vi.fn().mockResolvedValue(aSecret());
+  client.secrets.list = vi
+    .fn()
+    .mockResolvedValue({ items: [aSecret()], nextPageToken: null });
+  client.v1.secrets.get = vi.fn().mockResolvedValue({ name: 'K', value: 'V' });
+  client.secrets.update = vi.fn().mockResolvedValue(aSecret());
+  client.secrets.delete = vi.fn().mockResolvedValue({});
   client.run.execute = vi
     .fn()
-    .mockResolvedValue({ result: '2', status: 'completed' });
+    .mockResolvedValue({ returnValue: '2', status: 'SUCCEEDED' });
   client.run._executeSerializedArgs = vi
     .fn()
-    .mockResolvedValue({ result: '2', status: 'completed' });
-  client.release.feed = vi.fn().mockResolvedValue({ feed_id: 1 });
-  client.feed.list = vi.fn().mockResolvedValue({ feeds: [], has_more: false });
-  client.feed.stop = vi.fn().mockResolvedValue({ id: '42', status: 'PAUSED' });
-  client.feed.resume = vi
-    .fn()
-    .mockResolvedValue({ id: '42', status: 'ACTIVE' });
-  client.feed.delete = vi.fn().mockResolvedValue({ id: '42' });
+    .mockResolvedValue({ returnValue: '2', status: 'SUCCEEDED' });
+  client.release.feed = vi.fn().mockResolvedValue(AUTOMATION_VERSION);
+  client.feed.list = vi.fn().mockResolvedValue({
+    items: [],
+    nextPageToken: null,
+  });
+  client.feed.stop = vi.fn().mockResolvedValue(AUTOMATION);
+  client.feed.resume = vi.fn().mockResolvedValue(AUTOMATION);
+  client.feed.delete = vi.fn().mockResolvedValue({});
   client.feed.setVisibility = vi
     .fn()
-    .mockResolvedValue({ id: '42', visibility: 'public' });
+    .mockResolvedValue({ id: 'automation_0a', visibility: 'PUBLIC' });
   client.automation.list = vi.fn().mockResolvedValue({
-    feeds: [
+    items: [
       {
-        id: '42',
+        id: 'automation_0a',
         name: 'btc-ema',
         status: 'ACTIVE',
-        cron_expression: '0 * * * *',
-        total_runs: 3,
-        used_by_total: 1,
+        schedule: { cron: '0 * * * *', timezone: 'UTC' },
+        flow: null,
+        lastRunAt: null,
+        totalRuns: 3,
+        usedByCount: 1,
       },
     ],
-    next_cursor: 'next',
-    has_more: true,
+    nextPageToken: 'next',
   });
-  client.automation.inspect = vi.fn().mockResolvedValue({
-    id: '42',
-    feed_id: '42',
-    cronjob_id: 420,
-    name: 'portfolio-watch',
-    status: 'ACTIVE',
-    cron_expression: '0 9 * * *',
-    total_runs: 5,
-    flow_id: 'portfolio_watch',
-    flow_config_path:
-      '/alva/home/alice/memory/profile/portfolio_watch/portfolio-watch.yaml',
-  });
-  client.automation.publish = vi.fn().mockResolvedValue({ feed_id: 1 });
+  client.automation.inspect = vi.fn().mockResolvedValue(anAutomation());
+  client.automation.publish = vi.fn().mockResolvedValue(AUTOMATION_VERSION);
   client.automation.update = vi.fn().mockResolvedValue({
-    id: '42',
-    feed_id: '42',
+    automationId: 'automation_0abc',
     name: 'btc',
-    feed_major: 1,
+    major: 1,
     version: '1.0.1',
-    cronjob_id: 5,
+    cronjobId: 'cronjob_0p420',
   });
-  client.automation.delivery.get = vi.fn().mockResolvedValue({
-    isEnabled: true,
-    alvaChannels: [{ id: '17' }],
-    email: { isEnabled: true, isAvailable: true, address: 'a@example.com' },
-  });
-  client.automation.delivery.update = vi.fn().mockResolvedValue({
-    automation: { id: '42' },
-    alertDelivery: {
-      isEnabled: true,
-      email: { isEnabled: true, isAvailable: true, address: 'a@example.com' },
-    },
-  });
-  client.automation.stop = vi
+  client.automation.delivery.get = vi
     .fn()
-    .mockResolvedValue({ id: '42', status: 'PAUSED' });
+    .mockResolvedValue(anAutomationDelivery());
+  client.automation.delivery.update = vi.fn().mockResolvedValue(anAutomation());
+  client.automation.stop = vi.fn().mockResolvedValue(AUTOMATION);
   client.automation.resume = vi
     .fn()
-    .mockResolvedValue({ id: '42', status: 'ACTIVE' });
-  client.automation.delete = vi.fn().mockResolvedValue({ id: '42' });
-  const schedule = {
-    name: 'heartbeat',
-    rule: { kind: 'every' as const, interval: 'PT3600S' },
-    bounds: {},
-    text: 'check',
-    status: 'active' as const,
-    occurrencesUsed: 0,
-    nextFireAt: '2026-08-11T05:00:00.000Z',
-    createdAt: '2026-08-11T04:00:00.000Z',
-    updatedAt: '2026-08-11T04:00:00.000Z',
-  };
-  client.schedules.agentChannelId = vi.fn().mockResolvedValue('91');
-  client.schedules.list = vi.fn().mockResolvedValue([schedule]);
-  client.schedules.put = vi.fn().mockResolvedValue(schedule);
+    .mockResolvedValue({ ...AUTOMATION, status: 'ACTIVE' });
+  client.automation.delete = vi.fn().mockResolvedValue({});
+  client.schedules.agentChannelId = vi.fn().mockResolvedValue('channel_0ch');
+  client.schedules.list = vi
+    .fn()
+    .mockResolvedValue({ items: [aSchedule()], nextPageToken: null });
+  client.schedules.put = vi.fn().mockResolvedValue(aSchedule());
   client.schedules.pause = vi
     .fn()
-    .mockResolvedValue({ ...schedule, status: 'paused' });
-  client.schedules.resume = vi.fn().mockResolvedValue(schedule);
-  client.schedules.delete = vi.fn().mockResolvedValue(undefined);
+    .mockResolvedValue(aSchedule({ status: 'PAUSED' }));
+  client.schedules.resume = vi.fn().mockResolvedValue(aSchedule());
+  client.schedules.delete = vi.fn().mockResolvedValue({});
   client.credits.wallet = vi.fn().mockResolvedValue({
-    balance: 100,
-    totalRemaining: 100,
-    todayUsed: 3,
+    balance: '100',
+    todayUsed: '3',
+    balances: [],
   });
-  client.credits.items = vi.fn().mockResolvedValue({
-    balance: 100,
-    totalRemaining: 100,
-    todayUsed: 3,
-    items: {
-      pageInfo: {
-        hasNextPage: false,
-        hasPreviousPage: false,
-        startCursor: null,
-        endCursor: null,
-      },
-      edges: [],
-    },
-  });
-  client.markets.narrative = vi.fn().mockResolvedValue({
-    ticker: 'AAPL',
-    current: null,
-    history: null,
-  });
-  client.markets.earnings = vi.fn().mockResolvedValue({
-    ticker: 'AAPL',
-    period: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
-  });
+  client.credits.entries = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbooks.trending = vi
     .fn()
-    .mockResolvedValue({ playbooks: [], has_next: false });
-  client.playbooks.getByIds = vi.fn().mockResolvedValue({ items: [] });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.playbooks.getByIds = vi.fn().mockResolvedValue([]);
   client.playbooks.get = vi.fn().mockResolvedValue(null);
+  client.playbooks.getBySlug = vi.fn().mockResolvedValue(aPlaybook());
+  client.playbooks.update = vi.fn().mockResolvedValue(aPlaybook());
   client.playbooks.listByOwner = vi
     .fn()
-    .mockResolvedValue({ items: [], has_next: false });
+    .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbooks.listOwn = vi
     .fn()
-    .mockResolvedValue({ playbooks: [], has_next: false });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.user._username = vi.fn().mockResolvedValue('alice');
   client.subscriptions.follows = vi
     .fn()
-    .mockResolvedValue({ items: [], has_next: false });
-  client.subscriptions.followPlaybook = vi.fn().mockResolvedValue({
-    follow: {
-      id: '1',
-      user_id: '2',
-      playbook_id: '3',
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-    playbook_path: '/alva/home/alice/playbooks/btc-dashboard',
-  });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.subscriptions.followPlaybook = vi
+    .fn()
+    .mockResolvedValue(aPlaybookFollow());
   client.subscriptions.unfollowPlaybook = vi
     .fn()
-    .mockResolvedValue({ ok: true, unfollowed: true });
-  client.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({
+    .mockResolvedValue(aPlaybookFollow({ following: false }));
+  client.v1.subscriptions.subscribeFeed = vi.fn().mockResolvedValue({
     subscription: {
       target: { type: 'FEED', id: '42' },
       created_at_ms: 1700000000000,
@@ -262,79 +291,56 @@ function makeClient(
     },
     feed_path: '/alva/home/alice/feeds/btc-ema',
   });
-  client.subscriptions.unsubscribeFeed = vi
+  client.v1.subscriptions.unsubscribeFeed = vi
     .fn()
     .mockResolvedValue({ ok: true });
   client.subscriptions.subscribeBatch = vi
     .fn()
-    .mockResolvedValue({ subscriptions: [] });
-  client.subscriptions.list = vi.fn().mockResolvedValue({
-    items: [
-      {
-        target: { type: 'FEED', id: '42' },
-        created_at_ms: 1700000000000,
-        updated_at_ms: 1700000000000,
-        feed_name: 'btc-ema',
-        feed_status: 'ACTIVE',
-        kind: 'FEED_ALERT',
-        target_status: 'ACTIVE',
-        channel_id: '7',
-        used_by_total: 1,
-        last_pushed_at_ms: 1700000000000,
-      },
-    ],
-    next_cursor: 'next',
-    total_count: 2,
-  });
-  client.subscriptions.unsubscribeBatch = vi
+    .mockResolvedValue({ subscriptions: [aSubscription()] });
+  client.subscriptions.list = vi
     .fn()
-    .mockResolvedValue({ results: [], ok_count: 0 });
+    .mockResolvedValue({ items: [aSubscription()], nextPageToken: 'next' });
+  client.subscriptions.unsubscribeBatch = vi.fn().mockResolvedValue([]);
   client.alerts.list = vi.fn().mockResolvedValue({
-    items: [
-      {
-        target: { type: 'FEED', id: '42' },
-        created_at_ms: 1700000000000,
-        updated_at_ms: 1700000000000,
-        feed_name: 'btc-ema',
-        feed_status: 'ACTIVE',
-        kind: 'FEED_ALERT',
-        target_status: 'ACTIVE',
-        channel_id: '7',
-        used_by_total: 1,
-        last_pushed_at_ms: 1700000000000,
-      },
-    ],
-    next_cursor: 'next',
-    total_count: 2,
+    items: [aSubscription({ channelId: 'channel_0ch' })],
+    nextPageToken: 'next',
   });
   client.alerts.follows = vi
     .fn()
-    .mockResolvedValue({ items: [], has_next: false });
-  client.alerts.enableAutomation = vi.fn().mockResolvedValue({
-    subscription: {
-      target: { type: 'FEED', id: '42' },
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-    feed_path: '/alva/home/alice/feeds/btc-ema',
-  });
-  client.alerts.disableAutomation = vi.fn().mockResolvedValue({ ok: true });
-  client.alerts.enableBatch = vi.fn().mockResolvedValue({ subscriptions: [] });
-  client.alerts.disableBatch = vi
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.alerts.enableBatch = vi
     .fn()
-    .mockResolvedValue({ results: [], ok_count: 0 });
-  client.alerts.historyAutomation = vi
+    .mockResolvedValue({ subscriptions: [aSubscription()] });
+  client.alerts.disableBatch = vi.fn().mockResolvedValue([]);
+  client.alerts.history = vi
     .fn()
-    .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
-  client.alerts.preferences = vi.fn().mockResolvedValue({ settings: [] });
-  client.alerts.updatePreference = vi.fn().mockResolvedValue({
-    setting: { key: 'session_completed', enabled: false },
+    .mockResolvedValue({ items: [aDelivery()], nextPageToken: null });
+  client.alerts.preferences = vi
+    .fn()
+    .mockResolvedValue({ sessionCompleted: null });
+  client.alerts.updatePreferences = vi
+    .fn()
+    .mockResolvedValue({ sessionCompleted: false });
+  client.release.playbookDraft = vi.fn().mockResolvedValue({
+    id: 'draft_0a',
+    playbook: aPlaybook(),
+    url: null,
   });
-  client.release.playbookDraft = vi.fn().mockResolvedValue({ playbook_id: 1 });
-  client.release.playbook = vi.fn().mockResolvedValue({ playbook_id: 1 });
+  client.release.playbook = vi.fn().mockResolvedValue({
+    id: 'release_0a',
+    playbook: aPlaybook(),
+    url: null,
+    version: 'v1.0.0',
+  });
   client.sdk.doc = vi.fn().mockResolvedValue({ name: 'x', doc: '' });
-  client.sdk.partitions = vi.fn().mockResolvedValue({ partitions: [] });
-  client.sdk.partitionSummary = vi.fn().mockResolvedValue({ summary: '' });
+  client.sdk.partitions = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.sdk.partitionSummary = vi.fn().mockResolvedValue({
+    id: 'sdk_partition_0a',
+    name: 'feed_widgets',
+    summary: '',
+  });
   client.dataSkills.list = vi.fn().mockResolvedValue({ skills: [] });
   client.dataSkills.summary = vi
     .fn()
@@ -342,100 +348,79 @@ function makeClient(
   client.dataSkills.endpoint = vi
     .fn()
     .mockResolvedValue({ name: 'x', description: '', content: '' });
-  client.playbookSkills.list = vi.fn().mockResolvedValue({ skills: [] });
-  client.playbookSkills.tags = vi.fn().mockResolvedValue({ tags: [] });
+  client.playbookSkills.list = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.playbookSkills.tags = vi
+    .fn()
+    .mockResolvedValue({ items: [], nextPageToken: null });
   client.playbookSkills.get = vi.fn().mockResolvedValue({
-    username: 'alva',
+    id: 'skill_0a',
     name: 'ai-digest',
-    display_name: 'AI Digest',
+    displayName: 'AI Digest',
     description: '',
     tags: [],
-    creator_uid: 1,
-    updated_at: '',
+    owner: { id: null, handle: 'alva', displayName: null, avatarUrl: null },
+    header: null,
+    iconUrl: null,
+    promptTemplate: null,
+    updatedAt: null,
     files: [],
   });
   client.playbookSkills.file = vi.fn().mockResolvedValue({
-    username: 'alva',
-    name: 'ai-digest',
+    skillId: 'skill_0a',
     path: 'README.md',
     content: '',
-    updated_at: '',
+    updatedAt: null,
   });
   client.arraysJwt.status = vi.fn().mockResolvedValue({
     exists: true,
-    expires_at: 1800000000,
-    renewal_needed: false,
-    tier: 'SUBSCRIPTION_TIER_PRO',
+    expiresAt: '2027-01-15T08:00:00.000Z',
+    renewalNeeded: false,
+    tier: 'PRO',
   });
-  client.comments.create = vi.fn().mockResolvedValue({ id: 1 });
-  client.comments.pin = vi.fn().mockResolvedValue({ id: 1 });
-  client.comments.unpin = vi.fn().mockResolvedValue({ id: 1 });
-  client.notifications.listFeed = vi
+  client.comments.create = vi.fn().mockResolvedValue(COMMENT);
+  client.comments.pin = vi.fn().mockResolvedValue(COMMENT);
+  client.comments.unpin = vi.fn().mockResolvedValue(COMMENT);
+  client.v1.notifications.listFeed = vi
     .fn()
     .mockResolvedValue({ items: [], next_cursor: '', feed_path: '~/f' });
-  client.notificationPreferences.list = vi
+  client.notificationPreferences.get = vi
     .fn()
-    .mockResolvedValue({ settings: [] });
-  client.notificationPreferences.update = vi.fn().mockResolvedValue({
-    setting: { key: 'session_completed', enabled: false },
-  });
-  client.feedback.submit = vi.fn().mockResolvedValue({
-    feedback_id: 123,
-    notion_page_id: 'page-123',
-    notion_url: 'https://notion.so/page-123',
-  });
-  client.channelGroupSubscriptions.context = vi
+    .mockResolvedValue({ sessionCompleted: null });
+  client.notificationPreferences.update = vi
+    .fn()
+    .mockResolvedValue({ sessionCompleted: false });
+  client.feedback.submit = vi.fn().mockResolvedValue(aFeedback());
+  client.v1.channelGroupSubscriptions.context = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
-  client.channelGroupSubscriptions.list = vi
+  client.v1.channelGroupSubscriptions.list = vi
     .fn()
     .mockResolvedValue({ subscriptions: [] });
-  client.channelGroupSubscriptions.subscribe = vi
+  client.v1.channelGroupSubscriptions.subscribe = vi
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
-  client.channelGroupSubscriptions.unsubscribe = vi
+  client.v1.channelGroupSubscriptions.unsubscribe = vi
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
-  client.remix.save = vi.fn().mockResolvedValue(undefined);
-  client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(8));
-  client.functions.register = vi.fn().mockResolvedValue({
-    function: { function_name: 'analyze', playbook_id: 123 },
+  client.remix.save = vi.fn().mockResolvedValue(aPlaybook());
+  client.screenshot.capture = vi
+    .fn()
+    .mockResolvedValue(aScreenshot(encodeBase64(new Uint8Array(8))));
+  client.functions.register = vi.fn().mockResolvedValue(playbookFunction());
+  client.functions.list = vi.fn().mockResolvedValue({
+    items: [playbookFunction({ name: 'analyze' })],
+    nextPageToken: null,
   });
-  client.functions.list = vi.fn().mockResolvedValue({ functions: [] });
   client.functions.delete = vi.fn().mockResolvedValue(undefined);
-  client.functions.invoke = vi.fn().mockResolvedValue({
-    result: { ok: true },
-    logs: '',
-    credits_used_total: 0,
-    credits_charged_owner: 0,
-    credits_charged_consumer: 0,
-  });
-  client.functions.getAllowance = vi.fn().mockResolvedValue({
-    id: '1',
-    consumer_uid: '42',
-    playbook_id: '123',
-    amount: 25,
-    used: 0,
-    remaining: 25,
-    created_at_ms: 1700000000000,
-    updated_at_ms: 1700000000000,
-  });
+  client.functions.invoke = vi.fn().mockResolvedValue(functionInvocation());
+  client.functions.getAllowance = vi.fn().mockResolvedValue(allowance());
   client.functions.listAllowances = vi
     .fn()
-    .mockResolvedValue({ allowances: [] });
-  client.functions.createAllowance = vi.fn().mockResolvedValue({
-    allowance: {
-      id: '1',
-      consumer_uid: '42',
-      playbook_id: '123',
-      amount: 25,
-      used: 0,
-      remaining: 25,
-      created_at_ms: 1700000000000,
-      updated_at_ms: 1700000000000,
-    },
-  });
-  client.functions.revokeAllowance = vi.fn().mockResolvedValue({ ok: true });
+    .mockResolvedValue({ items: [], nextPageToken: null });
+  client.functions.createAllowance = vi.fn().mockResolvedValue(allowance());
+  client.functions.revokeAllowance = vi.fn().mockResolvedValue(undefined);
   return client;
 }
 
@@ -444,27 +429,70 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     const result = await dispatch(client, ['user', 'me']);
     expect(client.user.me).toHaveBeenCalled();
-    expect(result).toEqual({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      telegram_username: 'alice_tg',
-      discord_username: 'alice_discord',
-      slack_username: 'Alice',
-      whatsapp_username: '+15555550123',
-      imessage_username: 'alice@example.com',
-      active_im_provider: 'slack',
-      toolkit_min_version: '0.1.0',
-      home_path: '/alva/home/alice',
-    });
+    expect(result).toEqual(aMe({ toolkitMinVersion: '0.1.0' }));
   });
 
-  it('dispatches fs read with --path', async () => {
+  it('accepts --json on a command without a human format and prints the same result', async () => {
     const client = makeClient();
-    await dispatch(client, ['fs', 'read', '--path', '~/f']);
-    expect(client.fs.read).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '~/f' })
+    expect(await dispatch(client, ['user', 'me', '--json'])).toEqual(
+      await dispatch(client, ['user', 'me'])
     );
+  });
+
+  it('dispatches fs read with --path and prints UTF-8 bytes as text', async () => {
+    const client = makeClient();
+    expect(await dispatch(client, ['fs', 'read', '--path', '~/f'])).toBe(
+      'hello'
+    );
+    expect(client.fs.read).toHaveBeenCalledWith(
+      { path: '~/f' },
+      { range: undefined }
+    );
+  });
+
+  it('fs read turns --offset and --size into one byte range', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'fs',
+      'read',
+      '--path',
+      '~/f',
+      '--offset',
+      '10',
+      '--size',
+      '5',
+    ]);
+    await dispatch(client, ['fs', 'read', '--path', '~/f', '--offset', '10']);
+    await dispatch(client, ['fs', 'read', '--path', '~/f', '--size', '5']);
+    expect(vi.mocked(client.fs.read).mock.calls.map((c) => c[1])).toEqual([
+      { range: 'bytes=10-14' },
+      { range: 'bytes=10-' },
+      { range: 'bytes=0-4' },
+    ]);
+  });
+
+  it('fs read prints bytes that are not UTF-8 as bytes', async () => {
+    const client = makeClient();
+    client.fs.read = vi
+      .fn()
+      .mockResolvedValue(fileContent(new Uint8Array([0xff, 0xfe])));
+    const result = await dispatch(client, ['fs', 'read', '--path', '~/b']);
+    expect(new Uint8Array(result as ArrayBuffer)).toEqual(
+      new Uint8Array([0xff, 0xfe])
+    );
+  });
+
+  it('fs read without an API key reads publicly through client.v1', async () => {
+    const client = new AlvaClient({});
+    client.v1.fs.read = vi.fn().mockResolvedValue('public');
+    expect(
+      await dispatch(client, ['fs', 'read', '--path', '/alva/home/a/f'])
+    ).toBe('public');
+    expect(client.v1.fs.read).toHaveBeenCalledWith({
+      path: '/alva/home/a/f',
+      offset: undefined,
+      size: undefined,
+    });
   });
 
   it('dispatches fs write --append for text data', async () => {
@@ -478,12 +506,11 @@ describe('CLI dispatch', () => {
       'next',
       '--append',
     ]);
-    expect(client.fs.write).toHaveBeenCalledWith({
-      path: '~/f',
-      data: 'next',
-      mkdir_parents: true,
-      append: true,
-    });
+    expect(client.fs.write).toHaveBeenCalledWith(
+      { path: '~/f', mode: 'APPEND', mkdirParents: true },
+      'next',
+      { contentType: 'text/plain; charset=utf-8' }
+    );
   });
 
   it('dispatches fs write --append for local file data', async () => {
@@ -500,97 +527,122 @@ describe('CLI dispatch', () => {
       '/tmp/next.txt',
       '--append',
     ]);
-    expect(client.fs.rawWrite).toHaveBeenCalledWith({
-      path: '~/f',
-      body: Buffer.from('next'),
-      mkdir_parents: true,
-      append: true,
-    });
+    expect(client.fs.write).toHaveBeenCalledWith(
+      { path: '~/f', mode: 'APPEND', mkdirParents: true },
+      Buffer.from('next')
+    );
     mock.mockReset();
   });
 
-  it('dispatches deploy list with --limit', async () => {
+  it('dispatches deploy list with --limit and --cursor as the page query', async () => {
     const client = makeClient();
-    await dispatch(client, ['deploy', 'list', '--limit', '5']);
-    expect(client.deploy.list).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 5 })
-    );
+    await dispatch(client, [
+      'deploy',
+      'list',
+      '--limit',
+      '5',
+      '--cursor',
+      'p2',
+    ]);
+    expect(client.deploy.list).toHaveBeenCalledWith({
+      pageSize: 5,
+      pageToken: 'p2',
+    });
   });
 
-  it('dispatches deploy runs with --id', async () => {
-    const client = makeClient();
-    await dispatch(client, ['deploy', 'runs', '--id', '42']);
-    expect(client.deploy.listRuns).toHaveBeenCalledWith(
-      expect.objectContaining({ cronjob_id: 42 })
-    );
-  });
-
-  it('dispatches deploy runs with opaque cursor unchanged', async () => {
+  it('dispatches deploy runs with --id and the opaque cursor unchanged', async () => {
     const client = makeClient();
     await dispatch(client, [
       'deploy',
       'runs',
       '--id',
-      '42',
+      'cronjob_0c',
       '--first',
       '5',
       '--cursor',
       'next.page.token',
     ]);
-    expect(client.deploy.listRuns).toHaveBeenCalledWith({
-      cronjob_id: 42,
-      first: 5,
-      cursor: 'next.page.token',
+    expect(client.deploy.listRuns).toHaveBeenCalledWith('cronjob_0c', {
+      pageSize: 5,
+      pageToken: 'next.page.token',
     });
   });
 
-  it('dispatches deploy trigger with --id and returns workflow_run_id', async () => {
+  it('dispatches deploy run-stats with --id', async () => {
     const client = makeClient();
-    const result = await dispatch(client, ['deploy', 'trigger', '--id', '42']);
-    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 42 });
-    expect(result).toEqual({ workflow_run_id: 'wf-test' });
+    await dispatch(client, ['deploy', 'run-stats', '--id', 'cronjob_0c']);
+    expect(client.deploy.runStats).toHaveBeenCalledWith('cronjob_0c');
   });
 
-  it('dispatches deploy run-status with --id and --workflow-run-id', async () => {
+  it('dispatches deploy trigger with --id and returns the DispatchReceipt', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'deploy',
+      'trigger',
+      '--id',
+      'cronjob_0c',
+    ]);
+    expect(client.deploy.trigger).toHaveBeenCalledWith('cronjob_0c');
+    expect(result).toEqual({ dispatchId: 'cronjob_dispatch_0d' });
+  });
+
+  it('dispatches deploy run-status with the dispatch of that cronjob', async () => {
     const client = makeClient();
     const result = await dispatch(client, [
       'deploy',
       'run-status',
       '--id',
-      '42',
+      'cronjob_0c',
       '--workflow-run-id',
-      'wf-test',
+      'cronjob_dispatch_0d',
     ]);
-    expect(client.deploy.getRunStatus).toHaveBeenCalledWith({
-      cronjob_id: 42,
-      workflow_run_id: 'wf-test',
+    expect(client.deploy.getDispatch).toHaveBeenCalledWith(
+      'cronjob_dispatch_0d'
+    );
+    expect(result).toEqual({
+      id: 'cronjob_dispatch_0d',
+      cronjobId: 'cronjob_0c',
+      state: 'PENDING',
+      run: null,
     });
-    expect(result).toEqual({ workflow_run_id: 'wf-test', state: 'PENDING' });
+    await expect(
+      dispatch(client, [
+        'deploy',
+        'run-status',
+        '--id',
+        'cronjob_0other',
+        '--workflow-run-id',
+        'cronjob_dispatch_0d',
+      ])
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
 
-  it('dispatches deploy run-logs with --id and --run-id', async () => {
+  it('dispatches deploy run-logs with --run-id', async () => {
     const client = makeClient();
     await dispatch(client, [
       'deploy',
       'run-logs',
       '--id',
-      '42',
+      'cronjob_0c',
       '--run-id',
-      '7',
+      'run_0r',
     ]);
-    expect(client.deploy.getRunLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ cronjob_id: 42, run_id: 7 })
-    );
+    expect(client.deploy.getRunLogs).toHaveBeenCalledWith('run_0r');
   });
 
-  it('dispatches schedule list through the explicit Channel scope', async () => {
+  it('dispatches schedule list through the explicit Channel scope, every page', async () => {
     const client = makeClient();
-    await dispatch(client, ['schedule', 'list', '--channel-id', '7284']);
-    expect(client.schedules.list).toHaveBeenCalledWith({ channelId: '7284' });
+    expect(
+      await dispatch(client, ['schedule', 'list', '--channel-id', 'channel_0x'])
+    ).toEqual({ items: [aSchedule()], nextPageToken: null });
+    expect(client.schedules.list).toHaveBeenCalledWith('channel_0x', {
+      pageSize: 100,
+      pageToken: undefined,
+    });
     expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
   });
 
-  it('schedule put resolves the default Agent Channel and parses one rule', async () => {
+  it('schedule put resolves the default Agent Channel and builds the PutScheduleBody', async () => {
     const client = makeClient();
     await dispatch(client, [
       'schedule',
@@ -610,40 +662,74 @@ describe('CLI dispatch', () => {
       '--max-occurrences',
       '5',
     ]);
-    expect(client.schedules.put).toHaveBeenCalledWith({
-      channelId: '91',
+    expect(client.schedules.put).toHaveBeenCalledWith('channel_0ch', {
       name: 'market-open',
-      text: 'Review the market open',
+      message: 'Review the market open',
       rule: {
-        kind: 'cron',
-        expression: '30 9 * * 1-5',
+        kind: 'CRON',
+        cron: '30 9 * * 1-5',
         timezone: 'America/New_York',
       },
-      bounds: {
-        startsAt: '2026-07-15T12:00:00Z',
-        until: '2026-07-15T14:00:00Z',
-        maxOccurrences: 5,
-      },
+      startsAt: '2026-07-15T12:00:00.000Z',
+      endsAt: '2026-07-15T14:00:00.000Z',
+      maxOccurrences: 5,
     });
   });
 
-  it('dispatches explicit schedule lifecycle operations', async () => {
+  it('schedule put sends --every in seconds and --after as an absolute AT', async () => {
+    const client = makeClient();
+    vi.useFakeTimers({ now: Date.parse('2026-07-15T12:00:00.250Z') });
+    try {
+      for (const rule of [
+        ['--every', 'P1DT1H'],
+        ['--after', 'PT90S'],
+      ]) {
+        await dispatch(client, [
+          'schedule',
+          'put',
+          '--name',
+          'n',
+          '--message',
+          'm',
+          ...rule,
+        ]);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(
+      vi.mocked(client.schedules.put).mock.calls.map((c) => c[1].rule)
+    ).toEqual([
+      { kind: 'EVERY', everySeconds: 90000 },
+      { kind: 'AT', fireAt: '2026-07-15T12:01:31.000Z' },
+    ]);
+    await expect(
+      dispatch(client, [
+        'schedule',
+        'put',
+        '--name',
+        'n',
+        '--message',
+        'm',
+        '--every',
+        'PT30S',
+      ])
+    ).rejects.toThrow(/at least 60 whole seconds/);
+  });
+
+  it('dispatches schedule lifecycle operations by the ID the name selects', async () => {
     const client = makeClient();
     await dispatch(client, ['schedule', 'pause', '--name', 'heartbeat']);
     await dispatch(client, ['schedule', 'resume', '--name', 'heartbeat']);
-    await dispatch(client, ['schedule', 'delete', '--name', 'heartbeat']);
-    expect(client.schedules.pause).toHaveBeenCalledWith({
-      channelId: '91',
+    expect(
+      await dispatch(client, ['schedule', 'delete', '--name', 'heartbeat'])
+    ).toEqual({});
+    expect(client.schedules.list).toHaveBeenCalledWith('channel_0ch', {
       name: 'heartbeat',
     });
-    expect(client.schedules.resume).toHaveBeenCalledWith({
-      channelId: '91',
-      name: 'heartbeat',
-    });
-    expect(client.schedules.delete).toHaveBeenCalledWith({
-      channelId: '91',
-      name: 'heartbeat',
-    });
+    expect(client.schedules.pause).toHaveBeenCalledWith('schedule_0s');
+    expect(client.schedules.resume).toHaveBeenCalledWith('schedule_0s');
+    expect(client.schedules.delete).toHaveBeenCalledWith('schedule_0s');
   });
 
   it('schedule put rejects mixed rules before the resource call', async () => {
@@ -714,116 +800,39 @@ describe('CLI dispatch', () => {
       '2026-08-11t04:00:00z',
     ]);
     expect(client.schedules.put).toHaveBeenCalledWith(
+      'channel_0ch',
       expect.objectContaining({
-        rule: { kind: 'at', timestamp: '2026-08-11T04:00:00Z' },
+        rule: { kind: 'AT', fireAt: '2026-08-11T04:00:00.000Z' },
       })
     );
   });
 
-  it('passes canonical whole-second timestamps through the real schedule resource', async () => {
-    const client = new AlvaClient({ apiKey: 'test-key' });
-    const request = vi.fn().mockResolvedValue({
-      data: {
-        updateChannelSchedule: {
-          schedule: {
-            id: 'AgentSchedule:91:market-open',
-            channel: { id: '91' },
-            name: 'market-open',
-            rule: {
-              kind: 'CRON',
-              atMs: null,
-              everyIntervalSeconds: null,
-              cronExpression: '30 9 * * 1-5',
-              cronTimezone: 'America/New_York',
-            },
-            bounds: {
-              startsAtMs: Date.parse('2026-07-15T12:00:00Z'),
-              untilMs: Date.parse('2026-07-15T14:00:00Z'),
-              maxOccurrences: null,
-            },
-            message: { text: 'Review the market open' },
-            status: 'ACTIVE',
-            failureCode: null,
-            failureAtMs: null,
-            occurrencesUsed: 0,
-            nextFireAtMs: Date.parse('2026-07-15T13:30:00Z'),
-            createdAtMs: Date.parse('2026-07-15T11:00:00.123Z'),
-            updatedAtMs: Date.parse('2026-07-15T11:00:00.456Z'),
-          },
-        },
-      },
+  it('sends the schedule body through the real resource and transport', async () => {
+    const fake = fakeV2({
+      'POST /channels/channel_0ch/schedules': () => aSchedule(),
     });
-    client._request = request;
-
-    await dispatch(client, [
-      'schedule',
-      'put',
-      '--channel-id',
-      '91',
-      '--name',
-      'market-open',
-      '--message',
-      'Review the market open',
-      '--cron',
-      '30 9 * * 1-5',
-      '--timezone',
-      'America/New_York',
-      '--starts-at',
-      '2026-07-15T08:00:00-04:00',
-      '--until',
-      '2026-07-15T10:00:00-04:00',
-    ]);
-
-    expect(request).toHaveBeenCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: expect.objectContaining({
-            input: expect.objectContaining({
-              definition: expect.objectContaining({
-                bounds: {
-                  startsAtMs: Date.parse('2026-07-15T12:00:00Z'),
-                  untilMs: Date.parse('2026-07-15T14:00:00Z'),
-                },
-              }),
-            }),
-          }),
-        }),
-      })
-    );
-
-    await dispatch(client, [
-      'schedule',
-      'put',
-      '--channel-id',
-      '91',
-      '--name',
-      'one-shot',
-      '--message',
-      'Run once',
-      '--at',
-      '2026-07-15T08:00:00-04:00',
-    ]);
-
-    expect(request).toHaveBeenLastCalledWith(
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: expect.objectContaining({
-            input: expect.objectContaining({
-              definition: expect.objectContaining({
-                rule: {
-                  kind: 'AT',
-                  atMs: Date.parse('2026-07-15T12:00:00Z'),
-                },
-              }),
-            }),
-          }),
-        }),
-      })
-    );
+    try {
+      const client = new AlvaClient({ apiKey: 'test-key' });
+      await dispatch(client, [
+        'schedule',
+        'put',
+        '--channel-id',
+        'channel_0ch',
+        '--name',
+        'one-shot',
+        '--message',
+        'Run once',
+        '--at',
+        '2026-07-15T08:00:00-04:00',
+      ]);
+      expect(fake.calls[0].body).toEqual({
+        name: 'one-shot',
+        message: 'Run once',
+        rule: { kind: 'AT', fireAt: '2026-07-15T12:00:00.000Z' },
+      });
+    } finally {
+      fake.restore();
+    }
   });
 
   it.each([
@@ -867,11 +876,93 @@ describe('CLI dispatch', () => {
     });
   });
 
+  it('secrets list reads every page into one page that ends the list', async () => {
+    const client = makeClient();
+    const second = aSecret({ id: 'secret_0k2', name: 'B' });
+    client.secrets.list = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [aSecret()], nextPageToken: 'p2' })
+      .mockResolvedValueOnce({ items: [second], nextPageToken: null });
+    expect(await dispatch(client, ['secrets', 'list'])).toEqual({
+      items: [aSecret(), second],
+      nextPageToken: null,
+    });
+    expect(vi.mocked(client.secrets.list).mock.calls).toEqual([
+      [{ pageSize: 200, pageToken: undefined }],
+      [{ pageSize: 200, pageToken: 'p2' }],
+    ]);
+  });
+
+  it('secrets get reads the value through client.v1', async () => {
+    const client = makeClient();
+    expect(await dispatch(client, ['secrets', 'get', '--name', 'K'])).toEqual({
+      name: 'K',
+      value: 'V',
+    });
+    expect(client.v1.secrets.get).toHaveBeenCalledWith({ name: 'K' });
+  });
+
+  it('secrets delete finds the Secret ID by name', async () => {
+    const client = makeClient();
+    client.secrets.list = vi.fn().mockResolvedValue({
+      items: [aSecret({ id: 'secret_0x', name: 'OTHER' }), aSecret()],
+      nextPageToken: null,
+    });
+    expect(
+      await dispatch(client, ['secrets', 'delete', '--name', 'KEY'])
+    ).toEqual({});
+    expect(client.secrets.delete).toHaveBeenCalledWith('secret_0k1');
+    await expect(
+      dispatch(client, ['secrets', 'delete', '--name', 'NOPE'])
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(client.secrets.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches service-account grant with an upper-case permission', async () => {
+    const client = makeClient();
+    client.serviceAccount.grant = vi.fn().mockResolvedValue({});
+    await dispatch(client, [
+      'service-account',
+      'grant',
+      '--id',
+      'account_0sa',
+      '--path',
+      '~/feeds/x/',
+      '--permission',
+      'read',
+    ]);
+    expect(client.serviceAccount.grant).toHaveBeenCalledWith('account_0sa', {
+      path: '~/feeds/x/',
+      permission: 'READ',
+    });
+  });
+
+  it('dispatches service-account revoke by grant ID', async () => {
+    const client = makeClient();
+    client.serviceAccount.revoke = vi.fn().mockResolvedValue({});
+    await dispatch(client, [
+      'service-account',
+      'revoke',
+      '--id',
+      'account_0sa',
+      '--grant-id',
+      'service_account_grant_0g',
+    ]);
+    expect(client.serviceAccount.revoke).toHaveBeenCalledWith(
+      'account_0sa',
+      'service_account_grant_0g'
+    );
+    await expect(
+      dispatch(client, ['service-account', 'revoke', '--id', 'account_0sa'])
+    ).rejects.toThrow(/--grant-id/);
+  });
+
   it('dispatches run with --code', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1' })
+      expect.objectContaining({ code: '1+1' }),
+      expect.anything()
     );
   });
 
@@ -883,7 +974,8 @@ describe('CLI dispatch', () => {
     await dispatch(client, ['run', '--local-file', '/tmp/script.js']);
     expect(mock).toHaveBeenCalledWith('/tmp/script.js', 'utf-8');
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'console.log("hello")' })
+      expect.objectContaining({ code: 'console.log("hello")' }),
+      expect.anything()
     );
     mock.mockReset();
   });
@@ -905,7 +997,8 @@ describe('CLI dispatch', () => {
       expect.objectContaining({
         code: 'require("env").args',
       }),
-      '{"symbol":"BTC"}'
+      '{"symbol":"BTC"}',
+      expect.anything()
     );
     mock.mockReset();
   });
@@ -916,7 +1009,8 @@ describe('CLI dispatch', () => {
     await dispatch(client, ['run', '--code', '1+1', '--args', args]);
     expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
       expect.objectContaining({ code: '1+1' }),
-      args
+      args,
+      expect.anything()
     );
   });
 
@@ -940,7 +1034,8 @@ describe('CLI dispatch', () => {
     expect(readStdin).toHaveBeenCalledTimes(1);
     expect(client.run._executeSerializedArgs).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'require("env").args' }),
-      args
+      args,
+      expect.anything()
     );
     expect(client.run.execute).not.toHaveBeenCalled();
   });
@@ -1028,18 +1123,17 @@ describe('CLI dispatch', () => {
       '512',
     ]);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', max_heap_size_mb: 512 })
+      expect.objectContaining({ code: '1+1', maxHeapSizeMb: 512 }),
+      expect.anything()
     );
   });
 
-  it('dispatches run with default timeout_ms', async () => {
+  it('dispatches run with the default timeout', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: '1+1',
-        timeout_ms: DEFAULT_RUN_TIMEOUT_MS,
-      })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: DEFAULT_RUN_TIMEOUT_MS }
     );
   });
 
@@ -1047,7 +1141,8 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '900000']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', timeout_ms: 900000 })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: 900000 }
     );
     expect(setGlobalDispatcher).toHaveBeenCalledTimes(1);
     const dispatcher = vi.mocked(setGlobalDispatcher).mock.calls[0][0] as {
@@ -1064,7 +1159,8 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', timeout_ms: 750000 })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: 750000 }
     );
   });
 
@@ -1073,16 +1169,34 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1', '--timeout-ms', '900000']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '1+1', timeout_ms: 900000 })
+      expect.objectContaining({ code: '1+1' }),
+      { timeoutMs: 900000 }
     );
   });
 
-  it('omits max_heap_size_mb when --max-heap-size-mb is not provided', async () => {
+  it('omits maxHeapSizeMb when --max-heap-size-mb is not provided', async () => {
     const client = makeClient();
     await dispatch(client, ['run', '--code', '1+1']);
     expect(client.run.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ max_heap_size_mb: undefined })
+      expect.objectContaining({ maxHeapSizeMb: undefined }),
+      expect.anything()
     );
+  });
+
+  it('sends --working-dir with --code only, as 0.x did', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'run',
+      '--entry-path',
+      '~/s.js',
+      '--working-dir',
+      '~/w',
+    ]);
+    await dispatch(client, ['run', '--code', '1', '--working-dir', '~/w']);
+    expect(vi.mocked(client.run.execute).mock.calls.map(([r]) => r)).toEqual([
+      expect.objectContaining({ entryPath: '~/s.js', workingDir: undefined }),
+      expect.objectContaining({ code: '1', workingDir: '~/w' }),
+    ]);
   });
 
   it('throws CliUsageError when --max-heap-size-mb is below range', async () => {
@@ -1130,13 +1244,13 @@ describe('CLI dispatch', () => {
   });
 
   describe('run result decoding', () => {
-    function runResponse(result: string, status = 'completed') {
+    function runResponse(returnValue: string, status = 'SUCCEEDED') {
       return {
-        result,
+        returnValue,
         logs: 'log line',
-        stats: { duration_ms: 7 },
+        durationMs: 7,
         status,
-        ...(status === 'failed' ? { error: 'boom' } : {}),
+        error: status === 'FAILED' ? 'boom' : null,
       };
     }
 
@@ -1153,24 +1267,24 @@ describe('CLI dispatch', () => {
 
     it('prints a returned object as an object, not a JSON string', async () => {
       const out = await runWith('{"rows":[1,2],"name":"BTC"}');
-      expect(out.result).toEqual({ rows: [1, 2], name: 'BTC' });
+      expect(out.returnValue).toEqual({ rows: [1, 2], name: 'BTC' });
       expect(out).toMatchObject({
         logs: 'log line',
-        stats: { duration_ms: 7 },
-        status: 'completed',
+        durationMs: 7,
+        status: 'SUCCEEDED',
       });
     });
 
     it('decodes a script that returned JSON.stringify(obj)', async () => {
       const once = JSON.stringify({ income: [{ q: 'Q1', v: 1.5 }] });
       const out = await runWith(JSON.stringify(once));
-      expect(out.result).toEqual({ income: [{ q: 'Q1', v: 1.5 }] });
+      expect(out.returnValue).toEqual({ income: [{ q: 'Q1', v: 1.5 }] });
     });
 
     it('decodes a script that stringified twice', async () => {
       const twice = JSON.stringify(JSON.stringify([{ a: 'x"y' }]));
       const out = await runWith(JSON.stringify(twice));
-      expect(out.result).toEqual([{ a: 'x"y' }]);
+      expect(out.returnValue).toEqual([{ a: 'x"y' }]);
     });
 
     it.each([
@@ -1180,19 +1294,19 @@ describe('CLI dispatch', () => {
       ['quoted text', '"quoted"'],
     ])('keeps a returned %s string as written', async (_name, value) => {
       const out = await runWith(JSON.stringify(value));
-      expect(out.result).toBe(value);
+      expect(out.returnValue).toBe(value);
     });
 
     it('passes through a result that is not JSON', async () => {
       const out = await runWith('not json {');
-      expect(out.result).toBe('not json {');
+      expect(out.returnValue).toBe('not json {');
     });
 
     it('decodes failed runs too and keeps the error', async () => {
-      const out = await runWith('null', 'failed');
+      const out = await runWith('null', 'FAILED');
       expect(out).toMatchObject({
-        result: null,
-        status: 'failed',
+        returnValue: null,
+        status: 'FAILED',
         error: 'boom',
       });
     });
@@ -1207,7 +1321,7 @@ describe('CLI dispatch', () => {
         '--code',
         'x',
       ])) as Record<string, unknown>;
-      expect(out.result).toEqual({ a: 1 });
+      expect(out.returnValue).toEqual({ a: 1 });
     });
   });
 
@@ -1215,61 +1329,7 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     const result = await dispatch(client, ['credits', 'wallet']);
     expect(client.credits.wallet).toHaveBeenCalled();
-    expect(result).toEqual({
-      balance: 100,
-      totalRemaining: 100,
-      todayUsed: 3,
-    });
-  });
-
-  it('dispatches markets narrative', async () => {
-    const client = makeClient();
-    await dispatch(client, ['markets', 'narrative', '--ticker', 'BRK.B']);
-    expect(client.markets.narrative).toHaveBeenCalledWith('BRK.B');
-  });
-
-  it('defaults markets earnings to latest-completed', async () => {
-    const client = makeClient();
-    await dispatch(client, ['markets', 'earnings', '--ticker', 'AAPL']);
-    expect(client.markets.earnings).toHaveBeenCalledWith({
-      ticker: 'AAPL',
-      event: undefined,
-    });
-  });
-
-  it('dispatches markets earnings with an event selector', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'markets',
-      'earnings',
-      '--ticker',
-      'AAPL',
-      '--event',
-      'next-confirmed',
-    ]);
-    expect(client.markets.earnings).toHaveBeenCalledWith({
-      ticker: 'AAPL',
-      event: 'next-confirmed',
-    });
-  });
-
-  it('dispatches markets earnings with an explicit fiscal period', async () => {
-    const client = makeClient();
-    await dispatch(client, [
-      'markets',
-      'earnings',
-      '--ticker',
-      'AAPL',
-      '--fiscal-year',
-      '2026',
-      '--fiscal-quarter',
-      'q3',
-    ]);
-    expect(client.markets.earnings).toHaveBeenCalledWith({
-      ticker: 'AAPL',
-      fiscalYear: 2026,
-      fiscalQuarter: 'Q3',
-    });
+    expect(result).toEqual({ balance: '100', todayUsed: '3', balances: [] });
   });
 
   it('rejects mixed markets earnings selectors', async () => {
@@ -1318,9 +1378,9 @@ describe('CLI dispatch', () => {
     };
     const help = result.text.replace(/\s+/g, ' ');
     expect(help).toContain('Narrative is dated Alva analysis');
-    expect(help).toContain('Pre is the dated expectation baseline');
-    expect(help).toContain('Transcript holds management statements');
-    expect(help).toContain("Post is Alva's dated interpretation");
+    expect(help).toContain('The preview is the dated expectation baseline');
+    expect(help).toContain('the transcript holds management statements');
+    expect(help).toContain("the recap is Alva's dated interpretation");
     expect(help).toContain('does not invalidate valid stages');
     expect(help).toContain('never replaced with a different quarter');
   });
@@ -1335,18 +1395,18 @@ describe('CLI dispatch', () => {
       '--end',
       '2026-06-24T00:00:00Z',
       '--session-id',
-      '2069373335591239680',
+      'session_0abc',
       '--first',
       '10',
       '--after',
       'cursor-1',
     ]);
-    expect(client.credits.items).toHaveBeenCalledWith({
-      startAtMs: 1782172800000,
-      endAtMs: 1782259200000,
-      sessionId: '2069373335591239680',
-      first: 10,
-      after: 'cursor-1',
+    expect(client.credits.entries).toHaveBeenCalledWith({
+      from: '2026-06-23T00:00:00.000Z',
+      to: '2026-06-24T00:00:00.000Z',
+      sessionId: 'session_0abc',
+      pageSize: 10,
+      pageToken: 'cursor-1',
     });
   });
 
@@ -1360,12 +1420,12 @@ describe('CLI dispatch', () => {
       '--end',
       '2026-06-24',
     ]);
-    expect(client.credits.items).toHaveBeenCalledWith({
-      startAtMs: 1782172800000,
-      endAtMs: 1782259200000,
+    expect(client.credits.entries).toHaveBeenCalledWith({
+      from: '2026-06-23T00:00:00.000Z',
+      to: '2026-06-24T00:00:00.000Z',
       sessionId: undefined,
-      first: undefined,
-      after: undefined,
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
@@ -1375,12 +1435,12 @@ describe('CLI dispatch', () => {
       vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
       const client = makeClient();
       await dispatch(client, ['credits', 'items', '--today', '--first', '3']);
-      expect(client.credits.items).toHaveBeenCalledWith({
-        startAtMs: 1782172800000,
-        endAtMs: 1782259200000,
+      expect(client.credits.entries).toHaveBeenCalledWith({
+        from: '2026-06-23T00:00:00.000Z',
+        to: '2026-06-24T00:00:00.000Z',
         sessionId: undefined,
-        first: 3,
-        after: undefined,
+        pageSize: 3,
+        pageToken: undefined,
       });
     } finally {
       vi.useRealTimers();
@@ -1393,12 +1453,12 @@ describe('CLI dispatch', () => {
       vi.setSystemTime(new Date('2026-06-23T11:22:33Z'));
       const client = makeClient();
       await dispatch(client, ['credits', 'items', '--last', '24h']);
-      expect(client.credits.items).toHaveBeenCalledWith({
-        startAtMs: 1782127353000,
-        endAtMs: 1782213753000,
+      expect(client.credits.entries).toHaveBeenCalledWith({
+        from: '2026-06-22T11:22:33.000Z',
+        to: '2026-06-23T11:22:33.000Z',
         sessionId: undefined,
-        first: undefined,
-        after: undefined,
+        pageSize: undefined,
+        pageToken: undefined,
       });
     } finally {
       vi.useRealTimers();
@@ -1601,14 +1661,12 @@ describe('CLI dispatch', () => {
     expect(client.screenshot.capture).not.toHaveBeenCalled();
   });
 
-  it('returns a tagged _image result for screenshot --base64 (png)', async () => {
+  it('returns a tagged _image result for screenshot --base64', async () => {
     const client = makeClient();
-    const pngBytes = new Uint8Array([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-    ]);
+    const jpeg = encodeBase64(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]));
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(pngBytes.buffer.slice(0));
+      .mockResolvedValue({ contentType: 'image/jpeg', contentBase64: jpeg });
     const result = await dispatch(client, [
       'screenshot',
       '--url',
@@ -1617,64 +1675,19 @@ describe('CLI dispatch', () => {
     ]);
     expect(result).toEqual({
       _image: true,
-      mimeType: 'image/png',
-      data: Buffer.from(pngBytes).toString('base64'),
-      bytes: 8,
+      mimeType: 'image/jpeg',
+      data: jpeg,
+      bytes: 4,
     });
-  });
-
-  it('sniffs jpeg mime for screenshot --base64', async () => {
-    const client = makeClient();
-    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(bytes.buffer.slice(0));
-    const result = (await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ])) as { mimeType: string };
-    expect(result.mimeType).toBe('image/jpeg');
-  });
-
-  it('sniffs webp mime for screenshot --base64', async () => {
-    const client = makeClient();
-    const bytes = new Uint8Array([
-      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
-    ]);
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(bytes.buffer.slice(0));
-    const result = (await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ])) as { mimeType: string };
-    expect(result.mimeType).toBe('image/webp');
-  });
-
-  it('falls back to image/png mime for unknown bytes (--base64)', async () => {
-    const client = makeClient();
-    const bytes = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(bytes.buffer.slice(0));
-    const result = (await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ])) as { mimeType: string };
-    expect(result.mimeType).toBe('image/png');
   });
 
   it('applies default compression for screenshot --base64', async () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, ['screenshot', '--url', 'u', '--base64']);
     expect(client.screenshot.capture).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1689,7 +1702,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, [
       'screenshot',
       '--url',
@@ -1713,7 +1728,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--full']);
     expect(client.screenshot.capture).toHaveBeenCalledWith(
       expect.objectContaining({ compress: false })
@@ -1724,7 +1741,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     await dispatch(client, [
       'screenshot',
       '--url',
@@ -1761,7 +1780,9 @@ describe('CLI dispatch', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
+      );
     const writeSpy = vi
       .spyOn(fs, 'writeFileSync')
       .mockImplementation(() => undefined);
@@ -1782,7 +1803,7 @@ describe('CLI dispatch', () => {
 
   it('throws CliUsageError for screenshot --base64 with empty bytes', async () => {
     const client = makeClient();
-    client.screenshot.capture = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+    client.screenshot.capture = vi.fn().mockResolvedValue(aScreenshot(''));
     await expect(
       dispatch(client, ['screenshot', '--url', 'u', '--base64'])
     ).rejects.toSatisfy(
@@ -1794,7 +1815,7 @@ describe('CLI dispatch', () => {
   it('dispatches feed delete', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'delete', '--id', '42']);
-    expect(client.feed.delete).toHaveBeenCalledWith({ id: '42' });
+    expect(client.feed.delete).toHaveBeenCalledWith('42');
   });
 
   it('dispatches feed list with filters', async () => {
@@ -1810,55 +1831,54 @@ describe('CLI dispatch', () => {
       'abc',
     ]);
     expect(client.feed.list).toHaveBeenCalledWith({
-      status: 'all',
-      limit: 20,
-      cursor: 'abc',
+      status: undefined,
+      pageSize: 20,
+      pageToken: 'abc',
+    });
+    await dispatch(client, ['feed', 'list', '--status', 'PAUSED']);
+    expect(client.feed.list).toHaveBeenLastCalledWith({
+      status: 'PAUSED',
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
-  it('returns raw feed list for legacy feed list', async () => {
+  it('prints the /api/v2 page for feed list, active feeds by default', async () => {
     const client = makeClient();
-    client.feed.list = vi.fn().mockResolvedValue({
-      feeds: [
+    const page = {
+      items: [
         {
-          id: '42',
+          id: 'automation_0a',
           name: 'btc-ema',
           status: 'ACTIVE',
-          cron_expression: '0 * * * *',
-          total_runs: 3,
-          used_by_total: 1,
+          schedule: { cron: '0 * * * *', timezone: 'UTC' },
+          flow: null,
+          lastRunAt: null,
+          totalRuns: 3,
+          usedByCount: 1,
         },
       ],
-      next_cursor: 'next',
-      has_more: true,
-    });
-    const result = await dispatch(client, ['feed', 'list']);
-    expect(result).toEqual({
-      feeds: [
-        {
-          id: '42',
-          name: 'btc-ema',
-          status: 'ACTIVE',
-          cron_expression: '0 * * * *',
-          total_runs: 3,
-          used_by_total: 1,
-        },
-      ],
-      next_cursor: 'next',
-      has_more: true,
+      nextPageToken: 'next',
+    };
+    client.feed.list = vi.fn().mockResolvedValue(page);
+    await expect(dispatch(client, ['feed', 'list'])).resolves.toEqual(page);
+    expect(client.feed.list).toHaveBeenCalledWith({
+      status: 'ACTIVE',
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
   it('dispatches feed stop', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'stop', '--id', '42']);
-    expect(client.feed.stop).toHaveBeenCalledWith({ id: '42' });
+    expect(client.feed.stop).toHaveBeenCalledWith('42');
   });
 
   it('dispatches feed resume', async () => {
     const client = makeClient();
     await dispatch(client, ['feed', 'resume', '--id', '42']);
-    expect(client.feed.resume).toHaveBeenCalledWith({ id: '42' });
+    expect(client.feed.resume).toHaveBeenCalledWith('42');
   });
 
   it('feed stop requires --id', async () => {
@@ -1882,13 +1902,13 @@ describe('CLI dispatch', () => {
     );
   });
 
-  it('feed delete rejects non-numeric --id', async () => {
+  it('feed delete passes an opaque --id and rejects a padded one', async () => {
     const client = makeClient();
+    await dispatch(client, ['feed', 'delete', '--id', 'automation_0abc']);
+    expect(client.feed.delete).toHaveBeenCalledWith('automation_0abc');
     await expect(
-      dispatch(client, ['feed', 'delete', '--id', 'abc'])
-    ).rejects.toThrow(
-      "--id must be a positive integer for 'feed delete', got 'abc'"
-    );
+      dispatch(client, ['feed', 'delete', '--id', ' automation_0abc'])
+    ).rejects.toThrow("--id must be a feed ID for 'feed delete'");
   });
 
   it('dispatches feed set-visibility public', async () => {
@@ -1901,10 +1921,7 @@ describe('CLI dispatch', () => {
       '--visibility',
       'public',
     ]);
-    expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id: '42',
-      visibility: 'public',
-    });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith('42', 'PUBLIC');
   });
 
   it('dispatches feed set-visibility private', async () => {
@@ -1917,10 +1934,7 @@ describe('CLI dispatch', () => {
       '--visibility',
       'private',
     ]);
-    expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id: '42',
-      visibility: 'private',
-    });
+    expect(client.feed.setVisibility).toHaveBeenCalledWith('42', 'PRIVATE');
   });
 
   it('feed set-visibility requires --id', async () => {
@@ -1968,32 +1982,24 @@ describe('CLI dispatch', () => {
       'abc',
     ]);
     expect(client.automation.list).toHaveBeenCalledWith({
-      status: 'all',
-      limit: 20,
-      cursor: 'abc',
+      status: undefined,
+      pageSize: 20,
+      pageToken: 'abc',
     });
     expect(result).toEqual(expect.stringContaining('1 automation(s):'));
-    expect(result).toEqual(expect.stringContaining('btc-ema'));
-    expect(result).toEqual(expect.stringContaining('next_cursor: next'));
+    expect(result).toEqual(expect.stringContaining('btc-ema  [ACTIVE]'));
+    expect(result).toEqual(expect.stringContaining('schedule: 0 * * * *'));
+    expect(result).toEqual(expect.stringContaining('used by: 1'));
+    expect(result).toEqual(expect.stringContaining('nextPageToken: next'));
   });
 
   it('returns raw automation list with --json', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['automation', 'list', '--json']);
-    expect(result).toEqual({
-      feeds: [
-        {
-          id: '42',
-          name: 'btc-ema',
-          status: 'ACTIVE',
-          cron_expression: '0 * * * *',
-          total_runs: 3,
-          used_by_total: 1,
-        },
-      ],
-      next_cursor: 'next',
-      has_more: true,
-    });
+    expect(result).toEqual(
+      await vi.mocked(client.automation.list).mock.results[0].value
+    );
+    expect(result).toMatchObject({ nextPageToken: 'next' });
   });
 
   it('renders automation inspect as readable text by default', async () => {
@@ -2004,8 +2010,12 @@ describe('CLI dispatch', () => {
       '--id',
       '42',
     ]);
-    expect(client.automation.inspect).toHaveBeenCalledWith({ id: 42 });
+    expect(client.automation.inspect).toHaveBeenCalledWith('42');
     expect(result).toEqual(expect.stringContaining('portfolio-watch'));
+    expect(result).toEqual(expect.stringContaining('runs: 5'));
+    expect(result).toEqual(
+      expect.stringContaining('schedule: 0 9 * * * (UTC)')
+    );
     expect(result).toEqual(expect.stringContaining('flow id: portfolio_watch'));
     expect(result).toEqual(
       expect.stringContaining(
@@ -2023,18 +2033,7 @@ describe('CLI dispatch', () => {
       '42',
       '--json',
     ]);
-    expect(result).toEqual({
-      id: '42',
-      feed_id: '42',
-      cronjob_id: 420,
-      name: 'portfolio-watch',
-      status: 'ACTIVE',
-      cron_expression: '0 9 * * *',
-      total_runs: 5,
-      flow_id: 'portfolio_watch',
-      flow_config_path:
-        '/alva/home/alice/memory/profile/portfolio_watch/portfolio-watch.yaml',
-    });
+    expect(result).toEqual(anAutomation());
   });
 
   it('dispatches automation publish', async () => {
@@ -2047,7 +2046,7 @@ describe('CLI dispatch', () => {
       '--version',
       '1.0',
       '--cronjob-id',
-      '5',
+      'cronjob_05',
       '--view-json',
       '{"chart":"line"}',
       '--description',
@@ -2061,12 +2060,12 @@ describe('CLI dispatch', () => {
     expect(client.automation.publish).toHaveBeenCalledWith({
       name: 'btc',
       version: '1.0',
-      cronjob_id: 5,
-      view_json: { chart: 'line' },
+      cronjobId: 'cronjob_05',
+      viewJson: '{"chart":"line"}',
       description: 'BTC signal',
       changelog: 'Initial',
-      agent_type: 'alpi',
-      skip_auto_trigger: true,
+      agentType: 'alpi',
+      skipFirstRun: true,
     });
   });
 
@@ -2091,22 +2090,24 @@ describe('CLI dispatch', () => {
       '--version',
       '1.0.1',
       '--cronjob-id',
-      '5',
+      'cronjob_0c',
       '--description=updated',
       '--changelog=republished',
       '--agent-type',
       'alpi',
       '--trigger',
     ]);
-    expect(client.automation.update).toHaveBeenCalledWith({
-      id: '2077624515435917312',
-      version: '1.0.1',
-      cronjob_id: 5,
-      description: 'updated',
-      changelog: 'republished',
-      agent_type: 'alpi',
-      trigger: true,
-    });
+    expect(client.automation.update).toHaveBeenCalledWith(
+      '2077624515435917312',
+      {
+        version: '1.0.1',
+        cronjobId: 'cronjob_0c',
+        description: 'updated',
+        changelog: 'republished',
+        agentType: 'alpi',
+        triggerRun: true,
+      }
+    );
   });
 
   it('preserves an explicit empty automation metadata value', async () => {
@@ -2118,14 +2119,13 @@ describe('CLI dispatch', () => {
       '42',
       '--description=',
     ]);
-    expect(client.automation.update).toHaveBeenCalledWith({
-      id: '42',
+    expect(client.automation.update).toHaveBeenCalledWith('42', {
       version: undefined,
-      cronjob_id: undefined,
+      cronjobId: undefined,
       description: '',
       changelog: undefined,
-      agent_type: undefined,
-      trigger: undefined,
+      agentType: undefined,
+      triggerRun: undefined,
     });
   });
 
@@ -2160,16 +2160,32 @@ describe('CLI dispatch', () => {
       '--alva-channel-ids=',
     ]);
 
-    expect(client.automation.delivery.get).toHaveBeenCalledWith({ id: '42' });
-    expect(client.automation.delivery.update).toHaveBeenNthCalledWith(1, {
-      id: '42',
-      alvaChannelIds: undefined,
-      emailEnabled: false,
+    expect(client.automation.delivery.get).toHaveBeenCalledWith('42');
+    expect(client.automation.delivery.update).toHaveBeenNthCalledWith(1, '42', {
+      channelIds: undefined,
+      email: false,
     });
-    expect(client.automation.delivery.update).toHaveBeenNthCalledWith(2, {
-      id: '42',
-      alvaChannelIds: [],
-      emailEnabled: undefined,
+    expect(client.automation.delivery.update).toHaveBeenNthCalledWith(2, '42', {
+      channelIds: [],
+      email: undefined,
+    });
+  });
+
+  it('automation delivery update resolves the Agent channel alias 0', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'automation',
+      'delivery',
+      'update',
+      '--id',
+      '42',
+      '--alva-channel-ids',
+      '0,channel_0x,channel_0ch',
+    ]);
+    expect(client.schedules.agentChannelId).toHaveBeenCalledTimes(1);
+    expect(client.automation.delivery.update).toHaveBeenCalledWith('42', {
+      channelIds: ['channel_0ch', 'channel_0x'],
+      email: undefined,
     });
   });
 
@@ -2191,12 +2207,12 @@ describe('CLI dispatch', () => {
 
   it('dispatches automation lifecycle commands', async () => {
     const client = makeClient();
-    await dispatch(client, ['automation', 'stop', '--id', '42']);
-    await dispatch(client, ['automation', 'resume', '--id', '43']);
-    await dispatch(client, ['automation', 'delete', '--id', '44']);
-    expect(client.automation.stop).toHaveBeenCalledWith({ id: 42 });
-    expect(client.automation.resume).toHaveBeenCalledWith({ id: 43 });
-    expect(client.automation.delete).toHaveBeenCalledWith({ id: 44 });
+    await dispatch(client, ['automation', 'stop', '--id', 'automation_0a']);
+    await dispatch(client, ['automation', 'resume', '--id', 'automation_0b']);
+    await dispatch(client, ['automation', 'delete', '--id', 'automation_0c']);
+    expect(client.automation.stop).toHaveBeenCalledWith('automation_0a');
+    expect(client.automation.resume).toHaveBeenCalledWith('automation_0b');
+    expect(client.automation.delete).toHaveBeenCalledWith('automation_0c');
   });
 
   it('dispatches playbooks trending with agent-friendly filters', async () => {
@@ -2216,13 +2232,29 @@ describe('CLI dispatch', () => {
       'abc',
     ]);
     expect(client.playbooks.trending).toHaveBeenCalledWith({
-      keyword: 'scanner',
+      query: 'scanner',
       tags: ['macro', 'ai'],
-      sort: 'RECENT',
-      limit: 5,
-      cursor: 'abc',
-      current: undefined,
+      orderBy: 'NEWEST',
+      pageSize: 5,
+      pageToken: 'abc',
     });
+  });
+
+  it('reads keyless playbooks trending from client.v1 with the 0.x output', async () => {
+    const client = new AlvaClient({});
+    const v1 = { playbooks: [], has_next: false };
+    const trending = vi
+      .spyOn(client.v1.playbooks, 'trending')
+      .mockResolvedValue(v1);
+    const v2 = vi.spyOn(client.playbooks, 'trending');
+
+    await expect(
+      dispatch(client, ['playbooks', 'trending', '--sort', 'follows', '--json'])
+    ).resolves.toEqual(v1);
+    expect(trending).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'FOLLOWS' })
+    );
+    expect(v2).not.toHaveBeenCalled();
   });
 
   it('dispatches functions register with inline params schema', async () => {
@@ -2231,7 +2263,7 @@ describe('CLI dispatch', () => {
       'functions',
       'register',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--entry-script-path',
@@ -2240,13 +2272,11 @@ describe('CLI dispatch', () => {
       '{"type":"object"}',
       '--no-allow-charges',
     ]);
-    expect(client.functions.register).toHaveBeenCalledWith({
-      playbook_id: 123,
-      function_name: 'analyze',
-      entry_script_path:
-        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-      params_schema: '{"type":"object"}',
-      allow_charges: false,
+    expect(client.functions.register).toHaveBeenCalledWith('playbook_0abc', {
+      name: 'analyze',
+      entryScriptPath: '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+      paramsSchema: '{"type":"object"}',
+      allowCharges: false,
     });
   });
 
@@ -2256,38 +2286,36 @@ describe('CLI dispatch', () => {
       'functions',
       'register',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--entry-script-path',
       '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
       '--run-as-service-account',
-      '90123',
+      'account_0sa',
     ]);
     expect(client.functions.register).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: '90123' })
+      'playbook_0abc',
+      expect.objectContaining({ runAsAccountId: 'account_0sa' })
     );
   });
 
-  it('preserves a snowflake (>2^53) --run-as-service-account id as a string', async () => {
+  it('refuses --clear-run-as for functions register, which /api/v2 cannot clear', async () => {
     const client = makeClient();
-    // 19-digit snowflake id; would round to ...3776 if parsed as a JS number.
-    const snowflake = '1234567890123456789';
-    await dispatch(client, [
-      'functions',
-      'register',
-      '--playbook-id',
-      '123',
-      '--function-name',
-      'analyze',
-      '--entry-script-path',
-      '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-      '--run-as-service-account',
-      snowflake,
-    ]);
-    expect(client.functions.register).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: snowflake })
-    );
+    await expect(
+      dispatch(client, [
+        'functions',
+        'register',
+        '--playbook-id',
+        'playbook_0abc',
+        '--function-name',
+        'analyze',
+        '--entry-script-path',
+        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+        '--clear-run-as',
+      ])
+    ).rejects.toThrow(/--clear-run-as is not available/);
+    expect(client.functions.register).not.toHaveBeenCalled();
   });
 
   it('dispatches functions register with params schema file', async () => {
@@ -2299,7 +2327,7 @@ describe('CLI dispatch', () => {
       'functions',
       'register',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--entry-script-path',
@@ -2310,9 +2338,10 @@ describe('CLI dispatch', () => {
     ]);
     expect(mock).toHaveBeenCalledWith('/tmp/schema.json', 'utf-8');
     expect(client.functions.register).toHaveBeenCalledWith(
+      'playbook_0abc',
       expect.objectContaining({
-        params_schema: '{"type":"object"}',
-        allow_charges: true,
+        paramsSchema: '{"type":"object"}',
+        allowCharges: true,
       })
     );
     mock.mockReset();
@@ -2325,7 +2354,7 @@ describe('CLI dispatch', () => {
         'functions',
         'register',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--function-name',
         'analyze',
         '--entry-script-path',
@@ -2342,8 +2371,15 @@ describe('CLI dispatch', () => {
 
   it('dispatches functions list', async () => {
     const client = makeClient();
-    await dispatch(client, ['functions', 'list', '--playbook-id', '123']);
-    expect(client.functions.list).toHaveBeenCalledWith({ playbook_id: 123 });
+    await dispatch(client, [
+      'functions',
+      'list',
+      '--playbook-id',
+      'playbook_0abc',
+    ]);
+    expect(client.functions.list).toHaveBeenCalledWith('playbook_0abc', {
+      pageSize: 100,
+    });
   });
 
   it('dispatches functions delete', async () => {
@@ -2352,14 +2388,14 @@ describe('CLI dispatch', () => {
       'functions',
       'delete',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
     ]);
-    expect(client.functions.delete).toHaveBeenCalledWith({
-      playbook_id: 123,
-      function_name: 'analyze',
+    expect(client.functions.list).toHaveBeenCalledWith('playbook_0abc', {
+      name: 'analyze',
     });
+    expect(client.functions.delete).toHaveBeenCalledWith(FUNCTION);
   });
 
   it('dispatches functions invoke with params JSON', async () => {
@@ -2368,17 +2404,38 @@ describe('CLI dispatch', () => {
       'functions',
       'invoke',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--function-name',
       'analyze',
       '--params',
       '{"ticker":"AAPL"}',
     ]);
-    expect(client.functions.invoke).toHaveBeenCalledWith({
-      playbook_id: 123,
-      function_name: 'analyze',
-      parameters: { ticker: 'AAPL' },
+    expect(client.functions.invoke).toHaveBeenCalledWith(FUNCTION, {
+      parametersJson: '{"ticker":"AAPL"}',
     });
+  });
+
+  it('refuses functions invoke params that are not an object, and a missing function', async () => {
+    const client = makeClient();
+    const invoke = [
+      'functions',
+      'invoke',
+      '--playbook-id',
+      'playbook_0abc',
+      '--function-name',
+      'analyze',
+    ];
+    await expect(
+      dispatch(client, [...invoke, '--params', '[1]'])
+    ).rejects.toThrow("--params must be a JSON object for 'functions invoke'");
+    client.functions.list = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    await expect(dispatch(client, invoke)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Playbook playbook_0abc has no function named analyze',
+    });
+    expect(client.functions.invoke).not.toHaveBeenCalled();
   });
 
   it('functions invoke rejects invalid params JSON', async () => {
@@ -2388,7 +2445,7 @@ describe('CLI dispatch', () => {
         'functions',
         'invoke',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--function-name',
         'analyze',
         '--params',
@@ -2404,11 +2461,9 @@ describe('CLI dispatch', () => {
       'allowance',
       'get',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
     ]);
-    expect(client.functions.getAllowance).toHaveBeenCalledWith({
-      playbook_id: 123,
-    });
+    expect(client.functions.getAllowance).toHaveBeenCalledWith('playbook_0abc');
   });
 
   it('dispatches functions allowance list', async () => {
@@ -2424,13 +2479,13 @@ describe('CLI dispatch', () => {
       'allowance',
       'create',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
       '--amount',
       '25',
     ]);
     expect(client.functions.createAllowance).toHaveBeenCalledWith({
-      playbook_id: 123,
-      amount: 25,
+      playbookId: 'playbook_0abc',
+      credits: '25',
     });
   });
 
@@ -2442,7 +2497,7 @@ describe('CLI dispatch', () => {
         'allowance',
         'create',
         '--playbook-id',
-        '123',
+        'playbook_0abc',
         '--amount',
         '0',
       ])
@@ -2458,11 +2513,23 @@ describe('CLI dispatch', () => {
       'allowance',
       'revoke',
       '--playbook-id',
-      '123',
+      'playbook_0abc',
     ]);
-    expect(client.functions.revokeAllowance).toHaveBeenCalledWith({
-      playbook_id: 123,
-    });
+    expect(client.functions.getAllowance).toHaveBeenCalledWith('playbook_0abc');
+    expect(client.functions.revokeAllowance).toHaveBeenCalledWith(
+      'allowance_0a1'
+    );
+    client.functions.getAllowance = vi.fn().mockResolvedValue(null);
+    await expect(
+      dispatch(client, [
+        'functions',
+        'allowance',
+        'revoke',
+        '--playbook-id',
+        'playbook_0abc',
+      ])
+    ).resolves.toBeUndefined();
+    expect(client.functions.revokeAllowance).toHaveBeenCalledTimes(1);
   });
 
   it('functions --help documents register and allowance', async () => {
@@ -2486,17 +2553,15 @@ describe('CLI dispatch', () => {
       '--version',
       '1.0',
       '--cronjob-id',
-      '5',
+      'cronjob_05',
       '--skip-auto-trigger',
     ]);
-    expect(client.release.feed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc',
-        version: '1.0',
-        cronjob_id: 5,
-        skip_auto_trigger: true,
-      })
-    );
+    expect(client.release.feed).toHaveBeenCalledWith({
+      name: 'btc',
+      version: '1.0',
+      cronjobId: 'cronjob_05',
+      skipFirstRun: true,
+    });
   });
 
   it('dispatches release playbook-draft', async () => {
@@ -2509,15 +2574,32 @@ describe('CLI dispatch', () => {
       '--display-name',
       'BTC Trend Dashboard',
       '--feeds',
-      '[{"feed_id":100}]',
+      '[{"automationId":"automation_0a","major":2}]',
     ]);
-    expect(client.release.playbookDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc-dashboard',
-        display_name: 'BTC Trend Dashboard',
-        feeds: [{ feed_id: 100 }],
-      })
+    expect(client.release.playbookDraft).toHaveBeenCalledWith({
+      slug: 'btc-dashboard',
+      title: 'BTC Trend Dashboard',
+      automations: [{ automationId: 'automation_0a', major: 2 }],
+    });
+  });
+
+  it('refuses 0.x --feeds members before any request', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'release',
+        'playbook-draft',
+        '--name',
+        'btc-dashboard',
+        '--display-name',
+        'BTC',
+        '--feeds',
+        '[{"feed_id":"automation_0a"}]',
+      ])
+    ).rejects.toThrow(
+      /--feeds must be a JSON array of \{automationId, major\?\}/
     );
+    expect(client.release.playbookDraft).not.toHaveBeenCalled();
   });
 
   it('dispatches release playbook-draft with --skill-id', async () => {
@@ -2530,15 +2612,30 @@ describe('CLI dispatch', () => {
       '--display-name',
       'BTC Trend Dashboard',
       '--feeds',
-      '[{"feed_id":100}]',
+      '[{"automationId":"automation_0a","major":2}]',
       '--skill-id',
       'alva/screener',
     ]);
+    expect(client.playbookSkills.get).toHaveBeenCalledWith('alva/screener');
     expect(client.release.playbookDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'btc-dashboard',
-        skill_id: 'alva/screener',
-      })
+      expect.objectContaining({ slug: 'btc-dashboard', skillId: 'skill_0a' })
+    );
+
+    await dispatch(client, [
+      'release',
+      'playbook-draft',
+      '--name',
+      'btc-dashboard',
+      '--display-name',
+      'BTC Trend Dashboard',
+      '--feeds',
+      '[]',
+      '--skill-id',
+      'skill_0b',
+    ]);
+    expect(client.playbookSkills.get).toHaveBeenCalledTimes(1);
+    expect(client.release.playbookDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ automations: [], skillId: 'skill_0b' })
     );
   });
 
@@ -2553,7 +2650,7 @@ describe('CLI dispatch', () => {
         '--version',
         'v1.0.0',
         '--feeds',
-        '[{"feed_id":100}]',
+        '[{"automationId":"automation_0a","major":2}]',
       ])
     ).rejects.toThrow(/changelog/);
   });
@@ -2569,7 +2666,7 @@ describe('CLI dispatch', () => {
         '--version',
         'v1.0.0',
         '--feeds',
-        '[{"feed_id":100}]',
+        '[{"automationId":"automation_0a","major":2}]',
         '--changelog',
         'Initial release',
       ])
@@ -2594,8 +2691,10 @@ describe('CLI dispatch', () => {
       client.fs.read = vi
         .fn()
         .mockResolvedValue(
-          '<html><head><style>body{font-family:Delight}</style></head>' +
-            '<body><div class="playbook-container"><p>ok</p></div></body></html>'
+          fileContent(
+            '<html><head><style>body{font-family:Delight}</style></head>' +
+              '<body><div class="playbook-container"><p>ok</p></div></body></html>'
+          )
         );
       const TEST_CONTRACT_YAML = `
 version: 1
@@ -2617,23 +2716,24 @@ components: {}
         '--version',
         'v1.0.0',
         '--feeds',
-        '[{"feed_id":100}]',
+        '[{"automationId":"automation_0a","major":2}]',
         '--changelog',
         'Initial release',
         '--readme-url',
         '/alva/home/alice/playbooks/btc-dashboard/README.md',
         ...confirmationFlags,
       ]);
-      expect(client.release.playbook).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'btc-dashboard',
-          version: 'v1.0.0',
-          feeds: [{ feed_id: 100 }],
-          changelog: 'Initial release',
-          readme_url: '/alva/home/alice/playbooks/btc-dashboard/README.md',
-          confirm_bundled_feed_exposure: confirmation,
-        })
+      expect(client.playbooks.getBySlug).toHaveBeenCalledWith(
+        'alice',
+        'btc-dashboard'
       );
+      expect(client.release.playbook).toHaveBeenCalledWith('playbook_0abc', {
+        version: 'v1.0.0',
+        automations: [{ automationId: 'automation_0a', major: 2 }],
+        changelog: 'Initial release',
+        readmePath: '/alva/home/alice/playbooks/btc-dashboard/README.md',
+        confirmBundledFeedExposure: confirmation,
+      });
       expect(client.fs.read).toHaveBeenCalledWith({
         path: '~/playbooks/btc-dashboard/index.html',
       });
@@ -2643,14 +2743,30 @@ components: {}
 
   it('dispatches sdk partitions', async () => {
     const client = makeClient();
-    await dispatch(client, ['sdk', 'partitions']);
-    expect(client.sdk.partitions).toHaveBeenCalled();
+    const first = { id: 'sdk_partition_0a', name: 'feed_widgets' };
+    const second = { id: 'sdk_partition_0b', name: 'unified_search' };
+    client.sdk.partitions = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [first], nextPageToken: 'p2' })
+      .mockResolvedValueOnce({ items: [second], nextPageToken: null });
+    await expect(dispatch(client, ['sdk', 'partitions'])).resolves.toEqual({
+      items: [first, second],
+      nextPageToken: null,
+    });
+    expect(client.sdk.partitions).toHaveBeenNthCalledWith(1, {
+      pageSize: 100,
+      pageToken: undefined,
+    });
+    expect(client.sdk.partitions).toHaveBeenNthCalledWith(2, {
+      pageSize: 100,
+      pageToken: 'p2',
+    });
   });
 
   it('dispatches sdk doc with --name', async () => {
     const client = makeClient();
     await dispatch(client, ['sdk', 'doc', '--name', 'ohlcv']);
-    expect(client.sdk.doc).toHaveBeenCalledWith({ name: 'ohlcv' });
+    expect(client.sdk.doc).toHaveBeenCalledWith('ohlcv');
   });
 
   it('dispatches comments create', async () => {
@@ -2665,18 +2781,16 @@ components: {}
       '--content',
       'Nice!',
     ]);
-    expect(client.comments.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: 'alice',
-        name: 'pb',
-        content: 'Nice!',
-      })
-    );
+    expect(client.playbooks.getBySlug).toHaveBeenCalledWith('alice', 'pb');
+    expect(client.comments.create).toHaveBeenCalledWith('playbook_0abc', {
+      body: 'Nice!',
+      parentId: undefined,
+    });
   });
 
   it('dispatches notification-history list-feed', async () => {
     const client = makeClient();
-    vi.mocked(client.notifications.listFeed).mockResolvedValueOnce({
+    vi.mocked(client.v1.notifications.listFeed).mockResolvedValueOnce({
       items: [
         {
           id: '1',
@@ -2700,13 +2814,15 @@ components: {}
       'btc-ema',
       '--delivery-provider',
       'telegram',
+      '--since',
+      '2023-11-14T22:13:20Z',
     ])) as { items: Array<Record<string, unknown>> };
-    expect(client.notifications.listFeed).toHaveBeenCalledWith({
+    expect(client.v1.notifications.listFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
       channel: 'telegram',
       status: undefined,
-      since_time: undefined,
+      since_time: 1700000000,
       first: undefined,
       cursor: undefined,
     });
@@ -2730,13 +2846,34 @@ components: {}
     ).rejects.toThrow(
       /--channel is no longer supported.*use --delivery-provider/
     );
-    expect(client.notifications.listFeed).not.toHaveBeenCalled();
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Unix-seconds notification-history --since, naming the change', async () => {
+    const client = makeClient();
+    await expect(
+      dispatch(client, [
+        'notification-history',
+        'list-feed',
+        '--username',
+        'alice',
+        '--name',
+        'btc-ema',
+        '--since',
+        '1700000000',
+      ])
+    ).rejects.toThrow(
+      /--since takes an RFC 3339 time .* since toolkit 1\.0; Unix timestamps are no longer accepted/
+    );
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
   });
 
   it('dispatches notification-preferences list', async () => {
     const client = makeClient();
-    await dispatch(client, ['notification-preferences', 'list']);
-    expect(client.notificationPreferences.list).toHaveBeenCalled();
+    expect(
+      await dispatch(client, ['notification-preferences', 'list'])
+    ).toEqual({ sessionCompleted: null });
+    expect(client.notificationPreferences.get).toHaveBeenCalled();
   });
 
   it('dispatches notification-preferences disable-session-completed', async () => {
@@ -2746,8 +2883,7 @@ components: {}
       'disable-session-completed',
     ]);
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: false,
+      sessionCompleted: false,
     });
   });
 
@@ -2758,8 +2894,7 @@ components: {}
       'enable-session-completed',
     ]);
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: true,
+      sessionCompleted: true,
     });
   });
 
@@ -2783,18 +2918,14 @@ components: {}
     ]);
     expect(client.feedback.submit).toHaveBeenCalledWith({
       source: undefined,
-      category: 'runtime',
-      severity: 'high',
+      category: 'RUNTIME',
+      severity: 'HIGH',
       summary: 'runtime failed',
       details: 'command returned a platform error',
       evidence: { command: 'alva run foo.js' },
       context: { session_id: 's1' },
     });
-    expect(result).toEqual({
-      feedback_id: 123,
-      notion_page_id: 'page-123',
-      notion_url: 'https://notion.so/page-123',
-    });
+    expect(result).toEqual(aFeedback());
   });
 
   it('dispatches feedback submit with optional metadata omitted', async () => {
@@ -2814,11 +2945,7 @@ components: {}
       evidence: undefined,
       context: undefined,
     });
-    expect(result).toEqual({
-      feedback_id: 123,
-      notion_page_id: 'page-123',
-      notion_url: 'https://notion.so/page-123',
-    });
+    expect(result).toEqual(aFeedback());
   });
 
   it('rejects stale feedback dedupe flag', async () => {
@@ -2844,7 +2971,7 @@ components: {}
     await expect(
       dispatch(client, ['channel', 'group-subscriptions', 'list'])
     ).rejects.toThrow("Unknown command: 'channel'");
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('dispatches remix', async () => {
@@ -2858,10 +2985,25 @@ components: {}
       '--parents',
       '[{"username":"bob","name":"src"}]',
     ]);
-    expect(client.remix.save).toHaveBeenCalledWith({
-      child: { username: 'alice', name: 'my-pb' },
-      parents: [{ username: 'bob', name: 'src' }],
-    });
+    expect(vi.mocked(client.playbooks.getBySlug).mock.calls).toEqual([
+      ['alice', 'my-pb'],
+      ['bob', 'src'],
+    ]);
+    expect(client.remix.save).toHaveBeenCalledWith('playbook_0abc', [
+      'playbook_0abc',
+    ]);
+    await expect(
+      dispatch(client, [
+        'remix',
+        '--child-username',
+        'alice',
+        '--child-name',
+        'my-pb',
+        '--parents',
+        '["bob/src"]',
+      ])
+    ).rejects.toThrow(/--parents must be a JSON array of \{username, name\}/);
+    expect(client.remix.save).toHaveBeenCalledTimes(1);
   });
 
   it('dispatches deploy create with --no-push-notify', async () => {
@@ -2877,9 +3019,16 @@ components: {}
       '* * * * *',
       '--no-push-notify',
     ]);
-    expect(client.deploy.create).toHaveBeenCalledWith(
-      expect.objectContaining({ push_notify: false })
-    );
+    expect(client.deploy.create).toHaveBeenCalledWith({
+      name: 'j',
+      entryPath: '~/j.js',
+      cronExpression: '* * * * *',
+      argsJson: undefined,
+      pushNotify: false,
+      maxHeapSizeMb: undefined,
+      executionTimeoutSeconds: undefined,
+      runAsAccountId: undefined,
+    });
   });
 
   it('preserves string IDs in deploy create --args', async () => {
@@ -2897,9 +3046,8 @@ components: {}
       '--args',
       args,
     ]);
-    expect(client.deploy._createSerializedArgs).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'j' }),
-      args
+    expect(client.deploy.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'j', argsJson: args })
     );
   });
 
@@ -2929,10 +3077,10 @@ components: {}
       '--cron',
       '* * * * *',
       '--run-as-service-account',
-      '90123',
+      'account_0sa',
     ]);
     expect(client.deploy.create).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: '90123' })
+      expect.objectContaining({ runAsAccountId: 'account_0sa' })
     );
   });
 
@@ -2951,7 +3099,7 @@ components: {}
       '3600',
     ]);
     expect(client.deploy.create).toHaveBeenCalledWith(
-      expect.objectContaining({ execution_timeout_seconds: 3600 })
+      expect.objectContaining({ executionTimeoutSeconds: 3600 })
     );
   });
 
@@ -2966,7 +3114,8 @@ components: {}
       '900',
     ]);
     expect(client.deploy.update).toHaveBeenCalledWith(
-      expect.objectContaining({ execution_timeout_seconds: 900 })
+      '5',
+      expect.objectContaining({ executionTimeoutSeconds: 900 })
     );
   });
 
@@ -2988,52 +3137,58 @@ components: {}
     }
   );
 
-  // Security: a malformed --run-as-service-account must FAIL, not silently drop
-  // the flag and run the job with the owner's full privileges (Codex #113 P1).
-  it('rejects a non-numeric --run-as-service-account (deploy create)', async () => {
+  // Security: --run-as-service-account 0 must FAIL, not reach deploy update as
+  // "0", which clears run_as and runs the job with the owner's full privileges
+  // (Codex #113 P1); --clear-run-as says that explicitly.
+  it('rejects --run-as-service-account 0 (deploy update)', async () => {
     const client = makeClient();
     await expect(
       dispatch(client, [
         'deploy',
-        'create',
-        '--name',
-        'j',
-        '--path',
-        '~/j.js',
-        '--cron',
-        '* * * * *',
+        'update',
+        '--id',
+        '5',
         '--run-as-service-account',
-        '90123x',
+        '0',
       ])
     ).rejects.toThrow(/run-as-service-account/);
-    expect(client.deploy.create).not.toHaveBeenCalled();
+    expect(client.deploy.update).not.toHaveBeenCalled();
   });
 
-  it('rejects an empty --run-as-service-account (functions register)', async () => {
+  it('rejects an empty or 0 --run-as-service-account (functions register)', async () => {
     const client = makeClient();
-    await expect(
-      dispatch(client, [
-        'functions',
-        'register',
-        '--playbook-id',
-        '123',
-        '--function-name',
-        'analyze',
-        '--entry-script-path',
-        '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
-        '--run-as-service-account',
-        '',
-      ])
-    ).rejects.toThrow(/run-as-service-account/);
+    // "0" cleared run_as in 0.x; /api/v2 has no clear, so it must not pass.
+    for (const value of ['', '0']) {
+      await expect(
+        dispatch(client, [
+          'functions',
+          'register',
+          '--playbook-id',
+          'playbook_0abc',
+          '--function-name',
+          'analyze',
+          '--entry-script-path',
+          '/alva/home/alice/playbooks/my-playbook/udf/analyze.js',
+          '--run-as-service-account',
+          value,
+        ])
+      ).rejects.toThrow(/run-as-service-account/);
+    }
     expect(client.functions.register).not.toHaveBeenCalled();
   });
 
-  it('deploy update --clear-run-as sends run_as_user_id 0', async () => {
+  it('deploy update --clear-run-as clears runAsAccountId with null', async () => {
     const client = makeClient();
     await dispatch(client, ['deploy', 'update', '--id', '5', '--clear-run-as']);
     expect(client.deploy.update).toHaveBeenCalledWith(
-      expect.objectContaining({ run_as_user_id: '0' })
+      '5',
+      expect.objectContaining({ runAsAccountId: null })
     );
+    await dispatch(client, ['deploy', 'update', '--id', '5', '--name', 'n']);
+    expect(vi.mocked(client.deploy.update).mock.calls[1][1]).toMatchObject({
+      name: 'n',
+      runAsAccountId: undefined,
+    });
   });
 
   it('rejects --clear-run-as together with --run-as-service-account', async () => {
@@ -3087,10 +3242,10 @@ components: {}
     );
   });
 
-  it('throws CliUsageError with command="deploy" when --id is non-numeric for deploy get', async () => {
+  it('throws CliUsageError with command="deploy" when --id is blank for deploy get', async () => {
     const client = makeClient();
     await expect(
-      dispatch(client, ['deploy', 'get', '--id', 'abc'])
+      dispatch(client, ['deploy', 'get', '--id', ' '])
     ).rejects.toSatisfy(
       (err: unknown) => err instanceof CliUsageError && err.command === 'deploy'
     );
@@ -3199,10 +3354,7 @@ describe('whoami', () => {
       baseUrl: 'http://staging',
     })) as Record<string, unknown>;
     expect(client.user.me).toHaveBeenCalled();
-    expect(result.username).toBe('alice');
-    expect(result.subscription_tier).toBe('free');
-    expect(result.active_im_provider).toBe('slack');
-    expect(result.active_channel).toBeUndefined();
+    expect(result).toMatchObject(aMe({ toolkitMinVersion: '0.1.0' }));
     expect(result._meta).toMatchObject({
       profile: 'staging',
       endpoint: 'http://staging',
@@ -3228,9 +3380,9 @@ describe('whoami', () => {
     const meta = result._meta as Record<string, unknown>;
     expect(meta.arrays_jwt).toEqual({
       exists: true,
-      expires_at: 1800000000,
-      renewal_needed: false,
-      tier: 'SUBSCRIPTION_TIER_PRO',
+      expiresAt: '2027-01-15T08:00:00.000Z',
+      renewalNeeded: false,
+      tier: 'PRO',
     });
   });
 
@@ -3618,20 +3770,20 @@ describe('help text', () => {
     };
     expect(result._help).toBe(true);
     expect(result.text).toContain('whoami');
-    expect(result.text).toContain('active_im_provider');
-    expect(result.text).not.toContain('active_channel');
+    expect(result.text).toContain('preferredMessagingApp');
+    expect(result.text).not.toContain('active_im_provider');
     expect(result.text.toLowerCase()).toContain('arrays_jwt');
   });
 
-  it('returns per-command help for user --help with IM provider naming', async () => {
+  it('returns per-command help for user --help with the /api/v2 Me fields', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['user', '--help'])) as {
       _help: boolean;
       text: string;
     };
     expect(result._help).toBe(true);
-    expect(result.text).toContain('active_im_provider');
-    expect(result.text).not.toContain('active_channel');
+    expect(result.text).toContain('preferredMessagingApp');
+    expect(result.text).not.toContain('subscription_tier');
   });
 
   it('returns per-command help for sdk --help with partition names', async () => {
@@ -4225,8 +4377,54 @@ describe('skillhub dispatch', () => {
     await dispatch(client, ['skillhub', 'list', '--tag', 'research']);
     expect(client.playbookSkills.list).toHaveBeenCalledWith({
       tag: 'research',
-      username: undefined,
+      owner: undefined,
+      pageSize: 100,
+      pageToken: undefined,
     });
+  });
+
+  it('reads every skillhub page into one list', async () => {
+    const client = makeClient();
+    const skill = (name: string) => ({
+      id: 'skill_0a',
+      name,
+      displayName: name,
+      description: `${name} skill`,
+      tags: ['research'],
+      owner: { id: null, handle: 'alva', displayName: null, avatarUrl: null },
+      header: null,
+      iconUrl: null,
+      promptTemplate: null,
+      updatedAt: null,
+    });
+    client.playbookSkills.list = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [skill('a')], nextPageToken: 'p2' })
+      .mockResolvedValueOnce({ items: [skill('b')], nextPageToken: null });
+
+    const text = await dispatch(client, [
+      'skillhub',
+      'list',
+      '--username',
+      'alva',
+    ]);
+    expect(text).toBe(
+      '• alva/a\n  a skill\n  tags: research\n• alva/b\n  b skill\n  tags: research\n'
+    );
+    expect(client.playbookSkills.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ owner: 'alva', pageToken: 'p2' })
+    );
+  });
+
+  it('reads keyless skillhub from client.v1', async () => {
+    const client = new AlvaClient({});
+    const list = vi
+      .spyOn(client.v1.playbookSkills, 'list')
+      .mockResolvedValue({ skills: [] });
+    await expect(dispatch(client, ['skillhub', 'list'])).resolves.toBe(
+      'No playbook skills found.\n'
+    );
+    expect(list).toHaveBeenCalledWith({ tag: undefined, username: undefined });
   });
 
   it('dispatches skillhub tags', async () => {
@@ -4408,12 +4606,9 @@ describe('isVersionOlderThan', () => {
 describe('whoami version check', () => {
   it('sets _warning when CLI is older than min version', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      toolkit_min_version: '99.0.0',
-    });
+    client.user.me = vi
+      .fn()
+      .mockResolvedValue(aMe({ toolkitMinVersion: '99.0.0' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
@@ -4423,25 +4618,18 @@ describe('whoami version check', () => {
 
   it('no _warning when CLI version >= min version', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      toolkit_min_version: '0.1.0',
-    });
+    client.user.me = vi
+      .fn()
+      .mockResolvedValue(aMe({ toolkitMinVersion: '0.1.0' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
     expect(result._warning).toBeUndefined();
   });
 
-  it('no _warning when server omits toolkit_min_version', async () => {
+  it('no _warning when the server sends no toolkitMinVersion', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-    });
+    client.user.me = vi.fn().mockResolvedValue(aMe({ toolkitMinVersion: '' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
@@ -4450,12 +4638,9 @@ describe('whoami version check', () => {
 
   it('no _warning when server returns malformed version', async () => {
     const client = makeClient();
-    client.user.me = vi.fn().mockResolvedValue({
-      id: '9007199254740993',
-      username: 'alice',
-      subscription_tier: 'free',
-      toolkit_min_version: 'bad',
-    });
+    client.user.me = vi
+      .fn()
+      .mockResolvedValue(aMe({ toolkitMinVersion: 'bad' }));
     const result = (await dispatch(client, ['whoami'], {
       cliVersion: '0.1.2',
     })) as Record<string, unknown>;
@@ -4467,8 +4652,8 @@ describe('arrays token dispatch', () => {
   it('dispatches arrays token ensure', async () => {
     const client = makeClient();
     const mockResp = {
-      expires_at: 1,
-      tier: 'SUBSCRIPTION_TIER_FREE',
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      tier: 'FREE',
       renewed: true,
     };
     client.arraysJwt.ensure = vi.fn().mockResolvedValue(mockResp);
@@ -4481,9 +4666,9 @@ describe('arrays token dispatch', () => {
     const client = makeClient();
     const mockResp = {
       exists: true,
-      expires_at: 1,
-      tier: 'SUBSCRIPTION_TIER_FREE',
-      renewal_needed: false,
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      tier: 'FREE',
+      renewalNeeded: false,
     };
     client.arraysJwt.status = vi.fn().mockResolvedValue(mockResp);
     const result = await dispatch(client, ['arrays', 'token', 'status']);
@@ -4572,7 +4757,9 @@ components: {}
     const client = makeClient();
     client.fs.read = vi
       .fn()
-      .mockResolvedValue('<html><body><p>no container</p></body></html>');
+      .mockResolvedValue(
+        fileContent('<html><body><p>no container</p></body></html>')
+      );
     vi.mocked(fs.readFileSync).mockClear();
 
     const result = await handleLintPlaybook({
@@ -4603,11 +4790,10 @@ components: {}
     const client = makeClient();
     const html = '<html><body><p>no container</p></body></html>';
     const bytes = [...new TextEncoder().encode(html)];
-    client.fs.read = vi
-      .fn()
-      .mockResolvedValue(
-        runInNewContext(`new Uint8Array(${JSON.stringify(bytes)}).buffer`)
-      );
+    client.fs.read = vi.fn().mockResolvedValue({
+      ...fileContent(''),
+      data: runInNewContext(`new Uint8Array(${JSON.stringify(bytes)}).buffer`),
+    });
 
     const result = await handleLintPlaybook({
       file: '~/playbooks/demo/index.html',
@@ -4709,21 +4895,76 @@ components: {}
   });
 });
 
+describe('alva ask', () => {
+  const pending = {
+    id: 'ask_operation_0a',
+    done: false,
+    metadata: { sessionId: 'session_0s', createdAt: null },
+    response: null,
+    error: null,
+  };
+  const done = { ...pending, done: true, response: { text: 'NVDA beat.' } };
+
+  it('creates the ask, waits and prints the answer text', async () => {
+    const client = makeClient();
+    client.asks.create = vi.fn().mockResolvedValue(pending);
+    client.asks.wait = vi.fn().mockResolvedValue(done);
+    expect(
+      await dispatch(client, [
+        'ask',
+        '--prompt',
+        'How did NVDA do?',
+        '--model',
+        'm1',
+      ])
+    ).toBe('NVDA beat.\n');
+    expect(client.asks.create).toHaveBeenCalledWith({
+      prompt: 'How did NVDA do?',
+      system: undefined,
+      model: 'm1',
+      effort: undefined,
+    });
+    expect(client.asks.wait).toHaveBeenCalledWith(pending);
+  });
+
+  it('--json prints the finished operation and --no-wait the started one', async () => {
+    const client = makeClient();
+    client.asks.create = vi.fn().mockResolvedValue(pending);
+    client.asks.wait = vi.fn().mockResolvedValue(done);
+    expect(await dispatch(client, ['ask', '--prompt', 'q', '--json'])).toEqual(
+      done
+    );
+    expect(
+      await dispatch(client, ['ask', '--prompt', 'q', '--no-wait'])
+    ).toEqual(pending);
+    expect(client.asks.wait).toHaveBeenCalledTimes(1);
+    await expect(dispatch(client, ['ask'])).rejects.toThrow(/--prompt/);
+  });
+});
+
 describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)', () => {
   it('dispatches playbook follow without changing alerts', async () => {
     const client = makeClient();
-    await dispatch(client, [
-      'subscriptions',
-      'follow-playbook',
-      '--username',
+    vi.mocked(client.playbooks.getBySlug).mockResolvedValue(
+      aPlaybook({ id: 'playbook_0bcd' })
+    );
+    expect(
+      await dispatch(client, [
+        'subscriptions',
+        'follow-playbook',
+        '--username',
+        'alice',
+        '--name',
+        'btc-dashboard',
+      ])
+    ).toEqual(aPlaybookFollow());
+    expect(client.playbooks.getBySlug).toHaveBeenCalledWith(
       'alice',
-      '--name',
-      'btc-dashboard',
-    ]);
-    expect(client.subscriptions.followPlaybook).toHaveBeenCalledWith({
-      username: 'alice',
-      name: 'btc-dashboard',
-    });
+      'btc-dashboard'
+    );
+    expect(client.subscriptions.followPlaybook).toHaveBeenCalledWith(
+      'playbook_0bcd'
+    );
     expect(client.subscriptions.subscribeBatch).not.toHaveBeenCalled();
   });
 
@@ -4738,8 +4979,8 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'c1',
     ]);
     expect(client.subscriptions.follows).toHaveBeenCalledWith({
-      limit: 20,
-      cursor: 'c1',
+      pageSize: 20,
+      pageToken: 'c1',
     });
   });
 
@@ -4749,22 +4990,34 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'subscriptions',
       'subscribe',
       '--feed-ids',
-      '13292,13293',
+      'automation_0a,automation_0b',
       '--channel-id',
-      '42',
+      'channel_0c',
     ]);
     await dispatch(client, [
       'subscriptions',
       'unsubscribe',
       '--feed-ids',
-      '13292',
+      'automation_0a',
     ]);
     expect(client.subscriptions.subscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['13292', '13293'],
-      channelId: '42',
+      automationIds: ['automation_0a', 'automation_0b'],
+      channelId: 'channel_0c',
     });
-    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith({
-      feedIds: ['13292'],
+    expect(client.subscriptions.unsubscribeBatch).toHaveBeenCalledWith([
+      'automation_0a',
+    ]);
+    await dispatch(client, [
+      'subscriptions',
+      'subscribe',
+      '--feed-ids',
+      'automation_0a',
+      '--channel-id',
+      '0',
+    ]);
+    expect(client.subscriptions.subscribeBatch).toHaveBeenLastCalledWith({
+      automationIds: ['automation_0a'],
+      channelId: undefined,
     });
   });
 
@@ -4803,41 +5056,33 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'c1',
     ]);
     expect(client.alerts.list).toHaveBeenCalledWith({
-      first: 20,
-      cursor: 'c1',
+      pageSize: 20,
+      pageToken: 'c1',
     });
     expect(result).toEqual(expect.stringContaining('1 alert(s):'));
-    expect(result).toEqual(expect.stringContaining('btc-ema'));
-    expect(result).toEqual(expect.stringContaining('channel: 7'));
-    expect(result).toEqual(expect.stringContaining('next_cursor: next'));
+    expect(result).toEqual(expect.stringContaining('btc-ema  [ACTIVE]'));
+    expect(result).toEqual(
+      expect.stringContaining('destination: CHANNEL channel_0ch')
+    );
+    expect(result).toEqual(
+      expect.stringContaining('automation status: ACTIVE')
+    );
+    expect(result).toEqual(expect.stringContaining('used by: 1'));
+    expect(result).toEqual(expect.stringContaining('nextPageToken: next'));
   });
 
   it('returns raw alert list with --json', async () => {
     const client = makeClient();
     const result = await dispatch(client, ['alert', 'list', '--json']);
     expect(result).toEqual({
-      items: [
-        {
-          target: { type: 'FEED', id: '42' },
-          created_at_ms: 1700000000000,
-          updated_at_ms: 1700000000000,
-          feed_name: 'btc-ema',
-          feed_status: 'ACTIVE',
-          kind: 'FEED_ALERT',
-          target_status: 'ACTIVE',
-          channel_id: '7',
-          used_by_total: 1,
-          last_pushed_at_ms: 1700000000000,
-        },
-      ],
-      next_cursor: 'next',
-      total_count: 2,
+      items: [aSubscription({ channelId: 'channel_0ch' })],
+      nextPageToken: 'next',
     });
   });
 
   it('lists current group alerts through the explicit group subcommand', async () => {
     const client = makeClient('123', 'channel_group');
-    vi.mocked(client.channelGroupSubscriptions.list).mockResolvedValueOnce({
+    vi.mocked(client.v1.channelGroupSubscriptions.list).mockResolvedValueOnce({
       subscriptions: [
         {
           event_type: 'feed_alert_ready',
@@ -4850,7 +5095,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       ],
     });
     const result = await dispatch(client, ['alert', 'group', 'list']);
-    expect(client.channelGroupSubscriptions.list).toHaveBeenCalledWith({
+    expect(client.v1.channelGroupSubscriptions.list).toHaveBeenCalledWith({
       session_id: '123',
     });
     expect(client.alerts.list).not.toHaveBeenCalled();
@@ -4861,7 +5106,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     const client = makeClient('123', 'channel_group');
     await dispatch(client, ['alert', 'list']);
     expect(client.alerts.list).toHaveBeenCalled();
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('dispatches alert follows with pagination flags', async () => {
@@ -4875,8 +5120,8 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'c1',
     ]);
     expect(client.alerts.follows).toHaveBeenCalledWith({
-      limit: 20,
-      cursor: 'c1',
+      pageSize: 20,
+      pageToken: 'c1',
     });
   });
 
@@ -4894,11 +5139,11 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--automation',
       'alice/btc-ema',
     ]);
-    expect(client.alerts.enableAutomation).toHaveBeenCalledWith({
+    expect(client.v1.subscriptions.subscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
     });
-    expect(client.alerts.disableAutomation).toHaveBeenCalledWith({
+    expect(client.v1.subscriptions.unsubscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
     });
@@ -4916,7 +5161,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '7',
     ]);
 
-    expect(client.alerts.enableAutomation).toHaveBeenCalledWith({
+    expect(client.v1.subscriptions.subscribeFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
       channelId: '7',
@@ -4947,7 +5192,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     ).rejects.toThrow(/--channel-id is not supported for 'alert group list'/);
 
     expect(client.alerts.list).not.toHaveBeenCalled();
-    expect(client.alerts.disableAutomation).not.toHaveBeenCalled();
+    expect(client.v1.subscriptions.unsubscribeFeed).not.toHaveBeenCalled();
     expect(client.alerts.disableBatch).not.toHaveBeenCalled();
   });
 
@@ -4972,18 +5217,24 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       'alert',
       'enable',
       '--automation-ids',
-      '42,43',
+      'automation_0a,automation_0b',
       '--channel-id',
-      '7',
+      'channel_0c',
     ]);
-    await dispatch(client, ['alert', 'disable', '--automation-ids', '42,43']);
+    await dispatch(client, [
+      'alert',
+      'disable',
+      '--automation-ids',
+      'automation_0a,automation_0b',
+    ]);
     expect(client.alerts.enableBatch).toHaveBeenCalledWith({
-      feedIds: ['42', '43'],
-      channelId: '7',
+      automationIds: ['automation_0a', 'automation_0b'],
+      channelId: 'channel_0c',
     });
-    expect(client.alerts.disableBatch).toHaveBeenCalledWith({
-      feedIds: ['42', '43'],
-    });
+    expect(client.alerts.disableBatch).toHaveBeenCalledWith([
+      'automation_0a',
+      'automation_0b',
+    ]);
   });
 
   it('enables and disables current group alerts by automation id', async () => {
@@ -5002,12 +5253,14 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--automation-ids',
       '42',
     ]);
-    expect(client.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
+    expect(client.v1.channelGroupSubscriptions.subscribe).toHaveBeenCalledWith({
       session_id: '123',
       target_type: 'feed',
       target_id: '42',
     });
-    expect(client.channelGroupSubscriptions.unsubscribe).toHaveBeenCalledWith({
+    expect(
+      client.v1.channelGroupSubscriptions.unsubscribe
+    ).toHaveBeenCalledWith({
       session_id: '123',
       target_type: 'feed',
       target_id: '42',
@@ -5045,7 +5298,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
       /only available inside an external IM-group sandbox/
     );
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('requires the attached group session id without accepting it as input', async () => {
@@ -5053,7 +5306,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await expect(dispatch(client, ['alert', 'group', 'list'])).rejects.toThrow(
       /current group session is unavailable/
     );
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('does not accept an explicit session id for alert group commands', async () => {
@@ -5061,7 +5314,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await expect(
       dispatch(client, ['alert', 'group', 'list', '--session-id', '456'])
     ).rejects.toThrow(/does not accept --session-id/);
-    expect(client.channelGroupSubscriptions.list).not.toHaveBeenCalled();
+    expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
   it('rejects playbook ids for alert batch mutations', async () => {
@@ -5072,9 +5325,9 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     expect(client.alerts.disableBatch).not.toHaveBeenCalled();
   });
 
-  it('dispatches alert history for automation targets', async () => {
+  it('dispatches alert history by owner and name to /api/v1', async () => {
     const client = makeClient();
-    vi.mocked(client.alerts.historyAutomation).mockResolvedValueOnce({
+    vi.mocked(client.v1.notifications.listFeed).mockResolvedValueOnce({
       items: [
         {
           id: '1',
@@ -5099,13 +5352,13 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--status',
       'sent',
       '--since',
-      '1777355703',
+      '2026-04-28T05:55:03Z',
       '--first',
       '5',
       '--cursor',
       'c1',
     ])) as { items: Array<Record<string, unknown>> };
-    expect(client.alerts.historyAutomation).toHaveBeenCalledWith({
+    expect(client.v1.notifications.listFeed).toHaveBeenCalledWith({
       username: 'alice',
       name: 'btc-ema',
       channel: 'web',
@@ -5116,6 +5369,47 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     });
     expect(result.items[0]).toMatchObject({ delivery_provider: 'web' });
     expect(result.items[0]!.channel).toBeUndefined();
+    expect(client.alerts.history).not.toHaveBeenCalled();
+  });
+
+  it('dispatches alert history by automation ID to /api/v2', async () => {
+    const client = makeClient();
+    const result = await dispatch(client, [
+      'alert',
+      'history',
+      '--automation-id',
+      'automation_0abc',
+      '--delivery-provider',
+      'web',
+      '--status',
+      'sent',
+      '--since',
+      '2026-04-28T07:55:03+02:00',
+      '--first',
+      '5',
+      '--cursor',
+      'c1',
+    ]);
+    expect(client.alerts.history).toHaveBeenCalledWith({
+      automationId: 'automation_0abc',
+      deliveryProvider: 'web',
+      status: 'SENT',
+      since: '2026-04-28T05:55:03.000Z',
+      pageSize: 5,
+      pageToken: 'c1',
+    });
+    expect(result).toEqual({ items: [aDelivery()], nextPageToken: null });
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
+    await expect(
+      dispatch(client, [
+        'alert',
+        'history',
+        '--automation-id',
+        'automation_0abc',
+        '--since',
+        '1777355703',
+      ])
+    ).rejects.toThrow(/Unix timestamps are no longer accepted/);
   });
 
   it('rejects the legacy alert history --channel flag', async () => {
@@ -5132,7 +5426,7 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     ).rejects.toThrow(
       /--channel is no longer supported.*use --delivery-provider/
     );
-    expect(client.alerts.historyAutomation).not.toHaveBeenCalled();
+    expect(client.v1.notifications.listFeed).not.toHaveBeenCalled();
   });
 
   it('dispatches alert preferences', async () => {
@@ -5141,13 +5435,11 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     await dispatch(client, ['alert', 'enable-session-completed']);
     await dispatch(client, ['alert', 'disable-session-completed']);
     expect(client.alerts.preferences).toHaveBeenCalled();
-    expect(client.alerts.updatePreference).toHaveBeenNthCalledWith(1, {
-      key: 'session_completed',
-      enabled: true,
+    expect(client.alerts.updatePreferences).toHaveBeenNthCalledWith(1, {
+      sessionCompleted: true,
     });
-    expect(client.alerts.updatePreference).toHaveBeenNthCalledWith(2, {
-      key: 'session_completed',
-      enabled: false,
+    expect(client.alerts.updatePreferences).toHaveBeenNthCalledWith(2, {
+      sessionCompleted: false,
     });
   });
 
@@ -5177,40 +5469,32 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
   it('renders playbooks trending as readable text by default', async () => {
     const client = makeClient();
     client.playbooks.trending = vi.fn().mockResolvedValue({
-      playbooks: [
-        {
-          id: '1',
-          ref: 'alice/macro',
-          username: 'alice',
-          name: 'macro',
-          display_name: 'Macro',
-          description: 'Macro dashboard',
-          tags: ['macro'],
-          follow_count: 2,
-          url_path: '/u/alice/playbooks/macro',
-          url: 'https://alva.ai/u/alice/playbooks/macro',
-          cursor: 'c1',
-        },
-      ],
-      has_next: false,
+      items: [aPlaybook({ slug: 'macro', title: 'Macro' })],
+      nextPageToken: 'next',
     });
     const result = await dispatch(client, ['playbooks', 'trending']);
     expect(typeof result).toBe('string');
+    expect(result).toContain('• Macro  [public]  ★ 7');
+    expect(result).toContain('alice/macro');
     expect(result).toContain('https://alva.ai/u/alice/playbooks/macro');
+    expect(result).toContain('--cursor <nextPageToken>');
   });
 
-  it('returns the raw envelope for playbooks trending --json', async () => {
+  it('returns the /api/v2 page for playbooks trending --json', async () => {
     const client = makeClient();
-    const envelope = { playbooks: [], has_next: false };
-    client.playbooks.trending = vi.fn().mockResolvedValue(envelope);
+    const page = { items: [aPlaybook()], nextPageToken: null };
+    client.playbooks.trending = vi.fn().mockResolvedValue(page);
     const result = await dispatch(client, ['playbooks', 'trending', '--json']);
-    expect(result).toBe(envelope);
+    expect(result).toBe(page);
   });
 
   it('dispatches playbooks get --ref', async () => {
     const client = makeClient();
     await dispatch(client, ['playbooks', 'get', '--ref', 'alice/macro']);
-    expect(client.playbooks.get).toHaveBeenCalledWith({ ref: 'alice/macro' });
+    expect(client.playbooks.get).toHaveBeenCalledWith({
+      id: undefined,
+      ref: 'alice/macro',
+    });
   });
 
   it('dispatches playbooks list --owner', async () => {
@@ -5223,10 +5507,9 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--limit',
       '10',
     ]);
-    expect(client.playbooks.listByOwner).toHaveBeenCalledWith({
-      owner: 'alice',
-      limit: 10,
-      cursor: undefined,
+    expect(client.playbooks.listByOwner).toHaveBeenCalledWith('alice', {
+      pageSize: 10,
+      pageToken: undefined,
     });
   });
 
@@ -5234,19 +5517,19 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
     const client = makeClient();
     await dispatch(client, ['playbooks', 'mine']);
     expect(client.playbooks.listOwn).toHaveBeenCalledWith({
-      filter: undefined,
-      limit: undefined,
-      cursor: undefined,
+      status: undefined,
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
   it('passes a validated --filter to playbooks mine', async () => {
     const client = makeClient();
-    await dispatch(client, ['playbooks', 'mine', '--filter', 'DRAFT']);
+    await dispatch(client, ['playbooks', 'mine', '--filter', 'draft']);
     expect(client.playbooks.listOwn).toHaveBeenCalledWith({
-      filter: 'draft',
-      limit: undefined,
-      cursor: undefined,
+      status: 'DRAFT',
+      pageSize: undefined,
+      pageToken: undefined,
     });
   });
 
@@ -5260,17 +5543,12 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
 
   it('auto-paginates playbooks list --all across pages', async () => {
     const client = makeClient();
+    const a = aPlaybook({ id: 'playbook_0a', slug: 'a' });
+    const b = aPlaybook({ id: 'playbook_0b', slug: 'b' });
     client.playbooks.listByOwner = vi
       .fn()
-      .mockResolvedValueOnce({
-        items: [{ id: '1', owner_username: 'alice', name: 'a' }],
-        has_next: true,
-        next_cursor: 'c1',
-      })
-      .mockResolvedValueOnce({
-        items: [{ id: '2', owner_username: 'alice', name: 'b' }],
-        has_next: false,
-      });
+      .mockResolvedValueOnce({ items: [a], nextPageToken: 'c1' })
+      .mockResolvedValueOnce({ items: [b], nextPageToken: null });
     const out = await dispatch(client, [
       'playbooks',
       'list',
@@ -5280,51 +5558,69 @@ describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)',
       '--json',
     ]);
     expect(client.playbooks.listByOwner).toHaveBeenCalledTimes(2);
-    expect(client.playbooks.listByOwner).toHaveBeenLastCalledWith({
-      owner: 'alice',
-      limit: undefined,
-      cursor: 'c1',
+    expect(client.playbooks.listByOwner).toHaveBeenLastCalledWith('alice', {
+      pageSize: undefined,
+      pageToken: 'c1',
     });
-    expect(out).toEqual({
-      items: [
-        { id: '1', owner_username: 'alice', name: 'a' },
-        { id: '2', owner_username: 'alice', name: 'b' },
-      ],
-      has_next: false,
-    });
+    expect(out).toEqual({ items: [a, b], nextPageToken: null });
   });
 
-  it('auto-paginates playbooks mine --all using the last row cursor', async () => {
+  it('auto-paginates playbooks mine --all with the page token, past an empty page', async () => {
     const client = makeClient();
+    const a = aPlaybook({ id: 'playbook_0a', slug: 'a' });
+    const b = aPlaybook({ id: 'playbook_0b', slug: 'b' });
     client.playbooks.listOwn = vi
       .fn()
-      .mockResolvedValueOnce({
-        playbooks: [{ id: '1', name: 'a', cursor: 'c1' }],
-        has_next: true,
-      })
-      .mockResolvedValueOnce({
-        playbooks: [{ id: '2', name: 'b', cursor: 'c2' }],
-        has_next: false,
-      });
+      .mockResolvedValueOnce({ items: [a], nextPageToken: 'c1' })
+      .mockResolvedValueOnce({ items: [], nextPageToken: 'c2' })
+      .mockResolvedValueOnce({ items: [b], nextPageToken: null });
     const out = await dispatch(client, [
       'playbooks',
       'mine',
       '--all',
       '--json',
     ]);
-    expect(client.playbooks.listOwn).toHaveBeenCalledTimes(2);
+    expect(client.playbooks.listOwn).toHaveBeenCalledTimes(3);
     expect(client.playbooks.listOwn).toHaveBeenLastCalledWith({
-      filter: undefined,
-      limit: undefined,
-      cursor: 'c1',
+      status: undefined,
+      pageSize: undefined,
+      pageToken: 'c2',
     });
-    expect(out).toEqual({
-      playbooks: [
-        { id: '1', name: 'a', cursor: 'c1' },
-        { id: '2', name: 'b', cursor: 'c2' },
-      ],
-      has_next: false,
+    expect(out).toEqual({ items: [a, b], nextPageToken: null });
+  });
+
+  it('sets a playbook visibility by its name, confirming bundled feeds', async () => {
+    const client = makeClient();
+    await dispatch(client, [
+      'playbooks',
+      'set-visibility',
+      '--name',
+      'scanner',
+      '--visibility',
+      'Paid',
+    ]);
+    expect(client.playbooks.getBySlug).toHaveBeenCalledWith('alice', 'scanner');
+    expect(client.playbooks.update).toHaveBeenCalledWith('playbook_0abc', {
+      visibility: 'PAID',
+      confirmBundledFeedExposure: true,
+      confirmEndPaidRenewals: undefined,
     });
+    await dispatch(client, [
+      'playbooks',
+      'set-visibility',
+      '--name',
+      'scanner',
+      '--visibility',
+      'public',
+      '--confirm-end-paid-renewals',
+    ]);
+    expect(client.playbooks.update).toHaveBeenLastCalledWith(
+      'playbook_0abc',
+      expect.objectContaining({
+        visibility: 'PUBLIC',
+        confirmEndPaidRenewals: true,
+      })
+    );
   });
 });
 
@@ -5468,8 +5764,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
-      key: 'session_completed',
-      enabled: false,
+      sessionCompleted: false,
     });
   });
 
@@ -5477,7 +5772,9 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
     client.screenshot.capture = vi
       .fn()
-      .mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer);
+      .mockResolvedValue(
+        aScreenshot(encodeBase64(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])))
+      );
 
     const result = await dispatchEmbedded(
       client,
@@ -5522,19 +5819,47 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.deploy.create).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'pulse',
-        path: '~/scripts/pulse.js',
-        cron_expression: '0 * * * *',
+        entryPath: '~/scripts/pulse.js',
+        cronExpression: '0 * * * *',
       })
     );
     expect(client.automation.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'pulse',
         version: '1.0.0',
-        cronjob_id: 1,
+        cronjobId: 'cronjob_0p1',
         description: 'Market pulse',
       })
     );
-    expect(result).toEqual({ automation: { feed_id: 1 }, producer: { id: 1 } });
+    expect(result).toEqual({
+      automation: AUTOMATION_VERSION,
+      producer: aCronjob({ id: 'cronjob_0p1' }),
+    });
+  });
+
+  it('refuses a producer whose id is not an ID string', async () => {
+    const client = makeClient();
+    client.deploy.create = vi.fn().mockResolvedValue({ id: 1 });
+    await expect(
+      dispatchEmbedded(
+        client,
+        [
+          'automation',
+          'create',
+          '--name',
+          'pulse',
+          '--path',
+          '~/scripts/pulse.js',
+          '--cron',
+          '0 * * * *',
+          '--version',
+          '1.0.0',
+        ],
+        undefined,
+        agentDeps
+      )
+    ).rejects.toThrow('Automation producer creation returned an invalid id');
+    expect(client.automation.publish).not.toHaveBeenCalled();
   });
 
   it('validates automation registration fields before creating a producer', async () => {
@@ -5583,7 +5908,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
         agentDeps
       )
     ).rejects.toThrow(
-      /producer 1 was created.*left intact.*registration unavailable/
+      /producer cronjob_0p1 was created.*left intact.*registration unavailable/
     );
     expect(client.deploy.delete).not.toHaveBeenCalled();
   });
@@ -5606,10 +5931,12 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
     expect(client.deploy.update).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 420, cron_expression: '0 8 * * *' })
+      'cronjob_0p420',
+      expect.objectContaining({ cronExpression: '0 8 * * *' })
     );
     expect(client.automation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ id: '42', description: 'New description' })
+      '42',
+      expect.objectContaining({ description: 'New description' })
     );
 
     await dispatchEmbedded(
@@ -5618,10 +5945,9 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.deploy.listRuns).toHaveBeenCalledWith({
-      cronjob_id: 420,
-      first: 20,
-      cursor: undefined,
+    expect(client.deploy.listRuns).toHaveBeenCalledWith('cronjob_0p420', {
+      pageSize: 20,
+      pageToken: undefined,
     });
 
     const trigger = await dispatchEmbedded(
@@ -5630,8 +5956,8 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.deploy.trigger).toHaveBeenCalledWith({ id: 420 });
-    expect(trigger).toEqual({ workflow_run_id: 'wf-test' });
+    expect(client.deploy.trigger).toHaveBeenCalledWith('cronjob_0p420');
+    expect(trigger).toEqual({ dispatchId: 'cronjob_dispatch_0d' });
   });
 
   it('rejects array-shaped Automation details before producer operations', async () => {
@@ -5665,11 +5991,10 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
 
-    expect(client.automation.delivery.get).toHaveBeenCalledWith({ id: '42' });
-    expect(client.automation.delivery.update).toHaveBeenCalledWith({
-      id: '42',
-      alvaChannelIds: undefined,
-      emailEnabled: false,
+    expect(client.automation.delivery.get).toHaveBeenCalledWith('42');
+    expect(client.automation.delivery.update).toHaveBeenCalledWith('42', {
+      channelIds: undefined,
+      email: false,
     });
   });
 
@@ -5696,7 +6021,7 @@ describe('CLI dispatch — Slim Agent profile', () => {
         agentDeps
       )
     ).rejects.toThrow(
-      /Automation 42 metadata update failed after producer 420 was updated: metadata unavailable/
+      /Automation 42 metadata update failed after producer cronjob_0p420 was updated: metadata unavailable/
     );
     expect(client.deploy.update).toHaveBeenCalled();
   });
@@ -5705,37 +6030,35 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
     const id = '9007199254740993';
 
-    await dispatchEmbedded(
+    const result = await dispatchEmbedded(
       client,
       ['automation', 'update', '--id', id, '--description', 'Metadata only'],
       undefined,
       agentDeps
     );
 
+    expect(result).toEqual({
+      automationId: id,
+      automation: expect.objectContaining({ version: '1.0.1' }),
+    });
     expect(client.automation.inspect).not.toHaveBeenCalled();
     expect(client.deploy.update).not.toHaveBeenCalled();
-    expect(client.automation.update).toHaveBeenCalledWith({
-      id,
+    expect(client.automation.update).toHaveBeenCalledWith(id, {
       description: 'Metadata only',
       version: undefined,
+      cronjobId: undefined,
       changelog: undefined,
-      agent_type: undefined,
-      trigger: undefined,
+      agentType: undefined,
+      triggerRun: undefined,
     });
   });
 
   it('preserves int64 automation ids for inspect and visibility routes', async () => {
     const client = makeClient();
     const id = '9007199254740993';
-    client.automation.inspect = vi.fn().mockResolvedValue({
-      id,
-      feed_id: id,
-      name: 'large-id',
-      status: 'ACTIVE',
-      total_runs: 0,
-      flow_id: null,
-      flow_config_path: null,
-    });
+    client.automation.inspect = vi
+      .fn()
+      .mockResolvedValue(anAutomation({ name: 'large-id' }));
 
     await dispatchEmbedded(
       client,
@@ -5750,11 +6073,8 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
 
-    expect(client.automation.inspect).toHaveBeenCalledWith({ id });
-    expect(client.feed.setVisibility).toHaveBeenCalledWith({
-      id,
-      visibility: 'public',
-    });
+    expect(client.automation.inspect).toHaveBeenCalledWith(id);
+    expect(client.feed.setVisibility).toHaveBeenCalledWith(id, 'PUBLIC');
   });
 
   it('lets automation deletion cascade a paused producer', async () => {
@@ -5765,28 +6085,22 @@ describe('CLI dispatch — Slim Agent profile', () => {
       undefined,
       agentDeps
     );
-    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
-    expect(client.automation.delete).toHaveBeenCalledWith({ id: '42' });
+    expect(client.deploy.pause).toHaveBeenCalledWith('cronjob_0p420');
+    expect(client.automation.delete).toHaveBeenCalledWith('42');
     expect(client.deploy.delete).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      automation_id: '42',
-      cronjob_id: 420,
-      status: 'deleted',
-    });
+    expect(result).toEqual({ automationId: '42', cronjobId: 'cronjob_0p420' });
   });
 
   it('deletes an int64 automation without requiring a backing producer', async () => {
     const client = makeClient();
     const id = '9007199254740993';
-    client.automation.inspect = vi.fn().mockResolvedValue({
-      id,
-      feed_id: id,
-      name: 'metadata-only',
-      status: 'PAUSED',
-      total_runs: 0,
-      flow_id: null,
-      flow_config_path: null,
-    });
+    client.automation.inspect = vi.fn().mockResolvedValue(
+      anAutomation({
+        name: 'metadata-only',
+        status: 'PAUSED',
+        cronjobId: null,
+      })
+    );
 
     const result = await dispatchEmbedded(
       client,
@@ -5795,37 +6109,46 @@ describe('CLI dispatch — Slim Agent profile', () => {
       agentDeps
     );
 
-    expect(client.automation.inspect).toHaveBeenCalledWith({ id });
-    expect(client.automation.delete).toHaveBeenCalledWith({ id });
+    expect(client.automation.inspect).toHaveBeenCalledWith(id);
+    expect(client.automation.delete).toHaveBeenCalledWith(id);
     expect(client.deploy.pause).not.toHaveBeenCalled();
     expect(client.deploy.delete).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      automation_id: id,
-      status: 'deleted',
-    });
+    expect(result).toEqual({ automationId: id });
   });
 
   it('coordinates product and producer pause/resume state', async () => {
     const client = makeClient();
 
-    await dispatchEmbedded(
-      client,
-      ['automation', 'pause', '--id', '42'],
-      undefined,
-      agentDeps
-    );
-    expect(client.deploy.pause).toHaveBeenCalledWith({ id: 420 });
-    expect(client.automation.stop).toHaveBeenCalledWith({ id: '42' });
+    expect(
+      await dispatchEmbedded(
+        client,
+        ['automation', 'pause', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).toEqual({
+      automationId: '42',
+      cronjobId: 'cronjob_0p420',
+      automation: AUTOMATION,
+    });
+    expect(client.deploy.pause).toHaveBeenCalledWith('cronjob_0p420');
+    expect(client.automation.stop).toHaveBeenCalledWith('42');
     expect(client.deploy.pause).toHaveBeenCalledBefore(client.automation.stop);
 
-    await dispatchEmbedded(
-      client,
-      ['automation', 'resume', '--id', '42'],
-      undefined,
-      agentDeps
-    );
-    expect(client.automation.resume).toHaveBeenCalledWith({ id: '42' });
-    expect(client.deploy.resume).toHaveBeenCalledWith({ id: 420 });
+    expect(
+      await dispatchEmbedded(
+        client,
+        ['automation', 'resume', '--id', '42'],
+        undefined,
+        agentDeps
+      )
+    ).toEqual({
+      automationId: '42',
+      cronjobId: 'cronjob_0p420',
+      automation: { ...AUTOMATION, status: 'ACTIVE' },
+    });
+    expect(client.automation.resume).toHaveBeenCalledWith('42');
+    expect(client.deploy.resume).toHaveBeenCalledWith('cronjob_0p420');
     expect(client.automation.resume).toHaveBeenCalledBefore(
       client.deploy.resume
     );
@@ -5845,19 +6168,27 @@ describe('CLI dispatch — Slim Agent profile', () => {
         agentDeps
       )
     ).rejects.toThrow(
-      /producer 420 was paused.*remains paused.*delete unavailable/
+      /producer cronjob_0p420 was paused.*remains paused.*delete unavailable/
     );
     expect(client.deploy.delete).not.toHaveBeenCalled();
   });
 
   it('moves portfolio reads and defaults legacy Signal execution to dry-run', async () => {
     const client = makeClient();
-    client.portfolio.accounts = vi.fn().mockResolvedValue({ accounts: [] });
-    client.portfolio.summary = vi.fn().mockResolvedValue({ positions: [] });
-    client.portfolio.activities = vi.fn().mockResolvedValue({ activities: [] });
-    client.trading.orders = vi.fn().mockResolvedValue({ orders: [] });
-    client.trading.equityHistory = vi.fn().mockResolvedValue({ equity: [] });
-    client.trading.execute = vi.fn().mockResolvedValue({ accepted: true });
+    client.portfolio.accounts = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.portfolio.snapshot = vi.fn().mockResolvedValue({ positions: [] });
+    client.portfolio.activities = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.orders = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.equity = vi.fn().mockResolvedValue({ points: [] });
+    client.trading.placeOrders = vi
+      .fn()
+      .mockResolvedValue({ status: 'EXECUTED', orders: [] });
 
     await dispatchEmbedded(
       client,
@@ -5867,19 +6198,26 @@ describe('CLI dispatch — Slim Agent profile', () => {
     );
     await dispatchEmbedded(
       client,
-      ['portfolio', 'summary', '--account-id', '42'],
+      ['portfolio', 'summary', '--account-id', 'broker_account_0a'],
       undefined,
       agentDeps
     );
     await dispatchEmbedded(
       client,
-      ['portfolio', 'activities', '--account-id', '42', '--limit', '10'],
+      [
+        'portfolio',
+        'activities',
+        '--account-id',
+        'broker_account_0a',
+        '--limit',
+        '10',
+      ],
       undefined,
       agentDeps
     );
     await dispatchEmbedded(
       client,
-      ['portfolio', 'orders', '--account-id', '42'],
+      ['portfolio', 'orders', '--account-id', 'broker_account_0a'],
       undefined,
       agentDeps
     );
@@ -5889,47 +6227,49 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'portfolio',
         'equity-history',
         '--account-id',
-        '42',
-        '--timeframe',
-        '1D',
+        'broker_account_0a',
+        '--range',
+        'ALL',
       ],
       undefined,
       agentDeps
     );
 
-    expect(client.portfolio.accounts).toHaveBeenCalled();
-    expect(client.portfolio.summary).toHaveBeenCalledWith('42');
-    expect(client.portfolio.activities).toHaveBeenCalledWith({
-      accountId: '42',
-      limit: 10,
-      pageToken: undefined,
+    expect(client.portfolio.accounts).toHaveBeenCalledWith();
+    expect(client.portfolio.snapshot).toHaveBeenCalledWith('broker_account_0a');
+    expect(client.portfolio.activities).toHaveBeenCalledWith(
+      'broker_account_0a',
+      { pageSize: 10, pageToken: undefined }
+    );
+    expect(client.trading.orders).toHaveBeenCalledWith('broker_account_0a', {
+      origin: undefined,
+      from: undefined,
+      pageSize: undefined,
     });
-    expect(client.trading.orders).toHaveBeenCalledWith({
-      accountId: '42',
-      source: undefined,
-      since: undefined,
-      limit: undefined,
-    });
-    expect(client.trading.equityHistory).toHaveBeenCalledWith({
-      accountId: '42',
-      timeframe: '1D',
-      sinceMs: undefined,
-      untilMs: undefined,
+    expect(client.trading.equity).toHaveBeenCalledWith('broker_account_0a', {
+      range: 'ALL',
     });
 
+    const instruction = '{"type":"ORDERS","orders":[]}';
     await dispatchEmbedded(
       client,
-      ['trading', 'signals', 'execute', '--account-id', '42', '--signal', '{}'],
+      [
+        'trading',
+        'signals',
+        'execute',
+        '--account-id',
+        'broker_account_0a',
+        '--instruction',
+        instruction,
+      ],
       undefined,
       agentDeps
     );
-    expect(client.trading.execute).toHaveBeenLastCalledWith({
-      accountId: '42',
-      signalJson: '{}',
-      dryRun: true,
-      sourceUsername: undefined,
-      sourceFeed: undefined,
-    });
+    expect(client.trading.placeOrders).toHaveBeenLastCalledWith(
+      'broker_account_0a',
+      { type: 'ORDERS', orders: [], dryRun: true },
+      { idempotencyKey: undefined }
+    );
 
     await dispatchEmbedded(
       client,
@@ -5938,16 +6278,18 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'signals',
         'execute',
         '--account-id',
-        '42',
-        '--signal',
-        '{}',
+        'broker_account_0a',
+        '--instruction',
+        instruction,
         '--live',
       ],
       undefined,
       agentDeps
     );
-    expect(client.trading.execute).toHaveBeenLastCalledWith(
-      expect.objectContaining({ dryRun: false })
+    expect(client.trading.placeOrders).toHaveBeenLastCalledWith(
+      'broker_account_0a',
+      { type: 'ORDERS', orders: [] },
+      { idempotencyKey: undefined }
     );
   });
 
@@ -5955,13 +6297,24 @@ describe('CLI dispatch — Slim Agent profile', () => {
     const client = makeClient();
     client.trading.subscriptions = vi
       .fn()
-      .mockResolvedValue({ subscriptions: [] });
-    client.trading.subscribe = vi.fn().mockResolvedValue({ id: 'sub-1' });
-    client.trading.unsubscribe = vi.fn().mockResolvedValue({ ok: true });
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.subscribe = vi
+      .fn()
+      .mockResolvedValue({ id: 'trade_subscription_0a' });
+    client.trading.unsubscribe = vi
+      .fn()
+      .mockResolvedValue({ id: 'trade_subscription_0a' });
 
     await dispatchEmbedded(
       client,
-      ['trading', 'signals', 'subscriptions', 'list', '--account-id', '42'],
+      [
+        'trading',
+        'signals',
+        'subscriptions',
+        'list',
+        '--account-id',
+        'broker_account_0a',
+      ],
       undefined,
       agentDeps
     );
@@ -5973,13 +6326,11 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'subscriptions',
         'subscribe',
         '--account-id',
-        '42',
-        '--source-username',
-        'alice',
-        '--source-feed',
-        'targets',
+        'broker_account_0a',
+        '--signal-source-id',
+        'automation_0f',
         '--playbook-id',
-        '7',
+        'playbook_0p',
         '--playbook-version',
         '1.0.0',
       ],
@@ -5994,17 +6345,24 @@ describe('CLI dispatch — Slim Agent profile', () => {
         'subscriptions',
         'unsubscribe',
         '--subscription-id',
-        'sub-1',
+        'trade_subscription_0a',
       ],
       undefined,
       agentDeps
     );
 
-    expect(client.trading.subscriptions).toHaveBeenCalledWith('42');
-    expect(client.trading.subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ accountId: '42', executeLatest: undefined })
+    expect(client.trading.subscriptions).toHaveBeenCalledWith(
+      'broker_account_0a'
     );
-    expect(client.trading.unsubscribe).toHaveBeenCalledWith('sub-1');
+    expect(client.trading.subscribe).toHaveBeenCalledWith('broker_account_0a', {
+      playbookId: 'playbook_0p',
+      signalSourceId: 'automation_0f',
+      playbookVersion: '1.0.0',
+      initialOrders: 'NONE',
+    });
+    expect(client.trading.unsubscribe).toHaveBeenCalledWith(
+      'trade_subscription_0a'
+    );
   });
 });
 
@@ -6014,10 +6372,12 @@ describe('CLI dispatch — broker', () => {
     randomUUID: () => '123e4567-e89b-42d3-a456-426614174000',
   };
 
-  function brokerClient(resp: unknown) {
+  function brokerClient(resp: { envelope: unknown; exit: number }) {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (client as any)._request = vi.fn().mockResolvedValue(resp);
+    (client as any)._v2Request = vi
+      .fn()
+      .mockResolvedValue({ envelope: resp.envelope, exitCode: resp.exit });
     return client;
   }
 
@@ -6079,9 +6439,9 @@ describe('CLI dispatch — broker', () => {
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).toHaveBeenCalledWith(
+    expect((client as any)._v2Request).toHaveBeenCalledWith(
       'POST',
-      '/api/v1/broker/invoke',
+      '/broker/invocations',
       expect.objectContaining({
         body: expect.objectContaining({ argv: ['quote', '--help'] }),
       })
@@ -6103,7 +6463,7 @@ describe('CLI dispatch — broker', () => {
     expect(result._help).toBe(true);
     expect(result.text).toContain('trading broker');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).not.toHaveBeenCalled();
+    expect((client as any)._v2Request).not.toHaveBeenCalled();
   });
 
   it('keeps shared prerequisites out of the Broker subtree', async () => {
@@ -6114,7 +6474,7 @@ describe('CLI dispatch — broker', () => {
       })
     ).rejects.toThrow(/use 'alva trading accounts'/);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).not.toHaveBeenCalled();
+    expect((client as any)._v2Request).not.toHaveBeenCalled();
   });
 
   it.each(['venues', 'help'])(
@@ -6131,12 +6491,16 @@ describe('CLI dispatch — broker', () => {
         )
       ).rejects.toThrow(/not part of the Slim Broker tree/);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((client as any)._request).not.toHaveBeenCalled();
+      expect((client as any)._v2Request).not.toHaveBeenCalled();
     }
   );
 
-  it('routes shared accounts and risk rules through Broker-backed reads', async () => {
-    const client = brokerClient({ envelope: { items: [] }, exit: 0 });
+  it('routes shared accounts and risk rules through the /api/v2 reads, not Broker', async () => {
+    const client = brokerClient({ envelope: {}, exit: 0 });
+    client.portfolio.accounts = vi
+      .fn()
+      .mockResolvedValue({ items: [], nextPageToken: null });
+    client.trading.riskRules = vi.fn().mockResolvedValue({});
 
     await dispatchEmbedded(client, ['trading', 'accounts'], undefined, {
       runtime: 'jagent',
@@ -6145,27 +6509,15 @@ describe('CLI dispatch — broker', () => {
       runtime: 'jagent',
     });
 
+    expect(client.portfolio.accounts).toHaveBeenCalledWith({
+      modes: ['PAPER_TRADING', 'LIVE_TRADING', 'BROKER_CONFIRMATION'],
+    });
+    expect(client.trading.riskRules).toHaveBeenCalled();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const request = (client as any)._request;
-    expect(request).toHaveBeenNthCalledWith(
-      1,
-      'POST',
-      '/api/v1/broker/invoke',
-      expect.objectContaining({
-        body: expect.objectContaining({ argv: ['accounts'] }),
-      })
-    );
-    expect(request).toHaveBeenNthCalledWith(
-      2,
-      'POST',
-      '/api/v1/broker/invoke',
-      expect.objectContaining({
-        body: expect.objectContaining({ argv: ['risk-rules'] }),
-      })
-    );
+    expect((client as any)._v2Request).not.toHaveBeenCalled();
   });
 
-  it('passes argv through verbatim to /api/v1/broker/invoke', async () => {
+  it('passes argv through verbatim to /api/v2/broker/invocations', async () => {
     const client = brokerClient({ envelope: { status: 'filled' }, exit: 0 });
     const env = await dispatchEmbedded(
       client,
@@ -6182,9 +6534,9 @@ describe('CLI dispatch — broker', () => {
       brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((client as any)._request).toHaveBeenCalledWith(
+    expect((client as any)._v2Request).toHaveBeenCalledWith(
       'POST',
-      '/api/v1/broker/invoke',
+      '/broker/invocations',
       expect.objectContaining({
         body: expect.objectContaining({
           argv: ['quote', '--venue', 'binance', '--symbol', 'BTC/USDT'],
@@ -6203,8 +6555,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6218,11 +6570,13 @@ describe('CLI dispatch — broker', () => {
       brokerDeps
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const call = (client as any)._request.mock.calls[0];
+    const call = (client as any)._v2Request.mock.calls[0];
     const argv: string[] = call[2].body.argv;
     const idx = argv.indexOf('--intent-id');
     expect(idx).toBeGreaterThan(-1);
     expect(argv[idx + 1]).toMatch(/^[0-9a-f-]{36}$/); // a UUID
+    expect(call[2].body.accountId).toBe('broker_account_0a1');
+    expect(argv).not.toContain('--account-id');
   });
 
   it('does NOT mint an intent-id for a dry-run or when one is supplied', async () => {
@@ -6234,8 +6588,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6250,7 +6604,8 @@ describe('CLI dispatch — broker', () => {
       { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    const argv: string[] = (client as any)._v2Request.mock.calls[0][2].body
+      .argv;
     expect(argv).not.toContain('--intent-id');
 
     const client2 = brokerClient({ envelope: {}, exit: 0 });
@@ -6261,8 +6616,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6278,7 +6633,7 @@ describe('CLI dispatch — broker', () => {
       { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv2: string[] = (client2 as any)._request.mock.calls[0][2].body
+    const argv2: string[] = (client2 as any)._v2Request.mock.calls[0][2].body
       .argv;
     expect(argv2.filter((a) => a === '--intent-id')).toHaveLength(1);
     expect(argv2[argv2.indexOf('--intent-id') + 1]).toBe('mine');
@@ -6293,8 +6648,8 @@ describe('CLI dispatch — broker', () => {
         'broker',
         'order',
         'place',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--venue',
         'binance',
         '--symbol',
@@ -6309,7 +6664,8 @@ describe('CLI dispatch — broker', () => {
       { runtime: 'jagent' }
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    const argv: string[] = (client as any)._v2Request.mock.calls[0][2].body
+      .argv;
     expect(argv.filter((a) => a.startsWith('--intent-id'))).toHaveLength(1);
     expect(argv).toContain('--intent-id=mine');
   });
@@ -6323,7 +6679,7 @@ describe('CLI dispatch — broker', () => {
     await dispatchBrokerStdin(client, stdin);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = (client as any)._request.mock.calls[0][2].body;
+    const body = (client as any)._v2Request.mock.calls[0][2].body;
     expect(body.argv).toEqual(['order', 'place', '--stdin']);
     expect(body.stdin).toBe(stdin);
   });
@@ -6336,7 +6692,7 @@ describe('CLI dispatch — broker', () => {
     await dispatchBrokerStdin(client, stdin);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const calls = (client as any)._request.mock.calls;
+    const calls = (client as any)._v2Request.mock.calls;
     expect(calls).toHaveLength(2);
     for (const call of calls) {
       expect(call[2].body.argv).toEqual(['order', 'place', '--stdin']);
@@ -6350,7 +6706,7 @@ describe('CLI dispatch — broker', () => {
     await dispatchBrokerStdin(client, stdin);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = (client as any)._request.mock.calls[0][2].body;
+    const body = (client as any)._v2Request.mock.calls[0][2].body;
     const idx = body.argv.indexOf('--intent-id');
     expect(idx).toBeGreaterThan(-1);
     expect(body.argv[idx + 1]).toMatch(/^[0-9a-f-]{36}$/);
@@ -6364,7 +6720,7 @@ describe('CLI dispatch — broker', () => {
       await dispatchBrokerStdin(client, stdin);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const body = (client as any)._request.mock.calls[0][2].body;
+      const body = (client as any)._v2Request.mock.calls[0][2].body;
       expect(body.argv).toEqual(['order', 'place', '--stdin']);
       expect(body.stdin).toBe(stdin);
     }
@@ -6383,8 +6739,8 @@ describe('CLI dispatch — broker', () => {
         'list',
         '--venue',
         'binance',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
         '--open',
       ],
       undefined,
@@ -6392,7 +6748,8 @@ describe('CLI dispatch — broker', () => {
     );
     expect(env).toEqual({ status: 'ok' });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const argv: string[] = (client as any)._request.mock.calls[0][2].body.argv;
+    const argv: string[] = (client as any)._v2Request.mock.calls[0][2].body
+      .argv;
     expect(argv).toContain('--open');
   });
 
@@ -6406,8 +6763,8 @@ describe('CLI dispatch — broker', () => {
         'balance',
         '--venue',
         'binance',
-        '--account',
-        '7',
+        '--account-id',
+        'broker_account_0a1',
       ])
     ).resolves.toEqual({ status: 'ok' });
   });
@@ -6415,12 +6772,20 @@ describe('CLI dispatch — broker', () => {
   it('synthesizes a network error envelope on transport failure', async () => {
     const client = makeClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (client as any)._request = vi
+    (client as any)._v2Request = vi
       .fn()
       .mockRejectedValue(new Error('econnrefused'));
     const env = (await dispatchEmbedded(
       client,
-      ['trading', 'broker', 'balance', '--venue', 'binance', '--account', '7'],
+      [
+        'trading',
+        'broker',
+        'balance',
+        '--venue',
+        'binance',
+        '--account-id',
+        'broker_account_0a1',
+      ],
       undefined,
       { runtime: 'jagent' }
     )) as { status: string; reason: { code: string } };

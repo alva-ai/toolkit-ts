@@ -258,10 +258,10 @@ describe('Slim Alva Agent command profile', () => {
   it('elevates shared execution prerequisites above Signal and Broker', () => {
     expect(
       embeddedCommandArgv(parseEmbeddedCommand(['trading', 'accounts']))
-    ).toEqual(['broker', 'accounts']);
+    ).toEqual(['trading', 'accounts']);
     expect(
       embeddedCommandArgv(parseEmbeddedCommand(['trading', 'risk-rules']))
-    ).toEqual(['broker', 'risk-rules']);
+    ).toEqual(['trading', 'risk-rules']);
   });
 
   it('isolates legacy Signal commands and removes execute-latest', () => {

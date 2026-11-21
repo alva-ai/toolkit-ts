@@ -174,21 +174,22 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis related', 'thesis related', {
       values: ['id', 'first', 'cursor'],
     }),
-    route('thesis get', 'thesis get', { values: ['id'] }),
+    route('thesis get', 'thesis get', { values: ['id', 'number'] }),
     route('thesis version list', 'thesis version list', {
       values: ['id', 'first', 'cursor'],
     }),
     route('thesis version get', 'thesis version get', {
-      values: ['id', 'author-version-id'],
+      values: ['author-version-id', 'number', 'version'],
     }),
     route('thesis signals', 'thesis signals', {
       values: ['id', 'first', 'cursor'],
     }),
     route('thesis set-visibility', 'thesis set-visibility', {
       values: ['id', 'visibility'],
+      booleans: ['confirm-end-paid-renewals'],
     }),
     route('thesis archive', 'thesis archive', {
-      values: ['id', 'request-id', 'note'],
+      values: ['id', 'request-id', 'note', 'expected-author-version-id'],
     }),
     route('thesis star', 'thesis star', { values: ['id'] }),
     route('thesis unstar', 'thesis unstar', { values: ['id'] }),
@@ -209,6 +210,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'track-return',
         'archived',
       ],
+      booleans: ['confirm-end-paid-renewals'],
     }),
     route('thesis rewrite', 'thesis rewrite', { values: ['body', 'mode'] }),
     route('account whoami', 'whoami'),
@@ -243,7 +245,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['id', 'path', 'permission'],
     }),
     route('account service-accounts revoke', 'service-account revoke', {
-      values: ['id', 'path', 'permission'],
+      values: ['id', 'grant-id'],
     }),
     route('fs read', 'fs read', { values: ['path', 'offset', 'size'] }),
     route('fs write', 'fs write', {
@@ -449,6 +451,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     }),
     route('playbooks set-visibility', 'playbooks set-visibility', {
       values: ['name', 'visibility'],
+      booleans: ['confirm-end-paid-renewals'],
     }),
     route('playbooks draft', 'release playbook-draft', {
       values: [
@@ -558,6 +561,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('alert history', 'alert history', {
       values: [
         'automation',
+        'automation-id',
         'delivery-provider',
         'status',
         'since',
@@ -571,13 +575,13 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['account-id', 'limit', 'page-token'],
     }),
     route('portfolio orders', 'trading orders', {
-      values: ['account-id', 'source', 'since', 'limit'],
+      values: ['account-id', 'origin', 'source', 'since', 'limit'],
     }),
     route('portfolio equity-history', 'trading equity-history', {
-      values: ['account-id', 'timeframe', 'since-ms', 'until-ms'],
+      values: ['account-id', 'range', 'timeframe', 'since-ms', 'until-ms'],
     }),
-    route('trading accounts', 'broker accounts'),
-    route('trading risk-rules', 'broker risk-rules'),
+    route('trading accounts', 'trading accounts'),
+    route('trading risk-rules', 'trading risk-rules'),
     route('trading signals subscriptions list', 'trading subscriptions', {
       values: ['account-id'],
     }),
@@ -586,6 +590,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'account-id',
         'source-username',
         'source-feed',
+        'signal-source-id',
         'playbook-id',
         'playbook-version',
       ],
@@ -596,7 +601,14 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     action(
       'trading signals execute',
       {
-        values: ['account-id', 'signal', 'source-username', 'source-feed'],
+        values: [
+          'account-id',
+          'instruction',
+          'idempotency-key',
+          'signal',
+          'source-username',
+          'source-feed',
+        ],
         booleans: ['live'],
       },
       'signal-execute'

@@ -1,377 +1,75 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { MarketsResource } from '../../src/resources/markets.js';
+import { fakeV2, problem } from '../fakeV2.js';
+import {
+  ASSET,
+  asset,
+  earningsCalendar,
+  earningsPeriod,
+  earningsReport,
+  narrative,
+} from '../marketV2.js';
 
-function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
-  const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-    _request: ReturnType<typeof vi.fn>;
-  };
-  client._request = vi.fn();
-  return client;
+function markets() {
+  return new MarketsResource(
+    new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' })
+  );
 }
 
-const completedPeriod = {
-  fiscalYear: 2026,
-  fiscalQuarter: 'Q3',
-  label: 'FY2026 Q3',
-  fiscalDateEnding: '2026-06-27',
-  earningsDate: '2026-07-30',
-  session: 'AFTER_MARKET_CLOSE',
-  status: 'COMPLETED',
-  isDefault: true,
-};
-
-const upcomingPeriod = {
-  fiscalYear: 2026,
-  fiscalQuarter: 'Q4',
-  label: 'FY2026 Q4',
-  fiscalDateEnding: '2026-09-26',
-  earningsDate: '2026-10-29',
-  session: 'AFTER_MARKET_CLOSE',
-  status: 'UPCOMING',
-  isDefault: false,
-};
-
-function earningsResponse(period = completedPeriod) {
-  return {
-    data: {
-      market: {
-        entity: {
-          ticker: 'AAPL',
-          earnings: {
-            period,
-            preEarningsAnalysis: {
-              status: 'AVAILABLE',
-              investorFocus: [],
-            },
-            earningsRelease: { status: 'AVAILABLE' },
-            earningsTranscript: { status: 'AVAILABLE', sections: [] },
-            postEarningsSummary: {
-              status: 'AVAILABLE',
-              buriedSignals: [],
-              whatYouShouldKnow: [],
-            },
-          },
-        },
-      },
-    },
-  };
-}
+let restore = () => {};
+afterEach(() => restore());
 
 describe('MarketsResource', () => {
-  it('reads current narrative, snapshots, and narrative change log', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      data: {
-        market: {
-          entity: {
-            ticker: 'BRK.B',
-            companyInsight: {
-              asOf: '2026-08-07',
-              generatedAtMs: 1786032000000,
-              narrative: 'Current narrative',
-              peers: 'Peers',
-            },
-            companyInsightHistory: {
-              snapshots: [],
-              changeLog: [
-                {
-                  asOf: '2026-08-07',
-                  generatedAtMs: 1786032000000,
-                  narrativeChangeLog: 'Changed view',
-                },
-              ],
-            },
-          },
-        },
-      },
+  it('resolves a symbol to its Asset, one path segment', async () => {
+    const brk = asset({ id: 'asset_0b2', symbol: 'BRK/B' });
+    const fake = fakeV2({ 'GET /assets/by-symbol/BRK%2FB': () => brk });
+    restore = fake.restore;
+
+    await expect(
+      markets().assetBySymbol('BRK/B', { assetClass: 'US_STOCK' })
+    ).resolves.toEqual(brk);
+    expect(fake.calls[0].query.toString()).toBe('assetClass=US_STOCK');
+  });
+
+  it('returns the narrative, calendar and report as the API answers them', async () => {
+    const period = earningsPeriod({ fiscalQuarter: 'Q2', isDefault: false });
+    const fake = fakeV2({
+      [`GET /assets/${ASSET}/narrative`]: () => narrative(),
+      [`GET /assets/${ASSET}/earnings-calendar`]: () => earningsCalendar(),
+      [`GET /assets/${ASSET}/earnings`]: [
+        () => earningsReport(),
+        () => earningsReport(period),
+      ],
     });
+    restore = fake.restore;
+    const resource = markets();
 
-    const result = await new MarketsResource(client).narrative(' brk.b ');
-
-    expect(result.ticker).toBe('BRK.B');
-    expect(result.history?.changeLog[0]?.narrativeChangeLog).toBe(
-      'Changed view'
+    await expect(resource.narrative(ASSET)).resolves.toEqual(narrative());
+    await expect(resource.earningsCalendar(ASSET)).resolves.toEqual(
+      earningsCalendar()
     );
-    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
-      body: {
-        query: expect.stringContaining('companyInsightHistory'),
-        variables: { ticker: 'BRK.B' },
-      },
-    });
-  });
-
-  it('resolves latest-completed through the catalog before reading detail', async () => {
-    const client = makeClient();
-    client._request
-      .mockResolvedValueOnce({
-        data: {
-          market: {
-            entity: {
-              ticker: 'AAPL',
-              earningsPeriods: {
-                periods: [upcomingPeriod, completedPeriod],
-                defaultPeriod: completedPeriod,
-                unresolvedEventCount: 0,
-              },
-            },
-          },
-        },
-      })
-      .mockResolvedValueOnce(earningsResponse());
-
-    const result = await new MarketsResource(client).earnings({
-      ticker: 'aapl',
-      event: 'latest-completed',
-    });
-
-    expect(result.period.fiscalQuarter).toBe('Q3');
-    expect(client._request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
-      body: {
-        query: expect.stringContaining('preEarningsAnalysis'),
-        variables: {
-          ticker: 'AAPL',
-          input: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
-        },
-      },
-    });
-  });
-
-  it('ignores an upcoming default period for latest-completed', async () => {
-    const client = makeClient();
-    client._request
-      .mockResolvedValueOnce({
-        data: {
-          market: {
-            entity: {
-              ticker: 'AAPL',
-              earningsPeriods: {
-                periods: [upcomingPeriod, completedPeriod],
-                defaultPeriod: { ...upcomingPeriod, isDefault: true },
-                unresolvedEventCount: 0,
-              },
-            },
-          },
-        },
-      })
-      .mockResolvedValueOnce(earningsResponse());
-
-    await new MarketsResource(client).earnings({
-      ticker: 'AAPL',
-      event: 'latest-completed',
-    });
-
-    expect(client._request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
-      body: {
-        query: expect.any(String),
-        variables: {
-          ticker: 'AAPL',
-          input: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
-        },
-      },
-    });
-  });
-
-  it('selects the newest completed period from an unordered catalog', async () => {
-    const client = makeClient();
-    const olderCompleted = {
-      ...completedPeriod,
-      fiscalQuarter: 'Q2',
-      fiscalDateEnding: '2026-03-28',
-      earningsDate: '2026-04-30',
-    };
-    client._request
-      .mockResolvedValueOnce({
-        data: {
-          market: {
-            entity: {
-              ticker: 'AAPL',
-              earningsPeriods: {
-                periods: [olderCompleted, upcomingPeriod, completedPeriod],
-                defaultPeriod: olderCompleted,
-                unresolvedEventCount: 0,
-              },
-            },
-          },
-        },
-      })
-      .mockResolvedValueOnce(earningsResponse());
-
-    await new MarketsResource(client).earnings({ ticker: 'AAPL' });
-
-    expect(client._request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
-      body: {
-        query: expect.any(String),
-        variables: {
-          ticker: 'AAPL',
-          input: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
-        },
-      },
-    });
-  });
-
-  it.each([
-    {
-      name: 'only upcoming periods',
-      periods: [upcomingPeriod],
-      defaultPeriod: upcomingPeriod,
-    },
-    { name: 'an empty catalog', periods: [], defaultPeriod: null },
-  ])(
-    'reports no completed event with $name',
-    async ({ periods, defaultPeriod }) => {
-      const client = makeClient();
-      client._request.mockResolvedValue({
-        data: {
-          market: {
-            entity: {
-              ticker: 'AAPL',
-              earningsPeriods: {
-                periods,
-                defaultPeriod,
-                unresolvedEventCount: 0,
-              },
-            },
-          },
-        },
-      });
-
-      await expect(
-        new MarketsResource(client).earnings({
-          ticker: 'AAPL',
-          event: 'latest-completed',
-        })
-      ).rejects.toMatchObject({
-        code: 'MARKETS_EARNINGS_EVENT_NOT_FOUND',
-        status: 404,
-      });
-      expect(client._request).toHaveBeenCalledTimes(1);
-    }
-  );
-
-  it('selects the nearest upcoming period for next-confirmed', async () => {
-    const client = makeClient();
-    const laterUpcoming = {
-      ...upcomingPeriod,
-      fiscalYear: 2027,
-      fiscalQuarter: 'Q1',
-      earningsDate: '2027-01-28',
-    };
-    client._request
-      .mockResolvedValueOnce({
-        data: {
-          market: {
-            entity: {
-              ticker: 'AAPL',
-              earningsPeriods: {
-                periods: [laterUpcoming, upcomingPeriod, completedPeriod],
-                defaultPeriod: completedPeriod,
-                unresolvedEventCount: 0,
-              },
-            },
-          },
-        },
-      })
-      .mockResolvedValueOnce(earningsResponse(upcomingPeriod));
-
-    await new MarketsResource(client).earnings({
-      ticker: 'AAPL',
-      event: 'next-confirmed',
-    });
-
-    expect(client._request).toHaveBeenNthCalledWith(2, 'POST', '/query', {
-      body: {
-        query: expect.any(String),
-        variables: {
-          ticker: 'AAPL',
-          input: { fiscalYear: 2026, fiscalQuarter: 'Q4' },
-        },
-      },
-    });
-  });
-
-  it('reads an explicit fiscal period without fetching the catalog', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue(earningsResponse());
-
-    await new MarketsResource(client).earnings({
-      ticker: 'AAPL',
-      fiscalYear: 2026,
-      fiscalQuarter: 'Q3',
-    });
-
-    expect(client._request).toHaveBeenCalledTimes(1);
-    expect(client._request).toHaveBeenCalledWith('POST', '/query', {
-      body: {
-        query: expect.stringContaining('earnings(input: $input)'),
-        variables: {
-          ticker: 'AAPL',
-          input: { fiscalYear: 2026, fiscalQuarter: 'Q3' },
-        },
-      },
-    });
-  });
-
-  it('reports when the requested event does not exist', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      data: {
-        market: {
-          entity: {
-            ticker: 'AAPL',
-            earningsPeriods: {
-              periods: [completedPeriod],
-              defaultPeriod: completedPeriod,
-              unresolvedEventCount: 0,
-            },
-          },
-        },
-      },
-    });
-
+    await expect(resource.earnings(ASSET)).resolves.toEqual(earningsReport());
     await expect(
-      new MarketsResource(client).earnings({
-        ticker: 'AAPL',
-        event: 'next-confirmed',
-      })
-    ).rejects.toMatchObject({
-      code: 'MARKETS_EARNINGS_EVENT_NOT_FOUND',
+      resource.earnings(ASSET, { fiscalYear: 2026, fiscalQuarter: 'Q2' })
+    ).resolves.toEqual(earningsReport(period));
+    expect(fake.calls.map((c) => c.query.toString())).toEqual([
+      '',
+      '',
+      '',
+      'fiscalYear=2026&fiscalQuarter=Q2',
+    ]);
+  });
+
+  it('throws a missing narrative as the 404 problem', async () => {
+    restore = fakeV2({
+      [`GET /assets/${ASSET}/narrative`]: () => problem(404, 'NOT_FOUND'),
+    }).restore;
+
+    await expect(markets().narrative(ASSET)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
       status: 404,
-    });
-  });
-
-  it('validates direct SDK parameters before calling GraphQL', async () => {
-    const client = makeClient();
-    const markets = new MarketsResource(client);
-
-    await expect(
-      markets.earnings({
-        ticker: 'AAPL',
-        fiscalYear: 2026,
-      } as never)
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', status: 400 });
-    await expect(
-      markets.earnings({
-        ticker: 'AAPL',
-        event: 'next-confirmed',
-        fiscalYear: 2026,
-        fiscalQuarter: 'Q3',
-      } as never)
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', status: 400 });
-    expect(client._request).not.toHaveBeenCalled();
-  });
-
-  it('surfaces GraphQL errors', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValue({
-      errors: [{ message: 'company service unavailable' }],
-    });
-
-    await expect(
-      new MarketsResource(client).narrative('AAPL')
-    ).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-      message: 'company service unavailable',
+      message: 'NOT_FOUND detail',
     });
   });
 });

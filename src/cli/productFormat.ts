@@ -1,83 +1,73 @@
-import type {
-  AutomationInspectResponse,
-  ChannelGroupSubscriptionListResponse,
-  FeedListResponse,
-  PushSubscriptionListResponse,
-} from '../types.js';
+import type { Schema } from '../platformApi.js';
+import type { ChannelGroupSubscriptionListResponse } from '../types.js';
 
-export function formatAutomationList(result: FeedListResponse): string {
-  const automations = result.feeds ?? [];
+export function formatAutomationList(
+  result: Schema<'AutomationSummaryList'>
+): string {
+  const automations = result.items;
   if (automations.length === 0) return '(no automations)\n';
 
   const lines: string[] = [`${automations.length} automation(s):`, ''];
   for (const automation of automations) {
-    const status = automation.status ? `  [${automation.status}]` : '';
-    lines.push(`• ${automation.name || '(unnamed)'}${status}`);
+    lines.push(`• ${automation.name || '(unnamed)'}  [${automation.status}]`);
     lines.push(`    id: ${automation.id}`);
-    if (automation.cron_expression) {
-      lines.push(`    schedule: ${automation.cron_expression}`);
+    if (automation.schedule.cron) {
+      lines.push(`    schedule: ${automation.schedule.cron}`);
     }
-    lines.push(`    runs: ${automation.total_runs ?? 0}`);
-    lines.push(`    used by: ${automation.used_by_total ?? 0}`);
+    lines.push(`    runs: ${automation.totalRuns}`);
+    lines.push(`    used by: ${automation.usedByCount}`);
     lines.push('');
   }
-  if (result.has_more) {
-    lines.push('(more results — pass --cursor <next_cursor> to page)');
-    if (result.next_cursor) lines.push(`next_cursor: ${result.next_cursor}`);
+  if (result.nextPageToken !== null) {
+    lines.push('(more results — pass --cursor <nextPageToken> to page)');
+    lines.push(`nextPageToken: ${result.nextPageToken}`);
     lines.push('');
   }
   return lines.join('\n');
 }
 
-export function formatAutomationDetail(
-  result: AutomationInspectResponse
-): string {
-  const status = result.status ? `  [${result.status}]` : '';
+export function formatAutomationDetail(result: Schema<'Automation'>): string {
   const lines: string[] = [
-    `${result.name || '(unnamed)'}${status}`,
+    `${result.name || '(unnamed)'}  [${result.status}]`,
     `  id: ${result.id}`,
   ];
-  if (result.feed_id && result.feed_id !== result.id) {
-    lines.push(`  feed id: ${result.feed_id}`);
+  if (result.cronjobId) lines.push(`  cronjob id: ${result.cronjobId}`);
+  if (result.schedule.cron) {
+    lines.push(
+      `  schedule: ${result.schedule.cron} (${result.schedule.timezone})`
+    );
   }
-  if (result.cron_expression) {
-    lines.push(`  schedule: ${result.cron_expression}`);
-  }
-  lines.push(`  runs: ${result.total_runs ?? 0}`);
-  lines.push(`  flow id: ${result.flow_id ?? '(none)'}`);
-  lines.push(`  flow config path: ${result.flow_config_path ?? '(none)'}`);
+  lines.push(`  runs: ${result.stats.totalRuns}`);
+  lines.push(`  flow id: ${result.flow ?? '(none)'}`);
+  lines.push(`  flow config path: ${result.flowConfigPath ?? '(none)'}`);
   return `${lines.join('\n')}\n`;
 }
 
-export function formatAlertList(result: PushSubscriptionListResponse): string {
-  const alerts = result.items ?? [];
+export function formatAlertList(
+  result: Schema<'NotificationSubscriptionList'>
+): string {
+  const alerts = result.items;
   if (alerts.length === 0) return '(no alerts)\n';
 
   const lines: string[] = [`${alerts.length} alert(s):`, ''];
   for (const alert of alerts) {
-    const targetType = alert.target?.type ?? 'UNSPECIFIED';
-    const status = alert.target_status ? `  [${alert.target_status}]` : '';
-    lines.push(`• ${alertTitle(alert)}${status}`);
-    lines.push(`    target: ${targetType} ${alert.target?.id ?? ''}`.trimEnd());
-    if (alert.channel_id !== undefined) {
-      lines.push(`    channel: ${alert.channel_id}`);
-    }
-    if (alert.kind) lines.push(`    kind: ${alert.kind}`);
-    if (alert.feed_status)
-      lines.push(`    automation status: ${alert.feed_status}`);
-    if (alert.used_by_total !== undefined) {
-      lines.push(`    used by: ${alert.used_by_total}`);
-    }
-    if (alert.last_pushed_at_ms) {
-      lines.push(
-        `    last pushed: ${new Date(alert.last_pushed_at_ms).toISOString()}`
-      );
+    lines.push(
+      `• ${alert.automationName ?? `automation ${alert.automationId}`}  [${alert.targetStatus}]`
+    );
+    lines.push(`    automation: ${alert.automationId}`);
+    lines.push(
+      `    destination: ${alert.medium} ${alert.channelId ?? '(Agent channel)'}`
+    );
+    lines.push(`    automation status: ${alert.automationStatus}`);
+    lines.push(`    used by: ${alert.usedByCount}`);
+    if (alert.lastDeliveredAt) {
+      lines.push(`    last delivered: ${alert.lastDeliveredAt}`);
     }
     lines.push('');
   }
-  if (result.next_cursor) {
-    lines.push('(more results — pass --cursor <next_cursor> to page)');
-    lines.push(`next_cursor: ${result.next_cursor}`);
+  if (result.nextPageToken !== null) {
+    lines.push('(more results — pass --cursor <nextPageToken> to page)');
+    lines.push(`nextPageToken: ${result.nextPageToken}`);
     lines.push('');
   }
   return lines.join('\n');
@@ -98,11 +88,4 @@ export function formatGroupAlertList(
     lines.push('');
   }
   return lines.join('\n');
-}
-
-type AlertItem = PushSubscriptionListResponse['items'][number];
-
-function alertTitle(alert: AlertItem): string {
-  if (alert.feed_name) return alert.feed_name;
-  return alert.target?.id ? `target ${alert.target.id}` : '(unknown target)';
 }

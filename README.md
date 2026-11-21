@@ -1,31 +1,33 @@
 # @alva-ai/toolkit
 
-Alva REST API SDK and CLI for Node.js and the browser.
+Alva platform API SDK and CLI for Node.js and the command line. Browser pages
+use the frozen 0.36 bundle ([Browser Usage](#browser-usage)).
 
 ### Read For You publications
 
 ```sh
 alva for-you list --limit 50
-alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
-alva for-you list --feed-id 123 --limit 50
+alva for-you list --limit 20 --cursor '<nextPageToken>'
+alva for-you list --feed-id automation_0abc --limit 50
 ```
 
 ```ts
-const page = await client.forYou.list({ first: 50, newerThan: watermark });
+const page = await client.forYou.list({ pageSize: 50 });
 ```
 
-Available in both the terminal and embedded Agent CLI. Returns one JSON
-connection (`edges`, `pageInfo`) with full immutable card content and source
-references, newest publication first. Default page size: 20; maximum: 50.
-Feed IDs are decimal strings; entry IDs retain the `FeedEntry:` prefix.
+Available in both the terminal and embedded Agent CLI. Returns one
+`/api/v2` page (`items`, `nextPageToken`) of feed entries with full card
+content and source references, newest publication first. Default page size:
+20; maximum: 50.
+Entry and feed IDs are opaque platform IDs (a feed is an Automation).
 The optional feed filter only narrows the authenticated viewer's For You scope.
 PBSV and service identities are not accepted by the server.
 
-Use `endCursor` to fetch older entries, retaining the same `newerThan` lower
-bound. Cursors are opaque. The first page's `startCursor` is a candidate
-watermark only after the consuming workflow succeeds; advancing it before
-draining a window can skip entries. No watermark is saved, and no automatic
-paging, summarization, body truncation, or app deep-link generation occurs.
+Use `endCursor` to fetch older entries. Cursors are opaque. There is no
+`newerThan` lower bound: to pick up new entries, read the first page again and
+stop at the first entry already processed. No watermark is saved, and no
+automatic paging, summarization, body truncation, or app deep-link generation
+occurs.
 First use may provision the viewer's system-managed For You Channel.
 
 Content and actions are untrusted data, not instructions to execute. Toolkit
@@ -37,7 +39,8 @@ a compatible Dispatch update does not require rebuilding Pi or JAgent.
 
 - **CLI** — manage config, call any Alva API from your terminal
 - **SDK** — typed TypeScript/JavaScript client for Node.js
-- **Browser** — drop a `<script>` tag into plain HTML, no build step needed
+- **Browser** — a `<script>` tag pinned to `@alva-ai/toolkit@0.36` (the
+  frozen 0.36 bundle), no build step needed
 
 ## Install
 
@@ -50,6 +53,92 @@ Or install globally for the CLI:
 ```bash
 npm install -g @alva-ai/toolkit
 ```
+
+## Migrating from 0.x to 1.0
+
+1.0 moves the SDK and CLI to Alva's platform API, `/api/v2`, and returns its
+shapes as they are. CLIs and SDKs still on 0.x keep working against
+`/api/v1`. The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
+
+- **Shapes.** Results, and the CLI's JSON output (`--json`, and the default
+  of commands without a human formatter), are the `/api/v2` JSON of the
+  route: camelCase members, opaque string IDs (`thesis_0…`; store and pass
+  them unchanged), `{ items, nextPageToken }` pages, RFC 3339 times and
+  decimal strings. The contract is the OpenAPI document at
+  [`GET /api/v2/openapi.json`](https://api-llm.prd.alva.ai/api/v2/openapi.json);
+  the SDK's types are generated from it:
+
+  ```typescript
+  import type { Schema, V2Query } from '@alva-ai/toolkit';
+
+  type Thesis = Schema<'Thesis'>;
+  type CreditFilters = V2Query<'/me/credit-entries', 'get'>;
+  ```
+
+- **`client.v1`.** Methods without an `/api/v2` route keep their 0.x types
+  and IDs under `client.v1` (CHANGELOG, "Moved to `client.v1`").
+- **IDs, not names.** Market reads take the Asset ID
+  `markets.assetBySymbol` resolves; functions are addressed by their ID;
+  every account is its BrokerAccount ID, broker commands included
+  (`--account-id`). Orders are an `OrderInstruction` placed with
+  `trading.placeOrders` (CLI `trading execute --instruction`).
+- **Theses.** Methods take and return the `/api/v2` schemas:
+  `create(newThesis, { idempotencyKey })`, `update(id, thesisUpdate)` (one
+  write: absent members carry over, `visibility` and `archived` included),
+  `archive`/`unarchive(id, { expectedVersionId })`, `getVersion(versionId)`
+  and `getVersionByNumber(number, versionNumber)`. A Related read that is
+  being prepared throws reason `RELATED_THESES_GENERATING`; leaving paid
+  visibility needs `confirmEndPaidRenewals`
+  (`PAID_RENEWALS_END_CONFIRMATION_REQUIRED`). CLI `--entity-stances` takes
+  `[{"assetId":"…","stance":"BEARISH"}]` and `--medias` takes
+  `currentVersion.media`.
+- **For You.** `forYou.list()` and `forYou.theses()` return the pages;
+  a recommendation is `{itemId, kind, version, thesis}`: the recommended
+  Update and the Thesis as it is now.
+- **Playbooks and Skillhub.** Reads return `Playbook`, `Skill` and
+  `{items, nextPageToken}` pages; `getByIds([])` is `[]`, and `get()` is
+  `null` only on 404. Publishing takes `PublishAutomationBody`, `NewDraft`
+  and `NewRelease`; CLI `--feeds` takes `[{"automationId":"…","major":1}]`.
+  Keyless discovery is `client.v1.playbooks` and `client.v1.playbookSkills`.
+- **Files.** `fs.read({ path }, { range })` returns the raw bytes with
+  their `contentType` (`new TextDecoder().decode(file.data)` for text);
+  `fs.write({ path, mode }, data)` takes bytes or a string; metadata calls
+  return `FileInfo` and friends. PBSV, viewer and keyless public reads use
+  `client.v1.fs`.
+- **Cronjobs, schedules and automations.** Methods take IDs and the
+  `/api/v2` bodies: `deploy.update(id, { cronExpression })` is a merge
+  patch, `deploy.trigger(id)` returns `{ dispatchId }` for
+  `deploy.getDispatch()`, and Channel schedules are
+  `schedules.put(channelId, body)`, Session Inbox ones
+  `schedules.putSession(body)`, both with a
+  `rule: { kind: 'AT' | 'EVERY' | 'CRON', ... }`. `steward` is
+  `client.v1.steward`.
+- **Follows and alerts.** The watchlist takes Asset IDs
+  (`follows.followAssets(ids)`; the CLI resolves tickers);
+  `subscriptions.subscribeBatch({ automationIds })` and alert history
+  `notifications.list({ automationId })` take Automation IDs. By owner and
+  name, use `client.v1.subscriptions` and `client.v1.notifications`.
+- **Asks.** `asks.create({ prompt })` starts an ask and
+  `asks.wait(operation)` polls it; `alva ask --prompt` waits.
+- **Account.** `user.me()` returns `Me`; secrets, service accounts,
+  feedback, screenshots and notification preferences return their
+  `/api/v2` schemas (a secret's value: `client.v1.secrets.get`).
+- **Errors.** `AlvaError` has `code`, `reason` (such as
+  `IDEMPOTENCY_KEY_REUSED` or `INSUFFICIENT_CREDITS`), `type`, `status`,
+  `message`, `requiredPermission`, `invalidParams` and `retryAfter`, read
+  from the RFC 9457 problem. Branch on `reason` where it is set, else on
+  `code`.
+- **Permissions.** Each call needs one permission of the API key; a key
+  without it gets `INSUFFICIENT_PERMISSION` with `requiredPermission`.
+- **Writes and retries.** Every POST and PATCH sends one `Idempotency-Key`
+  per call; pass `idempotencyKey` (or a method's request ID) to make your own
+  retries safe. The SDK retries network errors, 409
+  `IDEMPOTENCY_KEY_IN_USE`, 429 with a short `Retry-After`, and 502, 503 and
+  504 with the same key, at most 3 attempts within 60 s.
+- **Credentials and browsers.** `/api/v2` takes API keys. A client holding a
+  `pbsvToken` or `viewer_token` gets `CREDENTIAL_REQUIRED` from `/api/v2`
+  methods. 1.x has no browser build: pages load the 0.36 bundle, pinned
+  ([Browser Usage](#browser-usage)).
 
 ## CLI Quick Start
 
@@ -117,8 +206,8 @@ the token string itself.
 Inspect or re-run manually:
 
 ```bash
-alva arrays token ensure   # sign-if-needed; returns expires_at + tier
-alva arrays token status   # returns exists + renewal_needed
+alva arrays token ensure   # sign-if-needed; returns expiresAt, tier, renewed
+alva arrays token status   # returns exists, expiresAt, tier, renewalNeeded
 ```
 
 `alva whoami` also reports current JWT status under `_meta.arrays_jwt`.
@@ -149,17 +238,19 @@ alva skillhub file alva/ai-digest references/api/example.md > out.md
 ```
 
 By default output is pretty-printed for humans. Pass `--json` to get the
-raw `{success, data}` envelope (e.g. for piping into `jq`).
+`/api/v2` JSON (e.g. for piping into `jq`): `list` and `tags` print every
+page as `{items, nextPageToken: null}`, `get` the `SkillDetail`, `file` the
+`SkillFile`.
 
 ### Playbook Discovery
 
-Discover public playbooks with a compact, agent-friendly result shape. The
-trending endpoint returns identifiers and ranking context, omitting
-frontend-only preview fields.
+Discover public playbooks. `--json` prints the `/api/v2` page of
+`Playbook`s; without an API key, discovery reads the public `/api/v1`
+catalog (`client.v1.playbooks`, 0.x shapes).
 
 ```bash
 alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
-alva playbooks trending --tag btc --cursor <cursor>
+alva playbooks trending --tag btc --cursor <nextPageToken>
 ```
 
 ### Playbook Functions
@@ -170,14 +261,14 @@ path under the creator's home directory. Viewer credit allowance is managed
 through the gateway REST session-user surface.
 
 ```bash
-alva functions register --playbook-id 123 --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
-alva functions list --playbook-id 123
-alva functions delete --playbook-id 123 --function-name analyze
-alva functions invoke --playbook-id 123 --function-name analyze --params '{"ticker":"AAPL"}'
-alva functions allowance create --playbook-id 123 --amount 25
-alva functions allowance get --playbook-id 123
+alva functions register --playbook-id playbook_0abc --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
+alva functions list --playbook-id playbook_0abc
+alva functions delete --playbook-id playbook_0abc --function-name analyze
+alva functions invoke --playbook-id playbook_0abc --function-name analyze --params '{"ticker":"AAPL"}'
+alva functions allowance create --playbook-id playbook_0abc --amount 25
+alva functions allowance get --playbook-id playbook_0abc
 alva functions allowance list
-alva functions allowance revoke --playbook-id 123
+alva functions allowance revoke --playbook-id playbook_0abc
 ```
 
 ### Data Skills
@@ -254,8 +345,8 @@ const client = new AlvaClient({ apiKey: 'alva_your_key_here' });
 // List files
 const entries = await client.fs.readdir({ path: '/' });
 
-// Run code
-const result = await client.run.execute({ code: 'return 1 + 1' });
+// Run code: the /api/v2 Run (status, returnValue as JSON text, logs, ...)
+const run = await client.run.execute({ code: 'return 1 + 1' });
 
 // Manage cronjobs
 const jobs = await client.deploy.list();
@@ -266,10 +357,12 @@ const secrets = await client.secrets.list();
 
 ## Browser Usage
 
-Add the browser bundle via a CDN:
+Browser pages use the 0.36 bundle. 1.x has no browser build: its
+`dist/browser.global.js` is the published 0.36.0 bundle, unchanged, so pages
+that load the unversioned URL keep their 0.36 behavior. Pin the version:
 
 ```html
-<script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
+<script src="https://unpkg.com/@alva-ai/toolkit@0.36/dist/browser.global.js"></script>
 <script>
   const client = new AlvaToolkit.AlvaClient({
     viewer_token,
@@ -281,7 +374,8 @@ Add the browser bundle via a CDN:
 </script>
 ```
 
-> **Note:** The Alva API must have CORS headers configured for browser requests to work from your origin.
+> **Note:** The 0.36 bundle calls `/api/v1` and has the 0.x shapes and IDs.
+> `/api/v2` accepts only API keys and sends no CORS headers.
 
 ### Playbook Runtime UDFs
 
@@ -296,7 +390,7 @@ Register creator-side functions first with `alva functions register`; viewer
 HTML should call the browser runtime instead of hand-writing API fetches.
 
 ```html
-<script src="https://unpkg.com/@alva-ai/toolkit/dist/browser.global.js"></script>
+<script src="https://unpkg.com/@alva-ai/toolkit@0.36/dist/browser.global.js"></script>
 <script>
   (async () => {
     const response = await window.alva.udf.call('analyze', { ticker: 'AAPL' });
@@ -338,21 +432,45 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 
 ### Resources
 
-| Resource            | Methods                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `client.user`       | `me()`                                                                                                                                                             |
-| `client.fs`         | `read()`, `write()`, `rawWrite()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()` |
-| `client.run`        | `execute()`                                                                                                                                                        |
-| `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
-| `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
-| `client.playbooks`  | `trending()`                                                                                                                                                       |
-| `client.theses`     | `create()`, `get()`, `update()`, `close()`, `delete()`, `rewrite()`                                                                                                |
-| `client.functions`  | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
-| `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
-| `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
-| `client.comments`   | `create()`, `pin()`, `unpin()`                                                                                                                                     |
-| `client.remix`      | `save()`                                                                                                                                                           |
-| `client.screenshot` | `capture()`                                                                                                                                                        |
+| Resource                           | Methods                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client.user`                      | `me()`                                                                                                                                                                                                                                                                                                  |
+| `client.fs`                        | `read()`, `write()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()`                                                                                                                                                    |
+| `client.asks`                      | `create()`, `get()`, `wait()`                                                                                                                                                                                                                                                                           |
+| `client.run`                       | `execute()`                                                                                                                                                                                                                                                                                             |
+| `client.deploy`                    | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`, `trigger()`, `listRuns()`, `runStats()`, `getDispatch()`, `getRunLogs()`                                                                                                                                                  |
+| `client.schedules`                 | `list()`, `put()`, `pause()`, `resume()`, `delete()`, `listSession()`, `putSession()`, `pauseSession()`, `resumeSession()`, `deleteSession()`, `agentChannelId()`                                                                                                                                       |
+| `client.automation`                | `list()`, `inspect()`, `update()`, `stop()`, `resume()`, `delete()`, `publish()`, `delivery.get()`, `delivery.update()`                                                                                                                                                                                 |
+| `client.feed`                      | `list()`, `stop()`, `resume()`, `delete()`, `setVisibility()`                                                                                                                                                                                                                                           |
+| `client.release`                   | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                                                                                                                                                               |
+| `client.playbooks`                 | `trending()`, `getByIds()`, `listByOwner()`, `listOwn()`, `get()`, `getBySlug()`, `update()`                                                                                                                                                                                                            |
+| `client.playbookSkills`            | `list()`, `tags()`, `get()`, `file()`                                                                                                                                                                                                                                                                   |
+| `client.theses`                    | `create()`, `get()`, `getByNumber()`, `getVersion()`, `getVersionByNumber()`, `list()`, `listUpdates()`, `related()`, `signals()`, `watchpoints()`, `thesisReturn()`, `assetCandidates()`, `update()`, `archive()`, `unarchive()`, `setVisibility()`, `setStarred()`, `setSignalEnabled()`, `rewrite()` |
+| `client.forYou`                    | `list()`, `theses()`                                                                                                                                                                                                                                                                                    |
+| `client.markets`                   | `assetBySymbol()`, `narrative()`, `earningsCalendar()`, `earnings()`                                                                                                                                                                                                                                    |
+| `client.tradingPairs`              | `list()`, `search()`, `resolve()`                                                                                                                                                                                                                                                                       |
+| `client.companyNews`               | `create()`                                                                                                                                                                                                                                                                                              |
+| `client.x`                         | `status()`, `following()`, `posts()`                                                                                                                                                                                                                                                                    |
+| `client.follows`                   | `watchlist()`, `followCounts()`, `followAssets()`, `unfollowAsset()`, `unfollowAssets()`, `searchProfiles()`, `profiles()`, `followProfile()`, `unfollowProfile()`                                                                                                                                      |
+| `client.subscriptions`             | `followPlaybook()`, `unfollowPlaybook()`, `follows()`, `list()`, `subscribeBatch()`, `unsubscribe()`, `unsubscribeBatch()`                                                                                                                                                                              |
+| `client.alerts`                    | `list()`, `follows()`, `enableBatch()`, `disableBatch()`, `history()`, `preferences()`, `updatePreferences()`                                                                                                                                                                                           |
+| `client.notifications`             | `list()`                                                                                                                                                                                                                                                                                                |
+| `client.notificationPreferences`   | `get()`, `update()`                                                                                                                                                                                                                                                                                     |
+| `client.channelGroupSubscriptions` | `getGroupChatHistory()`                                                                                                                                                                                                                                                                                 |
+| `client.portfolio`                 | `accounts()`, `snapshot()`, `activities()`                                                                                                                                                                                                                                                              |
+| `client.trading`                   | `orders()`, `placeOrders()`, `subscriptions()`, `subscribe()`, `unsubscribe()`, `equity()`, `riskRules()`, `updateRiskRules()`                                                                                                                                                                          |
+| `client.credits`                   | `wallet()`, `entries()`                                                                                                                                                                                                                                                                                 |
+| `client.functions`                 | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                                                                                                                                                          |
+| `client.arraysJwt`                 | `ensure()`, `status()`                                                                                                                                                                                                                                                                                  |
+| `client.dataSkills`                | `list()`, `summary()`, `endpoint()`                                                                                                                                                                                                                                                                     |
+| `client.secrets`                   | `create()`, `list()`, `update()`, `delete()`                                                                                                                                                                                                                                                            |
+| `client.serviceAccount`            | `create()`, `list()`, `delete()`, `grant()`, `revoke()`                                                                                                                                                                                                                                                 |
+| `client.feedback`                  | `submit()`                                                                                                                                                                                                                                                                                              |
+| `client.sdk`                       | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                                                                                                                                                           |
+| `client.comments`                  | `create()`, `pin()`, `unpin()`                                                                                                                                                                                                                                                                          |
+| `client.remix`                     | `save()`                                                                                                                                                                                                                                                                                                |
+| `client.screenshot`                | `capture()`                                                                                                                                                                                                                                                                                             |
+| `client.v1`                        | `steward`, `secrets.get()`, `notifications.listFeed()`, `subscriptions.subscribeFeed()`, `subscriptions.unsubscribeFeed()`, `channelGroupSubscriptions`, `fs`, `trading.subscribe()`, `playbooks`, `playbookSkills` (0.x shapes; CHANGELOG, "Moved to `client.v1`")                                     |
 
 ### Error Handling
 
@@ -364,8 +482,13 @@ try {
 } catch (err) {
   if (err instanceof AlvaError) {
     console.error(err.code); // 'NOT_FOUND'
+    console.error(err.reason); // a finer public reason, when the problem has one
     console.error(err.status); // 404
-    console.error(err.message); // 'File not found'
+    console.error(err.message); // the problem's detail
+    console.error(err.type); // 'https://alva.ai/problems/not-found'
+    console.error(err.requiredPermission); // on INSUFFICIENT_PERMISSION
+    console.error(err.invalidParams); // on INVALID_ARGUMENT: [{ name, reason }]
+    console.error(err.retryAfter); // seconds, on RATE_LIMITED and retryable failures
   }
 }
 ```
@@ -380,16 +503,16 @@ alva company-news create --name my-company-news --tickers NVDA,AMD,AAPL
 alva company-news create --name earnings-news --tickers NVDA,AMD --initial-lookback-hours 48 --page-size 30
 ```
 
-Uses the configured Alva API key and the vNext GraphQL business mutation
-`companyNews { createFeed(input: ...) }` via `POST /query`. The backend
-owns the producer code and creates the Feed, its cronjob and processing state.
-The response contains decimal-string `feed_id` and `cronjob_id`; newly created
+Uses the configured Alva API key and `POST /api/v2/company-news-feeds`. The
+backend owns the producer code and creates the Feed, its cronjob and processing
+state. The response is the `CompanyNewsFeed`: the Feed's Automation ID as `id`
+and its producer's Cronjob ID as `cronjobId`; newly created
 producers are **paused**, and creation does not invoke a model or spend model
 credits. Review the configuration, then explicitly start it from the terminal CLI
 when ready (embedded dispatch does not expose Feed lifecycle commands):
 
 ```bash
-alva feed resume --id <feed_id>
+alva feed resume --id <id>
 ```
 
 Once resumed, model usage is charged to the authenticated creator. Company News
@@ -398,7 +521,8 @@ upload, owner override or automatic-start flag is supported.
 
 Names must be owner-local, 1–64 alphanumeric/hyphen characters starting with an
 alphanumeric character, and not `news-lane`. Supply 1–1000 unique uppercase
-tickers (maximum 20 characters each). `--initial-lookback-hours` accepts 0–168
+tickers (maximum 20 characters each); the gateway refuses other values and
+names the parameter. `--initial-lookback-hours` accepts 0–168
 (default 24); `--page-size` accepts 0–100 (default 20). Zero selects the backend
 default. Large universes are read incrementally rather than all in one wake.
 
@@ -413,11 +537,11 @@ list once. Incrementally appending tickers to the same Feed is not supported.
 SDK equivalent:
 
 ```typescript
-const { feed_id, cronjob_id } = await client.companyNews.create({
+const { id, cronjobId } = await client.companyNews.create({
   name: 'my-company-news',
   tickers: ['NVDA', 'AMD'],
-  initial_lookback_hours: 24,
-  page_size: 20,
+  initialLookbackHours: 24,
+  batchSize: 20,
 });
 ```
 
@@ -429,21 +553,25 @@ follow the embedded CLI release instructions below.
 
 ## CLI Commands
 
+Every command also takes `--json`, which prints the `/api/v2` JSON result
+(the default of commands without a human format).
+
 ```text
 alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 alva whoami [--profile <name>]
 alva auth login [--browser | --no-browser] [--profile <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
+alva ask --prompt <text> [--system <text>] [--model <id>] [--effort <level>] [--json] [--no-wait]
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json> | --args-stdin] [--timeout-ms <ms>]
-alva deploy <create|list|get|update|delete|pause|resume|runs|run-logs>
+alva deploy <create|list|get|update|delete|pause|resume|trigger|runs|run-stats|run-status|run-logs>
 alva release <feed|playbook-draft|playbook>
 alva playbooks <trending>
 alva thesis <list|related|create|get|signals|set-visibility|update|rewrite>
-alva thesis version get --id <thesis-id> --author-version-id <version-id>
-alva thesis list --person <slug>       # or --person-name <name> / --user <username>
-alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextCursor>
-alva thesis related --id <playbook-id>
+alva thesis version get --author-version-id <version-id>  # or --number <n> --version <m>
+alva thesis list --person <handle>     # or --person-name <name> / --user <handle>
+alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextPageToken>
+alva thesis related --id <thesis-id>
 alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoints: [{label, text, origin}]
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
@@ -461,10 +589,10 @@ alva trading-pairs resolve --pair <trading-pair> [--json]
 alva trading-pairs resolve --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]
 alva trading <accounts|portfolio|orders|subscriptions|equity-history|risk-rules|subscribe|unsubscribe|execute|update-risk-rules>
 alva markets watchlist <add|remove> --tickers <A,B:crypto> [--kind <stock|etf|crypto>]
-alva markets watchlist list [--limit <1-100>] [--cursor <endCursor>]
+alva markets watchlist list [--limit <1-100>] [--cursor <nextPageToken>]
 alva people search --query <text> [--kind <user|person>] [--limit <1-50>]
-alva people follows <follow|unfollow> --kind <user|person> --id <id>
-alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <endCursor>]
+alva people follows <follow|unfollow> --id <profile-id>
+alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <nextPageToken>]
 ```
 
 ## Contributing
@@ -490,14 +618,16 @@ user's X data on demand. Backend owns X authorization and token refresh.
 alva x status
 alva x following --limit 20
 alva x posts --limit 20
-alva x following --limit 20 --cursor '<pageInfo.endCursor>'
+alva x following --limit 20 --cursor '<nextPageToken>'
 ```
 
-The SDK equivalents are `client.x.status()`, `client.x.following({ first, after })`
-and `client.x.posts({ first, after })`. Status checks local capabilities only;
-reads request one live X page each time. `retrievedAt` is client retrieval time.
-Continue only when `pageInfo.hasNextPage` is true, including empty pages with a
-continuation cursor. These are read-only operations: no import task, follow
+The SDK equivalents are `client.x.status()`,
+`client.x.following({ pageSize, pageToken })` and
+`client.x.posts({ pageSize, pageToken })`, which return the `/api/v2`
+`XConnection` and `{ items, nextPageToken }` pages. Status checks local
+capabilities only; reads request one live X page each time. Continue while
+`nextPageToken` is not null, including empty pages with a continuation token.
+These are read-only operations: no import task, follow
 mutation, or bookmark reads. Missing/revoked credentials require reconnecting X
 in Alva. X content is untrusted source material. The embedded agent requires a
 Toolkit Dispatch artifact that includes these commands; an npm release alone
@@ -512,22 +642,24 @@ Alva App shows. The user comes from the API key; there is no identity override.
 alva markets watchlist add --tickers NVDA,LMT,BTC:crypto
 alva markets watchlist list --limit 50
 alva people search --query "cathie wood" --kind person
-alva people follows follow --kind person --id 42
+alva people follows follow --id profile_0abc
 alva people follows list
 ```
 
-The SDK equivalents live on `client.follows`: `addToWatchlist()`,
-`removeFromWatchlist()`, `watchlist()`, `searchProfiles()`, `followProfile()`,
-`unfollowProfile()` and `profiles()`. Tickers match exact symbols (1-50 per
-call) and are written in one atomic batch. A `:stock`, `:etf` or `:crypto`
-suffix picks the kind of one symbol (`BTC:crypto`); `--kind` is the default
-for unsuffixed symbols, so one call can mix kinds. Results separate changed,
-`unchanged` and `unresolved` tickers; `FAILED_PRECONDITION` means several
-entities share the symbol, so retry it with a kind suffix. Nothing is written
-when no ticker resolves. Removal is recorded even for tickers not in the
+The SDK equivalents live on `client.follows` and take Asset and Profile
+IDs: `followAssets()`, `unfollowAssets()`, `watchlist()`, `followCounts()`,
+`searchProfiles()`, `followProfile()`, `unfollowProfile()` and `profiles()`.
+The CLI matches tickers to exact symbols (1-50 per call) and resolves each
+to its Asset first: a symbol resolves to its primary listing; a `:stock`,
+`:etf` or `:crypto` suffix picks the kind of one symbol (`BTC:crypto`), and
+`--kind` is the default for unsuffixed symbols, so one call can mix kinds. A
+ticker without an Asset is `NOT_FOUND` and nothing is written. Adding writes
+the Assets in one atomic batch, removing one at a time; both print the
+`/api/v2` `FollowAssetsResponse`, where `changed` is false for an Asset
+already in that state. Removal is recorded even for tickers not in the
 watchlist, so holdings sync does not add them back; adding re-adds a ticker
 the user removed earlier. Profiles are `USER` (Alva user) or `PERSON`
-(curated person), addressed by `kind` + `id` from search or list results. The
+(curated person), addressed by the Profile ID from search or list results. The
 terminal CLI and the embedded agent use the same `alva markets watchlist ...`
 and `alva people ...` paths; the embedded agent needs a Toolkit Dispatch
 artifact that includes these commands.

@@ -3,6 +3,7 @@ import { AlvaClient } from '../../src/client.js';
 import { CliUsageError } from '../../src/error.js';
 import { dispatch as dispatchTerminal } from '../../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../../src/cli/embeddedDispatch.js';
+import { companyNewsFeed } from '../marketV2.js';
 
 for (const [surface, dispatch] of [
   ['terminal', dispatchTerminal],
@@ -10,11 +11,16 @@ for (const [surface, dispatch] of [
 ] as const) {
   describe(`company-news ${surface} dispatch`, () => {
     if (surface === 'terminal') {
-      it.each(['stop', 'resume', 'delete', 'set-visibility'] as const)(
-        'preserves decimal int64 feed IDs for %s',
-        async (operation) => {
+      it.each([
+        ['stop', 'POST', '/pause'],
+        ['resume', 'POST', '/resume'],
+        ['delete', 'DELETE', ''],
+        ['set-visibility', 'POST', '/unpublish'],
+      ] as const)(
+        'sends the feed ID unchanged on the automation route for %s',
+        async (operation, method, suffix) => {
           const fetch = vi.fn().mockResolvedValue(
-            new Response('{}', {
+            new Response('{"visibility":"PRIVATE"}', {
               headers: { 'Content-Type': 'application/json' },
             })
           );
@@ -25,22 +31,23 @@ for (const [surface, dispatch] of [
               'feed',
               operation,
               '--id',
-              '9223372036854775807',
+              'automation_0abc',
               ...(operation === 'set-visibility'
                 ? ['--visibility', 'private']
                 : []),
             ]);
             expect(fetch).toHaveBeenCalledTimes(1);
-            expect(fetch.mock.calls[0][0]).toContain(
-              '/feed/9223372036854775807'
+            expect(fetch.mock.calls[0][0]).toMatch(
+              new RegExp(`/api/v2/automations/automation_0abc${suffix}$`)
             );
+            expect(fetch.mock.calls[0][1].method).toBe(method);
           } finally {
             vi.unstubAllGlobals();
           }
         }
       );
-      it.each(['0', '-1', '1.5', '1e3', '01', '9223372036854775808', '42\n'])(
-        'rejects invalid feed IDs without calling resume: %s',
+      it.each(['', ' automation_0abc', 'automation_0abc\n'])(
+        'rejects invalid feed IDs without calling resume: %j',
         async (id) => {
           const client = new AlvaClient({ apiKey: 'key' });
           const resume = vi
@@ -53,12 +60,9 @@ for (const [surface, dispatch] of [
         }
       );
     }
-    it('creates a multi-ticker managed feed with one call and returns lossless IDs', async () => {
+    it('creates a multi-ticker managed feed with one call and returns its IDs unchanged', async () => {
       const client = new AlvaClient({ apiKey: 'key' });
-      const result = {
-        feed_id: '9223372036854775807',
-        cronjob_id: '9223372036854775806',
-      };
+      const result = companyNewsFeed();
       const create = vi
         .spyOn(client.companyNews, 'create')
         .mockResolvedValue(result);
@@ -78,8 +82,8 @@ for (const [surface, dispatch] of [
       expect(create).toHaveBeenCalledExactlyOnceWith({
         name: 'my-news',
         tickers: ['NVDA', 'AMD'],
-        initial_lookback_hours: 48,
-        page_size: 30,
+        initialLookbackHours: 48,
+        batchSize: 30,
       });
     });
 
@@ -87,7 +91,7 @@ for (const [surface, dispatch] of [
       const client = new AlvaClient({ apiKey: 'key' });
       const create = vi
         .spyOn(client.companyNews, 'create')
-        .mockResolvedValue({ feed_id: '1', cronjob_id: '2' });
+        .mockResolvedValue(companyNewsFeed());
       await dispatch(client, [
         'company-news',
         'create',
@@ -106,7 +110,6 @@ for (const [surface, dispatch] of [
       [],
       ['--name', 'my-news'],
       ['--tickers', 'NVDA'],
-      ['--name', 'my-news', '--tickers', 'NVDA,,AMD'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--page-size', '1.5'],
       [
         '--name',
@@ -116,7 +119,6 @@ for (const [surface, dispatch] of [
         '--initial-lookback-hours',
         '-1',
       ],
-      ['--name', 'my-news', '--tickers', 'NVDA', '--page-size', '101'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--path', '~/pipeline.js'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--uid', '42'],
       ['--name', 'my-news', '--tickers', 'NVDA', '--start'],
