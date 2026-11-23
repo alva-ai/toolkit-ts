@@ -70,8 +70,13 @@ Headless / no-browser environments (SSH, containers, devcontainers, etc.)
 are auto-detected; pass `--no-browser` to force the paste-code flow or
 `--browser` to force the listener flow.
 
+The new key is named `<agent> · <computer>` in your key list: the agent comes
+from `--agent <name>`, or is detected from the environment when the CLI runs
+inside a known agent. A hosted agent (Grok bot, Muse) is named without its VM.
+
 ```bash
 alva auth login --no-browser            # force paste-code flow
+alva auth login --agent "Codex"         # name the key after the agent signing in
 alva auth login --profile staging       # save under a named profile
 alva auth login --auth-url https://stg.alva.xyz --base-url https://api-llm.stg.alva.ai  # point at stg
 ```
@@ -432,7 +437,7 @@ follow the embedded CLI release instructions below.
 ```text
 alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 alva whoami [--profile <name>]
-alva auth login [--browser | --no-browser] [--profile <name>]
+alva auth login [--browser | --no-browser] [--profile <name>] [--agent <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json> | --args-stdin] [--timeout-ms <ms>]
