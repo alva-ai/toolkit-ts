@@ -5714,13 +5714,41 @@ function encodePersonalSkillFile(
 ): SavePersonalSkillFileInput {
   if (!buf.includes(0)) {
     try {
-      const decoder = new TextDecoder('utf-8', { fatal: true });
+      // ignoreBOM: true preserves leading UTF-8 BOM bytes verbatim so content hashes match disk.
+      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
       return { path: relPath, content: decoder.decode(buf) };
     } catch {
       // Fall through to base64 for binary / non-UTF-8 content.
     }
   }
   return { path: relPath, content_base64: buf.toString('base64') };
+}
+
+function assertNoSymlinkAncestors(
+  fs: typeof import('node:fs'),
+  path: typeof import('node:path'),
+  targetPath: string,
+  flagName: string
+): void {
+  const resolved = path.resolve(targetPath);
+  const darwinSystemSymlinks = new Set(['/tmp', '/var', '/etc']);
+  let cur = resolved;
+  while (true) {
+    const isSystemLink =
+      process.platform === 'darwin' && darwinSystemSymlinks.has(cur);
+    if (!isSystemLink) {
+      const st = fs.lstatSync(cur);
+      if (st.isSymbolicLink()) {
+        throw new CliUsageError(
+          `${flagName} cannot traverse or target a symbolic link: ${cur}`,
+          'my-skills save'
+        );
+      }
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
 }
 
 async function collectPersonalSkillFiles(
@@ -5778,13 +5806,8 @@ async function collectPersonalSkillFiles(
 
   if (flags['dir']) {
     const root = path.resolve(flags['dir']);
+    assertNoSymlinkAncestors(fs, path, root, '--dir');
     const rootStat = fs.lstatSync(root);
-    if (rootStat.isSymbolicLink()) {
-      throw new CliUsageError(
-        `--dir cannot be a symbolic link: ${flags['dir']}`,
-        'my-skills save'
-      );
-    }
     if (!rootStat.isDirectory()) {
       throw new CliUsageError(
         `--dir must be a directory: ${flags['dir']}`,
@@ -5826,13 +5849,8 @@ async function collectPersonalSkillFiles(
 
   if (flags['skill-md']) {
     const resolved = path.resolve(flags['skill-md']);
+    assertNoSymlinkAncestors(fs, path, resolved, '--skill-md');
     const st = fs.lstatSync(resolved);
-    if (st.isSymbolicLink()) {
-      throw new CliUsageError(
-        `--skill-md cannot be a symbolic link: ${flags['skill-md']}`,
-        'my-skills save'
-      );
-    }
     if (!st.isFile()) {
       throw new CliUsageError(
         `--skill-md must be a regular file: ${flags['skill-md']}`,

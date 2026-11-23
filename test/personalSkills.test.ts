@@ -283,7 +283,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         ])
       ).rejects.toThrow(/Refusing symbolic link/);
 
-      // 2. Symlink as --skill-md is rejected.
+      // 2. Symlink as --skill-md and symlink ancestor directory are both rejected.
       await expect(
         dispatchCli(client, [
           'my-skills',
@@ -297,10 +297,35 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
           '--skill-md',
           join(dir, 'leak.md'),
         ])
-      ).rejects.toThrow(/--skill-md cannot be a symbolic link/);
+      ).rejects.toThrow(/symbolic link/);
 
-      // 3. Remove symlink; add .env, node_modules, and binary asset -> .env/node_modules skipped, binary sent as content_base64.
+      symlinkSync(outside, join(dir, 'symdir'));
+      writeFileSync(join(outside, 'SKILL.md'), '---\nname: sec-test\n---\nOutside\n');
+      await expect(
+        dispatchCli(client, [
+          'my-skills',
+          'save',
+          '--slug',
+          'sec-test',
+          '--display-name',
+          'Sec',
+          '--description',
+          'Desc',
+          '--skill-md',
+          join(dir, 'symdir', 'SKILL.md'),
+        ])
+      ).rejects.toThrow(/symbolic link/);
+      rmSync(join(dir, 'symdir'));
+
+      // 3. Remove symlink; add .env, node_modules, BOM-prefixed UTF-8 file, and binary asset.
       rmSync(join(dir, 'leak.md'));
+      writeFileSync(
+        join(dir, 'SKILL.md'),
+        Buffer.concat([
+          Buffer.from([0xef, 0xbb, 0xbf]),
+          Buffer.from('---\nname: sec-test\n---\nBody\n', 'utf-8'),
+        ])
+      );
       writeFileSync(join(dir, '.env'), 'OPENAI_API_KEY=sk-proj-1234567890abcdef1234567890');
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
       writeFileSync(join(dir, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;');
@@ -343,6 +368,8 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       const payload = JSON.parse(requests[0].body);
       const paths = payload.files.map((f: { path: string }) => f.path).sort();
       expect(paths).toEqual(['SKILL.md', 'assets/icon.png']);
+      const skillEntry = payload.files.find((f: { path: string }) => f.path === 'SKILL.md');
+      expect(skillEntry.content.startsWith('\ufeff')).toBe(true);
       const binEntry = payload.files.find((f: { path: string }) => f.path === 'assets/icon.png');
       expect(binEntry.content).toBeUndefined();
       expect(Buffer.from(binEntry.content_base64, 'base64')).toEqual(pngBytes);
