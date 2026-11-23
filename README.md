@@ -526,8 +526,9 @@ alva people follows theses --cursor <next_cursor>
 `people follows theses` lists the Thesis Updates of the profiles the user
 follows, in the order they reached Alva (a curated person's thesis can reach
 Alva hours after its post time). Without `--cursor` it reads the last 24 hours.
-Every answer carries `next_cursor`, also an empty one: page while `has_more` is
-true and keep the last `next_cursor` to read only what is new next time. The
+Every answer carries a non-empty `next_cursor`, also after an empty page: page
+while `has_more` is true and keep the last `next_cursor` to read only what is
+new next time. The
 SDK equivalent is `client.follows.theses({ cursor, first })`.
 
 The SDK equivalents live on `client.follows`: `addToWatchlist()`,
