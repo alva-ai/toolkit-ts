@@ -233,7 +233,8 @@ resource:
   rule sent is whole (`enabled` and a non-null `value`).
 - CLI: `trading update-risk-rules` replaces only the rules it names, each
   with both its `-value` and `-enabled` (`true` or `false`) flags; it no
-  longer requires all six.
+  longer requires all six. A value is a plain decimal (`2500.5`, no
+  exponent or leading or trailing zeros), sent as given.
 - CLI: `trading execute` takes `--instruction` and `--idempotency-key` and
   refuses `--signal`, `--source-username` and `--source-feed`;
   `trading orders --since` takes RFC 3339 only; `trading equity-history`
