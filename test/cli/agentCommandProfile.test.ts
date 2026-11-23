@@ -24,7 +24,19 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
-    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(137);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(145);
+    for (const leaf of [
+      'my-skills list',
+      'my-skills get',
+      'my-skills file',
+      'my-skills save',
+      'my-skills enable',
+      'my-skills disable',
+      'my-skills delete',
+      'my-skills reindex',
+    ]) {
+      expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(leaf);
+    }
     for (const leaf of [
       'markets watchlist list',
       'markets watchlist add',
@@ -349,9 +361,17 @@ describe('Slim Alva Agent command profile', () => {
         './schema.json',
       ],
       ['playbooks', 'screenshot', '--url', '/p', '--out', './p.png'],
+      ['my-skills', 'save', '--slug', 's', '--display-name', 'S', '--description', 'D', '--dir', './s'],
+      ['my-skills', 'save', '--slug', 's', '--display-name', 'S', '--description', 'D', '--skill-md', './SKILL.md'],
     ]) {
       expect(() => parseEmbeddedCommand(argv)).toThrow(/is not supported/);
     }
+
+    const mySkillsHelp = agentHelpFor(['my-skills', '--help']);
+    expect(mySkillsHelp).toContain('--files-json');
+    expect(mySkillsHelp).toContain('--overwrite-conflict');
+    expect(mySkillsHelp).not.toContain('--dir');
+    expect(mySkillsHelp).not.toContain('--skill-md');
 
     const screenshot = parseEmbeddedCommand([
       'playbooks',

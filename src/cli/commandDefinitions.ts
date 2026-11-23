@@ -490,7 +490,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
   command('my-skills reindex', {
     booleans: ['json'],
-    positionals: ['personal skill slug'],
+    positionals: ['personal skill ref'],
   }),
 
   command('comments create', {

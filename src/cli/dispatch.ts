@@ -163,6 +163,7 @@ Commands:
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
+  my-skills   Private Personal Skills (list, get, file, save, enable, disable, delete, reindex)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   notification-history  Feed notification delivery history (list-feed)
@@ -197,6 +198,30 @@ Quick start:
   alva whoami`;
 
 export const COMMAND_HELP: Record<string, string> = {
+  'my-skills': `Usage: alva my-skills <subcommand> [options]
+
+Manage your private Alva Cloud Personal Skills.
+
+Subcommands:
+  list    [--first <n>] [--after <cursor>] [--include-disabled] [--json]
+  get     <ref> [--json]
+  file    <ref> <path> [--rev <n>] [--json]
+  save    --slug <slug> --display-name <name> --description <desc>
+          (--dir <folder> | --skill-md <path> | --files-json '<json array>')
+          [--source-type chat|url|upload|agent_link|skillhub_fork]
+          [--source-ref <ref>] [--source-hash <hash>] [--expected-rev <n>]
+          [--expected-source-hash <hash>] [--request-id <uuid>]
+          [--overwrite-conflict] [--json]
+  enable  <ref> [--json]
+  disable <ref> [--json]
+  delete  <ref> [--json]
+  reindex <ref> [--json]
+
+Notes:
+  - <ref> accepts personal:<public_id>, <public_id>, or <slug>.
+  - SKILL.md must begin with YAML frontmatter whose name matches --slug.
+  - --dir skips dotfiles (.git, .env*, .DS_Store) and node_modules, and rejects symlinks.
+  - Updates require --expected-rev <current_rev> and include the full file bundle.`,
   'company-news': `Usage: alva company-news create --name <name> --tickers <NVDA,AMD> [options]
 
 Create one private, backend-managed Feed covering all supplied tickers.
@@ -4759,7 +4784,7 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'list': {
           const result = await client.personalSkills.list({
-            first: num(flags['first']),
+            first: parsePositiveIntFlag(flags['first'], 'first', 'my-skills list'),
             after: flags['after'],
             include_disabled: boolFlag(flags['include-disabled']) ?? false,
           });
@@ -4774,7 +4799,7 @@ export async function executeParsedCommand(
           const ref = positionals[0]!;
           const filePath = positionals[1]!;
           const result = await client.personalSkills.file(ref, filePath, {
-            rev: num(flags['rev']),
+            rev: parsePositiveIntFlag(flags['rev'], 'rev', 'my-skills file'),
           });
           return asJson ? result : formatPersonalSkillFile(result);
         }
@@ -4792,6 +4817,11 @@ export async function executeParsedCommand(
           );
           const sourceType = (flags['source-type'] ??
             'chat') as PersonalSkillSourceType;
+          const expectedRev = parsePositiveIntFlag(
+            flags['expected-rev'],
+            'expected-rev',
+            'my-skills save'
+          );
           const files = await collectPersonalSkillFiles(flags);
           const result = await client.personalSkills.save({
             public_id: flags['public-id'],
@@ -4802,7 +4832,7 @@ export async function executeParsedCommand(
             source_type: sourceType,
             source_ref: flags['source-ref'],
             source_content_hash: flags['source-hash'],
-            expected_rev: num(flags['expected-rev']),
+            expected_rev: expectedRev,
             expected_source_hash: flags['expected-source-hash'],
             request_id: flags['request-id'],
             overwrite_conflict: boolFlag(flags['overwrite-conflict']) ?? false,
@@ -5655,6 +5685,44 @@ export function stripGlobalFlags(argv: string[]): string[] {
   return result;
 }
 
+function parsePositiveIntFlag(
+  raw: string | undefined,
+  flagName: string,
+  command: string
+): number | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    throw new CliUsageError(
+      `--${flagName} must be a positive integer, got "${raw}"`,
+      command
+    );
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new CliUsageError(
+      `--${flagName} must be a positive integer, got "${raw}"`,
+      command
+    );
+  }
+  return parsed;
+}
+
+function encodePersonalSkillFile(
+  relPath: string,
+  buf: Buffer
+): SavePersonalSkillFileInput {
+  if (!buf.includes(0)) {
+    try {
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      return { path: relPath, content: decoder.decode(buf) };
+    } catch {
+      // Fall through to base64 for binary / non-UTF-8 content.
+    }
+  }
+  return { path: relPath, content_base64: buf.toString('base64') };
+}
+
 async function collectPersonalSkillFiles(
   flags: Record<string, string>
 ): Promise<SavePersonalSkillFileInput[]> {
@@ -5670,11 +5738,39 @@ async function collectPersonalSkillFiles(
     }
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new CliUsageError(
-        '--files-json must be a non-empty JSON array of { path, content }',
+        '--files-json must be a non-empty JSON array of { path, content | content_base64 }',
         'my-skills save'
       );
     }
-    return parsed as SavePersonalSkillFileInput[];
+    const items: SavePersonalSkillFileInput[] = [];
+    for (const entry of parsed) {
+      if (
+        !entry ||
+        typeof entry !== 'object' ||
+        typeof (entry as Record<string, unknown>).path !== 'string' ||
+        !(entry as Record<string, unknown>).path
+      ) {
+        throw new CliUsageError(
+          '--files-json entries must include a non-empty string "path"',
+          'my-skills save'
+        );
+      }
+      const rec = entry as Record<string, unknown>;
+      const hasContent = typeof rec.content === 'string';
+      const hasB64 = typeof rec.content_base64 === 'string';
+      if (!hasContent && !hasB64) {
+        throw new CliUsageError(
+          `--files-json entry "${rec.path}" must include "content" or "content_base64"`,
+          'my-skills save'
+        );
+      }
+      items.push({
+        path: rec.path as string,
+        ...(hasContent ? { content: rec.content as string } : {}),
+        ...(hasB64 ? { content_base64: rec.content_base64 as string } : {}),
+      });
+    }
+    return items;
   }
 
   const fs = await import('node:fs');
@@ -5682,20 +5778,39 @@ async function collectPersonalSkillFiles(
 
   if (flags['dir']) {
     const root = path.resolve(flags['dir']);
+    const rootStat = fs.lstatSync(root);
+    if (rootStat.isSymbolicLink()) {
+      throw new CliUsageError(
+        `--dir cannot be a symbolic link: ${flags['dir']}`,
+        'my-skills save'
+      );
+    }
+    if (!rootStat.isDirectory()) {
+      throw new CliUsageError(
+        `--dir must be a directory: ${flags['dir']}`,
+        'my-skills save'
+      );
+    }
     const collected: SavePersonalSkillFileInput[] = [];
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (entry.name === '.git' || entry.name === '.DS_Store') continue;
+        // Skip hidden dotfiles/dotdirs (.git, .env, .env.*, .DS_Store) and node_modules.
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+          continue;
+        }
         const full = path.join(dir, entry.name);
-        if (entry.isSymbolicLink()) continue;
-        if (entry.isDirectory()) {
+        const rel = path.relative(root, full).split(path.sep).join('/');
+        const st = fs.lstatSync(full);
+        if (st.isSymbolicLink()) {
+          throw new CliUsageError(
+            `Refusing symbolic link inside --dir: ${rel}`,
+            'my-skills save'
+          );
+        }
+        if (st.isDirectory()) {
           walk(full);
-        } else if (entry.isFile()) {
-          const rel = path.relative(root, full).split(path.sep).join('/');
-          collected.push({
-            path: rel,
-            content: fs.readFileSync(full, 'utf-8'),
-          });
+        } else if (st.isFile()) {
+          collected.push(encodePersonalSkillFile(rel, fs.readFileSync(full)));
         }
       }
     };
@@ -5710,8 +5825,21 @@ async function collectPersonalSkillFiles(
   }
 
   if (flags['skill-md']) {
-    const content = fs.readFileSync(path.resolve(flags['skill-md']), 'utf-8');
-    return [{ path: 'SKILL.md', content }];
+    const resolved = path.resolve(flags['skill-md']);
+    const st = fs.lstatSync(resolved);
+    if (st.isSymbolicLink()) {
+      throw new CliUsageError(
+        `--skill-md cannot be a symbolic link: ${flags['skill-md']}`,
+        'my-skills save'
+      );
+    }
+    if (!st.isFile()) {
+      throw new CliUsageError(
+        `--skill-md must be a regular file: ${flags['skill-md']}`,
+        'my-skills save'
+      );
+    }
+    return [encodePersonalSkillFile('SKILL.md', fs.readFileSync(resolved))];
   }
 
   throw new CliUsageError(

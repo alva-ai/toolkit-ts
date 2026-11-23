@@ -13,6 +13,7 @@ Commands:
   run           Execute Jagent JavaScript
   data-skills   Discover structured Arrays data endpoints
   skillhub      Discover curated methodology blueprints
+  my-skills     Manage private Personal Skills
   markets       Read market context; manage the ticker watchlist
   people        Search, follow, and unfollow Alva users and curated people
   trading-pairs Discover and strictly verify canonical trading pairs
@@ -244,6 +245,29 @@ Subcommands:
 
 Subcommands:
   list  tags  get  file`,
+
+  'my-skills': `Usage: alva my-skills <subcommand> [options]
+
+Manage your private Alva Cloud Personal Skills.
+Subcommands:
+  list    [--first <n>] [--after <cursor>] [--include-disabled] [--json]
+  get     <ref> [--json]
+  file    <ref> <path> [--rev <n>] [--json]
+  save    --slug <slug> --display-name <name> --description <desc>
+          --files-json '<json array>' [--source-type chat|url|upload|agent_link|skillhub_fork]
+          [--source-ref <ref>] [--source-hash <hash>] [--expected-rev <n>]
+          [--expected-source-hash <hash>] [--request-id <uuid>]
+          [--overwrite-conflict] [--json]
+  enable  <ref> [--json]
+  disable <ref> [--json]
+  delete  <ref> [--json]
+  reindex <ref> [--json]
+
+<ref> accepts personal:<public_id>, <public_id>, or <slug>.
+Embedded agent runs accept inline --files-json only (no local filesystem paths).
+SKILL.md must begin with YAML frontmatter whose name matches --slug.
+Always pass --rev <current_rev> when reading files during execution, and pass
+--expected-rev <current_rev> with the full file bundle when updating.`,
 
   markets: `Usage: alva markets <subcommand>
 

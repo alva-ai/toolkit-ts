@@ -346,7 +346,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     }),
     route('my-skills reindex', 'my-skills reindex', {
       booleans: ['json'],
-      positionals: ['personal skill slug'],
+      positionals: ['personal skill ref'],
     }),
     route('markets narrative', 'markets narrative', { values: ['ticker'] }),
     route('markets earnings', 'markets earnings', {

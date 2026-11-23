@@ -39,6 +39,8 @@ export interface PersonalSkillFile {
   rev: number;
   path: string;
   content: string;
+  content_base64?: string;
+  is_binary?: boolean;
   updated_at: string;
 }
 
@@ -178,8 +180,8 @@ export class PersonalSkillsResource {
     )) as { deleted: boolean };
   }
 
-  async reindex(slug: string): Promise<{ skill: PersonalSkillSummary }> {
-    const encoded = encodeURIComponent(validateRef(slug));
+  async reindex(ref: string): Promise<{ skill: PersonalSkillSummary }> {
+    const encoded = encodeURIComponent(validateRef(ref));
     return (await this.client._request(
       'POST',
       `/api/v1/personal-skills/${encoded}/reindex`
