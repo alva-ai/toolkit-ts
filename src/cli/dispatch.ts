@@ -1658,8 +1658,8 @@ it is):
   --max-daily-turnover-enabled <bool> Enforce it: true or false
   --max-daily-orders-value <n>        Max daily orders
   --max-daily-orders-enabled <bool>   Enforce it: true or false
-  A value is a plain decimal such as 2500.5 (no exponent, leading or
-  trailing zeros), sent as given.
+  A value is a plain decimal such as 2500.5 (no exponent); it is sent
+  exactly, without leading or trailing zeros (2500.50 as 2500.5).
   A rule is replaced whole, so it takes both its -value and -enabled flags,
   even to change one of them: read the current rule with
   'alva trading risk-rules' and repeat the member you keep. Nothing is read
@@ -2563,6 +2563,22 @@ async function automationDeliveryUpdateParams(
   return { id, patch: { channelIds, email } };
 }
 
+/**
+ * A plain decimal (`-?digits(.digits)?`) in the contract's Decimal form,
+ * rewritten as text, never through a float: no leading zeros (`007` is
+ * `7`), no trailing fractional zeros (`2500.50` is `2500.5`), and `-0` is
+ * `0`. Undefined for anything else: empty, hex, an exponent, Infinity.
+ */
+function canonicalDecimal(text: string): string | undefined {
+  const m = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(text);
+  if (m === null) return undefined;
+  const whole = m[2].replace(/^0+(?=[0-9])/, '');
+  const fraction = (m[3] ?? '').replace(/0+$/, '');
+  const magnitude = fraction === '' ? whole : `${whole}.${fraction}`;
+  const out = m[1] === '-' && magnitude !== '0' ? `-${magnitude}` : magnitude;
+  return DECIMAL_PATTERN.test(out) ? out : undefined;
+}
+
 /** The flag prefix of each risk rule: `--<prefix>-value`, `--<prefix>-enabled`. */
 const RISK_RULE_FLAGS = {
   maxOrderValue: 'max-single-order',
@@ -2602,10 +2618,10 @@ function riskRulesPatch(
         'trading'
       );
     }
-    const amount = flags[value].trim();
-    if (!DECIMAL_PATTERN.test(amount)) {
+    const amount = canonicalDecimal(flags[value].trim());
+    if (amount === undefined) {
       throw new CliUsageError(
-        `--${value} must be a plain decimal such as 2500.5 (no exponent, leading or trailing zeros) for '${command}', got '${flags[value]}'`,
+        `--${value} must be a plain decimal such as 2500.5 (no exponent) for '${command}', got '${flags[value]}'`,
         'trading'
       );
     }

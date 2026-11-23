@@ -281,24 +281,34 @@ describe('trading CLI on /api/v2', () => {
     ]);
   });
 
-  it('sends a value as given, trimmed, never through a float', async () => {
-    const fake = fakeV2({ 'PATCH /me/risk-rules': () => riskRules() });
-    restore = fake.restore;
+  it.each([
+    [' 12345678901234567.5 ', '12345678901234567.5'],
+    ['2500.50', '2500.5'],
+    ['007', '7'],
+    ['0.10', '0.1'],
+    ['100.000', '100'],
+    ['-0.0', '0'],
+  ])(
+    'sends the value %j as %j, rewritten as text, never through a float',
+    async (amount, sent) => {
+      const fake = fakeV2({ 'PATCH /me/risk-rules': () => riskRules() });
+      restore = fake.restore;
 
-    await dispatchCli(client(), [
-      'trading',
-      'update-risk-rules',
-      '--max-daily-turnover-value',
-      ' 12345678901234567.5 ',
-      '--max-daily-turnover-enabled',
-      'true',
-    ]);
-    expect(fake.calls[0].body).toEqual({
-      maxDailyTurnover: { enabled: true, value: '12345678901234567.5' },
-    });
-  });
+      await dispatchCli(client(), [
+        'trading',
+        'update-risk-rules',
+        '--max-daily-turnover-value',
+        amount,
+        '--max-daily-turnover-enabled',
+        'true',
+      ]);
+      expect(fake.calls[0].body).toEqual({
+        maxDailyTurnover: { enabled: true, value: sent },
+      });
+    }
+  );
 
-  it.each(['', '0x10', '1e23', 'Infinity', '2500.50', '007'])(
+  it.each(['', '0x10', '1e23', 'Infinity', '1 000', '.5', '+5'])(
     'refuses the value %j before sending: not a plain decimal',
     async (amount) => {
       const fake = fakeV2({});
@@ -314,7 +324,7 @@ describe('trading CLI on /api/v2', () => {
       ]);
       await expect(sent).rejects.toBeInstanceOf(CliUsageError);
       await expect(sent).rejects.toThrow(
-        `--max-single-order-value must be a plain decimal such as 2500.5 (no exponent, leading or trailing zeros) for 'trading update-risk-rules', got '${amount}'`
+        `--max-single-order-value must be a plain decimal such as 2500.5 (no exponent) for 'trading update-risk-rules', got '${amount}'`
       );
       expect(fake.calls).toHaveLength(0);
     }
