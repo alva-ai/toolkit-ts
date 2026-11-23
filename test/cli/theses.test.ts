@@ -331,6 +331,16 @@ for (const [name, dispatch] of RUNTIMES) {
           'paid',
         ])
       ).rejects.toBeInstanceOf(CliUsageError);
+      // A Thesis patch always names its visibility.
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'set-visibility',
+          '--id',
+          THESIS,
+          '--confirm-end-paid-renewals',
+        ])
+      ).rejects.toThrow("--visibility is required for 'thesis set-visibility'");
       expect(fake.calls).toHaveLength(4);
     });
 

@@ -8,6 +8,10 @@ import {
   generatePlatformTypes,
   TYPES_PATH,
 } from '../scripts/openapi.js';
+import { AlvaClient } from '../src/client.js';
+import type { Schema } from '../src/platformApi.js';
+import { requestBodyErrors } from './contractShape.js';
+import { fakeV2 } from './fakeV2.js';
 
 // The /api/v2 contract (openapi/alva-platform-v2.json) against the generated
 // types and every transport call site in src/.
@@ -98,6 +102,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 interface ContractOperation {
+  parameters?: { in: string; name: string; required?: boolean }[];
   responses: Record<string, { content?: Record<string, unknown> }>;
 }
 
@@ -184,5 +189,107 @@ describe('the /api/v2 contract', () => {
       return why ? [`${site.file}: ${site.method} ${site.path} (${why})`] : [];
     });
     expect(failing.sort()).toEqual([]);
+  });
+});
+
+describe('the /api/v2 request schemas', () => {
+  const PATCH = 'application/merge-patch+json';
+
+  it.each([
+    [
+      'part of a risk rule',
+      'PATCH',
+      '/me/risk-rules',
+      PATCH,
+      { maxOrderValue: { enabled: true } },
+      ['body.maxOrderValue.value: missing'],
+    ],
+    [
+      'a null risk-rule value',
+      'PATCH',
+      '/me/risk-rules',
+      PATCH,
+      { maxDailyOrders: { enabled: false, value: null } },
+      ['body.maxDailyOrders.value: is null, not string'],
+    ],
+    [
+      'part of a schedule',
+      'PATCH',
+      '/automations/automation_0abc',
+      PATCH,
+      { schedule: { cron: '0 9 * * *' } },
+      ['body.schedule.timezone: missing'],
+    ],
+    [
+      'a Thesis patch without its visibility',
+      'PATCH',
+      '/theses/thesis_0abc',
+      PATCH,
+      { confirmEndPaidRenewals: true },
+      ['body.visibility: missing'],
+    ],
+    [
+      'a null Decimal',
+      'POST',
+      '/me/allowances',
+      'application/json',
+      { playbookId: 'playbook_0abc', credits: null },
+      ['body.credits: is null, not string'],
+    ],
+  ])('refuse %s', (_name, method, path, contentType, body, expected) => {
+    expect(requestBodyErrors(method, path, contentType, body)).toEqual(
+      expected
+    );
+  });
+
+  it.each([
+    [
+      'PATCH',
+      '/me/risk-rules',
+      { maxDailyOrders: { enabled: false, value: '50' } },
+    ],
+    [
+      'PATCH',
+      '/automations/automation_0abc',
+      { schedule: { cron: '0 9 * * *', timezone: 'UTC' } },
+    ],
+    ['PATCH', '/theses/thesis_0abc', { visibility: 'PRIVATE' }],
+  ])('take a whole %s %s', (method, path, body) => {
+    expect(requestBodyErrors(method, path, PATCH, body)).toEqual([]);
+  });
+
+  it('are what fakeV2 answers a refused body with, as the gateway does', async () => {
+    const fake = fakeV2({ 'PATCH /me/risk-rules': () => ({}) });
+    const client = new AlvaClient({
+      apiKey: 'test-key',
+      baseUrl: 'https://api.test',
+    });
+    try {
+      await expect(
+        client.trading.updateRiskRules({
+          maxOrderValue: { enabled: true },
+        } as unknown as Schema<'RiskRulesPatch'>)
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        status: 400,
+        message:
+          'the contract refuses the request body: body.maxOrderValue.value: missing',
+      });
+      expect(fake.calls).toHaveLength(1);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it('declare an Idempotency-Key only on POST and PATCH, which carry one per call', () => {
+    const declared = [...contractOperations()].flatMap(([key, op]) =>
+      (op.parameters ?? []).some(
+        (p) => p.in === 'header' && p.name === 'Idempotency-Key'
+      )
+        ? [key.split(' ')[0]]
+        : []
+    );
+    expect(declared.length).toBeGreaterThan(0);
+    expect([...new Set(declared)].sort()).toEqual(['PATCH', 'POST']);
   });
 });

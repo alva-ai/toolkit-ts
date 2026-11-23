@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { requestBodyErrors } from './contractShape.js';
 
 /** One request the fake /api/v2 server received. */
 export interface V2Call {
@@ -37,10 +38,18 @@ export function problem(
   );
 }
 
+const JSON_TYPES = new Set([
+  'application/json',
+  'application/merge-patch+json',
+]);
+
 /**
  * Replaces fetch with a fake /api/v2 server whose routes are keyed
  * "METHOD /path" (the path below /api/v2, without the query). A handler may
- * be a list, answered in order. Any other request fails the test.
+ * be a list, answered in order. Any other request fails the test. A JSON
+ * body the operation's schema in the contract refuses is answered, before
+ * any handler, with the 400 INVALID_ARGUMENT the gateway would send, naming
+ * each mismatch in its detail.
  */
 export function fakeV2(routes: Record<string, V2Handler | V2Handler[]>): {
   calls: V2Call[];
@@ -68,6 +77,20 @@ export function fakeV2(routes: Record<string, V2Handler | V2Handler[]>): {
       body: text === undefined ? undefined : JSON.parse(text),
     };
     calls.push(call);
+    const contentType = call.headers['Content-Type'];
+    if (call.body !== undefined && JSON_TYPES.has(contentType)) {
+      const errors = requestBodyErrors(
+        call.method,
+        call.path,
+        contentType,
+        call.body
+      );
+      if (errors.length > 0) {
+        return problem(400, 'INVALID_ARGUMENT', {
+          detail: `the contract refuses the request body: ${errors.join('; ')}`,
+        });
+      }
+    }
     const key = `${call.method} ${call.path}`;
     const entry = queues.get(key);
     const handler = Array.isArray(entry) ? entry.shift() : entry;
