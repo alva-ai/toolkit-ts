@@ -20,6 +20,11 @@ export function formatPersonalSkillsList(
       `  rev: ${s.current_rev} | source: ${s.source_type} | updated: ${s.updated_at}`
     );
   }
+  if (result.has_next_page && result.end_cursor) {
+    lines.push(
+      `More results available; continue with --after ${result.end_cursor}`
+    );
+  }
   return lines.join('\n') + '\n';
 }
 

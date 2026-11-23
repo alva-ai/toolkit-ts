@@ -115,11 +115,11 @@ export class PersonalSkillsResource {
     if (params?.include_disabled) query.include_disabled = 'true';
     const res = (await this.client._request('GET', '/api/v1/personal-skills', {
       query,
-    })) as PersonalSkillListResponse;
+    })) as PersonalSkillListResponse | null | undefined;
     return {
-      skills: res.skills ?? [],
-      has_next_page: Boolean(res.has_next_page),
-      end_cursor: res.end_cursor ?? '',
+      skills: res?.skills ?? [],
+      has_next_page: Boolean(res?.has_next_page),
+      end_cursor: res?.end_cursor ?? '',
     };
   }
 

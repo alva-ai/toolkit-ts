@@ -5739,7 +5739,18 @@ function assertNoSymlinkAncestors(
     const isSystemLink =
       process.platform === 'darwin' && darwinSystemSymlinks.has(cur);
     if (!isSystemLink) {
-      const st = fs.lstatSync(cur);
+      let st: import('node:fs').Stats;
+      try {
+        st = fs.lstatSync(cur);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+          throw new CliUsageError(
+            `${flagName} path does not exist: ${targetPath}`,
+            'my-skills save'
+          );
+        }
+        throw err;
+      }
       if (st.isSymbolicLink()) {
         throw new CliUsageError(
           `${flagName} cannot traverse or target a symbolic link: ${cur}`,
