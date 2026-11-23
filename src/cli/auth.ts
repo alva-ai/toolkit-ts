@@ -406,6 +406,8 @@ export async function handleAuthLogin(
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const oobRedirectUrl = deriveOobRedirectUrl(authUrl);
   const timeout = d.timeout ?? 120_000;
+  // Both paths below mint the same key; name it once.
+  const mintedKeyName = d.keyName?.(flags.agent);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
@@ -479,7 +481,7 @@ export async function handleAuthLogin(
         codeVerifier,
         redirectUri: localRedirectUri,
         fetch: d.fetch,
-        keyName: d.keyName?.(flags.agent),
+        keyName: mintedKeyName,
       })
         .then(async (apiKey) => {
           if (settled) return;
@@ -566,7 +568,7 @@ export async function handleAuthLogin(
                 codeVerifier,
                 redirectUri: oobRedirectUrl,
                 fetch: d.fetch,
-                keyName: d.keyName?.(flags.agent),
+                keyName: mintedKeyName,
               });
               if (settled) return;
               await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
