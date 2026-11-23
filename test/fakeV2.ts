@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { requestBodyErrors } from './contractShape.js';
+import { mediaTypeOf, requestBodyErrors } from './contractShape.js';
 
 /** One request the fake /api/v2 server received. */
 export interface V2Call {
@@ -47,7 +47,8 @@ const JSON_TYPES = new Set([
  * Replaces fetch with a fake /api/v2 server whose routes are keyed
  * "METHOD /path" (the path below /api/v2, without the query). A handler may
  * be a list, answered in order. Any other request fails the test. A JSON
- * body the operation's schema in the contract refuses is answered, before
+ * body (application/json or application/merge-patch+json, with any
+ * parameters) the operation's schema in the contract refuses is answered, before
  * any handler, with the 400 INVALID_ARGUMENT the gateway would send, naming
  * each mismatch in its detail.
  */
@@ -78,7 +79,7 @@ export function fakeV2(routes: Record<string, V2Handler | V2Handler[]>): {
     };
     calls.push(call);
     const contentType = call.headers['Content-Type'];
-    if (call.body !== undefined && JSON_TYPES.has(contentType)) {
+    if (call.body !== undefined && JSON_TYPES.has(mediaTypeOf(contentType))) {
       const errors = requestBodyErrors(
         call.method,
         call.path,

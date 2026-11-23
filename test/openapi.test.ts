@@ -194,6 +194,11 @@ describe('the /api/v2 contract', () => {
 
 describe('the /api/v2 request schemas', () => {
   const PATCH = 'application/merge-patch+json';
+  const CRONJOB = {
+    name: 'n',
+    entryPath: '/a.js',
+    cronExpression: '0 9 * * *',
+  };
 
   it.each([
     [
@@ -236,6 +241,52 @@ describe('the /api/v2 request schemas', () => {
       { playbookId: 'playbook_0abc', credits: null },
       ['body.credits: is null, not string'],
     ],
+    [
+      'an int32 out of range',
+      'PATCH',
+      '/cronjobs/cronjob_0c',
+      PATCH,
+      { maxHeapSizeMb: 2 ** 31 },
+      ['body.maxHeapSizeMb: 2147483648 is out of the int32 range'],
+    ],
+    [
+      'an int64 out of range',
+      'POST',
+      '/fs/chmod',
+      'application/json',
+      { path: '/a', mode: 2 ** 63 },
+      ['body.mode: 9223372036854776000 is out of the int64 range'],
+    ],
+    [
+      'a date that does not exist',
+      'POST',
+      '/x-post-searches',
+      'application/json; charset=utf-8',
+      { query: 'nvda', fromDate: '2026-02-29' },
+      [
+        'body.fromDate: matches no branch (body.fromDate: "2026-02-29" is not a date; body.fromDate: is string, not null)',
+      ],
+    ],
+    [
+      'a date-time without an offset',
+      'POST',
+      '/me/cronjobs',
+      'Application/JSON; charset=utf-8',
+      { ...CRONJOB, endsAt: '2026-11-22T10:00:00' },
+      [
+        'body.endsAt: matches no branch (body.endsAt: "2026-11-22T10:00:00" is not a date-time; body.endsAt: is string, not null)',
+      ],
+    ],
+    [
+      'a date-time at hour 24',
+      'POST',
+      '/me/cronjobs',
+      'application/json',
+      { ...CRONJOB, endsAt: '2026-11-22T24:00:00Z' },
+      [
+        'body.endsAt: matches no branch (body.endsAt: "2026-11-22T24:00:00Z" is not a date-time; body.endsAt: is string, not null)',
+      ],
+    ],
   ])('refuse %s', (_name, method, path, contentType, body, expected) => {
     expect(requestBodyErrors(method, path, contentType, body)).toEqual(
       expected
@@ -254,8 +305,24 @@ describe('the /api/v2 request schemas', () => {
       { schedule: { cron: '0 9 * * *', timezone: 'UTC' } },
     ],
     ['PATCH', '/theses/thesis_0abc', { visibility: 'PRIVATE' }],
+    ['PATCH', '/cronjobs/cronjob_0c', { maxHeapSizeMb: 2 ** 31 - 1 }],
   ])('take a whole %s %s', (method, path, body) => {
     expect(requestBodyErrors(method, path, PATCH, body)).toEqual([]);
+  });
+
+  it('take an RFC 3339 date-time with fractions and an offset, and a leap day', () => {
+    expect(
+      requestBodyErrors('POST', '/me/cronjobs', 'application/json', {
+        ...CRONJOB,
+        endsAt: '2028-02-29T23:59:59.123456789+05:30',
+      })
+    ).toEqual([]);
+    expect(
+      requestBodyErrors('POST', '/x-post-searches', 'application/json', {
+        query: 'nvda',
+        fromDate: '2028-02-29',
+      })
+    ).toEqual([]);
   });
 
   it("use the contract's Decimal pattern in the client", () => {
@@ -263,6 +330,23 @@ describe('the /api/v2 request schemas', () => {
       components: { schemas: { Decimal: { pattern: string } } };
     };
     expect(DECIMAL_PATTERN.source).toBe(doc.components.schemas.Decimal.pattern);
+  });
+
+  it('are checked by fakeV2 whatever the JSON media type parameters', async () => {
+    const fake = fakeV2({ 'PATCH /me/risk-rules': () => ({}) });
+    try {
+      const response = await fetch('https://api.test/api/v2/me/risk-rules', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'Application/Merge-Patch+JSON; charset=utf-8',
+        },
+        body: JSON.stringify({ maxOrderValue: { enabled: true } }),
+      });
+      expect(response.status).toBe(400);
+      expect(fake.calls).toHaveLength(1);
+    } finally {
+      fake.restore();
+    }
   });
 
   it('are what fakeV2 answers a refused body with, as the gateway does', async () => {

@@ -7,9 +7,11 @@ import type { components } from '../src/generated/platform-v2.js';
 // (openapi/alva-platform-v2.json), so fakes answer what the gateway answers,
 // and a request body against its operation's schema, so the client sends
 // what the gateway takes. It reads the JSON Schema keywords the document
-// uses: $ref, anyOf, type, enum, pattern, maxLength, required, properties and
-// items. Objects are closed: the gateway writes no member its schema lacks
-// and refuses a request member its schema lacks.
+// uses: $ref, anyOf, type, enum, pattern, maxLength, required, properties,
+// items and the formats int32, int64, date and date-time (decimal is its
+// pattern; uri and uri-reference, response-only, are not checked). Objects
+// are closed: the gateway writes no member its schema lacks and refuses a
+// request member its schema lacks.
 
 interface JsonSchema {
   $ref?: string;
@@ -17,6 +19,7 @@ interface JsonSchema {
   type?: string | string[];
   enum?: unknown[];
   pattern?: string;
+  format?: string;
   maxLength?: number;
   required?: string[];
   properties?: Record<string, JsonSchema>;
@@ -53,6 +56,32 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
+/** The ranges of the integer formats (2 ** 63 - 1 is not a double). */
+const INTEGER_FORMATS: Record<string, (n: number) => boolean> = {
+  int32: (n) => n >= -(2 ** 31) && n <= 2 ** 31 - 1,
+  int64: (n) => n >= -(2 ** 63) && n < 2 ** 63,
+};
+
+/** The gateway's strict RFC 3339 grammars (alva-gateway pkg/v2/scalar). */
+const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,9})?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
+/** Whether y-m-d is a day of the proleptic Gregorian calendar. */
+function isDay(y: number, m: number, d: number): boolean {
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return m >= 1 && m <= 12 && d >= 1 && d <= days[m - 1];
+}
+
+/** Whether value is a string of a date or date-time format. */
+function isDateFormat(format: string, value: string): boolean {
+  const m = (format === 'date' ? DATE : DATE_TIME).exec(value);
+  if (m === null) return false;
+  const [y, mo, d, h = 0, mi = 0, sec = 0] = m.slice(1, 7).map(Number);
+  return isDay(y, mo, d) && h <= 23 && mi <= 59 && sec <= 59;
+}
+
 function errors(schema: JsonSchema, value: unknown, at: string): string[] {
   if (schema.$ref !== undefined) {
     const name = schema.$ref.replace('#/components/schemas/', '');
@@ -83,6 +112,16 @@ function errors(schema: JsonSchema, value: unknown, at: string): string[] {
       out.push(`${at}: ${JSON.stringify(value)} fails ${schema.pattern}`);
     if (schema.maxLength !== undefined && value.length > schema.maxLength)
       out.push(`${at}: longer than ${schema.maxLength}`);
+    if (
+      (schema.format === 'date' || schema.format === 'date-time') &&
+      !isDateFormat(schema.format, value)
+    )
+      out.push(`${at}: ${JSON.stringify(value)} is not a ${schema.format}`);
+  }
+  if (typeof value === 'number' && schema.format !== undefined) {
+    const inRange = INTEGER_FORMATS[schema.format];
+    if (inRange !== undefined && !inRange(value))
+      out.push(`${at}: ${value} is out of the ${schema.format} range`);
   }
   if (Array.isArray(value) && schema.items !== undefined) {
     value.forEach((item, i) =>
@@ -116,6 +155,11 @@ export function shapeErrors<Name extends keyof components['schemas']>(
   return errors(schema, value, name);
 }
 
+/** The media type of a Content-Type, lower-case, without its parameters. */
+export function mediaTypeOf(contentType: string | undefined): string {
+  return (contentType ?? '').split(';')[0].trim().toLowerCase();
+}
+
 /**
  * Why `body`, sent as `contentType`, is not a request the contract's
  * operation `method path` takes (path below /api/v2, as sent); empty when it
@@ -132,7 +176,7 @@ export function requestBodyErrors(
     method.toLowerCase()
   ];
   if (operation === undefined) return [`${at}: no such operation`];
-  const media = operation.requestBody?.content?.[contentType ?? ''];
+  const media = operation.requestBody?.content?.[mediaTypeOf(contentType)];
   if (media === undefined) return [`${at}: takes no ${contentType} body`];
   return media.schema === undefined ? [] : errors(media.schema, body, 'body');
 }
