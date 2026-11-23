@@ -157,7 +157,7 @@ describe('TradingResource', () => {
 
     await expect(
       client().trading.updateRiskRules({
-        maxOrderValue: { enabled: false, value: null },
+        maxOrderValue: { enabled: false, value: '10000' },
       })
     ).rejects.toMatchObject({
       code: 'INSUFFICIENT_PERMISSION',

@@ -776,9 +776,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path: {
                     automationId: components["schemas"]["AutomationID"];
@@ -1803,9 +1803,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path: {
                     cronjobId: components["schemas"]["CronjobID"];
@@ -3017,9 +3017,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path?: never;
                 cookie?: never;
@@ -4535,9 +4535,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path?: never;
                 cookie?: never;
@@ -5043,9 +5043,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path: {
                     playbookId: components["schemas"]["PlaybookID"];
@@ -6010,6 +6010,400 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/steward/briefings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StewardBriefingBody"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/deliveries/{deliveryId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    deliveryId: components["schemas"]["StewardDeliveryID"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StewardDecisionBody"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardDelivery"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/deliveries/{deliveryId}/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    deliveryId: components["schemas"]["StewardDeliveryID"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StewardInbox"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardForwardedDelivery"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/digests/{digestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires channel:read. */
+        get: {
+            parameters: {
+                query: {
+                    inboxPath: string;
+                };
+                header?: never;
+                path: {
+                    digestId: components["schemas"]["DigestID"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardDigestRun"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/digests/{digestId}/first-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires channel:read. */
+        get: {
+            parameters: {
+                query: {
+                    inboxPath: string;
+                };
+                header?: never;
+                path: {
+                    digestId: components["schemas"]["DigestID"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardFirstTodayContext"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/digests/{digestId}/pending-deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires channel:read. */
+        get: {
+            parameters: {
+                query: {
+                    pageSize?: number;
+                    pageToken?: string;
+                    inboxPath: string;
+                };
+                header?: never;
+                path: {
+                    digestId: components["schemas"]["DigestID"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardPendingDeliveryList"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/digests/{digestId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    digestId: components["schemas"]["DigestID"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StewardPublishBody"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardDigestRun"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/held-deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires channel:read. */
+        get: {
+            parameters: {
+                query: {
+                    pageSize?: number;
+                    pageToken?: string;
+                    inboxPath: string;
+                    from?: components["schemas"]["DateTime"];
+                    to?: components["schemas"]["DateTime"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardHeldDeliveryList"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/steward/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StewardMessageBody"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StewardMessage"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/task-updates": {
         parameters: {
             query?: never;
@@ -6194,9 +6588,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path: {
                     taskId: components["schemas"]["TaskID"];
@@ -7884,6 +8278,8 @@ export interface components {
             email?: boolean;
             removeChannelIds?: components["schemas"]["ChannelID"][];
         };
+        /** @description The ID of a Digest. */
+        DigestID: string;
         DirectoryListing: {
             entries: components["schemas"]["FileInfo"][];
         };
@@ -8118,6 +8514,8 @@ export interface components {
         FeedEntryTicker: {
             symbol: string;
         };
+        /** @description The ID of a FeedPost. */
+        FeedPostID: string;
         Feedback: {
             id: components["schemas"]["FeedbackID"];
             notionPageId: string | null;
@@ -8604,7 +9002,7 @@ export interface components {
         };
         OrderAmount: {
             type: components["schemas"]["OrderAmountType"];
-            value: components["schemas"]["Decimal"] | null;
+            value: components["schemas"]["Decimal"];
         };
         /** @enum {string} */
         OrderAmountType: "BASE" | "QUOTE" | "PERCENT_OF_CASH" | "PERCENT_OF_POSITION" | "PERCENT_OF_EQUITY";
@@ -8770,9 +9168,9 @@ export interface components {
         PredictionOrder: {
             conditionId: string;
             outcome?: components["schemas"]["PredictionOutcome"] | null;
-            price: components["schemas"]["Decimal"] | null;
+            price: components["schemas"]["Decimal"];
             side: components["schemas"]["OrderSide"];
-            size: components["schemas"]["Decimal"] | null;
+            size: components["schemas"]["Decimal"];
             timeInForce?: components["schemas"]["TimeInForce"] | null;
             tokenId?: string | null;
         };
@@ -8978,9 +9376,9 @@ export interface components {
             enabled: boolean;
             value: components["schemas"]["Decimal"] | null;
         };
-        RiskLimitPatch: {
-            enabled?: boolean;
-            value?: components["schemas"]["Decimal"] | null;
+        RiskLimitInput: {
+            enabled: boolean;
+            value: components["schemas"]["Decimal"];
         };
         RiskRules: {
             maxDailyOrders: components["schemas"]["RiskLimit"];
@@ -8988,9 +9386,9 @@ export interface components {
             maxOrderValue: components["schemas"]["RiskLimit"];
         };
         RiskRulesPatch: {
-            maxDailyOrders?: components["schemas"]["RiskLimitPatch"];
-            maxDailyTurnover?: components["schemas"]["RiskLimitPatch"];
-            maxOrderValue?: components["schemas"]["RiskLimitPatch"];
+            maxDailyOrders?: components["schemas"]["RiskLimitInput"];
+            maxDailyTurnover?: components["schemas"]["RiskLimitInput"];
+            maxOrderValue?: components["schemas"]["RiskLimitInput"];
         };
         Run: {
             creditsUsed: components["schemas"]["Decimal"] | null;
@@ -9058,13 +9456,13 @@ export interface components {
         ScheduleFailureCode: "TARGET_INVALID" | "DELIVERY_EXHAUSTED" | "PAYLOAD_CONFLICT";
         /** @description The ID of a Schedule. */
         ScheduleID: string;
+        ScheduleInput: {
+            cron: string;
+            timezone: string;
+        };
         ScheduleList: {
             items: components["schemas"]["Schedule"][];
             nextPageToken: string | null;
-        };
-        SchedulePatch: {
-            cron?: string;
-            timezone?: string;
         };
         ScheduleRule: {
             cron: string | null;
@@ -9177,7 +9575,7 @@ export interface components {
             nextPageToken: string | null;
         };
         SetAllowanceBody: {
-            credits: components["schemas"]["Decimal"] | null;
+            credits: components["schemas"]["Decimal"];
             playbookId: components["schemas"]["PlaybookID"];
         };
         SetSecretRequest: {
@@ -9281,6 +9679,120 @@ export interface components {
         };
         /** @enum {string} */
         Stance: "UNKNOWN" | "BULLISH" | "BEARISH" | "NONE";
+        StewardAlertSource: {
+            assetId: components["schemas"]["AssetID"] | null;
+            automationId: components["schemas"]["AutomationID"] | null;
+            kind: components["schemas"]["StewardAlertSourceKind"];
+            thesisId: components["schemas"]["ThesisID"] | null;
+        };
+        /** @enum {string} */
+        StewardAlertSourceKind: "FEED" | "MARKET_ENTITY" | "THESIS_FEED";
+        StewardBriefingBody: {
+            briefKey: string;
+            deliveryIds?: components["schemas"]["StewardDeliveryID"][];
+            inboxPath: string;
+        };
+        /** @enum {string} */
+        StewardDecision: "IMMEDIATE" | "DIGEST" | "SUPPRESS";
+        StewardDecisionBody: {
+            decision: components["schemas"]["StewardDecision"];
+            inboxPath: string;
+            reason: string;
+        };
+        StewardDelivery: {
+            id: components["schemas"]["StewardDeliveryID"];
+            state: string;
+        };
+        /** @description The ID of a StewardDelivery. */
+        StewardDeliveryID: string;
+        StewardDigestRun: {
+            /** Format: int64 */
+            attempts: number;
+            bodySha256: string | null;
+            channelMessageId: string | null;
+            completedAt: components["schemas"]["DateTime"] | null;
+            coverageSha256: string | null;
+            id: components["schemas"]["DigestID"];
+            lastError: string | null;
+            /** Format: int64 */
+            occurrenceIndex: number;
+            scanCompletedAt: components["schemas"]["DateTime"] | null;
+            scheduleId: string;
+            /** Format: int64 */
+            scheduleVersion: number;
+            sendUncertainAt: components["schemas"]["DateTime"] | null;
+            startedAt: components["schemas"]["DateTime"] | null;
+            state: components["schemas"]["StewardDigestRunState"];
+            windowEndsAt: components["schemas"]["DateTime"] | null;
+            windowStartsAt: components["schemas"]["DateTime"] | null;
+        };
+        /** @enum {string} */
+        StewardDigestRunState: "EXPECTED" | "RUNNING" | "SEND_UNCERTAIN" | "SENT" | "INTENTIONALLY_EMPTY" | "FAILED_BEFORE_SEND" | "FAILED" | "FAILED_EXPIRED";
+        StewardFirstReadsInput: {
+            contextSha256: string;
+            incomplete: boolean;
+            marketUrls?: string[];
+            platformEntryIds?: string[];
+            savedThesisIds?: string[];
+            thesisIds?: string[];
+            tickers?: string[];
+        };
+        StewardFirstTodayContext: {
+            sha256: string;
+            snapshot: string;
+        };
+        StewardForwardedDelivery: {
+            channelMessageId: string;
+            id: components["schemas"]["StewardDeliveryID"];
+            state: string;
+        };
+        StewardHeldDelivery: {
+            alertSnapshot: string | null;
+            category: string | null;
+            consumedAt: components["schemas"]["DateTime"] | null;
+            decisionReason: string;
+            feedEntryId: components["schemas"]["FeedPostID"];
+            id: components["schemas"]["StewardDeliveryID"];
+            source: components["schemas"]["StewardAlertSource"];
+        };
+        StewardHeldDeliveryList: {
+            items: components["schemas"]["StewardHeldDelivery"][];
+            nextPageToken: string | null;
+            windowEndsAt: components["schemas"]["DateTime"] | null;
+            windowStartsAt: components["schemas"]["DateTime"] | null;
+        };
+        StewardInbox: {
+            inboxPath: string;
+        };
+        StewardMessage: {
+            briefKey: string;
+            channelMessageId: string;
+        };
+        StewardMessageBody: {
+            body: string;
+            deliveryIds?: components["schemas"]["StewardDeliveryID"][];
+            inboxPath: string;
+        };
+        StewardPendingDelivery: {
+            alertSnapshot: string | null;
+            category: string | null;
+            consumedAt: components["schemas"]["DateTime"] | null;
+            decisionReason: string;
+            feedEntryId: components["schemas"]["FeedPostID"];
+            id: components["schemas"]["StewardDeliveryID"];
+            source: components["schemas"]["StewardAlertSource"];
+        };
+        StewardPendingDeliveryList: {
+            items: components["schemas"]["StewardPendingDelivery"][];
+            nextPageToken: string | null;
+        };
+        StewardPublishBody: {
+            body?: string | null;
+            deck?: components["schemas"]["TodayDeckInput"] | null;
+            deliveryIds?: components["schemas"]["StewardDeliveryID"][];
+            firstReads?: components["schemas"]["StewardFirstReadsInput"] | null;
+            inboxPath: string;
+        };
         SubmitFeedbackRequest: {
             category?: components["schemas"]["FeedbackCategory"];
             /** @description Any JSON value: free-form diagnostics an agent attaches to a report; the Backend only checks they are JSON, redacts secret-looking keys and bounds their size, and nothing reads their fields. */
@@ -9325,7 +9837,7 @@ export interface components {
         TargetStatus: "ACTIVE" | "PAUSED" | "TARGET_DELETED" | "UNSPECIFIED";
         TargetWeight: {
             symbol: string;
-            weight: components["schemas"]["Decimal"] | null;
+            weight: components["schemas"]["Decimal"];
         };
         Task: {
             activity: components["schemas"]["TaskActivity"] | null;
@@ -9440,7 +9952,7 @@ export interface components {
         };
         ThesisPatch: {
             confirmEndPaidRenewals?: boolean;
-            visibility?: components["schemas"]["Visibility"];
+            visibility: components["schemas"]["Visibility"];
         };
         ThesisPosition: {
             assetId: components["schemas"]["AssetID"];
@@ -9523,6 +10035,62 @@ export interface components {
         };
         /** @enum {string} */
         TimeInForce: "GTC" | "FOK" | "GTD";
+        /** @enum {string} */
+        TodayAction: "FOLLOW_THESIS" | "ADD_TO_WATCHLIST";
+        TodayAlvaBlockInput: {
+            kind: components["schemas"]["TodayAlvaKind"];
+            replies?: components["schemas"]["TodayReplyInput"][];
+            text: string;
+        };
+        /** @enum {string} */
+        TodayAlvaKind: "TAKE" | "QUESTION";
+        TodayAnchorInput: {
+            kind: components["schemas"]["TodayAnchorKind"];
+            playbookId?: components["schemas"]["PlaybookID"] | null;
+            relation: components["schemas"]["TodayRelation"];
+            thesisId?: components["schemas"]["ThesisID"] | null;
+            ticker?: string | null;
+            title: string;
+        };
+        /** @enum {string} */
+        TodayAnchorKind: "THESIS" | "TICKER";
+        TodayBulletInput: {
+            sources?: components["schemas"]["TodaySourceInput"][];
+            text: string;
+        };
+        TodayCardInput: {
+            alva?: components["schemas"]["TodayAlvaBlockInput"] | null;
+            anchor: components["schemas"]["TodayAnchorInput"];
+            brief: string;
+            bullets?: components["schemas"]["TodayBulletInput"][];
+            title: string;
+        };
+        TodayDeckInput: {
+            cards?: components["schemas"]["TodayCardInput"][];
+            quiet: boolean;
+        };
+        /** @enum {string} */
+        TodayRelation: "AUTHORED" | "FOLLOWED" | "HOLDING" | "WATCHING" | "DISCOVERY" | "IN_THESIS" | "NONE";
+        TodayReplyInput: {
+            action?: components["schemas"]["TodayAction"] | null;
+            kind: components["schemas"]["TodayReplyKind"];
+            label: string;
+            taskTitle?: string | null;
+            thesisId?: components["schemas"]["ThesisID"] | null;
+            url?: string | null;
+        };
+        /** @enum {string} */
+        TodayReplyKind: "TASK" | "ACTION" | "LINK";
+        TodaySourceInput: {
+            deliveryId?: components["schemas"]["StewardDeliveryID"] | null;
+            feedEntryId?: components["schemas"]["FeedPostID"] | null;
+            kind: components["schemas"]["TodaySourceKind"];
+            label?: string | null;
+            thesisId?: components["schemas"]["ThesisID"] | null;
+            url?: string | null;
+        };
+        /** @enum {string} */
+        TodaySourceKind: "DELIVERY" | "OVERVIEW" | "THESIS" | "MARKET";
         TradeSubscription: {
             accountId: components["schemas"]["BrokerAccountID"];
             createdAt: components["schemas"]["DateTime"] | null;
@@ -9581,7 +10149,7 @@ export interface components {
             delivery?: components["schemas"]["DeliveryPatch"];
             inForYou?: boolean;
             prompt?: string | null;
-            schedule?: components["schemas"]["SchedulePatch"];
+            schedule?: components["schemas"]["ScheduleInput"];
         };
         UpdateCronjobBody: {
             argsJson?: string | null;

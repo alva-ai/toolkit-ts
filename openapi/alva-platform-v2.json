@@ -2857,6 +2857,13 @@
         },
         "type": "object"
       },
+      "DigestID": {
+        "description": "The ID of a Digest.",
+        "maxLength": 4096,
+        "pattern": "^digest_0[0-9a-hjkmnp-tv-z]+$",
+        "type": "string",
+        "x-alva-id-type": "Digest"
+      },
       "DirectoryListing": {
         "properties": {
           "entries": {
@@ -4081,6 +4088,13 @@
           "symbol"
         ],
         "type": "object"
+      },
+      "FeedPostID": {
+        "description": "The ID of a FeedPost.",
+        "maxLength": 4096,
+        "pattern": "^feed_post_0[0-9a-hjkmnp-tv-z]+$",
+        "type": "string",
+        "x-alva-id-type": "FeedPost"
       },
       "Feedback": {
         "properties": {
@@ -6425,14 +6439,7 @@
             "$ref": "#/components/schemas/OrderAmountType"
           },
           "value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Decimal"
           }
         },
         "required": [
@@ -7337,27 +7344,13 @@
             ]
           },
           "price": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Decimal"
           },
           "side": {
             "$ref": "#/components/schemas/OrderSide"
           },
           "size": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Decimal"
           },
           "timeInForce": {
             "anyOf": [
@@ -8388,23 +8381,20 @@
         ],
         "type": "object"
       },
-      "RiskLimitPatch": {
+      "RiskLimitInput": {
         "additionalProperties": false,
         "properties": {
           "enabled": {
             "type": "boolean"
           },
           "value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Decimal"
           }
         },
+        "required": [
+          "enabled",
+          "value"
+        ],
         "type": "object"
       },
       "RiskRules": {
@@ -8430,13 +8420,13 @@
         "additionalProperties": false,
         "properties": {
           "maxDailyOrders": {
-            "$ref": "#/components/schemas/RiskLimitPatch"
+            "$ref": "#/components/schemas/RiskLimitInput"
           },
           "maxDailyTurnover": {
-            "$ref": "#/components/schemas/RiskLimitPatch"
+            "$ref": "#/components/schemas/RiskLimitInput"
           },
           "maxOrderValue": {
-            "$ref": "#/components/schemas/RiskLimitPatch"
+            "$ref": "#/components/schemas/RiskLimitInput"
           }
         },
         "type": "object"
@@ -8753,6 +8743,22 @@
         "type": "string",
         "x-alva-id-type": "Schedule"
       },
+      "ScheduleInput": {
+        "additionalProperties": false,
+        "properties": {
+          "cron": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cron",
+          "timezone"
+        ],
+        "type": "object"
+      },
       "ScheduleList": {
         "properties": {
           "items": {
@@ -8772,18 +8778,6 @@
           "items",
           "nextPageToken"
         ],
-        "type": "object"
-      },
-      "SchedulePatch": {
-        "additionalProperties": false,
-        "properties": {
-          "cron": {
-            "type": "string"
-          },
-          "timezone": {
-            "type": "string"
-          }
-        },
         "type": "object"
       },
       "ScheduleRule": {
@@ -9323,14 +9317,7 @@
         "additionalProperties": false,
         "properties": {
           "credits": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Decimal"
           },
           "playbookId": {
             "$ref": "#/components/schemas/PlaybookID"
@@ -9848,6 +9835,604 @@
         ],
         "type": "string"
       },
+      "StewardAlertSource": {
+        "properties": {
+          "assetId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "automationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomationID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StewardAlertSourceKind"
+          },
+          "thesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId",
+          "automationId",
+          "kind",
+          "thesisId"
+        ],
+        "type": "object"
+      },
+      "StewardAlertSourceKind": {
+        "enum": [
+          "FEED",
+          "MARKET_ENTITY",
+          "THESIS_FEED"
+        ],
+        "type": "string"
+      },
+      "StewardBriefingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "briefKey": {
+            "type": "string"
+          },
+          "deliveryIds": {
+            "items": {
+              "$ref": "#/components/schemas/StewardDeliveryID"
+            },
+            "type": "array"
+          },
+          "inboxPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "briefKey",
+          "inboxPath"
+        ],
+        "type": "object"
+      },
+      "StewardDecision": {
+        "enum": [
+          "IMMEDIATE",
+          "DIGEST",
+          "SUPPRESS"
+        ],
+        "type": "string"
+      },
+      "StewardDecisionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/StewardDecision"
+          },
+          "inboxPath": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "inboxPath",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "StewardDelivery": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/StewardDeliveryID"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "type": "object"
+      },
+      "StewardDeliveryID": {
+        "description": "The ID of a StewardDelivery.",
+        "maxLength": 4096,
+        "pattern": "^steward_delivery_0[0-9a-hjkmnp-tv-z]+$",
+        "type": "string",
+        "x-alva-id-type": "StewardDelivery"
+      },
+      "StewardDigestRun": {
+        "properties": {
+          "attempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "bodySha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channelMessageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverageSha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/DigestID"
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurrenceIndex": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scanCompletedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scheduleId": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sendUncertainAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/StewardDigestRunState"
+          },
+          "windowEndsAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "windowStartsAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "attempts",
+          "bodySha256",
+          "channelMessageId",
+          "completedAt",
+          "coverageSha256",
+          "id",
+          "lastError",
+          "occurrenceIndex",
+          "scanCompletedAt",
+          "scheduleId",
+          "scheduleVersion",
+          "sendUncertainAt",
+          "startedAt",
+          "state",
+          "windowEndsAt",
+          "windowStartsAt"
+        ],
+        "type": "object"
+      },
+      "StewardDigestRunState": {
+        "enum": [
+          "EXPECTED",
+          "RUNNING",
+          "SEND_UNCERTAIN",
+          "SENT",
+          "INTENTIONALLY_EMPTY",
+          "FAILED_BEFORE_SEND",
+          "FAILED",
+          "FAILED_EXPIRED"
+        ],
+        "type": "string"
+      },
+      "StewardFirstReadsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "contextSha256": {
+            "type": "string"
+          },
+          "incomplete": {
+            "type": "boolean"
+          },
+          "marketUrls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "platformEntryIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "savedThesisIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "thesisIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "contextSha256",
+          "incomplete"
+        ],
+        "type": "object"
+      },
+      "StewardFirstTodayContext": {
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "StewardForwardedDelivery": {
+        "properties": {
+          "channelMessageId": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/StewardDeliveryID"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channelMessageId",
+          "id",
+          "state"
+        ],
+        "type": "object"
+      },
+      "StewardHeldDelivery": {
+        "properties": {
+          "alertSnapshot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consumedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "feedEntryId": {
+            "$ref": "#/components/schemas/FeedPostID"
+          },
+          "id": {
+            "$ref": "#/components/schemas/StewardDeliveryID"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StewardAlertSource"
+          }
+        },
+        "required": [
+          "alertSnapshot",
+          "category",
+          "consumedAt",
+          "decisionReason",
+          "feedEntryId",
+          "id",
+          "source"
+        ],
+        "type": "object"
+      },
+      "StewardHeldDeliveryList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StewardHeldDelivery"
+            },
+            "type": "array"
+          },
+          "nextPageToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "windowEndsAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "windowStartsAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextPageToken",
+          "windowEndsAt",
+          "windowStartsAt"
+        ],
+        "type": "object"
+      },
+      "StewardInbox": {
+        "additionalProperties": false,
+        "properties": {
+          "inboxPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "inboxPath"
+        ],
+        "type": "object"
+      },
+      "StewardMessage": {
+        "properties": {
+          "briefKey": {
+            "type": "string"
+          },
+          "channelMessageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "briefKey",
+          "channelMessageId"
+        ],
+        "type": "object"
+      },
+      "StewardMessageBody": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "deliveryIds": {
+            "items": {
+              "$ref": "#/components/schemas/StewardDeliveryID"
+            },
+            "type": "array"
+          },
+          "inboxPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "inboxPath"
+        ],
+        "type": "object"
+      },
+      "StewardPendingDelivery": {
+        "properties": {
+          "alertSnapshot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consumedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "feedEntryId": {
+            "$ref": "#/components/schemas/FeedPostID"
+          },
+          "id": {
+            "$ref": "#/components/schemas/StewardDeliveryID"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StewardAlertSource"
+          }
+        },
+        "required": [
+          "alertSnapshot",
+          "category",
+          "consumedAt",
+          "decisionReason",
+          "feedEntryId",
+          "id",
+          "source"
+        ],
+        "type": "object"
+      },
+      "StewardPendingDeliveryList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StewardPendingDelivery"
+            },
+            "type": "array"
+          },
+          "nextPageToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextPageToken"
+        ],
+        "type": "object"
+      },
+      "StewardPublishBody": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayDeckInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deliveryIds": {
+            "items": {
+              "$ref": "#/components/schemas/StewardDeliveryID"
+            },
+            "type": "array"
+          },
+          "firstReads": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StewardFirstReadsInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inboxPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "inboxPath"
+        ],
+        "type": "object"
+      },
       "SubmitFeedbackRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10050,14 +10635,7 @@
             "type": "string"
           },
           "weight": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Decimal"
           }
         },
         "required": [
@@ -10638,6 +11216,9 @@
             "$ref": "#/components/schemas/Visibility"
           }
         },
+        "required": [
+          "visibility"
+        ],
         "type": "object"
       },
       "ThesisPosition": {
@@ -11127,6 +11708,298 @@
         ],
         "type": "string"
       },
+      "TodayAction": {
+        "enum": [
+          "FOLLOW_THESIS",
+          "ADD_TO_WATCHLIST"
+        ],
+        "type": "string"
+      },
+      "TodayAlvaBlockInput": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TodayAlvaKind"
+          },
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/TodayReplyInput"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "type": "object"
+      },
+      "TodayAlvaKind": {
+        "enum": [
+          "TAKE",
+          "QUESTION"
+        ],
+        "type": "string"
+      },
+      "TodayAnchorInput": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TodayAnchorKind"
+          },
+          "playbookId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaybookID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relation": {
+            "$ref": "#/components/schemas/TodayRelation"
+          },
+          "thesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ticker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "relation",
+          "title"
+        ],
+        "type": "object"
+      },
+      "TodayAnchorKind": {
+        "enum": [
+          "THESIS",
+          "TICKER"
+        ],
+        "type": "string"
+      },
+      "TodayBulletInput": {
+        "additionalProperties": false,
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/TodaySourceInput"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "TodayCardInput": {
+        "additionalProperties": false,
+        "properties": {
+          "alva": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayAlvaBlockInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "anchor": {
+            "$ref": "#/components/schemas/TodayAnchorInput"
+          },
+          "brief": {
+            "type": "string"
+          },
+          "bullets": {
+            "items": {
+              "$ref": "#/components/schemas/TodayBulletInput"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor",
+          "brief",
+          "title"
+        ],
+        "type": "object"
+      },
+      "TodayDeckInput": {
+        "additionalProperties": false,
+        "properties": {
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/TodayCardInput"
+            },
+            "type": "array"
+          },
+          "quiet": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "quiet"
+        ],
+        "type": "object"
+      },
+      "TodayRelation": {
+        "enum": [
+          "AUTHORED",
+          "FOLLOWED",
+          "HOLDING",
+          "WATCHING",
+          "DISCOVERY",
+          "IN_THESIS",
+          "NONE"
+        ],
+        "type": "string"
+      },
+      "TodayReplyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TodayReplyKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "taskTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ],
+        "type": "object"
+      },
+      "TodayReplyKind": {
+        "enum": [
+          "TASK",
+          "ACTION",
+          "LINK"
+        ],
+        "type": "string"
+      },
+      "TodaySourceInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deliveryId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StewardDeliveryID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feedEntryId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedPostID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TodaySourceKind"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "TodaySourceKind": {
+        "enum": [
+          "DELIVERY",
+          "OVERVIEW",
+          "THESIS",
+          "MARKET"
+        ],
+        "type": "string"
+      },
       "TradeSubscription": {
         "properties": {
           "accountId": {
@@ -11409,7 +12282,7 @@
             ]
           },
           "schedule": {
-            "$ref": "#/components/schemas/SchedulePatch"
+            "$ref": "#/components/schemas/ScheduleInput"
           }
         },
         "type": "object"
@@ -12884,6 +13757,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -13958,6 +14832,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -15106,6 +15981,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -16709,6 +17585,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -17230,6 +18107,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -18166,6 +19044,426 @@
         }
       }
     },
+    "/steward/briefings": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StewardBriefingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/deliveries/{deliveryId}/decision": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deliveryId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/StewardDeliveryID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StewardDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardDelivery"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/deliveries/{deliveryId}/forward": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deliveryId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/StewardDeliveryID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StewardInbox"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardForwardedDelivery"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/digests/{digestId}": {
+      "get": {
+        "description": "Requires channel:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "digestId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DigestID"
+            }
+          },
+          {
+            "in": "query",
+            "name": "inboxPath",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardDigestRun"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/digests/{digestId}/first-context": {
+      "get": {
+        "description": "Requires channel:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "digestId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DigestID"
+            }
+          },
+          {
+            "in": "query",
+            "name": "inboxPath",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardFirstTodayContext"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/digests/{digestId}/pending-deliveries": {
+      "get": {
+        "description": "Requires channel:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "digestId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DigestID"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "inboxPath",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardPendingDeliveryList"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/digests/{digestId}/publish": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "digestId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DigestID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StewardPublishBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardDigestRun"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/held-deliveries": {
+      "get": {
+        "description": "Requires channel:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "inboxPath",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "$ref": "#/components/schemas/DateTime"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "$ref": "#/components/schemas/DateTime"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardHeldDeliveryList"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/steward/messages": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StewardMessageBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StewardMessage"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/task-updates": {
       "post": {
         "description": "Requires automation:write.",
@@ -18341,6 +19639,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"

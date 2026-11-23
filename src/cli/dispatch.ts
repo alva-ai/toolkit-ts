@@ -5968,7 +5968,7 @@ export async function executeParsedCommand(
         case 'update-risk-rules': {
           const limit = (
             name: 'max-single-order' | 'max-daily-turnover' | 'max-daily-orders'
-          ): Schema<'RiskLimitPatch'> => ({
+          ): Schema<'RiskLimitInput'> => ({
             value: String(
               requireNumericFlag(
                 flags,
