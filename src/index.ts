@@ -18,6 +18,18 @@ export {
   type CreateCompanyNewsResponse,
 } from './resources/companyNews.js';
 export {
+  PersonalSkillsResource,
+  type PersonalSkillSourceType,
+  type PersonalSkillSummary,
+  type PersonalSkillFileMeta,
+  type PersonalSkillDetail,
+  type PersonalSkillFile,
+  type PersonalSkillListResponse,
+  type SavePersonalSkillFileInput,
+  type SavePersonalSkillParams,
+  type SavePersonalSkillResponse,
+} from './resources/personalSkills.js';
+export {
   ThesesResource,
   type Thesis,
   type ThesisID,

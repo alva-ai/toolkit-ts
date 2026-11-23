@@ -303,6 +303,51 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       booleans: ['json'],
       positionals: ['playbook skill identifier', 'file path'],
     }),
+    route('my-skills list', 'my-skills list', {
+      values: ['first', 'after'],
+      booleans: ['include-disabled', 'json'],
+    }),
+    route('my-skills get', 'my-skills get', {
+      booleans: ['json'],
+      positionals: ['personal skill ref'],
+    }),
+    route('my-skills file', 'my-skills file', {
+      values: ['rev'],
+      booleans: ['json'],
+      positionals: ['personal skill ref', 'file path'],
+    }),
+    route('my-skills save', 'my-skills save', {
+      values: [
+        'public-id',
+        'slug',
+        'display-name',
+        'description',
+        'source-type',
+        'source-ref',
+        'source-hash',
+        'expected-rev',
+        'expected-source-hash',
+        'request-id',
+        'files-json',
+      ],
+      booleans: ['overwrite-conflict', 'json'],
+    }),
+    route('my-skills enable', 'my-skills enable', {
+      booleans: ['json'],
+      positionals: ['personal skill ref'],
+    }),
+    route('my-skills disable', 'my-skills disable', {
+      booleans: ['json'],
+      positionals: ['personal skill ref'],
+    }),
+    route('my-skills delete', 'my-skills delete', {
+      booleans: ['json'],
+      positionals: ['personal skill ref'],
+    }),
+    route('my-skills reindex', 'my-skills reindex', {
+      booleans: ['json'],
+      positionals: ['personal skill slug'],
+    }),
     route('markets narrative', 'markets narrative', { values: ['ticker'] }),
     route('markets earnings', 'markets earnings', {
       values: ['ticker', 'event', 'fiscal-year', 'fiscal-quarter'],

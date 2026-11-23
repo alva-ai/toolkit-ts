@@ -445,6 +445,54 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     positionals: ['playbook skill identifier', 'file path'],
   }),
 
+  command('my-skills list', {
+    values: ['first', 'after'],
+    booleans: ['include-disabled', 'json'],
+  }),
+  command('my-skills get', {
+    booleans: ['json'],
+    positionals: ['personal skill ref'],
+  }),
+  command('my-skills file', {
+    values: ['rev'],
+    booleans: ['json'],
+    positionals: ['personal skill ref', 'file path'],
+  }),
+  command('my-skills save', {
+    values: [
+      'public-id',
+      'slug',
+      'display-name',
+      'description',
+      'source-type',
+      'source-ref',
+      'source-hash',
+      'expected-rev',
+      'expected-source-hash',
+      'request-id',
+      'dir',
+      'skill-md',
+      'files-json',
+    ],
+    booleans: ['overwrite-conflict', 'json'],
+  }),
+  command('my-skills enable', {
+    booleans: ['json'],
+    positionals: ['personal skill ref'],
+  }),
+  command('my-skills disable', {
+    booleans: ['json'],
+    positionals: ['personal skill ref'],
+  }),
+  command('my-skills delete', {
+    booleans: ['json'],
+    positionals: ['personal skill ref'],
+  }),
+  command('my-skills reindex', {
+    booleans: ['json'],
+    positionals: ['personal skill slug'],
+  }),
+
   command('comments create', {
     values: ['username', 'name', 'content', 'parent-id'],
   }),

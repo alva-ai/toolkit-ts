@@ -14,6 +14,7 @@ import { SecretsResource } from './resources/secrets.js';
 import { SdkDocsResource } from './resources/sdkDocs.js';
 import { DataSkillsResource } from './resources/dataSkills.js';
 import { PlaybookSkillsResource } from './resources/playbookSkills.js';
+import { PersonalSkillsResource } from './resources/personalSkills.js';
 import { CommentsResource } from './resources/comments.js';
 import { RemixResource } from './resources/remix.js';
 import { ScreenshotResource } from './resources/screenshot.js';
@@ -192,6 +193,7 @@ export class AlvaClient {
   private _tradingPairs?: TradingPairsResource;
   private _theses?: ThesesResource;
   private _companyNews?: CompanyNewsResource;
+  private _personalSkills?: PersonalSkillsResource;
 
   constructor(config: AlvaClientConfig) {
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -243,6 +245,9 @@ export class AlvaClient {
   }
   get playbookSkills(): PlaybookSkillsResource {
     return (this._playbookSkills ??= new PlaybookSkillsResource(this));
+  }
+  get personalSkills(): PersonalSkillsResource {
+    return (this._personalSkills ??= new PersonalSkillsResource(this));
   }
   get comments(): CommentsResource {
     return (this._comments ??= new CommentsResource(this));

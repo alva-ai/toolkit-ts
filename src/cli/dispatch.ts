@@ -41,6 +41,17 @@ import {
   formatPlaybookSkillFile,
 } from './playbookSkillsFormat.js';
 import {
+  formatPersonalSkillsList,
+  formatPersonalSkillGet,
+  formatPersonalSkillFile,
+  formatPersonalSkillSave,
+  formatPersonalSkillSummary,
+} from './personalSkillsFormat.js';
+import type {
+  PersonalSkillSourceType,
+  SavePersonalSkillFileInput,
+} from '../resources/personalSkills.js';
+import {
   PLAYBOOK_VISIBILITIES,
   OWNED_PLAYBOOK_FILTERS,
   webOriginFromApiBase,
@@ -4738,6 +4749,94 @@ export async function executeParsedCommand(
       }
     }
 
+    case 'my-skills': {
+      if (!subcommand)
+        throw new CliUsageError(
+          'Missing subcommand for my-skills',
+          'my-skills'
+        );
+      const asJson = boolFlag(flags['json']) ?? false;
+      switch (subcommand) {
+        case 'list': {
+          const result = await client.personalSkills.list({
+            first: num(flags['first']),
+            after: flags['after'],
+            include_disabled: boolFlag(flags['include-disabled']) ?? false,
+          });
+          return asJson ? result : formatPersonalSkillsList(result);
+        }
+        case 'get': {
+          const ref = positionals[0]!;
+          const result = await client.personalSkills.get(ref);
+          return asJson ? result : formatPersonalSkillGet(result);
+        }
+        case 'file': {
+          const ref = positionals[0]!;
+          const filePath = positionals[1]!;
+          const result = await client.personalSkills.file(ref, filePath, {
+            rev: num(flags['rev']),
+          });
+          return asJson ? result : formatPersonalSkillFile(result);
+        }
+        case 'save': {
+          const slug = requireFlag(flags, 'slug', 'my-skills save');
+          const displayName = requireFlag(
+            flags,
+            'display-name',
+            'my-skills save'
+          );
+          const description = requireFlag(
+            flags,
+            'description',
+            'my-skills save'
+          );
+          const sourceType = (flags['source-type'] ??
+            'chat') as PersonalSkillSourceType;
+          const files = await collectPersonalSkillFiles(flags);
+          const result = await client.personalSkills.save({
+            public_id: flags['public-id'],
+            slug,
+            display_name: displayName,
+            description,
+            files,
+            source_type: sourceType,
+            source_ref: flags['source-ref'],
+            source_content_hash: flags['source-hash'],
+            expected_rev: num(flags['expected-rev']),
+            expected_source_hash: flags['expected-source-hash'],
+            request_id: flags['request-id'],
+            overwrite_conflict: boolFlag(flags['overwrite-conflict']) ?? false,
+          });
+          return asJson ? result : formatPersonalSkillSave(result);
+        }
+        case 'enable': {
+          const ref = positionals[0]!;
+          const result = await client.personalSkills.setEnabled(ref, true);
+          return asJson ? result : formatPersonalSkillSummary(result.skill);
+        }
+        case 'disable': {
+          const ref = positionals[0]!;
+          const result = await client.personalSkills.setEnabled(ref, false);
+          return asJson ? result : formatPersonalSkillSummary(result.skill);
+        }
+        case 'delete': {
+          const ref = positionals[0]!;
+          const result = await client.personalSkills.delete(ref);
+          return asJson ? result : `Deleted ${ref}\n`;
+        }
+        case 'reindex': {
+          const slug = positionals[0]!;
+          const result = await client.personalSkills.reindex(slug);
+          return asJson ? result : formatPersonalSkillSummary(result.skill);
+        }
+        default:
+          throw new CliUsageError(
+            `Unknown subcommand: my-skills ${subcommand}`,
+            'my-skills'
+          );
+      }
+    }
+
     case 'comments': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for comments', 'comments');
@@ -5554,4 +5653,69 @@ export function stripGlobalFlags(argv: string[]): string[] {
     result.push(a);
   }
   return result;
+}
+
+async function collectPersonalSkillFiles(
+  flags: Record<string, string>
+): Promise<SavePersonalSkillFileInput[]> {
+  if (flags['files-json']) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(flags['files-json']);
+    } catch (err) {
+      throw new CliUsageError(
+        `Invalid --files-json: ${err instanceof Error ? err.message : String(err)}`,
+        'my-skills save'
+      );
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new CliUsageError(
+        '--files-json must be a non-empty JSON array of { path, content }',
+        'my-skills save'
+      );
+    }
+    return parsed as SavePersonalSkillFileInput[];
+  }
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  if (flags['dir']) {
+    const root = path.resolve(flags['dir']);
+    const collected: SavePersonalSkillFileInput[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === '.git' || entry.name === '.DS_Store') continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isSymbolicLink()) continue;
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.isFile()) {
+          const rel = path.relative(root, full).split(path.sep).join('/');
+          collected.push({
+            path: rel,
+            content: fs.readFileSync(full, 'utf-8'),
+          });
+        }
+      }
+    };
+    walk(root);
+    if (collected.length === 0) {
+      throw new CliUsageError(
+        `No files found in --dir ${flags['dir']}`,
+        'my-skills save'
+      );
+    }
+    return collected;
+  }
+
+  if (flags['skill-md']) {
+    const content = fs.readFileSync(path.resolve(flags['skill-md']), 'utf-8');
+    return [{ path: 'SKILL.md', content }];
+  }
+
+  throw new CliUsageError(
+    'Provide one of --dir <folder>, --skill-md <SKILL.md>, or --files-json <json>',
+    'my-skills save'
+  );
 }
