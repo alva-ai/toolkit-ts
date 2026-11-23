@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import {
   mkdtempSync,
   mkdirSync,
@@ -27,7 +31,10 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
   let server: ReturnType<typeof createServer>;
   let baseUrl = '';
   let requests: RecordedRequest[] = [];
-  let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
+  let nextResponse: { status: number; body: unknown } = {
+    status: 200,
+    body: {},
+  };
 
   beforeEach(async () => {
     requests = [];
@@ -46,7 +53,9 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         res.end(JSON.stringify(nextResponse.body));
       });
     });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
     const addr = server.address();
     if (!addr || typeof addr === 'string') throw new Error('bad server addr');
     baseUrl = `http://127.0.0.1:${addr.port}`;
@@ -82,7 +91,9 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     };
     const listed = await client.personalSkills.list({ include_disabled: true });
     expect(listed.skills).toHaveLength(1);
-    expect(requests[0].url).toBe('/api/v1/personal-skills?include_disabled=true');
+    expect(requests[0].url).toBe(
+      '/api/v1/personal-skills?include_disabled=true'
+    );
 
     nextResponse = {
       status: 200,
@@ -162,15 +173,16 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         '--dir',
         dir,
       ]);
-      expect(String(out)).toContain('Created personal:pskl_0123456789abcdef01234567');
+      expect(String(out)).toContain(
+        'Created personal:pskl_0123456789abcdef01234567'
+      );
       const payload = JSON.parse(requests[0].body);
       expect(payload.slug).toBe('earnings-review');
       expect(payload.source_type).toBe('agent_link');
       expect(payload.request_id).toBe('req-1');
-      expect(payload.files.map((x: { path: string }) => x.path).sort()).toEqual([
-        'SKILL.md',
-        'references/check.md',
-      ]);
+      expect(payload.files.map((x: { path: string }) => x.path).sort()).toEqual(
+        ['SKILL.md', 'references/check.md']
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -216,10 +228,15 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       'req-embed-1',
       '--files-json',
       JSON.stringify([
-        { path: 'SKILL.md', content: '---\nname: earnings-review\n---\nUpdated' },
+        {
+          path: 'SKILL.md',
+          content: '---\nname: earnings-review\n---\nUpdated',
+        },
       ]),
     ]);
-    expect(String(out)).toContain('Updated personal:pskl_0123456789abcdef01234567');
+    expect(String(out)).toContain(
+      'Updated personal:pskl_0123456789abcdef01234567'
+    );
     const payload = JSON.parse(requests[0].body);
     expect(payload.expected_rev).toBe(1);
     expect(payload.files).toHaveLength(1);
@@ -236,7 +253,14 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     expect(help.text).toContain('--overwrite-conflict');
 
     await expect(
-      dispatchCli(client, ['my-skills', 'file', 'earnings-review', 'SKILL.md', '--rev', 'abc'])
+      dispatchCli(client, [
+        'my-skills',
+        'file',
+        'earnings-review',
+        'SKILL.md',
+        '--rev',
+        'abc',
+      ])
     ).rejects.toThrow(/--rev must be a positive integer/);
     await expect(
       dispatchCli(client, [
@@ -300,7 +324,10 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       ).rejects.toThrow(/symbolic link/);
 
       symlinkSync(outside, join(dir, 'symdir'));
-      writeFileSync(join(outside, 'SKILL.md'), '---\nname: sec-test\n---\nOutside\n');
+      writeFileSync(
+        join(outside, 'SKILL.md'),
+        '---\nname: sec-test\n---\nOutside\n'
+      );
       await expect(
         dispatchCli(client, [
           'my-skills',
@@ -326,11 +353,19 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
           Buffer.from('---\nname: sec-test\n---\nBody\n', 'utf-8'),
         ])
       );
-      writeFileSync(join(dir, '.env'), 'OPENAI_API_KEY=sk-proj-1234567890abcdef1234567890');
+      writeFileSync(
+        join(dir, '.env'),
+        'OPENAI_API_KEY=sk-proj-1234567890abcdef1234567890'
+      );
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
-      writeFileSync(join(dir, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;');
+      writeFileSync(
+        join(dir, 'node_modules', 'pkg', 'index.js'),
+        'module.exports = 1;'
+      );
       mkdirSync(join(dir, 'assets'), { recursive: true });
-      const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]);
+      const pngBytes = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe,
+      ]);
       writeFileSync(join(dir, 'assets', 'icon.png'), pngBytes);
 
       await expect(
@@ -388,7 +423,9 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       const payload = JSON.parse(requests[0].body);
       const paths = payload.files.map((f: { path: string }) => f.path).sort();
       expect(paths).toEqual(['SKILL.md']);
-      const skillEntry = payload.files.find((f: { path: string }) => f.path === 'SKILL.md');
+      const skillEntry = payload.files.find(
+        (f: { path: string }) => f.path === 'SKILL.md'
+      );
       expect(skillEntry.content.startsWith('\ufeff')).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });

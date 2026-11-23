@@ -4782,7 +4782,11 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'list': {
           const result = await client.personalSkills.list({
-            first: parsePositiveIntFlag(flags['first'], 'first', 'my-skills list'),
+            first: parsePositiveIntFlag(
+              flags['first'],
+              'first',
+              'my-skills list'
+            ),
             after: flags['after'],
             include_disabled: boolFlag(flags['include-disabled']) ?? false,
           });
@@ -5828,7 +5832,9 @@ async function collectPersonalSkillFiles(
         if (st.isDirectory()) {
           walk(full);
         } else if (st.isFile()) {
-          collected.push(decodePersonalSkillTextFile(rel, fs.readFileSync(full)));
+          collected.push(
+            decodePersonalSkillTextFile(rel, fs.readFileSync(full))
+          );
         }
       }
     };

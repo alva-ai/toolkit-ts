@@ -360,8 +360,30 @@ describe('Slim Alva Agent command profile', () => {
         './schema.json',
       ],
       ['playbooks', 'screenshot', '--url', '/p', '--out', './p.png'],
-      ['my-skills', 'save', '--slug', 's', '--display-name', 'S', '--description', 'D', '--dir', './s'],
-      ['my-skills', 'save', '--slug', 's', '--display-name', 'S', '--description', 'D', '--skill-md', './SKILL.md'],
+      [
+        'my-skills',
+        'save',
+        '--slug',
+        's',
+        '--display-name',
+        'S',
+        '--description',
+        'D',
+        '--dir',
+        './s',
+      ],
+      [
+        'my-skills',
+        'save',
+        '--slug',
+        's',
+        '--display-name',
+        'S',
+        '--description',
+        'D',
+        '--skill-md',
+        './SKILL.md',
+      ],
     ]) {
       expect(() => parseEmbeddedCommand(argv)).toThrow(/is not supported/);
     }

@@ -52,7 +52,9 @@ export function formatPersonalSkillFile(file: PersonalSkillFile): string {
   return file.content;
 }
 
-export function formatPersonalSkillSave(res: SavePersonalSkillResponse): string {
+export function formatPersonalSkillSave(
+  res: SavePersonalSkillResponse
+): string {
   const verb = res.created ? 'Created' : 'Updated';
   const s = res.skill;
   return `${verb} ${s.template_ref} (${s.slug}) rev ${s.current_rev} — ${s.display_name}\n`;

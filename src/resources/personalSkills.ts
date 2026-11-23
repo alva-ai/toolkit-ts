@@ -150,7 +150,9 @@ export class PersonalSkillsResource {
     )) as PersonalSkillFile;
   }
 
-  async save(params: SavePersonalSkillParams): Promise<SavePersonalSkillResponse> {
+  async save(
+    params: SavePersonalSkillParams
+  ): Promise<SavePersonalSkillResponse> {
     return (await this.client._request('POST', '/api/v1/personal-skills', {
       body: params,
     })) as SavePersonalSkillResponse;
