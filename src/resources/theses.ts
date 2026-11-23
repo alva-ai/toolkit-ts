@@ -196,7 +196,9 @@ export class ThesesResource {
   /**
    * One write of a Thesis from the Update `expectedVersionId` names: absent
    * members carry over, and assets, categoryIds and media replace the lists.
-   * `visibility` is set before the Update is published; `archived: false`
+   * A narrower `visibility` is set before the Update is published and a
+   * wider one after it, so a failure between the two never shows the
+   * content to more readers than asked; `archived: false`
    * unarchives the Thesis with this content, `archived: true` archives it.
    * A stale `expectedVersionId` is CONFLICT and writes nothing. An Update
    * identical to the current one writes nothing and returns the Thesis

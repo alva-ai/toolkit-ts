@@ -1731,8 +1731,8 @@ Create, update and archive require --request-id: a caller-supplied UUID, sent
 as the write's Idempotency-Key. The toolkit retries transient failures with
 the same key; if a response is still ambiguous, reuse the same request ID
 only, never a fresh one. Create defaults --visibility to public. Update keeps
-the current visibility unless --visibility is given; a different visibility
-is set before the Update is published.
+the current visibility unless --visibility is given; a narrower visibility
+is set before the Update is published and a wider one after it.
 
 Other flags:
   create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false]
