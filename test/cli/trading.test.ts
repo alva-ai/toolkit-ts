@@ -244,7 +244,7 @@ describe('trading CLI on /api/v2', () => {
         '--max-single-order-enabled',
         'true',
         '--max-daily-turnover-value',
-        '2500.50',
+        '2500.5',
         '--max-daily-turnover-enabled',
         'false',
         '--max-daily-orders-value',
@@ -280,6 +280,45 @@ describe('trading CLI on /api/v2', () => {
       ],
     ]);
   });
+
+  it('sends a value as given, trimmed, never through a float', async () => {
+    const fake = fakeV2({ 'PATCH /me/risk-rules': () => riskRules() });
+    restore = fake.restore;
+
+    await dispatchCli(client(), [
+      'trading',
+      'update-risk-rules',
+      '--max-daily-turnover-value',
+      ' 12345678901234567.5 ',
+      '--max-daily-turnover-enabled',
+      'true',
+    ]);
+    expect(fake.calls[0].body).toEqual({
+      maxDailyTurnover: { enabled: true, value: '12345678901234567.5' },
+    });
+  });
+
+  it.each(['', '0x10', '1e23', 'Infinity', '2500.50', '007'])(
+    'refuses the value %j before sending: not a plain decimal',
+    async (amount) => {
+      const fake = fakeV2({});
+      restore = fake.restore;
+
+      const sent = dispatchCli(client(), [
+        'trading',
+        'update-risk-rules',
+        '--max-single-order-value',
+        amount,
+        '--max-single-order-enabled',
+        'true',
+      ]);
+      await expect(sent).rejects.toBeInstanceOf(CliUsageError);
+      await expect(sent).rejects.toThrow(
+        `--max-single-order-value must be a plain decimal such as 2500.5 (no exponent, leading or trailing zeros) for 'trading update-risk-rules', got '${amount}'`
+      );
+      expect(fake.calls).toHaveLength(0);
+    }
+  );
 
   it.each([
     [

@@ -3,7 +3,7 @@ import { AlvaClient } from '../client.js';
 import { decodeBase64 } from '../base64.js';
 import { requireDecision } from '../v1/steward.js';
 import { AlvaError, CliUsageError } from '../error.js';
-import type { Schema, V2Query } from '../platformApi.js';
+import { DECIMAL_PATTERN, type Schema, type V2Query } from '../platformApi.js';
 import { allPages } from './pages.js';
 import { parseTickers, resolveTickers } from './watchlist.js';
 import { optionalRfc3339Flag, rfc3339Flag } from './timeFlags.js';
@@ -1658,6 +1658,8 @@ it is):
   --max-daily-turnover-enabled <bool> Enforce it: true or false
   --max-daily-orders-value <n>        Max daily orders
   --max-daily-orders-enabled <bool>   Enforce it: true or false
+  A value is a plain decimal such as 2500.5 (no exponent, leading or
+  trailing zeros), sent as given.
   A rule is replaced whole, so it takes both its -value and -enabled flags,
   even to change one of them: read the current rule with
   'alva trading risk-rules' and repeat the member you keep. Nothing is read
@@ -1918,23 +1920,6 @@ export function requireFlag(
     throw new CliUsageError(`--${name} is required for '${command}'`, group);
   }
   return val;
-}
-
-function requireNumericFlag(
-  flags: Record<string, string>,
-  name: string,
-  command: string
-): number {
-  const val = requireFlag(flags, name, command);
-  const n = Number(val);
-  if (Number.isNaN(n)) {
-    const group = command.split(' ')[0];
-    throw new CliUsageError(
-      `--${name} must be a number for '${command}', got '${val}'`,
-      group
-    );
-  }
-  return n;
 }
 
 export function requirePositiveIntegerFlag(
@@ -2617,10 +2602,14 @@ function riskRulesPatch(
         'trading'
       );
     }
-    patch[rule] = {
-      enabled: on,
-      value: String(requireNumericFlag(flags, value, command)),
-    };
+    const amount = flags[value].trim();
+    if (!DECIMAL_PATTERN.test(amount)) {
+      throw new CliUsageError(
+        `--${value} must be a plain decimal such as 2500.5 (no exponent, leading or trailing zeros) for '${command}', got '${flags[value]}'`,
+        'trading'
+      );
+    }
+    patch[rule] = { enabled: on, value: amount };
   }
   if (Object.keys(patch).length === 0) {
     throw new CliUsageError(

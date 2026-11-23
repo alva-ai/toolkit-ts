@@ -157,6 +157,14 @@ export function idempotencyKeyHeader(key: string): string {
   return `"${key}"`;
 }
 
+/**
+ * A Decimal as the contract writes it: a plain decimal string with no
+ * exponent, leading zeros or trailing fractional zeros (`-12.5`). This is
+ * the vendored contract's Decimal pattern; test/openapi.test.ts keeps the
+ * two equal.
+ */
+export const DECIMAL_PATTERN = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/;
+
 export const RETRY_MAX_ATTEMPTS = 3;
 export const RETRY_BUDGET_MS = 60_000;
 const RETRY_BASE_MS = 500;

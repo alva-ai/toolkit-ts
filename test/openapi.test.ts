@@ -9,7 +9,7 @@ import {
   TYPES_PATH,
 } from '../scripts/openapi.js';
 import { AlvaClient } from '../src/client.js';
-import type { Schema } from '../src/platformApi.js';
+import { DECIMAL_PATTERN, type Schema } from '../src/platformApi.js';
 import { requestBodyErrors } from './contractShape.js';
 import { fakeV2 } from './fakeV2.js';
 
@@ -256,6 +256,13 @@ describe('the /api/v2 request schemas', () => {
     ['PATCH', '/theses/thesis_0abc', { visibility: 'PRIVATE' }],
   ])('take a whole %s %s', (method, path, body) => {
     expect(requestBodyErrors(method, path, PATCH, body)).toEqual([]);
+  });
+
+  it("use the contract's Decimal pattern in the client", () => {
+    const doc = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as {
+      components: { schemas: { Decimal: { pattern: string } } };
+    };
+    expect(DECIMAL_PATTERN.source).toBe(doc.components.schemas.Decimal.pattern);
   });
 
   it('are what fakeV2 answers a refused body with, as the gateway does', async () => {
