@@ -106,9 +106,13 @@ export class TradingResource {
   }
 
   /**
-   * Changes the risk rules (JSON Merge Patch: an absent rule is unchanged).
-   * Raising or lifting a cap needs trading_limits:write, which agent
-   * credentials lack; tightening needs trading:write.
+   * Changes the risk rules (JSON Merge Patch): a rule not sent is unchanged,
+   * and a rule sent replaces the current one whole, so it names both
+   * `enabled` and `value` (the gateway refuses part of a rule). To change one
+   * member, read the rules (`riskRules()`) and send the rule with the member
+   * you keep; this method reads nothing itself. Raising or lifting a cap
+   * needs trading_limits:write, which agent credentials lack; tightening
+   * needs trading:write.
    */
   async updateRiskRules(
     patch: Schema<'RiskRulesPatch'>

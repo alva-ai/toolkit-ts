@@ -229,7 +229,11 @@ resource:
   longer found by owner and name), `unsubscribe(tradeSubscriptionId)`
   returns the stopped `TradeSubscription`, and `riskRules()` and
   `updateRiskRules(patch)` use `RiskRules` and a merge-patch
-  `RiskRulesPatch` with decimal values.
+  `RiskRulesPatch` with decimal values: a rule not sent is unchanged, and a
+  rule sent is whole (`enabled` and a non-null `value`).
+- CLI: `trading update-risk-rules` replaces only the rules it names, each
+  with both its `-value` and `-enabled` (`true` or `false`) flags; it no
+  longer requires all six.
 - CLI: `trading execute` takes `--instruction` and `--idempotency-key` and
   refuses `--signal`, `--source-username` and `--source-feed`;
   `trading orders --since` takes RFC 3339 only; `trading equity-history`

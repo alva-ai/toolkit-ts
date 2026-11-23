@@ -259,6 +259,70 @@ describe('trading CLI on /api/v2', () => {
       maxDailyOrders: { value: '100', enabled: true },
     });
   });
+
+  it('replaces only the rules it names, each one whole', async () => {
+    const fake = fakeV2({ 'PATCH /me/risk-rules': () => riskRules() });
+    restore = fake.restore;
+
+    await dispatchCli(client(), [
+      'trading',
+      'update-risk-rules',
+      '--max-daily-orders-value',
+      '50',
+      '--max-daily-orders-enabled',
+      'false',
+    ]);
+    expect(fake.calls.map((c) => [c.method, c.path, c.body])).toEqual([
+      [
+        'PATCH',
+        '/me/risk-rules',
+        { maxDailyOrders: { enabled: false, value: '50' } },
+      ],
+    ]);
+  });
+
+  it.each([
+    [
+      ['--max-daily-orders-value', '50'],
+      "--max-daily-orders-enabled is required with --max-daily-orders-value for 'trading update-risk-rules': a rule is sent whole",
+    ],
+    [
+      [
+        '--max-daily-orders-value',
+        '50',
+        '--max-daily-orders-enabled',
+        'true',
+        '--max-single-order-enabled',
+        'false',
+      ],
+      "--max-single-order-value is required with --max-single-order-enabled for 'trading update-risk-rules': a rule is sent whole",
+    ],
+    [
+      [
+        '--max-daily-turnover-value',
+        '10',
+        '--max-daily-turnover-enabled',
+        'on',
+      ],
+      "--max-daily-turnover-enabled must be true or false for 'trading update-risk-rules', got 'on'",
+    ],
+    [[], /'trading update-risk-rules' requires a rule/],
+  ])(
+    'refuses %j before sending: half a rule is not a rule',
+    async (flags, message) => {
+      const fake = fakeV2({});
+      restore = fake.restore;
+
+      const sent = dispatchCli(client(), [
+        'trading',
+        'update-risk-rules',
+        ...flags,
+      ]);
+      await expect(sent).rejects.toBeInstanceOf(CliUsageError);
+      await expect(sent).rejects.toThrow(message);
+      expect(fake.calls).toHaveLength(0);
+    }
+  );
 });
 
 describe('broker invocations on /api/v2', () => {

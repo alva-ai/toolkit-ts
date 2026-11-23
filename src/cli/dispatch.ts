@@ -1613,7 +1613,7 @@ Subcommands:
   subscribe            Copy a Playbook feed's signals into an account
   unsubscribe          Stop a trade subscription
   execute              Place an order instruction on an account
-  update-risk-rules    Update risk rules
+  update-risk-rules    Replace the risk rules it names
 
 Portfolio/Orders/Subscriptions/Equity-history flags:
   --account-id <id>    Account ID from 'alva trading accounts' (required)
@@ -1650,13 +1650,18 @@ Execute flags:
   --idempotency-key <key>      Reuse to retry the same placement safely; the
                                same key never places the orders twice
 
-Update-risk-rules flags:
-  --max-single-order-value <n>       Max single order value (required)
-  --max-single-order-enabled <bool>  Max single order enabled (required)
-  --max-daily-turnover-value <n>     Max daily turnover value (required)
-  --max-daily-turnover-enabled <bool> Max daily turnover enabled (required)
-  --max-daily-orders-value <n>       Max daily orders value (required)
-  --max-daily-orders-enabled <bool>  Max daily orders enabled (required)
+Update-risk-rules flags (name one or more rules; a rule not named is left as
+it is):
+  --max-single-order-value <n>        Max single order value
+  --max-single-order-enabled <bool>   Enforce it: true or false
+  --max-daily-turnover-value <n>      Max daily turnover value
+  --max-daily-turnover-enabled <bool> Enforce it: true or false
+  --max-daily-orders-value <n>        Max daily orders
+  --max-daily-orders-enabled <bool>   Enforce it: true or false
+  A rule is replaced whole, so it takes both its -value and -enabled flags,
+  even to change one of them: read the current rule with
+  'alva trading risk-rules' and repeat the member you keep. Nothing is read
+  for you.
 
 Examples:
   alva trading accounts
@@ -1668,7 +1673,8 @@ Examples:
   alva trading subscribe --account-id broker_account_0abc --signal-source-id automation_0abc --playbook-id playbook_0abc --playbook-version v1.0.0
   alva trading unsubscribe --subscription-id trade_subscription_0abc
   alva trading execute --account-id broker_account_0abc --instruction '{"type":"ALLOCATE","weights":[{"symbol":"BINANCE_PERP_BTC_USDT","weight":"0.1"}]}' --dry-run
-  alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
+  alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true
+  alva trading update-risk-rules --max-daily-orders-value 50 --max-daily-orders-enabled true`,
 
   arrays: `Usage: alva arrays token <subcommand>
 
@@ -2570,6 +2576,59 @@ async function automationDeliveryUpdateParams(
     ...new Set(channels.map((c) => (c === AGENT_CHANNEL_ALIAS ? agent! : c))),
   ];
   return { id, patch: { channelIds, email } };
+}
+
+/** The flag prefix of each risk rule: `--<prefix>-value`, `--<prefix>-enabled`. */
+const RISK_RULE_FLAGS = {
+  maxOrderValue: 'max-single-order',
+  maxDailyTurnover: 'max-daily-turnover',
+  maxDailyOrders: 'max-daily-orders',
+} as const;
+
+/**
+ * The rules `trading update-risk-rules` names. The gateway replaces a rule
+ * whole and refuses part of one, so a rule takes both of its flags; a rule
+ * not named is left as it is. Nothing is read to fill in a missing flag.
+ */
+function riskRulesPatch(
+  flags: Record<string, string>
+): Schema<'RiskRulesPatch'> {
+  const command = 'trading update-risk-rules';
+  const patch: Schema<'RiskRulesPatch'> = {};
+  for (const [rule, prefix] of Object.entries(RISK_RULE_FLAGS) as [
+    keyof typeof RISK_RULE_FLAGS,
+    string,
+  ][]) {
+    const value = `${prefix}-value`;
+    const enabled = `${prefix}-enabled`;
+    if (flags[value] === undefined && flags[enabled] === undefined) continue;
+    if (flags[value] === undefined || flags[enabled] === undefined) {
+      const [given, missing] =
+        flags[value] === undefined ? [enabled, value] : [value, enabled];
+      throw new CliUsageError(
+        `--${missing} is required with --${given} for '${command}': a rule is sent whole`,
+        'trading'
+      );
+    }
+    const on = boolFlag(flags[enabled]);
+    if (on === undefined) {
+      throw new CliUsageError(
+        `--${enabled} must be true or false for '${command}', got '${flags[enabled]}'`,
+        'trading'
+      );
+    }
+    patch[rule] = {
+      enabled: on,
+      value: String(requireNumericFlag(flags, value, command)),
+    };
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new CliUsageError(
+      `'${command}' requires a rule: --<rule>-value with --<rule>-enabled, for max-single-order, max-daily-turnover or max-daily-orders`,
+      'trading'
+    );
+  }
+  return patch;
 }
 
 function trendingPlaybooksSort(
@@ -5965,30 +6024,8 @@ export async function executeParsedCommand(
             { idempotencyKey: flags['idempotency-key'] }
           );
         }
-        case 'update-risk-rules': {
-          const limit = (
-            name: 'max-single-order' | 'max-daily-turnover' | 'max-daily-orders'
-          ): Schema<'RiskLimitInput'> => ({
-            value: String(
-              requireNumericFlag(
-                flags,
-                `${name}-value`,
-                'trading update-risk-rules'
-              )
-            ),
-            enabled:
-              requireFlag(
-                flags,
-                `${name}-enabled`,
-                'trading update-risk-rules'
-              ) === 'true',
-          });
-          return client.trading.updateRiskRules({
-            maxOrderValue: limit('max-single-order'),
-            maxDailyTurnover: limit('max-daily-turnover'),
-            maxDailyOrders: limit('max-daily-orders'),
-          });
-        }
+        case 'update-risk-rules':
+          return client.trading.updateRiskRules(riskRulesPatch(flags));
         default:
           throw new CliUsageError(
             `Unknown subcommand: trading ${subcommand}`,
