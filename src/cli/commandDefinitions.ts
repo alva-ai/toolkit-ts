@@ -71,7 +71,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   // deeper leaves.
   command('auth'),
   command('auth login', {
-    values: ['profile', 'auth-url', 'base-url'],
+    values: ['profile', 'auth-url', 'base-url', 'agent'],
     booleans: ['browser', 'no-browser'],
   }),
   command('whoami'),
@@ -596,6 +596,7 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('people search', { values: ['query', 'kind', 'limit'] }),
   command('people follows'),
   command('people follows list', { values: ['kind', 'limit', 'cursor'] }),
+  command('people follows theses', { values: ['cursor'] }),
   command('people follows follow', { values: ['kind', 'id'] }),
   command('people follows unfollow', { values: ['kind', 'id'] }),
 

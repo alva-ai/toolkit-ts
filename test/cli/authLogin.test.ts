@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as http from 'node:http';
-import { generateState, handleAuthLogin } from '../../src/cli/auth.js';
+import {
+  computerName,
+  detectAgent,
+  generateState,
+  handleAuthLogin,
+  keyName,
+} from '../../src/cli/auth.js';
 import { deriveChallenge } from '../../src/cli/pkce.js';
 
 // Mode A is a dual-URL race:
@@ -93,6 +99,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       timeout: 500,
       log: (msg: string) => logged.push(msg),
       fetch: fetchMock.fn,
+      keyName: () => 'Test computer',
       ...overrides,
     },
   };
@@ -192,6 +199,39 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
     expect(body.code).toBe('PASTED-ABC');
     expect(body.code_verifier).toBe(fixedVerifier);
     expect(body.redirect_uri).toBe('https://alva.ai/oauth/code/callback');
+  });
+
+  it('passes --agent to the key name', async () => {
+    const seen: (string | undefined)[] = [];
+    const { deps } = makeDeps({
+      readline: vi.fn().mockResolvedValueOnce('CODE-3'),
+      keyName: (agent: string | undefined) => {
+        seen.push(agent);
+        return 'x';
+      },
+    });
+    await handleAuthLogin(['auth', 'login', '--agent', 'Grok bot'], deps);
+    expect(seen).toEqual(['Grok bot']);
+  });
+
+  it('names the key after this computer, and sends no name when there is none', async () => {
+    const named = makeDeps({
+      readline: vi.fn().mockResolvedValueOnce('CODE-1'),
+      keyName: () => 'Leo’s MacBook Pro',
+    });
+    await handleAuthLogin(['auth', 'login'], named.deps);
+    expect(JSON.parse(named.fetchMock.calls[0].init?.body ?? '{}').name).toBe(
+      'Leo’s MacBook Pro'
+    );
+
+    const unnamed = makeDeps({
+      readline: vi.fn().mockResolvedValueOnce('CODE-2'),
+      keyName: () => '',
+    });
+    await handleAuthLogin(['auth', 'login'], unnamed.deps);
+    expect(
+      JSON.parse(unnamed.fetchMock.calls[0].init?.body ?? '{}')
+    ).not.toHaveProperty('name');
   });
 
   it('printed message contains the OOB URL (for copy/share)', async () => {
@@ -324,5 +364,138 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
 
     expect(result.profile).toBe('stg');
     expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+  });
+});
+
+describe('computerName', () => {
+  it('uses the macOS computer name, then the host name without .local', () => {
+    expect(
+      computerName(
+        'darwin',
+        () => 'Leo’s MacBook Pro\n',
+        () => 'leos-mbp.local'
+      )
+    ).toBe('Leo’s MacBook Pro');
+    expect(
+      computerName(
+        'darwin',
+        () => {
+          throw new Error('no scutil');
+        },
+        () => 'leos-mbp.local'
+      )
+    ).toBe('leos-mbp');
+    expect(
+      computerName(
+        'linux',
+        () => 'unused',
+        () => 'devbox'
+      )
+    ).toBe('devbox');
+    expect(
+      computerName(
+        'linux',
+        () => '',
+        () => {
+          throw new Error('no hostname');
+        }
+      )
+    ).toBe('');
+  });
+});
+
+describe('detectAgent', () => {
+  const none = 'leos-mbp';
+  it('recognizes hosted agents first, so Grok bot is not read as Cursor', () => {
+    expect(detectAgent({ CURSOR_AGENT: '1' }, 'grok-bot-vm-181445070')).toEqual(
+      { name: 'Grok bot', cloud: true }
+    );
+    expect(
+      detectAgent({ HATCH_API_SOCKET: '/run/h.sock' }, 'htch-runtime')
+    ).toEqual({ name: 'Muse', cloud: true });
+    expect(detectAgent({ JARVIS_HATCHLING_ID: 'abc' }, 'htch-runtime')).toEqual(
+      {
+        name: 'Muse',
+        cloud: true,
+      }
+    );
+  });
+
+  it("reads AI_AGENT, then each agent's own variables", () => {
+    const name = (env: NodeJS.ProcessEnv) => detectAgent(env, none)?.name;
+    expect(
+      name({
+        AI_AGENT: 'claude-code_2-1-326_agent',
+        CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+      })
+    ).toBe('Claude');
+    expect(name({ AI_AGENT: 'claude-code@2' })).toBe('Claude Code');
+    expect(name({ AI_AGENT: 'crush' })).toBe('crush');
+    expect(name({ AI_AGENT: 'true', CODEX_THREAD_ID: 't' })).toBe('Codex');
+    expect(name({ CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' })).toBe(
+      'Claude Code'
+    );
+    expect(name({ CODEX_SANDBOX: 'seatbelt' })).toBe('Codex');
+    expect(name({ OPENCLAW_SHELL: 'exec' })).toBe('OpenClaw');
+    expect(name({ HERMES_SESSION_ID: 's' })).toBe('Hermes');
+    expect(name({ CURSOR_AGENT: '1' })).toBe('Cursor');
+    expect(name({ GEMINI_CLI: '1' })).toBe('Gemini CLI');
+    expect(detectAgent({ PATH: '/usr/bin' }, none)).toBeNull();
+  });
+});
+
+describe('keyName', () => {
+  const mac = () => 'Leo’s MacBook Pro';
+  it("joins agent and computer, leaving out a hosted agent's VM", () => {
+    expect(keyName(undefined, { CODEX_THREAD_ID: 't' }, mac, () => 'mbp')).toBe(
+      'Codex · Leo’s MacBook Pro'
+    );
+    expect(
+      keyName(
+        undefined,
+        { CURSOR_AGENT: '1' },
+        () => 'grok-bot-vm-1',
+        () => 'grok-bot-vm-1'
+      )
+    ).toBe('Grok bot');
+    expect(
+      keyName(
+        undefined,
+        {},
+        () => 'htch-runtime',
+        () => 'htch-runtime'
+      )
+    ).toBe('htch-runtime');
+    expect(keyName(undefined, {}, mac, () => 'mbp')).toBe('Leo’s MacBook Pro');
+    expect(
+      keyName(
+        undefined,
+        {},
+        () => '',
+        () => ''
+      )
+    ).toBe('');
+  });
+
+  it('prefers --agent, cleaned and capped, over what it detects', () => {
+    expect(
+      keyName('  Hermes \n bot ', { CLAUDECODE: '1' }, mac, () => 'mbp')
+    ).toBe('Hermes bot · Leo’s MacBook Pro');
+    expect(
+      keyName(
+        'Muse',
+        { HATCH_API_SOCKET: 's' },
+        () => 'htch-runtime',
+        () => 'htch-runtime'
+      )
+    ).toBe('Muse');
+    expect(
+      keyName(
+        'x'.repeat(40),
+        {},
+        () => '',
+        () => ''
+      )
+    ).toBe('x'.repeat(32));
   });
 });

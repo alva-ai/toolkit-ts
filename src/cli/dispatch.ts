@@ -268,7 +268,7 @@ Examples:
   alva configure --profile staging --api-key alva_stg_key --base-url https://api-llm.stg.alva.ai
   alva --profile staging whoami`,
 
-  auth: `Usage: alva auth login [--browser | --no-browser] [--profile <name>]
+  auth: `Usage: alva auth login [--browser | --no-browser] [--profile <name>] [--agent <name>]
 
 By default, opens a browser locally and listens for the OAuth callback. Use
 --no-browser for SSH / container / headless environments — alva will print
@@ -285,12 +285,16 @@ Flags:
   --browser           Force the local browser + 127.0.0.1 callback flow
   --no-browser        Force the paste-code flow (no local listener)
   --profile <name>    Profile name to save credentials under (default: "default")
+  --agent <name>      The AI agent signing in, e.g. "Claude Code" or "Grok bot".
+                      The new key is named "<agent> · <computer>"; without it
+                      the agent is detected from the environment when it can be.
 
 Examples:
   alva auth login                       # auto-detect
   alva auth login --no-browser          # force paste-code flow
   alva auth login --browser             # force browser flow
-  alva auth login --profile staging`,
+  alva auth login --profile staging
+  alva auth login --agent "Codex"`,
 
   whoami: `Usage: alva whoami [--profile <name>]
 
@@ -1549,6 +1553,7 @@ person. These change the same Following list the user sees in the Alva App.
 Subcommands:
   search                    Prefix match on name, username, slug, or alias
   follows list              List the profiles the caller follows
+  follows theses            Thesis Updates by followed profiles, oldest arrival first
   follows follow            Follow one profile (idempotent)
   follows unfollow          Unfollow one profile (idempotent)
 
@@ -1558,15 +1563,19 @@ Flags:
   --id <id>                 follow/unfollow: profile id from a search or list
                             result (required)
   --limit <1-50>            search/list: page size
-  --cursor <token>          list: nextPageToken of the previous page
+  --cursor <token>          list: nextPageToken of the previous page;
+                            theses: next_cursor of the previous read (omitted:
+                            the last 24 hours)
 
 Output is the /api/v2 shape: search and list print a ProfileList page,
-follow and unfollow the ProfileFollow {following, profile}.
+follow and unfollow the ProfileFollow {following, profile}. theses prints the
+/api/v1 following feed page {items, next_cursor, has_more}.
 
 Examples:
   alva people search --query "cathie wood" --kind person
   alva people follows follow --id profile_0abc
-  alva people follows list`,
+  alva people follows list
+  alva people follows theses --cursor <next_cursor>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
@@ -2336,6 +2345,14 @@ function dispatchPeople(
         pageToken: usageChecked(command, () =>
           optionalCursorFlag(flags['cursor'])
         ),
+      });
+    case 'follows theses':
+      // Agents page with next_cursor; the largest page keeps calls few.
+      return client.follows.theses({
+        cursor: usageChecked(command, () =>
+          optionalCursorFlag(flags['cursor'])
+        ),
+        first: 100,
       });
     // The Profile ID names the kind; --kind is only checked.
     case 'follows follow':

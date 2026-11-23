@@ -1,12 +1,130 @@
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
 import { writeConfig } from './config.js';
 import { parseCommand } from './commandSchema.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
+
+/**
+ * This computer's name, used to name the API key a CLI sign-in mints: the
+ * sign-in has no step where the user could name it. macOS gives the name the
+ * user sees in Sharing settings ("Leo’s MacBook Pro"); elsewhere it is the
+ * host name without a trailing ".local". Empty when neither can be read, and
+ * the gateway then keeps its default name.
+ */
+export function computerName(
+  platform: NodeJS.Platform = process.platform,
+  readMacName: () => string = () =>
+    execFileSync('scutil', ['--get', 'ComputerName'], {
+      encoding: 'utf8',
+      timeout: 1000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }),
+  hostname: () => string = () => os.hostname()
+): string {
+  if (platform === 'darwin') {
+    try {
+      const name = readMacName().trim();
+      if (name) return name;
+    } catch {
+      // Fall back to the host name.
+    }
+  }
+  try {
+    return hostname()
+      .trim()
+      .replace(/\.local$/i, '');
+  } catch {
+    return '';
+  }
+}
+
+/** Agents whose sign-in runs on a computer the agent's vendor hosts. */
+type Agent = { name: string; cloud: boolean };
+
+const AGENT_SLUGS: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  openclaw: 'OpenClaw',
+  hermes: 'Hermes',
+  'hermes-agent': 'Hermes',
+  cursor: 'Cursor',
+  'cursor-cli': 'Cursor',
+  'gemini-cli': 'Gemini CLI',
+};
+
+const has = (env: NodeJS.ProcessEnv, key: string) => Boolean(env[key]?.trim());
+
+/**
+ * Which agent runs this CLI, from what its environment shows. Hosted agents
+ * come first: Grok bot's VM also carries Cursor's variables. Null when
+ * nothing is recognized.
+ */
+export function detectAgent(
+  env: NodeJS.ProcessEnv,
+  hostname: string
+): Agent | null {
+  if (/^grok-bot-vm-/i.test(hostname)) return { name: 'Grok bot', cloud: true };
+  if (has(env, 'HATCH_API_SOCKET') || has(env, 'JARVIS_HATCHLING_ID')) {
+    return { name: 'Muse', cloud: true };
+  }
+  // Claude Code's desktop app and terminal share one CLI; the entrypoint
+  // tells them apart.
+  const claude = () =>
+    env.CLAUDE_CODE_ENTRYPOINT === 'claude-desktop' ? 'Claude' : 'Claude Code';
+  // AI_AGENT is the cross-tool convention: a slug, optionally followed by
+  // "@version" or "_<more>" (Claude Code sends "claude-code_2-1-326_agent").
+  const slug = env.AI_AGENT?.trim()
+    .toLowerCase()
+    .split(/[@_\s]/)[0];
+  if (
+    slug &&
+    !['0', '1', 'true', 'false', 'yes', 'no', 'on', 'off'].includes(slug)
+  ) {
+    if (slug === 'claude-code') return { name: claude(), cloud: false };
+    return { name: AGENT_SLUGS[slug] ?? slug.slice(0, 32), cloud: false };
+  }
+  if (has(env, 'CLAUDECODE')) return { name: claude(), cloud: false };
+  if (has(env, 'CODEX_THREAD_ID') || has(env, 'CODEX_SANDBOX')) {
+    return { name: 'Codex', cloud: false };
+  }
+  if (env.OPENCLAW_SHELL === 'exec') return { name: 'OpenClaw', cloud: false };
+  if (has(env, 'HERMES_AGENT') || has(env, 'HERMES_SESSION_ID')) {
+    return { name: 'Hermes', cloud: false };
+  }
+  if (has(env, 'CURSOR_AGENT')) return { name: 'Cursor', cloud: false };
+  if (has(env, 'GEMINI_CLI')) return { name: 'Gemini CLI', cloud: false };
+  return null;
+}
+
+/**
+ * The name for the API key this sign-in mints: "<agent> · <computer>". The
+ * agent is the one named by --agent, else the one detected. A hosted agent's
+ * VM name means nothing to the user, so it is left out. Empty when nothing is
+ * known, and the gateway then keeps its default name.
+ */
+export function keyName(
+  agentFlag: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  computer: () => string = () => computerName(),
+  hostname: () => string = () => os.hostname()
+): string {
+  let host = '';
+  try {
+    host = hostname();
+  } catch {
+    // No host name; only the agent flag and variables count.
+  }
+  const detected = detectAgent(env, host);
+  const flag = agentFlag?.replace(/\s+/g, ' ').trim().slice(0, 32);
+  const agent = flag || detected?.name || '';
+  if (detected?.cloud) return agent;
+  const machine = computer();
+  return [agent, machine].filter(Boolean).join(' · ');
+}
 
 export function generateState(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -56,6 +174,8 @@ export interface AuthLoginDeps {
   timeout?: number;
   log: (msg: string) => void;
   fetch: FetchLike;
+  // Names the minted key from the --agent flag; see keyName.
+  keyName?: (agentFlag: string | undefined) => string;
   // Readline for the OOB paste path. The terminal also prints an
   // OOB-redirect authorize URL so a user on a different device can
   // open it, see the code on the display page, and paste it back here.
@@ -86,6 +206,8 @@ export interface AuthLoginNoBrowserDeps {
   fetch: FetchLike;
   readline: (prompt?: string) => Promise<string>;
   oobRedirectUrl?: string;
+  // Names the minted key from the --agent flag; see keyName.
+  keyName?: (agentFlag: string | undefined) => string;
 }
 
 const DEFAULT_BASE_URL = 'https://api-llm.prd.alva.ai';
@@ -154,6 +276,7 @@ function defaultDeps(): AuthLoginDeps {
         init as Parameters<FetchLike>[1]
       )) as FetchLike,
     readline: defaultReadline,
+    keyName: (agentFlag) => keyName(agentFlag),
   };
 }
 
@@ -202,6 +325,8 @@ export async function exchangeCodeForApiKey(params: {
   codeVerifier: string;
   redirectUri: string;
   fetch: FetchLike;
+  /** Name for the minted key; omitted or empty keeps the gateway default. */
+  keyName?: string;
 }): Promise<string> {
   // Gateway mounts the OAuth-CLI handler on the `/api/v1` router group
   // (sibling to /api/v1/discord). The full path is /api/v1/oauth/token —
@@ -216,6 +341,7 @@ export async function exchangeCodeForApiKey(params: {
       code_verifier: params.codeVerifier,
       redirect_uri: params.redirectUri,
       client_id: CLIENT_ID,
+      ...(params.keyName ? { name: params.keyName } : {}),
     }),
   });
 
@@ -280,6 +406,8 @@ export async function handleAuthLogin(
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const oobRedirectUrl = deriveOobRedirectUrl(authUrl);
   const timeout = d.timeout ?? 120_000;
+  // Both paths below mint the same key; name it once.
+  const mintedKeyName = d.keyName?.(flags.agent);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
@@ -353,6 +481,7 @@ export async function handleAuthLogin(
         codeVerifier,
         redirectUri: localRedirectUri,
         fetch: d.fetch,
+        keyName: mintedKeyName,
       })
         .then(async (apiKey) => {
           if (settled) return;
@@ -439,6 +568,7 @@ export async function handleAuthLogin(
                 codeVerifier,
                 redirectUri: oobRedirectUrl,
                 fetch: d.fetch,
+                keyName: mintedKeyName,
               });
               if (settled) return;
               await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
@@ -566,6 +696,7 @@ function defaultNoBrowserDeps(): AuthLoginNoBrowserDeps {
         init as Parameters<FetchLike>[1]
       )) as FetchLike,
     readline: defaultReadline,
+    keyName: (agentFlag) => keyName(agentFlag),
     // oobRedirectUrl deliberately left undefined — derived from --auth-url
     // at call time so it tracks prd / stg / local-dev automatically.
   };
@@ -641,6 +772,7 @@ export async function handleAuthLoginNoBrowser(
         codeVerifier,
         redirectUri: oobRedirectUrl,
         fetch: d.fetch,
+        keyName: d.keyName?.(flags.agent),
       });
       await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
       return { status: 'logged_in', apiKey, profile: profileName };

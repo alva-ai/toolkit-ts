@@ -159,8 +159,13 @@ Headless / no-browser environments (SSH, containers, devcontainers, etc.)
 are auto-detected; pass `--no-browser` to force the paste-code flow or
 `--browser` to force the listener flow.
 
+The new key is named `<agent> · <computer>` in your key list: the agent comes
+from `--agent <name>`, or is detected from the environment when the CLI runs
+inside a known agent. A hosted agent (Grok bot, Muse) is named without its VM.
+
 ```bash
 alva auth login --no-browser            # force paste-code flow
+alva auth login --agent "Codex"         # name the key after the agent signing in
 alva auth login --profile staging       # save under a named profile
 alva auth login --auth-url https://stg.alva.xyz --base-url https://api-llm.stg.alva.ai  # point at stg
 ```
@@ -559,7 +564,7 @@ Every command also takes `--json`, which prints the `/api/v2` JSON result
 ```text
 alva configure --api-key <key> [--base-url <url>] [--profile <name>]
 alva whoami [--profile <name>]
-alva auth login [--browser | --no-browser] [--profile <name>]
+alva auth login [--browser | --no-browser] [--profile <name>] [--agent <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
 alva ask --prompt <text> [--system <text>] [--model <id>] [--effort <level>] [--json] [--no-wait]
@@ -593,6 +598,7 @@ alva markets watchlist list [--limit <1-100>] [--cursor <nextPageToken>]
 alva people search --query <text> [--kind <user|person>] [--limit <1-50>]
 alva people follows <follow|unfollow> --id <profile-id>
 alva people follows list [--kind <user|person>] [--limit <1-50>] [--cursor <nextPageToken>]
+alva people follows theses [--cursor <next_cursor>]
 ```
 
 ## Contributing
@@ -644,7 +650,18 @@ alva markets watchlist list --limit 50
 alva people search --query "cathie wood" --kind person
 alva people follows follow --id profile_0abc
 alva people follows list
+alva people follows theses --cursor <next_cursor>
 ```
+
+`people follows theses` lists the Thesis Updates of the profiles the user
+follows, in the order they reached Alva (a curated person's thesis can reach
+Alva hours after its post time). Without `--cursor` it reads the last 24 hours.
+Every answer carries a non-empty `next_cursor`, also after an empty page: page
+while `has_more` is true and keep the last `next_cursor` to read only what is
+new next time. It reads `GET /api/v1/me/following/theses` and prints its
+`/api/v1` Thesis shape: an `/api/v2` page token lasts 24 hours, so it cannot
+be that lasting cursor. The SDK equivalent is
+`client.follows.theses({ cursor, first })`.
 
 The SDK equivalents live on `client.follows` and take Asset and Profile
 IDs: `followAssets()`, `unfollowAssets()`, `watchlist()`, `followCounts()`,
