@@ -49,9 +49,6 @@ export function formatPersonalSkillGet(detail: PersonalSkillDetail): string {
 }
 
 export function formatPersonalSkillFile(file: PersonalSkillFile): string {
-  if (file.is_binary) {
-    return `[binary file ${file.path} (rev ${file.rev}); use --json for content_base64]\n`;
-  }
   return file.content;
 }
 

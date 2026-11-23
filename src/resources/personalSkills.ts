@@ -39,8 +39,6 @@ export interface PersonalSkillFile {
   rev: number;
   path: string;
   content: string;
-  content_base64?: string;
-  is_binary?: boolean;
   updated_at: string;
 }
 
@@ -52,8 +50,7 @@ export interface PersonalSkillListResponse {
 
 export interface SavePersonalSkillFileInput {
   path: string;
-  content?: string;
-  content_base64?: string;
+  content: string;
 }
 
 export interface SavePersonalSkillParams {
@@ -66,7 +63,6 @@ export interface SavePersonalSkillParams {
   source_ref?: string;
   source_content_hash?: string;
   expected_rev?: number;
-  expected_source_hash?: string;
   request_id?: string;
   overwrite_conflict?: boolean;
 }
@@ -178,13 +174,5 @@ export class PersonalSkillsResource {
       'DELETE',
       `/api/v1/personal-skills/${encoded}`
     )) as { deleted: boolean };
-  }
-
-  async reindex(ref: string): Promise<{ skill: PersonalSkillSummary }> {
-    const encoded = encodeURIComponent(validateRef(ref));
-    return (await this.client._request(
-      'POST',
-      `/api/v1/personal-skills/${encoded}/reindex`
-    )) as { skill: PersonalSkillSummary };
   }
 }

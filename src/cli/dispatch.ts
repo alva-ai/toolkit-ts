@@ -163,7 +163,7 @@ Commands:
   secrets     Secret management (create, list, get, update, delete)
   sdk         SDK documentation (doc, partitions, partition-summary)
   skillhub    Playbook skills (list, tags, get, file)
-  my-skills   Private Personal Skills (list, get, file, save, enable, disable, delete, reindex)
+  my-skills   Private Personal Skills (list, get, file, save, enable, disable, delete)
   data-skills Data-skill documentation from the Arrays backend (list, summary, endpoint)
   comments    Playbook comments (create, pin, unpin)
   notification-history  Feed notification delivery history (list-feed)
@@ -210,17 +210,15 @@ Subcommands:
           (--dir <folder> | --skill-md <path> | --files-json '<json array>')
           [--source-type chat|url|upload|agent_link|skillhub_fork]
           [--source-ref <ref>] [--source-hash <hash>] [--expected-rev <n>]
-          [--expected-source-hash <hash>] [--request-id <uuid>]
-          [--overwrite-conflict] [--json]
+          [--request-id <uuid>] [--overwrite-conflict] [--json]
   enable  <ref> [--json]
   disable <ref> [--json]
   delete  <ref> [--json]
-  reindex <ref> [--json]
 
 Notes:
   - <ref> accepts personal:<public_id>, <public_id>, or <slug>.
   - SKILL.md must begin with YAML frontmatter whose name matches --slug.
-  - --dir skips dotfiles (.git, .env*, .DS_Store) and node_modules, and rejects symlinks.
+  - Bundles accept UTF-8 text files only; --dir skips dotfiles and node_modules, and rejects symlinks.
   - Updates require --expected-rev <current_rev> and include the full file bundle.`,
   'company-news': `Usage: alva company-news create --name <name> --tickers <NVDA,AMD> [options]
 
@@ -4833,7 +4831,6 @@ export async function executeParsedCommand(
             source_ref: flags['source-ref'],
             source_content_hash: flags['source-hash'],
             expected_rev: expectedRev,
-            expected_source_hash: flags['expected-source-hash'],
             request_id: flags['request-id'],
             overwrite_conflict: boolFlag(flags['overwrite-conflict']) ?? false,
           });
@@ -4853,11 +4850,6 @@ export async function executeParsedCommand(
           const ref = positionals[0]!;
           const result = await client.personalSkills.delete(ref);
           return asJson ? result : `Deleted ${ref}\n`;
-        }
-        case 'reindex': {
-          const slug = positionals[0]!;
-          const result = await client.personalSkills.reindex(slug);
-          return asJson ? result : formatPersonalSkillSummary(result.skill);
         }
         default:
           throw new CliUsageError(
@@ -5708,20 +5700,26 @@ function parsePositiveIntFlag(
   return parsed;
 }
 
-function encodePersonalSkillFile(
+function decodePersonalSkillTextFile(
   relPath: string,
   buf: Buffer
 ): SavePersonalSkillFileInput {
-  if (!buf.includes(0)) {
-    try {
-      // ignoreBOM: true preserves leading UTF-8 BOM bytes verbatim so content hashes match disk.
-      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-      return { path: relPath, content: decoder.decode(buf) };
-    } catch {
-      // Fall through to base64 for binary / non-UTF-8 content.
-    }
+  if (buf.includes(0)) {
+    throw new CliUsageError(
+      `Personal Skills v1 supports UTF-8 text files only (binary NUL byte in "${relPath}")`,
+      'my-skills save'
+    );
   }
-  return { path: relPath, content_base64: buf.toString('base64') };
+  try {
+    // ignoreBOM: true preserves leading UTF-8 BOM bytes verbatim so content hashes match disk.
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    return { path: relPath, content: decoder.decode(buf) };
+  } catch {
+    throw new CliUsageError(
+      `Personal Skills v1 supports UTF-8 text files only (invalid UTF-8 in "${relPath}")`,
+      'my-skills save'
+    );
+  }
 }
 
 function assertNoSymlinkAncestors(
@@ -5766,7 +5764,7 @@ async function collectPersonalSkillFiles(
     }
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new CliUsageError(
-        '--files-json must be a non-empty JSON array of { path, content | content_base64 }',
+        '--files-json must be a non-empty JSON array of { path, content }',
         'my-skills save'
       );
     }
@@ -5784,18 +5782,15 @@ async function collectPersonalSkillFiles(
         );
       }
       const rec = entry as Record<string, unknown>;
-      const hasContent = typeof rec.content === 'string';
-      const hasB64 = typeof rec.content_base64 === 'string';
-      if (!hasContent && !hasB64) {
+      if (typeof rec.content !== 'string') {
         throw new CliUsageError(
-          `--files-json entry "${rec.path}" must include "content" or "content_base64"`,
+          `--files-json entry "${rec.path}" must include string "content"`,
           'my-skills save'
         );
       }
       items.push({
         path: rec.path as string,
-        ...(hasContent ? { content: rec.content as string } : {}),
-        ...(hasB64 ? { content_base64: rec.content_base64 as string } : {}),
+        content: rec.content,
       });
     }
     return items;
@@ -5833,7 +5828,7 @@ async function collectPersonalSkillFiles(
         if (st.isDirectory()) {
           walk(full);
         } else if (st.isFile()) {
-          collected.push(encodePersonalSkillFile(rel, fs.readFileSync(full)));
+          collected.push(decodePersonalSkillTextFile(rel, fs.readFileSync(full)));
         }
       }
     };
@@ -5857,7 +5852,7 @@ async function collectPersonalSkillFiles(
         'my-skills save'
       );
     }
-    return [encodePersonalSkillFile('SKILL.md', fs.readFileSync(resolved))];
+    return [decodePersonalSkillTextFile('SKILL.md', fs.readFileSync(resolved))];
   }
 
   throw new CliUsageError(

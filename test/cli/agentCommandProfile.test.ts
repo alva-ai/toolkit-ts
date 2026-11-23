@@ -24,7 +24,7 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
-    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(145);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(144);
     for (const leaf of [
       'my-skills list',
       'my-skills get',
@@ -33,7 +33,6 @@ describe('Slim Alva Agent command profile', () => {
       'my-skills enable',
       'my-skills disable',
       'my-skills delete',
-      'my-skills reindex',
     ]) {
       expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(leaf);
     }

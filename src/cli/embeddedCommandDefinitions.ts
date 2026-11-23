@@ -326,7 +326,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'source-ref',
         'source-hash',
         'expected-rev',
-        'expected-source-hash',
         'request-id',
         'files-json',
       ],
@@ -341,10 +340,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       positionals: ['personal skill ref'],
     }),
     route('my-skills delete', 'my-skills delete', {
-      booleans: ['json'],
-      positionals: ['personal skill ref'],
-    }),
-    route('my-skills reindex', 'my-skills reindex', {
       booleans: ['json'],
       positionals: ['personal skill ref'],
     }),

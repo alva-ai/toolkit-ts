@@ -468,7 +468,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'source-ref',
       'source-hash',
       'expected-rev',
-      'expected-source-hash',
       'request-id',
       'dir',
       'skill-md',
@@ -485,10 +484,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     positionals: ['personal skill ref'],
   }),
   command('my-skills delete', {
-    booleans: ['json'],
-    positionals: ['personal skill ref'],
-  }),
-  command('my-skills reindex', {
     booleans: ['json'],
     positionals: ['personal skill ref'],
   }),

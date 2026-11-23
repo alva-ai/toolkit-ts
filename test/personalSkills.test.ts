@@ -257,7 +257,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     expect(requests).toHaveLength(0);
   });
 
-  it('rejects symlinks, skips dotfiles/node_modules, and preserves binary files via content_base64', async () => {
+  it('rejects symlinks and binary files, skips dotfiles/node_modules, and preserves UTF-8 BOM', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'alva-my-skill-sec-'));
     const outside = mkdtempSync(join(tmpdir(), 'alva-outside-'));
     try {
@@ -317,7 +317,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       ).rejects.toThrow(/symbolic link/);
       rmSync(join(dir, 'symdir'));
 
-      // 3. Remove symlink; add .env, node_modules, BOM-prefixed UTF-8 file, and binary asset.
+      // 3. Remove symlink; binary files are rejected in v1.
       rmSync(join(dir, 'leak.md'));
       writeFileSync(
         join(dir, 'SKILL.md'),
@@ -333,6 +333,26 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]);
       writeFileSync(join(dir, 'assets', 'icon.png'), pngBytes);
 
+      await expect(
+        dispatchCli(client, [
+          'my-skills',
+          'save',
+          '--slug',
+          'sec-test',
+          '--display-name',
+          'Sec',
+          '--description',
+          'Desc',
+          '--source-type',
+          'upload',
+          '--dir',
+          dir,
+        ])
+      ).rejects.toThrow(/UTF-8 text files only/);
+      expect(requests).toHaveLength(0);
+
+      // 4. After removing binary file, dotfiles and node_modules are skipped and UTF-8 BOM is preserved.
+      rmSync(join(dir, 'assets'), { recursive: true, force: true });
       nextResponse = {
         status: 201,
         body: {
@@ -345,7 +365,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
             description: 'Desc',
             enabled: true,
             current_rev: 1,
-            content_hash: 'sha256:bin',
+            content_hash: 'sha256:txt',
             source_type: 'upload',
             updated_at: '2026-11-23T12:00:00Z',
           },
@@ -367,12 +387,9 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       ]);
       const payload = JSON.parse(requests[0].body);
       const paths = payload.files.map((f: { path: string }) => f.path).sort();
-      expect(paths).toEqual(['SKILL.md', 'assets/icon.png']);
+      expect(paths).toEqual(['SKILL.md']);
       const skillEntry = payload.files.find((f: { path: string }) => f.path === 'SKILL.md');
       expect(skillEntry.content.startsWith('\ufeff')).toBe(true);
-      const binEntry = payload.files.find((f: { path: string }) => f.path === 'assets/icon.png');
-      expect(binEntry.content).toBeUndefined();
-      expect(Buffer.from(binEntry.content_base64, 'base64')).toEqual(pngBytes);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
