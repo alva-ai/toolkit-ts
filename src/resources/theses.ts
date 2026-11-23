@@ -93,6 +93,8 @@ export interface Thesis {
   archived: boolean;
   version_archived?: boolean;
   note?: string;
+  /** `initial` for a Thesis's first publication, `material` for an Update. */
+  change_kind?: string;
 }
 
 export interface ThesisResponse {
@@ -438,9 +440,7 @@ export class ThesesResource {
       typeof response.next_cursor !== 'string'
     )
       throw invalidResponse('invalid Update list');
-    const versions = response.versions.map(
-      (value) => thesisResponse({ thesis: value }).thesis
-    );
+    const versions = response.versions.map(parseThesisREST);
     if (versions.some((version) => version.id !== thesisID))
       throw invalidResponse('Update list must match requested Thesis');
     return { versions, next_cursor: response.next_cursor };
@@ -852,6 +852,11 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
   return body;
 }
 
+/** One REST thesis object, validated like a single-thesis response. */
+export function parseThesisREST(value: unknown): Thesis {
+  return thesisResponse({ thesis: value }).thesis;
+}
+
 function thesisResponse(response: unknown): ThesisResponse {
   if (!isRecord(response) || !isRecord(response.thesis)) {
     throw invalidResponse('response must contain thesis');
@@ -897,6 +902,8 @@ function thesisResponse(response: unknown): ThesisResponse {
     );
   if (thesis.note !== undefined)
     value.note = responseText(thesis.note, 'thesis.note');
+  if (thesis.change_kind !== undefined)
+    value.change_kind = responseText(thesis.change_kind, 'thesis.change_kind');
 
   if (thesis.entity_stances !== undefined) {
     if (!Array.isArray(thesis.entity_stances))

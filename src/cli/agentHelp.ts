@@ -268,7 +268,7 @@ resolves. add re-adds a ticker the user removed earlier. list takes
 
 Subcommands:
   search --query <text> [--kind user|person] [--limit <1-50>]
-  follows list|follow|unfollow
+  follows list|theses|follow|unfollow
 
 USER is an Alva user; PERSON is a curated person (KOL). follow/unfollow take
 --kind and --id from search or list results. Search is a prefix match on
@@ -276,9 +276,11 @@ name, username, or slug. Follow only an exact match; when several profiles
 match, ask the user which one. Act only when the user asks to follow or
 unfollow.`,
 
-  'people follows': `Usage: alva people follows <list|follow|unfollow> [options]
+  'people follows': `Usage: alva people follows <list|theses|follow|unfollow> [options]
 
 list: [--kind user|person] [--limit <1-50>] [--cursor <pageInfo.endCursor>]
+theses: [--cursor <next_cursor>] Thesis Updates by followed profiles in the
+  order they reached Alva; page while has_more, keep the last next_cursor
 follow|unfollow: --kind user|person --id <profile id>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand>

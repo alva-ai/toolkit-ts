@@ -11,7 +11,27 @@ const commands = {
   search: ['people', 'search'],
   followProfile: ['people', 'follows', 'follow'],
   profiles: ['people', 'follows', 'list'],
+  theses: ['people', 'follows', 'theses'],
 } as const;
+
+// A REST thesis as GET /api/v1/me/following/theses returns it.
+function restThesis(versionID: string, changeKind: string) {
+  return {
+    id: '7',
+    author_version_id: versionID,
+    material_version_id: versionID,
+    title: 'Power caps neocloud growth',
+    body: 'Power caps neocloud growth into 2027.',
+    entity_ids: ['3'],
+    visibility: 'public',
+    closed: false,
+    archived: false,
+    closing_note: '',
+    author_kind: 'public_source',
+    author_ref: 'cathie-wood',
+    change_kind: changeKind,
+  };
+}
 
 const paths = {
   terminal: { dispatch: dispatchCli, ...commands },
@@ -148,6 +168,72 @@ for (const [name, cli] of Object.entries(paths)) {
       expect(request.mock.calls[2][2]?.body).toMatchObject({
         variables: { input: { kind: 'USER', first: 20 } },
       });
+    });
+
+    it('reads followed theses with the largest page and the given cursor', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      const author = {
+        kind: 'person',
+        slug: 'cathie-wood',
+        display_name: 'Cathie Wood',
+      };
+      const request = vi.spyOn(client, '_request').mockResolvedValueOnce({
+        items: [
+          { thesis: restThesis('11', 'initial'), author },
+          { thesis: restThesis('12', 'material'), author: null },
+        ],
+        next_cursor: 'c2',
+        has_more: true,
+      });
+      const page = await cli.dispatch(client, [
+        ...cli.theses,
+        '--cursor',
+        'c1',
+      ]);
+      expect(request).toHaveBeenCalledWith(
+        'GET',
+        '/api/v1/me/following/theses',
+        { query: { first: '100', cursor: 'c1' } }
+      );
+      expect(page).toMatchObject({
+        items: [
+          {
+            thesis: { author_version_id: '11', change_kind: 'initial' },
+            author,
+          },
+          { thesis: { change_kind: 'material' }, author: null },
+        ],
+        next_cursor: 'c2',
+        has_more: true,
+      });
+    });
+
+    it('refuses a following page it cannot resume or read', async () => {
+      const client = new AlvaClient({ apiKey: 'host-key' });
+      vi.spyOn(client, '_request')
+        .mockResolvedValueOnce({ items: [], has_more: false })
+        .mockResolvedValueOnce({
+          items: [{ thesis: { id: '7' }, author: null }],
+          next_cursor: 'c2',
+          has_more: false,
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              thesis: restThesis('11', 'initial'),
+              author: { kind: 'team', display_name: 'x' },
+            },
+          ],
+          next_cursor: 'c2',
+          has_more: false,
+        });
+      for (let i = 0; i < 3; i++) {
+        await expect(
+          cli.dispatch(client, [...cli.theses])
+        ).rejects.toMatchObject({
+          code: 'INVALID_RESPONSE',
+        });
+      }
     });
 
     it('mixes kinds in one atomic write with a per-symbol suffix', async () => {
