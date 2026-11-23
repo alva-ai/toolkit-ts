@@ -263,4 +263,8 @@ export {
   type FollowedProfilesParams,
   type ProfilesPage,
   type ProfileFollowResult,
+  type FollowingThesesParams,
+  type FollowingThesisAuthor,
+  type FollowingThesisItem,
+  type FollowingThesesPage,
 } from './resources/follows.js';

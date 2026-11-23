@@ -322,6 +322,9 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('people follows list', 'people follows list', {
       values: ['kind', 'limit', 'cursor'],
     }),
+    route('people follows theses', 'people follows theses', {
+      values: ['cursor'],
+    }),
     route('people follows follow', 'people follows follow', {
       values: ['kind', 'id'],
     }),

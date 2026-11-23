@@ -1478,6 +1478,7 @@ person. These change the same Following list the user sees in the Alva App.
 Subcommands:
   search                    Prefix match on name, username, slug, or alias
   follows list              List the profiles the caller follows
+  follows theses            Thesis Updates by followed profiles, oldest arrival first
   follows follow            Follow one profile (idempotent)
   follows unfollow          Unfollow one profile (idempotent)
 
@@ -1487,12 +1488,15 @@ Flags:
                             required, from a search or list result
   --id <id>                 follow/unfollow: profile id (required)
   --limit <1-50>            search/list: page size
-  --cursor <endCursor>      list: pageInfo.endCursor of the previous page
+  --cursor <endCursor>      list: pageInfo.endCursor of the previous page;
+                            theses: next_cursor of the previous read (omitted:
+                            the last 24 hours)
 
 Examples:
   alva people search --query "cathie wood" --kind person
   alva people follows follow --kind person --id 42
-  alva people follows list`,
+  alva people follows list
+  alva people follows theses --cursor <next_cursor>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
@@ -2224,6 +2228,14 @@ function dispatchPeople(
         ),
         first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
         after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
+      });
+    case 'follows theses':
+      // Agents page with next_cursor; the largest page keeps calls few.
+      return client.follows.theses({
+        cursor: usageChecked(command, () =>
+          optionalCursorFlag(flags['cursor'])
+        ),
+        first: 100,
       });
     case 'follows follow':
     case 'follows unfollow': {
