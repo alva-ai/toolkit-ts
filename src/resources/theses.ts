@@ -187,7 +187,43 @@ export interface CreateThesisParams {
   visibility?: 'public' | 'private';
   /** Thesis return switch; omitted keeps the default (on). */
   track_return?: boolean;
+  /** Which Signals the Thesis shows; omitted shows every Signal. */
+  signal_preferences?: ThesisSignalPreferences;
 }
+
+/** What a Thesis Signal is about. */
+export type ThesisSignalKind =
+  | 'fundamentals'
+  | 'macro'
+  | 'technicals'
+  | 'commentary';
+
+/** The least important Signals a Thesis shows; notable means notable and major. */
+export type ThesisSignalMinImportance = 'all' | 'notable' | 'major';
+
+/**
+ * Which Signals a Thesis shows to every reader, chosen by its author. Signals
+ * without a label always show.
+ */
+export interface ThesisSignalPreferences {
+  kinds: ThesisSignalKind[];
+  min_importance: ThesisSignalMinImportance;
+}
+
+export interface ThesisSignalPreferencesResponse {
+  /** The Thesis read or written; null for the caller's last choice. */
+  thesis_id: ThesisID | null;
+  preferences: ThesisSignalPreferences;
+}
+
+export const THESIS_SIGNAL_KINDS: readonly ThesisSignalKind[] = [
+  'fundamentals',
+  'macro',
+  'technicals',
+  'commentary',
+];
+export const THESIS_SIGNAL_MIN_IMPORTANCES: readonly ThesisSignalMinImportance[] =
+  ['all', 'notable', 'major'];
 
 export interface UpdateThesisParams {
   /** Full media replacement; pass current medias for a text-only update. */
@@ -597,6 +633,52 @@ export class ThesesResource {
     };
   }
 
+  /**
+   * Reads which Signals one of the caller's Theses shows: its setting, or every
+   * kind and `all` when it has none. Without an id, reads the setting the caller
+   * last saved, which prefills a new Thesis. Only the Thesis's author can read it.
+   */
+  async getSignalPreferences(
+    id?: ThesisID
+  ): Promise<ThesisSignalPreferencesResponse> {
+    this.client._requireAuth();
+    if (id === undefined) {
+      return signalPreferencesResponse(
+        await this.client._request('GET', '/api/v1/theses/signal-preferences'),
+        null
+      );
+    }
+    const thesisID = requireID(id, 'id');
+    return signalPreferencesResponse(
+      await this.client._request(
+        'GET',
+        `/api/v1/theses/${thesisID}/signal-preferences`
+      ),
+      thesisID
+    );
+  }
+
+  /**
+   * Replaces which Signals one of the caller's Theses shows, for every reader,
+   * and records it as the caller's last choice. Author only.
+   */
+  async setSignalPreferences(
+    id: ThesisID,
+    preferences: ThesisSignalPreferences
+  ): Promise<ThesisSignalPreferencesResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const input = requireSignalPreferences(preferences);
+    return signalPreferencesResponse(
+      await this.client._request(
+        'PUT',
+        `/api/v1/theses/${thesisID}/signal-preferences`,
+        { body: { signal_preferences: input } }
+      ),
+      thesisID
+    );
+  }
+
   async setSignalEnabled(
     id: ThesisID,
     enabled: boolean
@@ -718,6 +800,10 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     body.tickers = requireTickers(params.tickers);
   if (params.track_return !== undefined)
     body.track_return = requireTrackReturn(params.track_return);
+  if (params.signal_preferences !== undefined)
+    body.signal_preferences = requireSignalPreferences(
+      params.signal_preferences
+    );
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
       params.entity_stances,
@@ -725,6 +811,58 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     );
   }
   return body;
+}
+
+/** A whole setting: at least one known kind, deduplicated, and a known minimum. */
+function requireSignalPreferences(value: unknown): ThesisSignalPreferences {
+  if (!isRecord(value) || !Array.isArray(value.kinds))
+    throw invalidArgument(
+      'signal_preferences must have kinds and min_importance'
+    );
+  const kinds = [...new Set(value.kinds)];
+  if (
+    kinds.length === 0 ||
+    !kinds.every((kind) =>
+      THESIS_SIGNAL_KINDS.includes(kind as ThesisSignalKind)
+    )
+  )
+    throw invalidArgument(
+      `signal kinds must be one or more of ${THESIS_SIGNAL_KINDS.join(', ')}`
+    );
+  if (
+    !THESIS_SIGNAL_MIN_IMPORTANCES.includes(
+      value.min_importance as ThesisSignalMinImportance
+    )
+  )
+    throw invalidArgument(
+      `min_importance must be ${THESIS_SIGNAL_MIN_IMPORTANCES.join(', ')}`
+    );
+  return {
+    kinds: kinds as ThesisSignalKind[],
+    min_importance: value.min_importance as ThesisSignalMinImportance,
+  };
+}
+
+/**
+ * The gateway's `{thesis_id, signal_preferences}`, checked against the Thesis
+ * asked for (null for the caller's last choice).
+ */
+function signalPreferencesResponse(
+  value: unknown,
+  thesisID: string | null
+): ThesisSignalPreferencesResponse {
+  if (!isRecord(value) || value.thesis_id !== thesisID)
+    throw invalidResponse(
+      'Signal setting response must name the requested thesis'
+    );
+  try {
+    return {
+      thesis_id: thesisID,
+      preferences: requireSignalPreferences(value.signal_preferences),
+    };
+  } catch {
+    throw invalidResponse('response contains an unknown Signal setting');
+  }
 }
 
 const ENTITY_STANCES: readonly string[] = [

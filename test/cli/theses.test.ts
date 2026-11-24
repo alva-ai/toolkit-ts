@@ -754,6 +754,7 @@ describe('thesis embedded dispatch', () => {
     expect(result.text).toContain('returnPreview.directions');
     expect(result.text).toContain('--no-discovery');
     expect(result.text).toContain('--track-return false');
+    expect(result.text).toContain('signal-preferences set --id <id>');
     expect(result.text).toContain('"stance":"bearish"');
     expect(result.text).toContain('never creates request IDs or retries');
     expect(result.text).toContain('Create defaults --visibility to public');
@@ -947,6 +948,101 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
           'off',
         ])
       ).rejects.toBeInstanceOf(CliUsageError);
+    });
+
+    it(`${name}: create passes the Signal setting, filling a missing half`, async () => {
+      const value = client();
+      const calls = mockLifecycle(value);
+      const create = (...flags: string[]) =>
+        run(value, [
+          'thesis',
+          'create',
+          '--request-id',
+          REQUEST_ID,
+          '--body',
+          'body',
+          ...flags,
+        ]);
+      await create();
+      expect(calls.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ signal_preferences: undefined })
+      );
+      await create('--signal-kinds', 'macro, fundamentals');
+      expect(calls.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          signal_preferences: {
+            kinds: ['macro', 'fundamentals'],
+            min_importance: 'all',
+          },
+        })
+      );
+      await create('--signal-min-importance', 'major');
+      expect(calls.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          signal_preferences: {
+            kinds: ['fundamentals', 'macro', 'technicals', 'commentary'],
+            min_importance: 'major',
+          },
+        })
+      );
+      await expect(create('--signal-kinds', 'macro,')).rejects.toBeInstanceOf(
+        CliUsageError
+      );
+    });
+
+    it(`${name}: signal-preferences reads and changes only what is given`, async () => {
+      const value = client();
+      const get = vi
+        .spyOn(value.theses, 'getSignalPreferences')
+        .mockResolvedValue({
+          thesis_id: '9451',
+          preferences: { kinds: ['macro'], min_importance: 'notable' },
+        });
+      const set = vi
+        .spyOn(value.theses, 'setSignalPreferences')
+        .mockResolvedValue({
+          thesis_id: '9451',
+          preferences: { kinds: ['macro'], min_importance: 'major' },
+        });
+      await run(value, ['thesis', 'signal-preferences', 'get']);
+      expect(get).toHaveBeenLastCalledWith(undefined);
+      await run(value, ['thesis', 'signal-preferences', 'get', '--id', '9451']);
+      expect(get).toHaveBeenLastCalledWith('9451');
+
+      await run(value, [
+        'thesis',
+        'signal-preferences',
+        'set',
+        '--id',
+        '9451',
+        '--min-importance',
+        'major',
+      ]);
+      expect(set).toHaveBeenLastCalledWith('9451', {
+        kinds: ['macro'],
+        min_importance: 'major',
+      });
+      await run(value, [
+        'thesis',
+        'signal-preferences',
+        'set',
+        '--id',
+        '9451',
+        '--kinds',
+        'technicals,commentary',
+      ]);
+      expect(set).toHaveBeenLastCalledWith('9451', {
+        kinds: ['technicals', 'commentary'],
+        min_importance: 'notable',
+      });
+      const before = set.mock.calls.length;
+      await expect(
+        run(value, ['thesis', 'signal-preferences', 'set', '--id', '9451'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      await expect(
+        run(value, ['thesis', 'signal-preferences', 'set', '--kinds', 'macro'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(set.mock.calls.length).toBe(before);
     });
 
     it(`${name}: return reads the Thesis return`, async () => {
