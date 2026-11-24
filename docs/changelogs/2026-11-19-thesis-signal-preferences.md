@@ -17,9 +17,9 @@ A Thesis's author chooses which Signals it shows to every reader: kinds (`fundam
   setting; kinds deduplicated, values validated before any request.
 - `create` takes `signal_preferences`, sent over REST as `signal_preferences`.
 - CLI, terminal and embedded (same paths): `thesis create --signal-kinds <kind,kind>
-  --signal-min-importance all|notable|major` (omit both: every Signal; with one, the other keeps
+--signal-min-importance all|notable|major` (omit both: every Signal; with one, the other keeps
   its default); `thesis signal-preferences get [--id]`; `thesis signal-preferences set --id
-  [--kinds] [--min-importance]`, which reads the current setting and changes only what is given.
+[--kinds] [--min-importance]`, which reads the current setting and changes only what is given.
   Help text in `dispatch.ts` and `agentHelp.ts`.
 
 ## Deviations from the primary plan (not material)
