@@ -159,7 +159,11 @@ the Thesis return switch (askSwitch) and whether the draft would be rejected
 (lastLegRemoved). Publish with create/update --entity-ids <id,id> and
 --entity-stances <json> equal to returnPreview.directions, lowercased:
 --entity-stances '[{"entity_id":"745337","stance":"bearish"}]'. Valid stances:
-unknown, bullish, bearish, none. --track-return false turns the Thesis return
+unknown, bullish, bearish, none. An optional "weight" (a fraction, 0.4 is 40%,
+at most four decimals) sets that long or short's share and the rest is cash:
+give one to every bullish or bearish entity or to none; without weights the
+shares follow the default rules and what the body says, and get shows weight
+only on an Update published with weights. --track-return false turns the Thesis return
 off for good; it is accepted only while the switch is UNSET.
 create --signal-kinds <kind,kind> --signal-min-importance all|notable|major
 limits which Signals the new Thesis shows (omit both: every Signal). Kinds:
@@ -169,7 +173,8 @@ signal-preferences get [--id <id>] reads which Signals your Thesis shows
 [--kinds <kind,kind>] [--min-importance all|notable|major] changes only what is
 given, for every reader of that Thesis. Author only.
 return --id <id> [--detail] reads the Thesis return (fractions; --detail adds
-each Update's positions).
+each Update's positions with their weight and the allocation: the current
+target shares and cash, not drifted with prices).
 watchpoints --id <thesis-id> lists every watchpoint of the Thesis (the same id
 as get and signals). A watchpoint is one thing the Thesis depends on, or that
 would show it right or wrong; Alva's Signal research checks each new source

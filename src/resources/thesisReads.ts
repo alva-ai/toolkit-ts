@@ -388,6 +388,27 @@ export interface ThesisPositionReturn {
   end: 'PENDING' | 'NEXT_UPDATE' | 'LATEST';
   positionReturn: number;
   currency: string;
+  /** The Update's target share of this position; equal shares when it states none. */
+  weight: number;
+}
+
+/** One long or short of a target portfolio. */
+export interface ThesisHolding {
+  entityId: string;
+  symbol: string;
+  direction: 'BULLISH' | 'BEARISH';
+  /** Target share as a fraction; equal shares when the Update states none. */
+  weight: number;
+}
+
+/**
+ * The current target portfolio: the shares the latest Update set, not drifted
+ * with prices. Holdings and cash sum to 1; cash is 1 with no direction or
+ * while archived.
+ */
+export interface ThesisAllocation {
+  holdings: ThesisHolding[];
+  cash: number;
 }
 
 /** One Update on the return chart. */
@@ -408,6 +429,8 @@ export interface ThesisReturnValue {
   stale: boolean;
   computedAtMs: number;
   updates: ThesisUpdateReturn[];
+  /** The current target portfolio, with detail; null on card reads. */
+  allocation: ThesisAllocation | null;
 }
 
 export interface ThesisReturnResult {
@@ -424,7 +447,8 @@ const RETURN_QUERY = `query ToolkitThesisReturn($id: ID!, $detail: Boolean!) {
     thesisReturn(detail: $detail) {
       live value firstFillAtMs pricedAtMs stale computedAtMs
       updates { authorVersionId publishedAtMs startValue updateReturn
-        positions { entityId symbol direction startPrice startAtMs endPrice endAtMs end positionReturn currency } }
+        positions { entityId symbol direction startPrice startAtMs endPrice endAtMs end positionReturn currency weight } }
+      allocation { holdings { entityId symbol direction weight } cash }
     }
   } } } }
 }`;
@@ -534,7 +558,8 @@ function validThesisReturn(value: unknown): boolean {
     typeof value.value !== 'number' ||
     typeof value.stale !== 'boolean' ||
     typeof value.computedAtMs !== 'number' ||
-    !Array.isArray(value.updates)
+    !Array.isArray(value.updates) ||
+    (value.allocation !== null && !validAllocation(value.allocation))
   )
     return false;
   return value.updates.every(
@@ -552,8 +577,25 @@ function validThesisReturn(value: unknown): boolean {
           ['PENDING', 'NEXT_UPDATE', 'LATEST'].includes(
             position.end as string
           ) &&
-          typeof position.positionReturn === 'number'
+          typeof position.positionReturn === 'number' &&
+          typeof position.weight === 'number'
       )
+  );
+}
+
+function validAllocation(value: unknown): boolean {
+  return (
+    record(value) &&
+    typeof value.cash === 'number' &&
+    Array.isArray(value.holdings) &&
+    value.holdings.every(
+      (holding) =>
+        record(holding) &&
+        nonempty(holding.entityId) &&
+        nonempty(holding.symbol) &&
+        ['BULLISH', 'BEARISH'].includes(holding.direction as string) &&
+        typeof holding.weight === 'number'
+    )
   );
 }
 
