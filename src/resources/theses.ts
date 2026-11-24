@@ -187,7 +187,43 @@ export interface CreateThesisParams {
   visibility?: 'public' | 'private';
   /** Thesis return switch; omitted keeps the default (on). */
   track_return?: boolean;
+  /** Which Signals the Thesis shows; omitted shows every Signal. */
+  signal_preferences?: ThesisSignalPreferences;
 }
+
+/** What a Thesis Signal is about. */
+export type ThesisSignalKind =
+  | 'fundamentals'
+  | 'macro'
+  | 'technicals'
+  | 'commentary';
+
+/** The least important Signals a Thesis shows; notable means notable and major. */
+export type ThesisSignalMinImportance = 'all' | 'notable' | 'major';
+
+/**
+ * Which Signals a Thesis shows to every reader, chosen by its author. Signals
+ * without a label always show.
+ */
+export interface ThesisSignalPreferences {
+  kinds: ThesisSignalKind[];
+  min_importance: ThesisSignalMinImportance;
+}
+
+export interface ThesisSignalPreferencesResponse {
+  /** The Thesis read or written; null for the caller's last choice. */
+  thesis_id: ThesisID | null;
+  preferences: ThesisSignalPreferences;
+}
+
+export const THESIS_SIGNAL_KINDS: readonly ThesisSignalKind[] = [
+  'fundamentals',
+  'macro',
+  'technicals',
+  'commentary',
+];
+export const THESIS_SIGNAL_MIN_IMPORTANCES: readonly ThesisSignalMinImportance[] =
+  ['all', 'notable', 'major'];
 
 export interface UpdateThesisParams {
   /** Full media replacement; pass current medias for a text-only update. */
@@ -255,6 +291,20 @@ const SET_THESIS_SIGNAL_ENABLED = `mutation SetThesisSignalEnabled($input: SetTh
   setThesisSignalEnabled(input: $input) {
     publication { playbookId authorVersionId archived researchPaused }
   }
+}`;
+
+const SIGNAL_PREFERENCES_FIELDS = 'kinds minImportance';
+
+const THESIS_SIGNAL_PREFERENCES = `query ThesisSignalPreferences($id: ID!) {
+  node(id: $id) { ... on Playbook { signalPreferences { ${SIGNAL_PREFERENCES_FIELDS} } } }
+}`;
+
+const LAST_THESIS_SIGNAL_PREFERENCES = `query LastThesisSignalPreferences {
+  viewer { account { lastThesisSignalPreferences { ${SIGNAL_PREFERENCES_FIELDS} } } }
+}`;
+
+const SET_THESIS_SIGNAL_PREFERENCES = `mutation SetThesisSignalPreferences($input: SetThesisSignalPreferencesInput!) {
+  setThesisSignalPreferences(input: $input) { preferences { ${SIGNAL_PREFERENCES_FIELDS} } }
 }`;
 
 const MAX_SIGNED_INT64 = 9_223_372_036_854_775_807n;
@@ -597,6 +647,84 @@ export class ThesesResource {
     };
   }
 
+  /**
+   * Reads which Signals one of the caller's Theses shows: its setting, or every
+   * kind and `all` when it has none. Without an id, reads the setting the caller
+   * last saved, which prefills a new Thesis. Only the Thesis's author can read it.
+   */
+  async getSignalPreferences(
+    id?: ThesisID
+  ): Promise<ThesisSignalPreferencesResponse> {
+    this.client._requireAuth();
+    if (id === undefined) {
+      const data = await thesisGraphql(
+        this.client,
+        LAST_THESIS_SIGNAL_PREFERENCES,
+        {}
+      );
+      const account = isRecord(data.viewer) ? data.viewer.account : undefined;
+      if (!isRecord(account))
+        throw invalidResponse('response must contain viewer.account');
+      return {
+        thesis_id: null,
+        preferences: responseSignalPreferences(
+          account.lastThesisSignalPreferences
+        ),
+      };
+    }
+    const thesisID = requireID(id, 'id');
+    const data = await thesisGraphql(this.client, THESIS_SIGNAL_PREFERENCES, {
+      id: `Playbook:${thesisID}`,
+    });
+    const preferences = isRecord(data.node)
+      ? data.node.signalPreferences
+      : undefined;
+    if (preferences === null || preferences === undefined) {
+      throw new AlvaError(
+        'PERMISSION_DENIED',
+        "only the Thesis's author can read its Signal setting",
+        403
+      );
+    }
+    return {
+      thesis_id: thesisID,
+      preferences: responseSignalPreferences(preferences),
+    };
+  }
+
+  /**
+   * Replaces which Signals one of the caller's Theses shows, for every reader,
+   * and records it as the caller's last choice. Author only.
+   */
+  async setSignalPreferences(
+    id: ThesisID,
+    preferences: ThesisSignalPreferences
+  ): Promise<ThesisSignalPreferencesResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const input = requireSignalPreferences(preferences);
+    const data = await thesisGraphql(
+      this.client,
+      SET_THESIS_SIGNAL_PREFERENCES,
+      {
+        input: {
+          thesisId: thesisID,
+          preferences: {
+            kinds: input.kinds.map((kind) => kind.toUpperCase()),
+            minImportance: input.min_importance.toUpperCase(),
+          },
+        },
+      }
+    );
+    const result = data.setThesisSignalPreferences;
+    if (!isRecord(result))
+      throw invalidResponse('response must contain setThesisSignalPreferences');
+    return {
+      thesis_id: thesisID,
+      preferences: responseSignalPreferences(result.preferences),
+    };
+  }
+
   async setSignalEnabled(
     id: ThesisID,
     enabled: boolean
@@ -718,6 +846,10 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     body.tickers = requireTickers(params.tickers);
   if (params.track_return !== undefined)
     body.track_return = requireTrackReturn(params.track_return);
+  if (params.signal_preferences !== undefined)
+    body.signal_preferences = requireSignalPreferences(
+      params.signal_preferences
+    );
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
       params.entity_stances,
@@ -725,6 +857,56 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     );
   }
   return body;
+}
+
+/** A whole setting: at least one known kind, deduplicated, and a known minimum. */
+function requireSignalPreferences(value: unknown): ThesisSignalPreferences {
+  if (!isRecord(value) || !Array.isArray(value.kinds))
+    throw invalidArgument(
+      'signal_preferences must have kinds and min_importance'
+    );
+  const kinds = [...new Set(value.kinds)];
+  if (
+    kinds.length === 0 ||
+    !kinds.every((kind) =>
+      THESIS_SIGNAL_KINDS.includes(kind as ThesisSignalKind)
+    )
+  )
+    throw invalidArgument(
+      `signal kinds must be one or more of ${THESIS_SIGNAL_KINDS.join(', ')}`
+    );
+  if (
+    !THESIS_SIGNAL_MIN_IMPORTANCES.includes(
+      value.min_importance as ThesisSignalMinImportance
+    )
+  )
+    throw invalidArgument(
+      `min_importance must be ${THESIS_SIGNAL_MIN_IMPORTANCES.join(', ')}`
+    );
+  return {
+    kinds: kinds as ThesisSignalKind[],
+    min_importance: value.min_importance as ThesisSignalMinImportance,
+  };
+}
+
+/** The gateway's setting (uppercase enums) as the toolkit's (lowercase). */
+function responseSignalPreferences(value: unknown): ThesisSignalPreferences {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.kinds) ||
+    typeof value.minImportance !== 'string'
+  )
+    throw invalidResponse('response must contain a Signal setting');
+  try {
+    return requireSignalPreferences({
+      kinds: value.kinds.map((kind) =>
+        typeof kind === 'string' ? kind.toLowerCase() : kind
+      ),
+      min_importance: value.minImportance.toLowerCase(),
+    });
+  } catch {
+    throw invalidResponse('response contains an unknown Signal setting');
+  }
 }
 
 const ENTITY_STANCES: readonly string[] = [

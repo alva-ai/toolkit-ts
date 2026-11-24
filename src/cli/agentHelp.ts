@@ -135,7 +135,7 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, set-visibility, archive, star, unstar, set-signal-enabled, update, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, update, rewrite.
 
 list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
@@ -161,6 +161,13 @@ the Thesis return switch (askSwitch) and whether the draft would be rejected
 --entity-stances '[{"entity_id":"745337","stance":"bearish"}]'. Valid stances:
 unknown, bullish, bearish, none. --track-return false turns the Thesis return
 off for good; it is accepted only while the switch is UNSET.
+create --signal-kinds <kind,kind> --signal-min-importance all|notable|major
+limits which Signals the new Thesis shows (omit both: every Signal). Kinds:
+fundamentals, macro, technicals, commentary.
+signal-preferences get [--id <id>] reads which Signals your Thesis shows
+(without --id: your last saved setting); signal-preferences set --id <id>
+[--kinds <kind,kind>] [--min-importance all|notable|major] changes only what is
+given, for every reader of that Thesis. Author only.
 return --id <id> [--detail] reads the Thesis return (fractions; --detail adds
 each Update's positions).
 watchpoints --id <thesis-id> lists every watchpoint of the Thesis (the same id
