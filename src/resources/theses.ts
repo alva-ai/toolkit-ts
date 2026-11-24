@@ -293,20 +293,6 @@ const SET_THESIS_SIGNAL_ENABLED = `mutation SetThesisSignalEnabled($input: SetTh
   }
 }`;
 
-const SIGNAL_PREFERENCES_FIELDS = 'kinds minImportance';
-
-const THESIS_SIGNAL_PREFERENCES = `query ThesisSignalPreferences($id: ID!) {
-  node(id: $id) { ... on Playbook { signalPreferences { ${SIGNAL_PREFERENCES_FIELDS} } } }
-}`;
-
-const LAST_THESIS_SIGNAL_PREFERENCES = `query LastThesisSignalPreferences {
-  viewer { account { lastThesisSignalPreferences { ${SIGNAL_PREFERENCES_FIELDS} } } }
-}`;
-
-const SET_THESIS_SIGNAL_PREFERENCES = `mutation SetThesisSignalPreferences($input: SetThesisSignalPreferencesInput!) {
-  setThesisSignalPreferences(input: $input) { preferences { ${SIGNAL_PREFERENCES_FIELDS} } }
-}`;
-
 const MAX_SIGNED_INT64 = 9_223_372_036_854_775_807n;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UNPAIRED_SURROGATE =
@@ -657,39 +643,19 @@ export class ThesesResource {
   ): Promise<ThesisSignalPreferencesResponse> {
     this.client._requireAuth();
     if (id === undefined) {
-      const data = await thesisGraphql(
-        this.client,
-        LAST_THESIS_SIGNAL_PREFERENCES,
-        {}
+      return signalPreferencesResponse(
+        await this.client._request('GET', '/api/v1/theses/signal-preferences'),
+        null
       );
-      const account = isRecord(data.viewer) ? data.viewer.account : undefined;
-      if (!isRecord(account))
-        throw invalidResponse('response must contain viewer.account');
-      return {
-        thesis_id: null,
-        preferences: responseSignalPreferences(
-          account.lastThesisSignalPreferences
-        ),
-      };
     }
     const thesisID = requireID(id, 'id');
-    const data = await thesisGraphql(this.client, THESIS_SIGNAL_PREFERENCES, {
-      id: `Playbook:${thesisID}`,
-    });
-    const preferences = isRecord(data.node)
-      ? data.node.signalPreferences
-      : undefined;
-    if (preferences === null || preferences === undefined) {
-      throw new AlvaError(
-        'PERMISSION_DENIED',
-        "only the Thesis's author can read its Signal setting",
-        403
-      );
-    }
-    return {
-      thesis_id: thesisID,
-      preferences: responseSignalPreferences(preferences),
-    };
+    return signalPreferencesResponse(
+      await this.client._request(
+        'GET',
+        `/api/v1/theses/${thesisID}/signal-preferences`
+      ),
+      thesisID
+    );
   }
 
   /**
@@ -703,26 +669,14 @@ export class ThesesResource {
     this.client._requireAuth();
     const thesisID = requireID(id, 'id');
     const input = requireSignalPreferences(preferences);
-    const data = await thesisGraphql(
-      this.client,
-      SET_THESIS_SIGNAL_PREFERENCES,
-      {
-        input: {
-          thesisId: thesisID,
-          preferences: {
-            kinds: input.kinds.map((kind) => kind.toUpperCase()),
-            minImportance: input.min_importance.toUpperCase(),
-          },
-        },
-      }
+    return signalPreferencesResponse(
+      await this.client._request(
+        'PUT',
+        `/api/v1/theses/${thesisID}/signal-preferences`,
+        { body: { signal_preferences: input } }
+      ),
+      thesisID
     );
-    const result = data.setThesisSignalPreferences;
-    if (!isRecord(result))
-      throw invalidResponse('response must contain setThesisSignalPreferences');
-    return {
-      thesis_id: thesisID,
-      preferences: responseSignalPreferences(result.preferences),
-    };
   }
 
   async setSignalEnabled(
@@ -889,21 +843,23 @@ function requireSignalPreferences(value: unknown): ThesisSignalPreferences {
   };
 }
 
-/** The gateway's setting (uppercase enums) as the toolkit's (lowercase). */
-function responseSignalPreferences(value: unknown): ThesisSignalPreferences {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value.kinds) ||
-    typeof value.minImportance !== 'string'
-  )
-    throw invalidResponse('response must contain a Signal setting');
+/**
+ * The gateway's `{thesis_id, signal_preferences}`, checked against the Thesis
+ * asked for (null for the caller's last choice).
+ */
+function signalPreferencesResponse(
+  value: unknown,
+  thesisID: string | null
+): ThesisSignalPreferencesResponse {
+  if (!isRecord(value) || value.thesis_id !== thesisID)
+    throw invalidResponse(
+      'Signal setting response must name the requested thesis'
+    );
   try {
-    return requireSignalPreferences({
-      kinds: value.kinds.map((kind) =>
-        typeof kind === 'string' ? kind.toLowerCase() : kind
-      ),
-      min_importance: value.minImportance.toLowerCase(),
-    });
+    return {
+      thesis_id: thesisID,
+      preferences: requireSignalPreferences(value.signal_preferences),
+    };
   } catch {
     throw invalidResponse('response contains an unknown Signal setting');
   }
