@@ -67,17 +67,35 @@ function validateRef(ref: string): string {
   return trimmed;
 }
 
+const MAX_FILE_PATH_BYTES = 255;
+const MAX_PATH_SEGMENT_BYTES = 128;
+const DISALLOWED_PATH_CHARS =
+  /[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069<>\\]/;
+
+function utf8ByteLength(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
 function validateRelPath(p: string): string {
   const trimmed = p.trim();
   if (
     !trimmed ||
+    utf8ByteLength(trimmed) > MAX_FILE_PATH_BYTES ||
     trimmed.startsWith('/') ||
-    trimmed.includes('\\') ||
-    trimmed.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')
+    DISALLOWED_PATH_CHARS.test(trimmed) ||
+    trimmed
+      .split('/')
+      .some(
+        (seg) =>
+          seg === '' ||
+          seg === '.' ||
+          seg === '..' ||
+          utf8ByteLength(seg) > MAX_PATH_SEGMENT_BYTES
+      )
   ) {
     throw new AlvaError(
       'INVALID_ARGUMENT',
-      `invalid relative personal skill file path: "${p}"`,
+      'invalid relative personal skill file path',
       0
     );
   }

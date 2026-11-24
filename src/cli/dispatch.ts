@@ -205,7 +205,7 @@ Subcommands:
   file    <ref> <path> [--rev <n>] [--json]
   save    --slug <slug> --display-name <name> --description <desc>
           (--dir <folder> | --skill-md <path> | --files-json '<json array>')
-          [--expected-rev <n>] [--json]
+          [--public-id <id>] [--expected-rev <n>] [--json]
   enable  <ref> [--json]
   disable <ref> [--json]
   delete  <ref> [--json]
@@ -5708,47 +5708,47 @@ function decodePersonalSkillTextFile(
   }
 }
 
-function assertNoSymlinkAncestors(
+function assertNotSymlinkTarget(
   fs: typeof import('node:fs'),
-  path: typeof import('node:path'),
-  targetPath: string,
+  resolvedPath: string,
+  rawPath: string,
   flagName: string
-): void {
-  const resolved = path.resolve(targetPath);
-  const darwinSystemSymlinks = new Set(['/tmp', '/var', '/etc']);
-  let cur = resolved;
-  while (true) {
-    const isSystemLink =
-      process.platform === 'darwin' && darwinSystemSymlinks.has(cur);
-    if (!isSystemLink) {
-      let st: import('node:fs').Stats;
-      try {
-        st = fs.lstatSync(cur);
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-          throw new CliUsageError(
-            `${flagName} path does not exist: ${targetPath}`,
-            'my-skills save'
-          );
-        }
-        throw err;
-      }
-      if (st.isSymbolicLink()) {
-        throw new CliUsageError(
-          `${flagName} cannot traverse or target a symbolic link: ${cur}`,
-          'my-skills save'
-        );
-      }
+): import('node:fs').Stats {
+  let st: import('node:fs').Stats;
+  try {
+    st = fs.lstatSync(resolvedPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      throw new CliUsageError(
+        `${flagName} path does not exist: ${rawPath}`,
+        'my-skills save'
+      );
     }
-    const parent = path.dirname(cur);
-    if (parent === cur) break;
-    cur = parent;
+    throw err;
   }
+  if (st.isSymbolicLink()) {
+    throw new CliUsageError(
+      `${flagName} cannot target a symbolic link: ${resolvedPath}`,
+      'my-skills save'
+    );
+  }
+  return st;
 }
 
 async function collectPersonalSkillFiles(
   flags: Record<string, string>
 ): Promise<SavePersonalSkillFileInput[]> {
+  const sourceCount =
+    (flags['files-json'] ? 1 : 0) +
+    (flags['dir'] ? 1 : 0) +
+    (flags['skill-md'] ? 1 : 0);
+  if (sourceCount > 1) {
+    throw new CliUsageError(
+      'Specify only one of --dir, --skill-md, or --files-json',
+      'my-skills save'
+    );
+  }
+
   if (flags['files-json']) {
     let parsed: unknown;
     try {
@@ -5798,8 +5798,7 @@ async function collectPersonalSkillFiles(
 
   if (flags['dir']) {
     const root = path.resolve(flags['dir']);
-    assertNoSymlinkAncestors(fs, path, root, '--dir');
-    const rootStat = fs.lstatSync(root);
+    const rootStat = assertNotSymlinkTarget(fs, root, flags['dir'], '--dir');
     if (!rootStat.isDirectory()) {
       throw new CliUsageError(
         `--dir must be a directory: ${flags['dir']}`,
@@ -5843,8 +5842,12 @@ async function collectPersonalSkillFiles(
 
   if (flags['skill-md']) {
     const resolved = path.resolve(flags['skill-md']);
-    assertNoSymlinkAncestors(fs, path, resolved, '--skill-md');
-    const st = fs.lstatSync(resolved);
+    const st = assertNotSymlinkTarget(
+      fs,
+      resolved,
+      flags['skill-md'],
+      '--skill-md'
+    );
     if (!st.isFile()) {
       throw new CliUsageError(
         `--skill-md must be a regular file: ${flags['skill-md']}`,

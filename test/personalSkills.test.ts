@@ -114,11 +114,20 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     );
   });
 
-  it('rejects path traversal locally before sending request', async () => {
+  it('rejects path traversal, control/bidi chars, and oversized paths locally before sending request', async () => {
     const client = new AlvaClient({ baseUrl, apiKey: 'alva_test' });
-    await expect(
-      client.personalSkills.file('earnings-review', '../memory/user.md')
-    ).rejects.toThrow(/invalid relative personal skill file path/i);
+    for (const badPath of [
+      '../memory/user.md',
+      'references/a\nb.md',
+      'references/a\u202eb.md',
+      'references/<evil>.md',
+      `references/${'a'.repeat(129)}.md`,
+      `${'a/'.repeat(130)}b.md`,
+    ]) {
+      await expect(
+        client.personalSkills.file('earnings-review', badPath)
+      ).rejects.toThrow(/invalid relative personal skill file path/i);
+    }
     expect(requests).toHaveLength(0);
   });
 
@@ -236,6 +245,24 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     expect(help._help).toBe(true);
     expect(help.text).toContain('alva my-skills');
     expect(help.text).toContain('--expected-rev');
+    expect(help.text).toContain('--public-id');
+
+    await expect(
+      dispatchCli(client, [
+        'my-skills',
+        'save',
+        '--slug',
+        'earnings-review',
+        '--display-name',
+        'Test',
+        '--description',
+        'Desc',
+        '--dir',
+        '/tmp',
+        '--files-json',
+        '[{"path":"SKILL.md","content":"---\\nname: earnings-review\\n---\\nBody"}]',
+      ])
+    ).rejects.toThrow(/Specify only one of --dir, --skill-md, or --files-json/);
 
     await expect(
       dispatchCli(client, [
@@ -292,7 +319,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         ])
       ).rejects.toThrow(/Refusing symbolic link/);
 
-      // 2. Symlink as --skill-md and symlink ancestor directory are both rejected.
+      // 2. Symlink as --skill-md is rejected, while files under a symlinked parent dir (e.g. ~/.claude/skills) succeed.
       await expect(
         dispatchCli(client, [
           'my-skills',
@@ -313,20 +340,37 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         join(outside, 'SKILL.md'),
         '---\nname: sec-test\n---\nOutside\n'
       );
-      await expect(
-        dispatchCli(client, [
-          'my-skills',
-          'save',
-          '--slug',
-          'sec-test',
-          '--display-name',
-          'Sec',
-          '--description',
-          'Desc',
-          '--skill-md',
-          join(dir, 'symdir', 'SKILL.md'),
-        ])
-      ).rejects.toThrow(/symbolic link/);
+      nextResponse = {
+        status: 201,
+        body: {
+          created: true,
+          skill: {
+            public_id: 'pskl_0123456789abcdef01234567',
+            slug: 'sec-test',
+            template_ref: 'personal:pskl_0123456789abcdef01234567',
+            display_name: 'Sec',
+            description: 'Desc',
+            enabled: true,
+            current_rev: 1,
+            content_hash: 'sha256:sym',
+            updated_at: '2026-11-23T12:00:00Z',
+          },
+        },
+      };
+      await dispatchCli(client, [
+        'my-skills',
+        'save',
+        '--slug',
+        'sec-test',
+        '--display-name',
+        'Sec',
+        '--description',
+        'Desc',
+        '--skill-md',
+        join(dir, 'symdir', 'SKILL.md'),
+      ]);
+      expect(requests).toHaveLength(1);
+      requests = [];
       rmSync(join(dir, 'symdir'));
 
       // 3. Remove symlink; binary files are rejected in v1.

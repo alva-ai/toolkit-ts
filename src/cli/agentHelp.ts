@@ -254,7 +254,7 @@ Subcommands:
   get     <ref> [--json]
   file    <ref> <path> [--rev <n>] [--json]
   save    --slug <slug> --display-name <name> --description <desc>
-          --files-json '<json array>' [--expected-rev <n>] [--json]
+          --files-json '<json array>' [--public-id <id>] [--expected-rev <n>] [--json]
   enable  <ref> [--json]
   disable <ref> [--json]
   delete  <ref> [--json]
