@@ -3028,6 +3028,7 @@ function thesisEntityStances(flags: Record<string, string>):
   | Array<{
       entity_id: string;
       stance: 'unknown' | 'bullish' | 'bearish' | 'none';
+      weight?: number;
     }>
   | undefined {
   const raw = flags['entity-stances'];
@@ -3043,6 +3044,7 @@ function thesisEntityStances(flags: Record<string, string>):
   return parsed as Array<{
     entity_id: string;
     stance: 'unknown' | 'bullish' | 'bearish' | 'none';
+    weight?: number;
   }>;
 }
 

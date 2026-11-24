@@ -20,6 +20,14 @@ export interface ThesisEntityStance {
   stance: ThesisAssetStance;
   /** Full direction in responses; stance reports none as unknown there. */
   direction?: ThesisAssetStance;
+  /**
+   * The Update's share of this long or short as a fraction (0.4 is 40%), with
+   * at most four decimals. On create and update give one to every bullish or
+   * bearish entity, and the rest is cash, or to none, and the shares follow
+   * the default rules and what the body says. Responses carry it only on an
+   * Update published with weights.
+   */
+  weight?: number;
 }
 /** GraphQL direction, including NONE. */
 export type ThesisDirection = 'UNKNOWN' | 'BULLISH' | 'BEARISH' | 'NONE';
@@ -410,9 +418,11 @@ export class ThesesResource {
   async create(params: CreateThesisParams): Promise<ThesisResponse> {
     this.client._requireAuth();
     const body = createBody(params);
-    return thesisResponse(
+    const response = thesisResponse(
       await this.client._request('POST', '/api/v1/theses', { body })
     );
+    requireKeptWeights(body.entity_stances, response.thesis.entity_stances);
+    return response;
   }
 
   async get(id: ThesisID): Promise<ThesisGetResponse> {
@@ -525,6 +535,7 @@ export class ThesesResource {
     if (response.thesis.id !== thesisID) {
       throw invalidResponse('update response must match the requested thesis');
     }
+    requireKeptWeights(body.entity_stances, response.thesis.entity_stances);
     return response;
   }
 
@@ -570,7 +581,11 @@ export class ThesesResource {
       body: current.thesis.body,
       title: current.thesis.title,
       entity_ids: current.thesis.entity_ids,
-      entity_stances: current.thesis.entity_stances,
+      // Directions only: archiving keeps the current Update and unarchiving
+      // keeps its shares without restating them.
+      entity_stances: current.thesis.entity_stances?.map(
+        ({ entity_id, stance }) => ({ entity_id, stance })
+      ),
       visibility: current.thesis.visibility,
       archived: params.archived,
       medias: current.thesis.medias,
@@ -949,8 +964,53 @@ function requireEntityStances(
     seen.add(entityID);
     if (!ENTITY_STANCES.includes(item.stance as string))
       throw invalidArgument(`entity_stances[${index}].stance is invalid`);
-    return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
+    const stance: ThesisEntityStance = {
+      entity_id: entityID,
+      stance: item.stance as ThesisAssetStance,
+    };
+    if (item.weight !== undefined) {
+      if (!validWeight(item.weight))
+        throw invalidArgument(
+          `entity_stances[${index}].weight must be a fraction in (0, 1] with at most four decimals`
+        );
+      if (stance.stance !== 'bullish' && stance.stance !== 'bearish')
+        throw invalidArgument(
+          `entity_stances[${index}].weight needs a bullish or bearish stance`
+        );
+      stance.weight = item.weight as number;
+    }
+    return stance;
   });
+}
+
+function validWeight(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  const bps = Math.round(value * 10000);
+  return bps >= 1 && bps <= 10000 && Math.abs(value * 10000 - bps) <= 1e-6;
+}
+
+/**
+ * Fails loudly when the server dropped or changed the weights the request
+ * sent: an alva-gateway that predates weights ignores them
+ * (docs/changelogs/2026-11-23-thesis-weights.md F5).
+ */
+function requireKeptWeights(
+  sent: unknown,
+  returned: ThesisEntityStance[] | undefined
+): void {
+  if (!Array.isArray(sent)) return;
+  const weights = new Map<string, number>();
+  for (const item of returned ?? []) {
+    if (item.weight !== undefined) weights.set(item.entity_id, item.weight);
+  }
+  for (const item of sent as ThesisEntityStance[]) {
+    if (item.weight === undefined) continue;
+    const kept = weights.get(item.entity_id);
+    if (kept === undefined || Math.abs(kept - item.weight) > 1e-9)
+      throw invalidResponse(
+        'the Update was published without the weights sent: the server predates weights'
+      );
+  }
 }
 
 function updateBody(params: UpdateThesisParams): Record<string, unknown> {
@@ -1064,6 +1124,13 @@ function thesisResponse(response: unknown): ThesisResponse {
             'thesis.entity_stances contains invalid direction'
           );
         stance.direction = item.direction as ThesisAssetStance;
+      }
+      if (item.weight !== undefined) {
+        if (!validWeight(item.weight))
+          throw invalidResponse(
+            'thesis.entity_stances contains invalid weight'
+          );
+        stance.weight = item.weight;
       }
       return stance;
     });
