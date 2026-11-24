@@ -581,7 +581,11 @@ export class ThesesResource {
       body: current.thesis.body,
       title: current.thesis.title,
       entity_ids: current.thesis.entity_ids,
-      entity_stances: current.thesis.entity_stances,
+      // Directions only: archiving keeps the current Update and unarchiving
+      // keeps its shares without restating them.
+      entity_stances: current.thesis.entity_stances?.map(
+        ({ entity_id, stance }) => ({ entity_id, stance })
+      ),
       visibility: current.thesis.visibility,
       archived: params.archived,
       medias: current.thesis.medias,
@@ -1004,7 +1008,7 @@ function requireKeptWeights(
     const kept = weights.get(item.entity_id);
     if (kept === undefined || Math.abs(kept - item.weight) > 1e-9)
       throw invalidResponse(
-        'the server did not keep the weights sent; it may predate weights'
+        'the Update was published without the weights sent: the server predates weights'
       );
   }
 }

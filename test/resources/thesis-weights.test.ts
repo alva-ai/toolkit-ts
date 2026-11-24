@@ -116,43 +116,76 @@ describe('Thesis weights', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('keeps the weights when archiving and unarchiving', async () => {
+  it('fails loudly when the server changes the weights on create (F5)', async () => {
     const c = client();
-    const current = {
-      ...thesisWith(weighted, true),
-      author: {
-        id: '42',
-        kind: 'user',
-        display_name: 'A',
-        avatar_url: '',
-        username: 'a',
-      },
-      entities: [NVDA, AMD].map((id) => ({
-        id,
-        ticker: 'T',
-        name: 'N',
-        icon_url: '',
-        kind: 'STOCK',
-      })),
-    };
-    c._request = vi
-      .fn()
-      .mockResolvedValueOnce(current)
-      .mockResolvedValueOnce(thesisWith(weighted, false));
-    await c.theses.setArchived(MAX_ID, {
-      request_id: REQUEST_ID,
-      archived: false,
+    c._request = vi.fn().mockResolvedValueOnce(
+      thesisWith([
+        {
+          entity_id: NVDA,
+          stance: 'bullish',
+          direction: 'bullish',
+          weight: 0.5,
+        },
+        {
+          entity_id: AMD,
+          stance: 'bearish',
+          direction: 'bearish',
+          weight: 0.25,
+        },
+      ])
+    );
+    await expect(
+      c.theses.create({
+        request_id: REQUEST_ID,
+        body: 'body',
+        entity_ids: [NVDA, AMD],
+        entity_stances: [
+          { entity_id: NVDA, stance: 'bullish', weight: 0.4 },
+          { entity_id: AMD, stance: 'bearish', weight: 0.25 },
+        ],
+      })
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: expect.stringContaining('published without the weights'),
     });
-    const [, , init] = c._request.mock.calls[1] as [
-      string,
-      string,
-      { body: Record<string, unknown> },
-    ];
-    expect(init.body.entity_stances).toEqual([
-      { entity_id: NVDA, stance: 'bullish', weight: 0.4 },
-      { entity_id: AMD, stance: 'bearish', weight: 0.25 },
-    ]);
   });
+
+  for (const archived of [true, false]) {
+    it(`${archived ? 'archives' : 'unarchives'} with directions only`, async () => {
+      const c = client();
+      const current = {
+        ...thesisWith(weighted, !archived),
+        author: {
+          id: '42',
+          kind: 'user',
+          display_name: 'A',
+          avatar_url: '',
+          username: 'a',
+        },
+        entities: [NVDA, AMD].map((id) => ({
+          id,
+          ticker: 'T',
+          name: 'N',
+          icon_url: '',
+          kind: 'STOCK',
+        })),
+      };
+      c._request = vi
+        .fn()
+        .mockResolvedValueOnce(current)
+        .mockResolvedValueOnce(thesisWith(weighted, archived));
+      await c.theses.setArchived(MAX_ID, { request_id: REQUEST_ID, archived });
+      const [, , init] = c._request.mock.calls[1] as [
+        string,
+        string,
+        { body: Record<string, unknown> },
+      ];
+      expect(init.body.entity_stances).toEqual([
+        { entity_id: NVDA, stance: 'bullish' },
+        { entity_id: AMD, stance: 'bearish' },
+      ]);
+    });
+  }
 
   it('reads the allocation and position weights of the detail return', async () => {
     const fetch = vi.fn().mockResolvedValueOnce({
