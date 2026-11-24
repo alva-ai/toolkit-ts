@@ -304,7 +304,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       positionals: ['playbook skill identifier', 'file path'],
     }),
     route('my-skills list', 'my-skills list', {
-      values: ['first', 'after'],
       booleans: ['include-disabled', 'json'],
     }),
     route('my-skills get', 'my-skills get', {
@@ -322,14 +321,10 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'slug',
         'display-name',
         'description',
-        'source-type',
-        'source-ref',
-        'source-hash',
         'expected-rev',
-        'request-id',
         'files-json',
       ],
-      booleans: ['overwrite-conflict', 'json'],
+      booleans: ['json'],
     }),
     route('my-skills enable', 'my-skills enable', {
       booleans: ['json'],

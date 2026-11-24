@@ -16,14 +16,7 @@ export function formatPersonalSkillsList(
     const state = s.enabled ? '' : ' [disabled]';
     lines.push(`• ${s.template_ref} (${s.slug}) — ${s.display_name}${state}`);
     if (s.description) lines.push(`  ${s.description}`);
-    lines.push(
-      `  rev: ${s.current_rev} | source: ${s.source_type} | updated: ${s.updated_at}`
-    );
-  }
-  if (result.has_next_page && result.end_cursor) {
-    lines.push(
-      `More results available; continue with --after ${result.end_cursor}`
-    );
+    lines.push(`  rev: ${s.current_rev} | updated: ${s.updated_at}`);
   }
   return lines.join('\n') + '\n';
 }
@@ -36,8 +29,6 @@ export function formatPersonalSkillGet(detail: PersonalSkillDetail): string {
     `enabled:      ${s.enabled}`,
     `current_rev:  ${s.current_rev}`,
     `content_hash: ${s.content_hash}`,
-    `source_type:  ${s.source_type}`,
-    ...(s.source_ref ? [`source_ref:   ${s.source_ref}`] : []),
     `updated_at:   ${s.updated_at}`,
     '',
     'Files:',

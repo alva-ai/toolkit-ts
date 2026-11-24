@@ -47,10 +47,7 @@ import {
   formatPersonalSkillSave,
   formatPersonalSkillSummary,
 } from './personalSkillsFormat.js';
-import type {
-  PersonalSkillSourceType,
-  SavePersonalSkillFileInput,
-} from '../resources/personalSkills.js';
+import type { SavePersonalSkillFileInput } from '../resources/personalSkills.js';
 import {
   PLAYBOOK_VISIBILITIES,
   OWNED_PLAYBOOK_FILTERS,
@@ -203,14 +200,12 @@ export const COMMAND_HELP: Record<string, string> = {
 Manage your private Alva Cloud Personal Skills.
 
 Subcommands:
-  list    [--first <n>] [--after <cursor>] [--include-disabled] [--json]
+  list    [--include-disabled] [--json]
   get     <ref> [--json]
   file    <ref> <path> [--rev <n>] [--json]
   save    --slug <slug> --display-name <name> --description <desc>
           (--dir <folder> | --skill-md <path> | --files-json '<json array>')
-          [--source-type chat|url|upload|agent_link|skillhub_fork]
-          [--source-ref <ref>] [--source-hash <hash>] [--expected-rev <n>]
-          [--request-id <uuid>] [--overwrite-conflict] [--json]
+          [--expected-rev <n>] [--json]
   enable  <ref> [--json]
   disable <ref> [--json]
   delete  <ref> [--json]
@@ -4782,12 +4777,6 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'list': {
           const result = await client.personalSkills.list({
-            first: parsePositiveIntFlag(
-              flags['first'],
-              'first',
-              'my-skills list'
-            ),
-            after: flags['after'],
             include_disabled: boolFlag(flags['include-disabled']) ?? false,
           });
           return asJson ? result : formatPersonalSkillsList(result);
@@ -4817,8 +4806,6 @@ export async function executeParsedCommand(
             'description',
             'my-skills save'
           );
-          const sourceType = (flags['source-type'] ??
-            'chat') as PersonalSkillSourceType;
           const expectedRev = parsePositiveIntFlag(
             flags['expected-rev'],
             'expected-rev',
@@ -4831,12 +4818,7 @@ export async function executeParsedCommand(
             display_name: displayName,
             description,
             files,
-            source_type: sourceType,
-            source_ref: flags['source-ref'],
-            source_content_hash: flags['source-hash'],
             expected_rev: expectedRev,
-            request_id: flags['request-id'],
-            overwrite_conflict: boolFlag(flags['overwrite-conflict']) ?? false,
           });
           return asJson ? result : formatPersonalSkillSave(result);
         }

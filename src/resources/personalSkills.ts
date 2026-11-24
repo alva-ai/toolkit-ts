@@ -1,13 +1,6 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 
-export type PersonalSkillSourceType =
-  | 'chat'
-  | 'url'
-  | 'upload'
-  | 'agent_link'
-  | 'skillhub_fork';
-
 export interface PersonalSkillSummary {
   public_id: string;
   slug: string;
@@ -17,9 +10,6 @@ export interface PersonalSkillSummary {
   enabled: boolean;
   current_rev: number;
   content_hash: string;
-  source_type: PersonalSkillSourceType;
-  source_ref?: string;
-  source_content_hash?: string;
   updated_at: string;
 }
 
@@ -44,8 +34,6 @@ export interface PersonalSkillFile {
 
 export interface PersonalSkillListResponse {
   skills: PersonalSkillSummary[];
-  has_next_page: boolean;
-  end_cursor: string;
 }
 
 export interface SavePersonalSkillFileInput {
@@ -59,12 +47,7 @@ export interface SavePersonalSkillParams {
   display_name: string;
   description: string;
   files: SavePersonalSkillFileInput[];
-  source_type: PersonalSkillSourceType;
-  source_ref?: string;
-  source_content_hash?: string;
   expected_rev?: number;
-  request_id?: string;
-  overwrite_conflict?: boolean;
 }
 
 export interface SavePersonalSkillResponse {
@@ -105,21 +88,15 @@ export class PersonalSkillsResource {
   constructor(private client: AlvaClient) {}
 
   async list(params?: {
-    first?: number;
-    after?: string;
     include_disabled?: boolean;
   }): Promise<PersonalSkillListResponse> {
     const query: Record<string, string> = {};
-    if (params?.first !== undefined) query.first = String(params.first);
-    if (params?.after) query.after = params.after;
     if (params?.include_disabled) query.include_disabled = 'true';
     const res = (await this.client._request('GET', '/api/v1/personal-skills', {
       query,
     })) as PersonalSkillListResponse | null | undefined;
     return {
       skills: res?.skills ?? [],
-      has_next_page: Boolean(res?.has_next_page),
-      end_cursor: res?.end_cursor ?? '',
     };
   }
 

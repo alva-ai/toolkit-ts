@@ -390,7 +390,7 @@ describe('Slim Alva Agent command profile', () => {
 
     const mySkillsHelp = agentHelpFor(['my-skills', '--help']);
     expect(mySkillsHelp).toContain('--files-json');
-    expect(mySkillsHelp).toContain('--overwrite-conflict');
+    expect(mySkillsHelp).toContain('--expected-rev');
     expect(mySkillsHelp).not.toContain('--dir');
     expect(mySkillsHelp).not.toContain('--skill-md');
 

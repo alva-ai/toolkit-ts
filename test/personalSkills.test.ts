@@ -65,7 +65,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('lists, gets, and reads pinned revision files via /api/v1/personal-skills', async () => {
+  it('lists, gets, and reads revision-checked files via /api/v1/personal-skills', async () => {
     const client = new AlvaClient({ baseUrl, apiKey: 'alva_test' });
 
     nextResponse = {
@@ -81,12 +81,9 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
             enabled: true,
             current_rev: 2,
             content_hash: 'sha256:abc',
-            source_type: 'chat',
             updated_at: '2026-11-23T12:00:00Z',
           },
         ],
-        has_next_page: false,
-        end_cursor: 'c1',
       },
     };
     const listed = await client.personalSkills.list({ include_disabled: true });
@@ -100,7 +97,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       body: {
         public_id: 'pskl_0123456789abcdef01234567',
         slug: 'earnings-review',
-        rev: 1,
+        rev: 2,
         path: 'references/checklist.md',
         content: '- FCF',
         updated_at: '2026-11-23T12:00:00Z',
@@ -109,11 +106,11 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     const f = await client.personalSkills.file(
       'personal:pskl_0123456789abcdef01234567',
       'references/checklist.md',
-      { rev: 1 }
+      { rev: 2 }
     );
-    expect(f.rev).toBe(1);
+    expect(f.rev).toBe(2);
     expect(requests[1].url).toBe(
-      '/api/v1/personal-skills/personal%3Apskl_0123456789abcdef01234567/files/references/checklist.md?rev=1'
+      '/api/v1/personal-skills/personal%3Apskl_0123456789abcdef01234567/files/references/checklist.md?rev=2'
     );
   });
 
@@ -125,7 +122,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     expect(requests).toHaveLength(0);
   });
 
-  it('saves a local skill directory via CLI my-skills save with expected-rev and request-id', async () => {
+  it('saves a local multi-file skill directory via CLI my-skills save', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'alva-my-skill-'));
     try {
       mkdirSync(join(dir, 'references'), { recursive: true });
@@ -148,7 +145,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
             enabled: true,
             current_rev: 1,
             content_hash: 'sha256:def',
-            source_type: 'agent_link',
             updated_at: '2026-11-23T12:00:00Z',
           },
         },
@@ -164,12 +160,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         '财报复盘',
         '--description',
         '先看现金流',
-        '--source-type',
-        'agent_link',
-        '--source-ref',
-        'agent_link:claude:~/.claude/skills/earnings-review',
-        '--request-id',
-        'req-1',
         '--dir',
         dir,
       ]);
@@ -178,8 +168,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       );
       const payload = JSON.parse(requests[0].body);
       expect(payload.slug).toBe('earnings-review');
-      expect(payload.source_type).toBe('agent_link');
-      expect(payload.request_id).toBe('req-1');
       expect(payload.files.map((x: { path: string }) => x.path).sort()).toEqual(
         ['SKILL.md', 'references/check.md']
       );
@@ -207,7 +195,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
           enabled: true,
           current_rev: 2,
           content_hash: 'sha256:def',
-          source_type: 'chat',
           updated_at: '2026-11-23T12:00:00Z',
         },
       },
@@ -224,8 +211,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       '先看现金流',
       '--expected-rev',
       '1',
-      '--request-id',
-      'req-embed-1',
       '--files-json',
       JSON.stringify([
         {
@@ -250,7 +235,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     };
     expect(help._help).toBe(true);
     expect(help.text).toContain('alva my-skills');
-    expect(help.text).toContain('--overwrite-conflict');
+    expect(help.text).toContain('--expected-rev');
 
     await expect(
       dispatchCli(client, [
@@ -378,8 +363,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
           'Sec',
           '--description',
           'Desc',
-          '--source-type',
-          'upload',
           '--dir',
           dir,
         ])
@@ -401,7 +384,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
             enabled: true,
             current_rev: 1,
             content_hash: 'sha256:txt',
-            source_type: 'upload',
             updated_at: '2026-11-23T12:00:00Z',
           },
         },
@@ -415,8 +397,6 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         'Sec',
         '--description',
         'Desc',
-        '--source-type',
-        'upload',
         '--dir',
         dir,
       ]);

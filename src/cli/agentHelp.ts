@@ -250,13 +250,11 @@ Subcommands:
 
 Manage your private Alva Cloud Personal Skills.
 Subcommands:
-  list    [--first <n>] [--after <cursor>] [--include-disabled] [--json]
+  list    [--include-disabled] [--json]
   get     <ref> [--json]
   file    <ref> <path> [--rev <n>] [--json]
   save    --slug <slug> --display-name <name> --description <desc>
-          --files-json '<json array>' [--source-type chat|url|upload|agent_link|skillhub_fork]
-          [--source-ref <ref>] [--source-hash <hash>] [--expected-rev <n>]
-          [--request-id <uuid>] [--overwrite-conflict] [--json]
+          --files-json '<json array>' [--expected-rev <n>] [--json]
   enable  <ref> [--json]
   disable <ref> [--json]
   delete  <ref> [--json]
@@ -264,7 +262,7 @@ Subcommands:
 <ref> accepts personal:<public_id>, <public_id>, or <slug>.
 Embedded agent runs accept inline --files-json only (UTF-8 text files, no local paths).
 SKILL.md must begin with YAML frontmatter whose name matches --slug.
-Always pass --rev <current_rev> when reading files during execution, and pass
+Pass --rev <current_rev> when reading files for consistency, and pass
 --expected-rev <current_rev> with the full file bundle when updating.`,
 
   markets: `Usage: alva markets <subcommand>

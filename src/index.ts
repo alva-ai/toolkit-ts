@@ -19,7 +19,6 @@ export {
 } from './resources/companyNews.js';
 export {
   PersonalSkillsResource,
-  type PersonalSkillSourceType,
   type PersonalSkillSummary,
   type PersonalSkillFileMeta,
   type PersonalSkillDetail,

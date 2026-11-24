@@ -446,7 +446,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   }),
 
   command('my-skills list', {
-    values: ['first', 'after'],
     booleans: ['include-disabled', 'json'],
   }),
   command('my-skills get', {
@@ -464,16 +463,12 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'slug',
       'display-name',
       'description',
-      'source-type',
-      'source-ref',
-      'source-hash',
       'expected-rev',
-      'request-id',
       'dir',
       'skill-md',
       'files-json',
     ],
-    booleans: ['overwrite-conflict', 'json'],
+    booleans: ['json'],
   }),
   command('my-skills enable', {
     booleans: ['json'],
