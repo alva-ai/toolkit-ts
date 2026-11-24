@@ -198,87 +198,6 @@
         ],
         "type": "object"
       },
-      "AskMetadata": {
-        "properties": {
-          "createdAt": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DateTime"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "sessionId": {
-            "$ref": "#/components/schemas/SessionID"
-          }
-        },
-        "required": [
-          "createdAt",
-          "sessionId"
-        ],
-        "type": "object"
-      },
-      "AskOperation": {
-        "properties": {
-          "done": {
-            "type": "boolean"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Problem"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "$ref": "#/components/schemas/AskOperationID"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/AskMetadata"
-          },
-          "response": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AskResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "done",
-          "error",
-          "id",
-          "metadata",
-          "response"
-        ],
-        "type": "object"
-      },
-      "AskOperationID": {
-        "description": "The ID of an AskOperation.",
-        "maxLength": 4096,
-        "pattern": "^ask_operation_0[0-9a-hjkmnp-tv-z]+$",
-        "type": "string",
-        "x-alva-id-type": "AskOperation"
-      },
-      "AskResponse": {
-        "properties": {
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "text"
-        ],
-        "type": "object"
-      },
       "Asset": {
         "properties": {
           "assetClass": {
@@ -666,6 +585,22 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "AuthorSourceInput": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
         "type": "object"
       },
       "Automation": {
@@ -5659,27 +5594,6 @@
         ],
         "type": "object"
       },
-      "NewAsk": {
-        "additionalProperties": false,
-        "properties": {
-          "effort": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "prompt": {
-            "type": "string"
-          },
-          "system": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "prompt"
-        ],
-        "type": "object"
-      },
       "NewChannelTurn": {
         "additionalProperties": false,
         "properties": {
@@ -5877,7 +5791,7 @@
             ]
           },
           "visibility": {
-            "$ref": "#/components/schemas/Visibility"
+            "$ref": "#/components/schemas/NewVisibility"
           }
         },
         "required": [
@@ -5885,6 +5799,13 @@
           "title"
         ],
         "type": "object"
+      },
+      "NewVisibility": {
+        "enum": [
+          "PUBLIC",
+          "PRIVATE"
+        ],
+        "type": "string"
       },
       "NotificationAction": {
         "properties": {
@@ -7423,6 +7344,7 @@
                 "enum": [
                   "ACCOUNT_BANNED",
                   "ACCOUNT_DELETION_IN_PROGRESS",
+                  "ADMIN_REQUIRED",
                   "ADMISSION_REQUIRED",
                   "ALLOWANCE_REQUIRED",
                   "API_KEY_SCOPE_DENIED",
@@ -9781,6 +9703,44 @@
         ],
         "type": "object"
       },
+      "SourceInput": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
       "SourceType": {
         "enum": [
           "NEWS",
@@ -11148,6 +11108,99 @@
           "id",
           "kind",
           "viewerState"
+        ],
+        "type": "object"
+      },
+      "ThesisBackfill": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/ThesisAssetInput"
+            },
+            "type": "array"
+          },
+          "author": {
+            "$ref": "#/components/schemas/ProfileID"
+          },
+          "authorSource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorSourceInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "categoryIds": {
+            "items": {
+              "$ref": "#/components/schemas/ThesisCategoryID"
+            },
+            "type": "array"
+          },
+          "editorial": {
+            "type": "boolean"
+          },
+          "expectedVersionId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisVersionID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaInput"
+            },
+            "type": "array"
+          },
+          "published": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "researchPaused": {
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceInput"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/NewVisibility"
+          }
+        },
+        "required": [
+          "author",
+          "body",
+          "published",
+          "title"
         ],
         "type": "object"
       },
@@ -12950,45 +13003,14 @@
   "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
   "openapi": "3.1.0",
   "paths": {
-    "/ask-operations/{askOperationId}": {
-      "get": {
-        "description": "Requires agent:invoke.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "askOperationId",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AskOperationID"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AskOperation"
-                }
-              }
-            },
-            "description": "OK."
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/asks": {
+    "/admin/thesis-backfills": {
       "post": {
-        "description": "Requires agent:invoke.",
+        "description": "Requires content:write and an admin (403 ADMIN_REQUIRED otherwise).",
         "parameters": [
           {
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -12999,31 +13021,22 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewAsk"
+                "$ref": "#/components/schemas/ThesisBackfill"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AskOperation"
+                  "$ref": "#/components/schemas/Thesis"
                 }
               }
             },
-            "description": "Accepted: poll the operation the Location header names.",
-            "headers": {
-              "Location": {
-                "required": true,
-                "schema": {
-                  "format": "uri-reference",
-                  "type": "string"
-                }
-              }
-            }
+            "description": "OK."
           },
           "default": {
             "$ref": "#/components/responses/Problem"
@@ -14375,6 +14388,7 @@
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
+            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"

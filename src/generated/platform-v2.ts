@@ -4,46 +4,7 @@
  */
 
 export interface paths {
-    "/ask-operations/{askOperationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Requires agent:invoke. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    askOperationId: components["schemas"]["AskOperationID"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AskOperation"];
-                    };
-                };
-                default: components["responses"]["Problem"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/asks": {
+    "/admin/thesis-backfills": {
         parameters: {
             query?: never;
             header?: never;
@@ -52,31 +13,30 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requires agent:invoke. */
+        /** @description Requires content:write and an admin (403 ADMIN_REQUIRED otherwise). */
         post: {
             parameters: {
                 query?: never;
-                header: {
+                header?: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key": string;
+                    "Idempotency-Key"?: string;
                 };
                 path?: never;
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["NewAsk"];
+                    "application/json": components["schemas"]["ThesisBackfill"];
                 };
             };
             responses: {
-                /** @description Accepted: poll the operation the Location header names. */
-                202: {
+                /** @description OK. */
+                200: {
                     headers: {
-                        Location: string;
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["AskOperation"];
+                        "application/json": components["schemas"]["Thesis"];
                     };
                 };
                 default: components["responses"]["Problem"];
@@ -1334,9 +1294,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: {
+                header: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key"?: string;
+                    "Idempotency-Key": string;
                 };
                 path?: never;
                 cookie?: never;
@@ -7745,22 +7705,6 @@ export interface components {
             expectedVersionId: components["schemas"]["ThesisVersionID"];
             note?: string | null;
         };
-        AskMetadata: {
-            createdAt: components["schemas"]["DateTime"] | null;
-            sessionId: components["schemas"]["SessionID"];
-        };
-        AskOperation: {
-            done: boolean;
-            error: components["schemas"]["Problem"] | null;
-            id: components["schemas"]["AskOperationID"];
-            metadata: components["schemas"]["AskMetadata"];
-            response: components["schemas"]["AskResponse"] | null;
-        };
-        /** @description The ID of an AskOperation. */
-        AskOperationID: string;
-        AskResponse: {
-            text: string;
-        };
         Asset: {
             assetClass: components["schemas"]["AssetClass"] | null;
             categories: components["schemas"]["AssetCategory"][];
@@ -7838,6 +7782,10 @@ export interface components {
         };
         AssetsToFollow: {
             assetIds?: components["schemas"]["AssetID"][];
+        };
+        AuthorSourceInput: {
+            kind: string;
+            ref: string;
         };
         Automation: {
             agentType: string | null;
@@ -8856,12 +8804,6 @@ export interface components {
             peers: string | null;
             summary: string | null;
         };
-        NewAsk: {
-            effort?: string;
-            model?: string;
-            prompt: string;
-            system?: string;
-        };
         NewChannelTurn: {
             channelId?: components["schemas"]["ChannelID"] | null;
             effort?: string;
@@ -8904,8 +8846,10 @@ export interface components {
             tickers?: string[];
             title: string;
             trackReturn?: boolean | null;
-            visibility?: components["schemas"]["Visibility"];
+            visibility?: components["schemas"]["NewVisibility"];
         };
+        /** @enum {string} */
+        NewVisibility: "PUBLIC" | "PRIVATE";
         NotificationAction: {
             actionToken: string | null;
             channelId: components["schemas"]["ChannelID"] | null;
@@ -9181,7 +9125,7 @@ export interface components {
             code: "CANCELED" | "CONFLICT" | "CREDENTIAL_NOT_ACCEPTED" | "DEADLINE_EXCEEDED" | "HUMAN_SESSION_REQUIRED" | "INSUFFICIENT_PERMISSION" | "INTERNAL" | "INVALID_ARGUMENT" | "NOT_FOUND" | "PERMISSION_DENIED" | "RATE_LIMITED" | "REQUEST_TOO_LARGE" | "UNAUTHENTICATED" | "UNAVAILABLE";
             detail: string;
             invalidParams: components["schemas"]["InvalidParam"][] | null;
-            reason: ("ACCOUNT_BANNED" | "ACCOUNT_DELETION_IN_PROGRESS" | "ADMISSION_REQUIRED" | "ALLOWANCE_REQUIRED" | "API_KEY_SCOPE_DENIED" | "BUNDLED_FEED_EXPOSURE_CONFIRMATION_REQUIRED" | "CHANNEL_MAIN_SESSION_REQUIRED" | "CONCURRENCY_LIMIT_EXCEEDED" | "CONTENT_PLAN_REQUIRED" | "CREDENTIAL_EXPIRED" | "DURABLE_USER_STORAGE_FORBIDDEN" | "EXECUTION_DEPTH_EXCEEDED" | "FEATURED_MEDIA_NOT_FOUND" | "FEATURED_MEDIA_QUOTA_EXCEEDED" | "FEATURED_MEDIA_SOURCE_INVALID" | "FEATURED_MEDIA_SOURCE_UNSUPPORTED" | "FEATURED_MEDIA_UPSTREAM_UNAVAILABLE" | "FEATURED_MEDIA_X_UNAVAILABLE" | "FILE_TOO_LARGE" | "GROUP_SESSION_REFUSED" | "IDEMPOTENCY_KEY_INVALID" | "IDEMPOTENCY_KEY_IN_USE" | "IDEMPOTENCY_KEY_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_RESULT_UNAVAILABLE" | "INSUFFICIENT_CREDITS" | "MODEL_TIER_REQUIRED" | "PAGE_TOKEN_INVALID" | "PAID_RENEWALS_END_CONFIRMATION_REQUIRED" | "PLAYBOOK_QUOTA_EXCEEDED" | "PRICING_REQUIRED" | "QUOTA_EXCEEDED" | "RANGE_NOT_SATISFIABLE" | "RELATED_THESES_GENERATING" | "TASK_LIMIT_EXCEEDED" | "THESIS_ACTIVE_LIMIT_EXCEEDED" | "THESIS_ARCHIVED" | "THESIS_RETURN_LAST_LEG" | "THESIS_RETURN_SWITCH_FINAL" | "UNSUPPORTED_MEDIA_TYPE" | "X_SCOPE_REVOKED" | "X_TOKEN_REVOKED") | null;
+            reason: ("ACCOUNT_BANNED" | "ACCOUNT_DELETION_IN_PROGRESS" | "ADMIN_REQUIRED" | "ADMISSION_REQUIRED" | "ALLOWANCE_REQUIRED" | "API_KEY_SCOPE_DENIED" | "BUNDLED_FEED_EXPOSURE_CONFIRMATION_REQUIRED" | "CHANNEL_MAIN_SESSION_REQUIRED" | "CONCURRENCY_LIMIT_EXCEEDED" | "CONTENT_PLAN_REQUIRED" | "CREDENTIAL_EXPIRED" | "DURABLE_USER_STORAGE_FORBIDDEN" | "EXECUTION_DEPTH_EXCEEDED" | "FEATURED_MEDIA_NOT_FOUND" | "FEATURED_MEDIA_QUOTA_EXCEEDED" | "FEATURED_MEDIA_SOURCE_INVALID" | "FEATURED_MEDIA_SOURCE_UNSUPPORTED" | "FEATURED_MEDIA_UPSTREAM_UNAVAILABLE" | "FEATURED_MEDIA_X_UNAVAILABLE" | "FILE_TOO_LARGE" | "GROUP_SESSION_REFUSED" | "IDEMPOTENCY_KEY_INVALID" | "IDEMPOTENCY_KEY_IN_USE" | "IDEMPOTENCY_KEY_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_RESULT_UNAVAILABLE" | "INSUFFICIENT_CREDITS" | "MODEL_TIER_REQUIRED" | "PAGE_TOKEN_INVALID" | "PAID_RENEWALS_END_CONFIRMATION_REQUIRED" | "PLAYBOOK_QUOTA_EXCEEDED" | "PRICING_REQUIRED" | "QUOTA_EXCEEDED" | "RANGE_NOT_SATISFIABLE" | "RELATED_THESES_GENERATING" | "TASK_LIMIT_EXCEEDED" | "THESIS_ACTIVE_LIMIT_EXCEEDED" | "THESIS_ARCHIVED" | "THESIS_RETURN_LAST_LEG" | "THESIS_RETURN_SWITCH_FINAL" | "UNSUPPORTED_MEDIA_TYPE" | "X_SCOPE_REVOKED" | "X_TOKEN_REVOKED") | null;
             requiredPermission: string | null;
             /** Format: int32 */
             retryAfter: number | null;
@@ -9669,6 +9613,14 @@ export interface components {
             title: string | null;
             url: string | null;
         };
+        SourceInput: {
+            kind: string;
+            locator?: string;
+            published?: components["schemas"]["DateTime"] | null;
+            ref: string;
+            title?: string | null;
+            url?: string;
+        };
         /** @enum {string} */
         SourceType: "NEWS" | "X" | "REDDIT" | "YOUTUBE" | "PODCAST" | "EARNINGS" | "FILING" | "WEB" | "MARKET_DATA" | "UNKNOWN";
         SpawnedTask: {
@@ -9935,6 +9887,23 @@ export interface components {
             id: components["schemas"]["ProfileID"];
             kind: components["schemas"]["ProfileKind"];
             viewerState: components["schemas"]["FollowState"];
+        };
+        ThesisBackfill: {
+            assets?: components["schemas"]["ThesisAssetInput"][];
+            author: components["schemas"]["ProfileID"];
+            authorSource?: components["schemas"]["AuthorSourceInput"] | null;
+            body: string;
+            categoryIds?: components["schemas"]["ThesisCategoryID"][];
+            editorial?: boolean;
+            expectedVersionId?: components["schemas"]["ThesisVersionID"] | null;
+            media?: components["schemas"]["MediaInput"][];
+            published: components["schemas"]["DateTime"];
+            researchPaused?: boolean;
+            sources?: components["schemas"]["SourceInput"][];
+            summary?: string | null;
+            thesisId?: components["schemas"]["ThesisID"] | null;
+            title: string;
+            visibility?: components["schemas"]["NewVisibility"];
         };
         /** @description The ID of a ThesisCategory. */
         ThesisCategoryID: string;

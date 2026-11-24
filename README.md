@@ -118,8 +118,6 @@ shapes as they are. CLIs and SDKs still on 0.x keep working against
   `subscriptions.subscribeBatch({ automationIds })` and alert history
   `notifications.list({ automationId })` take Automation IDs. By owner and
   name, use `client.v1.subscriptions` and `client.v1.notifications`.
-- **Asks.** `asks.create({ prompt })` starts an ask and
-  `asks.wait(operation)` polls it; `alva ask --prompt` waits.
 - **Account.** `user.me()` returns `Me`; secrets, service accounts,
   feedback, screenshots and notification preferences return their
   `/api/v2` schemas (a secret's value: `client.v1.secrets.get`).
@@ -441,7 +439,6 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `client.user`                      | `me()`                                                                                                                                                                                                                                                                                                  |
 | `client.fs`                        | `read()`, `write()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()`                                                                                                                                                    |
-| `client.asks`                      | `create()`, `get()`, `wait()`                                                                                                                                                                                                                                                                           |
 | `client.run`                       | `execute()`                                                                                                                                                                                                                                                                                             |
 | `client.deploy`                    | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`, `trigger()`, `listRuns()`, `runStats()`, `getDispatch()`, `getRunLogs()`                                                                                                                                                  |
 | `client.schedules`                 | `list()`, `put()`, `pause()`, `resume()`, `delete()`, `listSession()`, `putSession()`, `pauseSession()`, `resumeSession()`, `deleteSession()`, `agentChannelId()`                                                                                                                                       |
@@ -567,7 +564,6 @@ alva whoami [--profile <name>]
 alva auth login [--browser | --no-browser] [--profile <name>] [--agent <name>]
 alva user me
 alva fs <read|write|stat|readdir|mkdir|remove|rename|copy|symlink|readlink|chmod|grant|revoke>
-alva ask --prompt <text> [--system <text>] [--model <id>] [--effort <level>] [--json] [--no-wait]
 alva run --code <code> [--entry-path <path>] [--working-dir <dir>] [--args <json> | --args-stdin] [--timeout-ms <ms>]
 alva deploy <create|list|get|update|delete|pause|resume|trigger|runs|run-stats|run-status|run-logs>
 alva release <feed|playbook-draft|playbook>

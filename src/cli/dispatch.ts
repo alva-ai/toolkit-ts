@@ -107,7 +107,6 @@ Commands:
   user        User profile operations (me)
   fs          Filesystem operations (read, write, stat, readdir, mkdir, remove, rename, copy, symlink, readlink, chmod, grant, revoke)
   run         Execute code in the Alva runtime
-  ask         Ask the Alva agent and wait for its answer
   deploy      Cronjob management (create, list, get, update, delete, pause, resume, runs, run-logs)
   schedule    Agent-owned named schedules (list, put, pause, resume, delete)
   steward     Push steward reports for a Session Inbox (decide, forward, send, pending, briefed)
@@ -162,26 +161,6 @@ Quick start:
   alva whoami`;
 
 export const COMMAND_HELP: Record<string, string> = {
-  ask: `Usage: alva ask --prompt <text> [--system <text>] [--model <id>] [--effort <level>] [--json] [--no-wait]
-
-Ask the Alva agent once (paid; agent:invoke). The ask runs as an /api/v2
-AskOperation: the CLI polls it (1, 2 and 4 s, then every 5 s, for at most
-35 minutes) and prints the answer text.
-
-Options:
-  --prompt <text>    The question (required)
-  --system <text>    An optional system prompt
-  --model <id>       An optional model
-  --effort <level>   An optional reasoning effort
-  --json             Print the finished AskOperation {id, done, metadata,
-                     response: {text}, error} instead of the text
-  --no-wait          Print the AskOperation at once without waiting; poll it
-                     with the SDK (client.asks.get / client.asks.wait)
-
-Examples:
-  alva ask --prompt "Summarize NVDA's last earnings call"
-  alva ask --prompt "What moved BTC today?" --json`,
-
   'company-news': `Usage: alva company-news create --name <name> --tickers <NVDA,AMD> [options]
 
 Create one private, backend-managed Feed covering all supplied tickers.
@@ -3942,18 +3921,6 @@ export async function executeParsedCommand(
         default:
           throw new CliUsageError(`Unknown subcommand: fs ${subcommand}`, 'fs');
       }
-    }
-
-    case 'ask': {
-      const operation = await client.asks.create({
-        prompt: requireFlag(flags, 'prompt', 'ask'),
-        system: flags['system'],
-        model: flags['model'],
-        effort: flags['effort'],
-      });
-      if (boolFlag(flags['wait']) === false) return operation;
-      const done = await client.asks.wait(operation);
-      return boolFlag(flags['json']) ? done : `${done.response?.text ?? ''}\n`;
     }
 
     case 'run': {

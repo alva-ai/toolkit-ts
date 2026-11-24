@@ -100,10 +100,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('fs grant', { values: ['path', 'subject', 'permission'] }),
   command('fs revoke', { values: ['path', 'subject', 'permission'] }),
 
-  command('ask', {
-    values: ['prompt', 'system', 'model', 'effort'],
-    booleans: ['json', 'wait'],
-  }),
   command('run', {
     values: [
       'code',

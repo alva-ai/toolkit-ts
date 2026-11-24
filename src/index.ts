@@ -15,7 +15,6 @@ export {
 export type { Page, Schema, V2Query } from './platformApi.js';
 export type { components, paths } from './generated/platform-v2.js';
 export { V1Resources } from './v1/index.js';
-export { AsksResource, type AskWaitOptions } from './resources/asks.js';
 export type {
   FsChangeOptions,
   FsReadOptions,

@@ -4895,53 +4895,6 @@ components: {}
   });
 });
 
-describe('alva ask', () => {
-  const pending = {
-    id: 'ask_operation_0a',
-    done: false,
-    metadata: { sessionId: 'session_0s', createdAt: null },
-    response: null,
-    error: null,
-  };
-  const done = { ...pending, done: true, response: { text: 'NVDA beat.' } };
-
-  it('creates the ask, waits and prints the answer text', async () => {
-    const client = makeClient();
-    client.asks.create = vi.fn().mockResolvedValue(pending);
-    client.asks.wait = vi.fn().mockResolvedValue(done);
-    expect(
-      await dispatch(client, [
-        'ask',
-        '--prompt',
-        'How did NVDA do?',
-        '--model',
-        'm1',
-      ])
-    ).toBe('NVDA beat.\n');
-    expect(client.asks.create).toHaveBeenCalledWith({
-      prompt: 'How did NVDA do?',
-      system: undefined,
-      model: 'm1',
-      effort: undefined,
-    });
-    expect(client.asks.wait).toHaveBeenCalledWith(pending);
-  });
-
-  it('--json prints the finished operation and --no-wait the started one', async () => {
-    const client = makeClient();
-    client.asks.create = vi.fn().mockResolvedValue(pending);
-    client.asks.wait = vi.fn().mockResolvedValue(done);
-    expect(await dispatch(client, ['ask', '--prompt', 'q', '--json'])).toEqual(
-      done
-    );
-    expect(
-      await dispatch(client, ['ask', '--prompt', 'q', '--no-wait'])
-    ).toEqual(pending);
-    expect(client.asks.wait).toHaveBeenCalledTimes(1);
-    await expect(dispatch(client, ['ask'])).rejects.toThrow(/--prompt/);
-  });
-});
-
 describe('CLI dispatch — FEED alerts and playbook follows (mono-meta#584 W3)', () => {
   it('dispatches playbook follow without changing alerts', async () => {
     const client = makeClient();

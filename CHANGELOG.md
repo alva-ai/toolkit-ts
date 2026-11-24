@@ -77,8 +77,6 @@ under `client.v1`, and move back when their route exists:
 - `trading.execute` is
   `trading.placeOrders(accountId, instruction, { idempotencyKey })`, on
   `POST /api/v2/broker-accounts/{accountId}/orders`.
-- `asks.create()` returns the ask operation; `asks.wait(operation)` polls it
-  (1, 2 and 4 s, then every 5 s, for at most 35 minutes); `alva ask` waits.
 - `--since` takes an RFC 3339 time only (a number is refused);
   `--newer-than` stays removed.
 - `getByIds([])` returns `[]` without a request; reads that return `null`
@@ -96,7 +94,7 @@ under `client.v1`, and move back when their route exists:
   `followAssets` and `unfollowAssets` with Asset IDs), and the methods moved
   to `client.v1` (above). The 0.x request and response types are gone: use
   the generated `Schema<'…'>` and `V2Query<…>` types.
-- New: `asks`, `markets.assetBySymbol`, `tradingPairs.list`,
+- New: `markets.assetBySymbol`, `tradingPairs.list`,
   `theses.getByNumber` and `getVersionByNumber`, `playbooks.getBySlug`,
   `deploy.runStats`, the `schedules` Session Inbox methods
   (`listSession`, `putSession`, `pauseSession`, `resumeSession`,
@@ -418,10 +416,3 @@ resource:
   `addToWatchlist` and `removeFromWatchlist` by ticker are gone: CLI
   `markets watchlist add|remove` resolves the tickers and refuses an
   unknown one before writing.
-
-#### Asks
-
-- New `asks.create(NewAsk, { idempotencyKey })`,
-  `get(askOperationId, { signal })` and `wait(operation, { signal })`, and
-  `alva ask` (above): `--json` prints the finished `AskOperation`,
-  `--no-wait` the started one.
