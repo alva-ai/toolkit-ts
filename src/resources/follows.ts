@@ -132,8 +132,7 @@ export interface FollowingThesesParams {
   first?: number;
 }
 
-/** The author of a Thesis in the following feed. */
-/** The followed user who wrote a Thesis Update. Persons cannot be followed. */
+/** The followed user who wrote a Thesis Update; Persons cannot be followed. */
 export interface FollowingThesisAuthor {
   kind: 'user';
   username: string;
@@ -854,7 +853,7 @@ function followingThesisAuthor(value: unknown): FollowingThesisAuthor | null {
     throw invalidFollowingTheses('invalid following theses author');
   }
   return {
-    kind: value.kind,
+    kind: 'user',
     username: value.username,
     display_name: value.display_name,
   };
