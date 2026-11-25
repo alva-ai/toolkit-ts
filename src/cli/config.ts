@@ -24,7 +24,7 @@ interface ConfigFile {
   baseUrl?: string;
 }
 
-interface WriteConfigDeps {
+export interface WriteConfigDeps {
   env: Record<string, string | undefined>;
   homedir: () => string;
   mkdir: (path: string, options: { recursive: boolean }) => Promise<void>;

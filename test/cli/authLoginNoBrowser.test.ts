@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as fsPromises from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { handleAuthLoginNoBrowser } from '../../src/cli/auth.js';
 import { loadConfig } from '../../src/cli/config.js';
 import { deriveChallenge } from '../../src/cli/pkce.js';
@@ -440,5 +443,37 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     expect(writeConfigDeps.writeFile).not.toHaveBeenCalled();
     expect(fetchMock.calls).toHaveLength(0);
     expect(readline.getCallCount()).toBe(0);
+  });
+
+  it('a failed login leaves an existing config byte for byte (default file access)', async () => {
+    const home = await fsPromises.mkdtemp(
+      path.join(os.tmpdir(), 'alva-login-')
+    );
+    const file = path.join(home, 'alva', 'config.json');
+    const existing = JSON.stringify({
+      profiles: { default: { apiKey: 'alva_keep' } },
+    });
+    await fsPromises.mkdir(path.dirname(file), { recursive: true });
+    await fsPromises.writeFile(file, existing);
+    const previous = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = home;
+    try {
+      const { deps } = makeBaseDeps({
+        readlineLines: ['BAD1', 'BAD2', 'BAD3'],
+        fetchResponses: [invalidGrantResponse()],
+      });
+      // The CLI's own file access, not the mock.
+      delete (deps as { writeConfigDeps?: unknown }).writeConfigDeps;
+
+      await expect(
+        handleAuthLoginNoBrowser(['auth', 'login'], deps)
+      ).rejects.toThrow(/alva auth login/);
+
+      expect(await fsPromises.readFile(file, 'utf-8')).toBe(existing);
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previous;
+      await fsPromises.rm(home, { recursive: true, force: true });
+    }
   });
 });

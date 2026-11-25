@@ -4,7 +4,11 @@ import { execFileSync, spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
-import { assertConfigWritable, writeConfig } from './config.js';
+import {
+  assertConfigWritable,
+  writeConfig,
+  type WriteConfigDeps,
+} from './config.js';
 import { parseCommand } from './commandSchema.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
 
@@ -130,18 +134,6 @@ export function generateState(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-interface WriteConfigDeps {
-  env: Record<string, string | undefined>;
-  homedir: () => string;
-  mkdir: (path: string, options: { recursive: boolean }) => Promise<void>;
-  writeFile: (
-    path: string,
-    data: string,
-    options: { mode: number }
-  ) => Promise<void>;
-  readFile: (path: string) => Promise<string>;
-}
-
 /**
  * Minimal fetch-like surface used by the auth flow so tests can inject a mock
  * without touching the network. Mirrors the subset of `globalThis.fetch` we
@@ -261,8 +253,11 @@ function defaultDeps(): AuthLoginDeps {
       homedir: () => os.homedir(),
       mkdir: (path: string, options: { recursive: boolean }) =>
         fsPromises.mkdir(path, options).then(() => undefined),
-      writeFile: (path: string, data: string, options: { mode: number }) =>
-        fsPromises.writeFile(path, data, options).then(() => undefined),
+      writeFile: (
+        path: string,
+        data: string,
+        options: { mode: number; flag?: string }
+      ) => fsPromises.writeFile(path, data, options).then(() => undefined),
       readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
     },
     createServer: (handler: http.RequestListener) => http.createServer(handler),
@@ -694,8 +689,11 @@ function defaultNoBrowserDeps(): AuthLoginNoBrowserDeps {
       homedir: () => os.homedir(),
       mkdir: (path: string, options: { recursive: boolean }) =>
         fsPromises.mkdir(path, options).then(() => undefined),
-      writeFile: (path: string, data: string, options: { mode: number }) =>
-        fsPromises.writeFile(path, data, options).then(() => undefined),
+      writeFile: (
+        path: string,
+        data: string,
+        options: { mode: number; flag?: string }
+      ) => fsPromises.writeFile(path, data, options).then(() => undefined),
       readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
     },
     log: (msg: string) => process.stderr.write(msg),
