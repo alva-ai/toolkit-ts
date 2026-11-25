@@ -1561,6 +1561,16 @@
           "kind": {
             "$ref": "#/components/schemas/ChannelKind"
           },
+          "lastActivityAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mainSessionId": {
             "anyOf": [
               {
@@ -1573,6 +1583,22 @@
           },
           "slug": {
             "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updatedAt": {
             "anyOf": [
@@ -1590,11 +1616,22 @@
           "description",
           "id",
           "kind",
+          "lastActivityAt",
           "mainSessionId",
           "slug",
+          "summary",
+          "title",
           "updatedAt"
         ],
         "type": "object"
+      },
+      "ChannelAuthor": {
+        "enum": [
+          "USER",
+          "ALVA",
+          "SYSTEM"
+        ],
+        "type": "string"
       },
       "ChannelID": {
         "description": "The ID of a Channel.",
@@ -1631,13 +1668,88 @@
         ],
         "type": "object"
       },
+      "ChannelPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ChannelSummary": {
+        "properties": {
+          "needsInputTasks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "previewAuthor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelAuthor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previewText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryThesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runningTasks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "thesisDraft": {
+            "type": "boolean"
+          },
+          "unreadCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "needsInputTasks",
+          "previewAuthor",
+          "previewText",
+          "primaryThesisId",
+          "runningTasks",
+          "thesisDraft",
+          "unreadCount"
+        ],
+        "type": "object"
+      },
       "ChannelTurn": {
         "properties": {
+          "channelId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sessionId": {
             "$ref": "#/components/schemas/SessionID"
           }
         },
         "required": [
+          "channelId",
           "sessionId"
         ],
         "type": "object"
@@ -2065,6 +2177,16 @@
         "properties": {
           "brief": {
             "type": "string"
+          },
+          "channelId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelID"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "effort": {
             "type": "string"
@@ -5744,15 +5866,21 @@
         ],
         "type": "object"
       },
-      "NewChannel": {
+      "NewChannelMessage": {
         "additionalProperties": false,
         "properties": {
-          "effort": {
+          "text": {
             "type": "string"
-          },
-          "prompt": {
-            "type": "string"
-          },
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "NewChannelOptions": {
+        "additionalProperties": false,
+        "properties": {
           "thesisId": {
             "anyOf": [
               {
@@ -5764,9 +5892,6 @@
             ]
           }
         },
-        "required": [
-          "prompt"
-        ],
         "type": "object"
       },
       "NewChannelTurn": {
@@ -5784,6 +5909,16 @@
           },
           "effort": {
             "type": "string"
+          },
+          "newChannel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NewChannelOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "prompt": {
             "type": "string"
@@ -5981,6 +6116,22 @@
         },
         "required": [
           "body",
+          "title"
+        ],
+        "type": "object"
+      },
+      "NewTopicChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
           "title"
         ],
         "type": "object"
@@ -12180,6 +12331,16 @@
           },
           "title": {
             "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayTopicContextInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -12192,7 +12353,8 @@
       "TodayAnchorKind": {
         "enum": [
           "THESIS",
-          "TICKER"
+          "TICKER",
+          "TOPIC"
         ],
         "type": "string"
       },
@@ -12276,7 +12438,8 @@
           "WATCHING",
           "DISCOVERY",
           "IN_THESIS",
-          "NONE"
+          "NONE",
+          "TRACKING"
         ],
         "type": "string"
       },
@@ -12378,6 +12541,16 @@
               }
             ]
           },
+          "topicResearch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayTopicResearchSourceInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "url": {
             "type": [
               "string",
@@ -12395,9 +12568,70 @@
           "DELIVERY",
           "OVERVIEW",
           "THESIS",
-          "MARKET"
+          "MARKET",
+          "TOPIC_RESEARCH"
         ],
         "type": "string"
+      },
+      "TodayTopicContextInput": {
+        "additionalProperties": false,
+        "properties": {
+          "newFactCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceConversationAt": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "title": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "trackingStartedAt": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "watchDays": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "newFactCount",
+          "sourceConversationAt",
+          "title",
+          "topicId",
+          "trackingStartedAt",
+          "watchDays"
+        ],
+        "type": "object"
+      },
+      "TodayTopicResearchSourceInput": {
+        "additionalProperties": false,
+        "properties": {
+          "materialKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "researchIntentId": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "topicVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "researchIntentId",
+          "topicId",
+          "topicVersion"
+        ],
+        "type": "object"
       },
       "TradeSubscription": {
         "properties": {
@@ -14627,6 +14861,143 @@
         }
       }
     },
+    "/channels/{channelId}": {
+      "patch": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ChannelID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/archive": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ChannelID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/channels/{channelId}/messages": {
+      "post": {
+        "description": "Requires channel:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channelId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ChannelID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewChannelMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/channels/{channelId}/schedules": {
       "get": {
         "description": "Requires automation:read.",
@@ -16476,13 +16847,12 @@
         }
       },
       "post": {
-        "description": "Requires agent:invoke.",
+        "description": "Requires channel:write.",
         "parameters": [
           {
             "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
             "schema": {
               "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
               "type": "string"
@@ -16493,7 +16863,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewChannel"
+                "$ref": "#/components/schemas/NewTopicChannel"
               }
             }
           },

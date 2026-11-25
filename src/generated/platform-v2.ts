@@ -1208,6 +1208,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/{channelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Requires channel:write. */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    channelId: components["schemas"]["ChannelID"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/merge-patch+json": components["schemas"]["ChannelPatch"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Channel"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        trace?: never;
+    };
+    "/channels/{channelId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    channelId: components["schemas"]["ChannelID"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Channel"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/{channelId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires channel:write. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    channelId: components["schemas"]["ChannelID"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["NewChannelMessage"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Channel"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/{channelId}/schedules": {
         parameters: {
             query?: never;
@@ -3084,20 +3218,20 @@ export interface paths {
             };
         };
         put?: never;
-        /** @description Requires agent:invoke. */
+        /** @description Requires channel:write. */
         post: {
             parameters: {
                 query?: never;
-                header: {
+                header?: {
                     /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
-                    "Idempotency-Key": string;
+                    "Idempotency-Key"?: string;
                 };
                 path?: never;
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["NewChannel"];
+                    "application/json": components["schemas"]["NewTopicChannel"];
                 };
             };
             responses: {
@@ -8152,10 +8286,15 @@ export interface components {
             description: string;
             id: components["schemas"]["ChannelID"];
             kind: components["schemas"]["ChannelKind"];
+            lastActivityAt: components["schemas"]["DateTime"] | null;
             mainSessionId: components["schemas"]["SessionID"] | null;
             slug: string;
+            summary: components["schemas"]["ChannelSummary"] | null;
+            title: string | null;
             updatedAt: components["schemas"]["DateTime"] | null;
         };
+        /** @enum {string} */
+        ChannelAuthor: "USER" | "ALVA" | "SYSTEM";
         /** @description The ID of a Channel. */
         ChannelID: string;
         /** @enum {string} */
@@ -8164,7 +8303,23 @@ export interface components {
             items: components["schemas"]["Channel"][];
             nextPageToken: string | null;
         };
+        ChannelPatch: {
+            title?: string;
+        };
+        ChannelSummary: {
+            /** Format: int64 */
+            needsInputTasks: number;
+            previewAuthor: components["schemas"]["ChannelAuthor"] | null;
+            previewText: string | null;
+            primaryThesisId: components["schemas"]["ThesisID"] | null;
+            /** Format: int64 */
+            runningTasks: number;
+            thesisDraft: boolean;
+            /** Format: int64 */
+            unreadCount: number;
+        };
         ChannelTurn: {
+            channelId: components["schemas"]["ChannelID"] | null;
             sessionId: components["schemas"]["SessionID"];
         };
         ChartArtifact: {
@@ -8259,6 +8414,7 @@ export interface components {
         };
         CreateTaskBody: {
             brief: string;
+            channelId?: components["schemas"]["ChannelID"] | null;
             effort?: string;
             model?: string;
             title: string;
@@ -9005,14 +9161,16 @@ export interface components {
             peers: string | null;
             summary: string | null;
         };
-        NewChannel: {
-            effort?: string;
-            prompt: string;
+        NewChannelMessage: {
+            text: string;
+        };
+        NewChannelOptions: {
             thesisId?: components["schemas"]["ThesisID"] | null;
         };
         NewChannelTurn: {
             channelId?: components["schemas"]["ChannelID"] | null;
             effort?: string;
+            newChannel?: components["schemas"]["NewChannelOptions"] | null;
             prompt: string;
             system?: string;
         };
@@ -9054,6 +9212,10 @@ export interface components {
             title: string;
             trackReturn?: boolean | null;
             visibility?: components["schemas"]["NewVisibility"];
+        };
+        NewTopicChannel: {
+            summary: string;
+            title: string;
         };
         /** @enum {string} */
         NewVisibility: "PUBLIC" | "PRIVATE";
@@ -10257,9 +10419,10 @@ export interface components {
             thesisId?: components["schemas"]["ThesisID"] | null;
             ticker?: string | null;
             title: string;
+            topic?: components["schemas"]["TodayTopicContextInput"] | null;
         };
         /** @enum {string} */
-        TodayAnchorKind: "THESIS" | "TICKER";
+        TodayAnchorKind: "THESIS" | "TICKER" | "TOPIC";
         TodayBulletInput: {
             sources?: components["schemas"]["TodaySourceInput"][];
             text: string;
@@ -10276,7 +10439,7 @@ export interface components {
             quiet: boolean;
         };
         /** @enum {string} */
-        TodayRelation: "AUTHORED" | "FOLLOWED" | "HOLDING" | "WATCHING" | "DISCOVERY" | "IN_THESIS" | "NONE";
+        TodayRelation: "AUTHORED" | "FOLLOWED" | "HOLDING" | "WATCHING" | "DISCOVERY" | "IN_THESIS" | "NONE" | "TRACKING";
         TodayReplyInput: {
             action?: components["schemas"]["TodayAction"] | null;
             kind: components["schemas"]["TodayReplyKind"];
@@ -10293,10 +10456,27 @@ export interface components {
             kind: components["schemas"]["TodaySourceKind"];
             label?: string | null;
             thesisId?: components["schemas"]["ThesisID"] | null;
+            topicResearch?: components["schemas"]["TodayTopicResearchSourceInput"] | null;
             url?: string | null;
         };
         /** @enum {string} */
-        TodaySourceKind: "DELIVERY" | "OVERVIEW" | "THESIS" | "MARKET";
+        TodaySourceKind: "DELIVERY" | "OVERVIEW" | "THESIS" | "MARKET" | "TOPIC_RESEARCH";
+        TodayTopicContextInput: {
+            /** Format: int64 */
+            newFactCount: number;
+            sourceConversationAt: components["schemas"]["DateTime"];
+            title: string;
+            topicId: string;
+            trackingStartedAt: components["schemas"]["DateTime"];
+            /** Format: int64 */
+            watchDays: number;
+        };
+        TodayTopicResearchSourceInput: {
+            materialKeys?: string[];
+            researchIntentId: string;
+            topicId: string;
+            topicVersion: string;
+        };
         TradeSubscription: {
             accountId: components["schemas"]["BrokerAccountID"];
             createdAt: components["schemas"]["DateTime"] | null;
