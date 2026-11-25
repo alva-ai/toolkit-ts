@@ -91,6 +91,8 @@ describe('thesis terminal dispatch', () => {
     await dispatchTerminal(value, [
       'thesis',
       'create',
+      '--visibility',
+      'public',
       '--request-id',
       REQUEST_ID,
       '--body',
@@ -340,6 +342,8 @@ describe('thesis terminal dispatch', () => {
       dispatchTerminal(value, [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -402,6 +406,33 @@ describe('thesis terminal dispatch', () => {
     expect(calls.setVisibility).not.toHaveBeenCalled();
   });
 
+  it('rejects create without --visibility before calling the resource', async () => {
+    const value = client();
+    const calls = mockLifecycle(value);
+
+    await expect(
+      dispatchTerminal(value, [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'draft',
+      ])
+    ).rejects.toThrow(/--visibility is required for 'thesis create'/);
+    await expect(
+      dispatchEmbedded(value, [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'draft',
+      ])
+    ).rejects.toThrow(/--visibility is required for 'thesis create'/);
+    expect(calls.create).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed UTF-8 file and stdin bytes without calling the resource', async () => {
     const value = client();
     const calls = mockLifecycle(value);
@@ -413,6 +444,8 @@ describe('thesis terminal dispatch', () => {
         [
           'thesis',
           'create',
+          '--visibility',
+          'public',
           '--request-id',
           REQUEST_ID,
           '--body-file',
@@ -451,6 +484,8 @@ describe('thesis terminal dispatch', () => {
       [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body-file',
@@ -479,6 +514,8 @@ describe('thesis terminal dispatch', () => {
     await dispatchTerminal(value, [
       'thesis',
       'create',
+      '--visibility',
+      'public',
       '--request-id',
       REQUEST_ID,
       '--body',
@@ -502,6 +539,8 @@ describe('thesis terminal dispatch', () => {
       dispatchTerminal(value, [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -520,6 +559,8 @@ describe('thesis terminal dispatch', () => {
     await dispatchTerminal(value, [
       'thesis',
       'create',
+      '--visibility',
+      'public',
       '--request-id',
       REQUEST_ID,
       '--body',
@@ -535,6 +576,8 @@ describe('thesis terminal dispatch', () => {
       dispatchTerminal(value, [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -547,6 +590,8 @@ describe('thesis terminal dispatch', () => {
       dispatchTerminal(value, [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -564,7 +609,13 @@ describe('thesis terminal dispatch', () => {
     };
     expect(result.text).toContain('Publish a new Update replacing');
     expect(result.text).toContain('response is ambiguous');
-    expect(result.text).toContain('defaults --visibility to public');
+    expect(result.text).toContain('Create and update require --visibility');
+    for (const line of result.text.split('\n')) {
+      if (line.includes('alva thesis create '))
+        expect(line).toContain('--visibility');
+    }
+    expect(result.text).toContain('asset-candidates  Read catalog IDs');
+    expect(result.text).not.toContain('defaults --visibility to public');
     expect(result.text).toContain('--tickers <ticker,ticker>');
     expect(result.text).toContain('--mode reformat|shorten|enrich');
     expect(result.text).toContain('candidate only');
@@ -642,6 +693,8 @@ describe('thesis embedded dispatch', () => {
     await dispatchEmbedded(value, [
       'thesis',
       'create',
+      '--visibility',
+      'public',
       '--request-id',
       REQUEST_ID,
       '--body',
@@ -665,6 +718,8 @@ describe('thesis embedded dispatch', () => {
     await dispatchEmbedded(value, [
       'thesis',
       'create',
+      '--visibility',
+      'public',
       '--request-id',
       REQUEST_ID,
       '--body',
@@ -745,7 +800,7 @@ describe('thesis embedded dispatch', () => {
     ).rejects.toThrow(/--body-stdin is not supported/);
   });
 
-  it('returns embedded help with the no-retry and public-default contract', async () => {
+  it('returns embedded help with the no-retry and explicit-visibility contract', async () => {
     const result = (await dispatchEmbedded(client(), ['thesis', '--help'])) as {
       text: string;
     };
@@ -757,7 +812,10 @@ describe('thesis embedded dispatch', () => {
     expect(result.text).toContain('signal-preferences set --id <id>');
     expect(result.text).toContain('"stance":"bearish"');
     expect(result.text).toContain('never creates request IDs or retries');
-    expect(result.text).toContain('Create defaults --visibility to public');
+    expect(result.text).toContain(
+      'Create\nand update require --visibility public|private explicitly'
+    );
+    expect(result.text).not.toContain('Create defaults --visibility to public');
     expect(result.text).toContain('changes current access without publishing');
     expect(result.text).toContain('never uses a request ID');
     expect(result.text).toContain('--mode reformat|shorten|enrich');
@@ -908,6 +966,8 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
       await run(value, [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -940,6 +1000,8 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
         run(value, [
           'thesis',
           'create',
+          '--visibility',
+          'public',
           '--request-id',
           REQUEST_ID,
           '--body',
@@ -957,6 +1019,8 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
         run(value, [
           'thesis',
           'create',
+          '--visibility',
+          'public',
           '--request-id',
           REQUEST_ID,
           '--body',
