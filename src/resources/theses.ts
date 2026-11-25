@@ -379,3 +379,11 @@ function notFound(): AlvaError {
     404
   );
 }
+
+/**
+ * A Thesis's web page, `<origin>/thesis/<number>`: the page takes the Thesis
+ * number, not its ID. `webOrigin` is `webOriginFromApiBase(client.baseUrl)`.
+ */
+export function thesisUrl(thesis: Schema<'Thesis'>, webOrigin: string): string {
+  return `${webOrigin}/thesis/${thesis.number}`;
+}

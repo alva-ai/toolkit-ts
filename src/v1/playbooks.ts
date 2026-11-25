@@ -1,6 +1,6 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
-import { webOriginFromApiBase } from '../resources/playbooks.js';
+import { webOriginFromApiBase } from '../resources/webOrigin.js';
 import type { AlvaId } from '../types.js';
 
 // Keyless Playbook discovery on /api/v1, with its 0.x types and IDs: every

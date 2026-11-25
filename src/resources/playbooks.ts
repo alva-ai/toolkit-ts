@@ -139,26 +139,6 @@ export function parsePlaybookRef(ref: string): { owner: string; slug: string } {
   return { owner: ref.slice(0, slash), slug: ref.slice(slash + 1) };
 }
 
-/**
- * The user-facing web origin (where Playbooks are browsable) of an API base
- * URL: `api-llm.prd.alva.ai` → `https://alva.ai`, `api-llm.stg.alva.ai` →
- * `https://stg.alva.ai`, and `https://alva.ai` for other hosts (custom base
- * URLs, local-dev).
- */
-export function webOriginFromApiBase(apiBaseUrl: string): string {
-  try {
-    const host = new URL(apiBaseUrl).hostname;
-    const match = /^api-llm\.([a-z0-9-]+)\.alva\.ai$/i.exec(host);
-    if (match) {
-      const env = match[1].toLowerCase();
-      return env === 'prd' ? 'https://alva.ai' : `https://${env}.alva.ai`;
-    }
-  } catch {
-    // Malformed base URL — fall through to the default origin.
-  }
-  return 'https://alva.ai';
-}
-
 /** A Playbook's web URL, `<origin>/u/<owner>/playbooks/<slug>`; empty without an owner. */
 export function playbookUrl(
   playbook: Schema<'Playbook'>,

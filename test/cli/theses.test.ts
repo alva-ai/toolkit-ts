@@ -43,6 +43,8 @@ for (const [name, dispatch] of RUNTIMES) {
       const result = await dispatch(client(), [
         'thesis',
         'create',
+        '--visibility',
+        'public',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -65,6 +67,7 @@ for (const [name, dispatch] of RUNTIMES) {
       expect(fake.calls[0].body).toEqual({
         title: '',
         body: 'first\r\nsecond',
+        visibility: 'PUBLIC',
         assets: [{ assetId: ASSET, stance: 'BEARISH' }, { assetId: ASSET_2 }],
         media: [
           {
@@ -84,6 +87,8 @@ for (const [name, dispatch] of RUNTIMES) {
       await dispatch(client(), [
         'thesis',
         'create',
+        '--visibility',
+        'private',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -112,6 +117,8 @@ for (const [name, dispatch] of RUNTIMES) {
       await dispatch(client(), [
         'thesis',
         'create',
+        '--visibility',
+        'private',
         '--request-id',
         REQUEST_ID,
         '--body',
@@ -146,6 +153,8 @@ for (const [name, dispatch] of RUNTIMES) {
         dispatch(client(), [
           'thesis',
           'create',
+          '--visibility',
+          'private',
           '--request-id',
           REQUEST_ID,
           '--body',
@@ -257,6 +266,26 @@ for (const [name, dispatch] of RUNTIMES) {
       ['a malformed --track-return', ['--track-return', 'off']],
     ])('refuses %s before any request', async (_case, extra) => {
       fake = fakeV2({});
+      const visibility = extra.includes('--visibility')
+        ? []
+        : ['--visibility', 'public'];
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'create',
+          ...visibility,
+          '--request-id',
+          REQUEST_ID,
+          '--body',
+          'view',
+          ...extra,
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it('refuses create without --visibility before any request', async () => {
+      fake = fakeV2({});
       await expect(
         dispatch(client(), [
           'thesis',
@@ -265,9 +294,8 @@ for (const [name, dispatch] of RUNTIMES) {
           REQUEST_ID,
           '--body',
           'view',
-          ...extra,
         ])
-      ).rejects.toBeInstanceOf(CliUsageError);
+      ).rejects.toThrow("--visibility is required for 'thesis create'");
       expect(fake.calls).toHaveLength(0);
     });
 
@@ -697,7 +725,15 @@ describe('terminal thesis body transports', () => {
   ) {
     return dispatchTerminal(
       client(),
-      ['thesis', 'create', '--request-id', REQUEST_ID, ...extra],
+      [
+        'thesis',
+        'create',
+        '--visibility',
+        'private',
+        '--request-id',
+        REQUEST_ID,
+        ...extra,
+      ],
       undefined,
       deps
     );
@@ -830,6 +866,20 @@ describe('thesis help and removed commands', () => {
       );
       expect(text).toContain('--mode reformat|shorten|enrich');
       expect(text).toContain('candidate only');
+      expect(text).toMatch(/Create requires --visibility\s+public\|private/);
+      expect(text).not.toContain('defaults --visibility');
+      for (const line of text.split('\n')) {
+        if (line.includes('alva thesis create ')) {
+          expect(line).toContain('--visibility');
+        }
+      }
+      const subcommands = text
+        .slice(text.indexOf('Subcommands:'))
+        .split('\n\n')[0];
+      expect(subcommands).toMatch(/\basset-candidates\b/);
+      expect(subcommands).toMatch(/\breturn\b/);
+      expect(text).toMatch(/UNKNOWN is an answer, not\s+an error/);
+      expect(text).toContain('/thesis/<number>');
       expect(text).not.toMatch(/\bclose\b|version delete|--editorial/);
       expect(text).not.toMatch(/nextCursor|entity_id|unchanged: true/);
     });

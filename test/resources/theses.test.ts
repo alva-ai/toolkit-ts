@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
+import { thesisUrl } from '../../src/resources/theses.js';
+import { webOriginFromApiBase } from '../../src/resources/webOrigin.js';
 import { fakeV2, problem } from '../fakeV2.js';
 import { v2 } from '../v2Schema.js';
 import {
@@ -332,6 +334,17 @@ describe('ThesesResource writes', () => {
     ).resolves.toEqual(created);
     expect(fake.calls[0].body).toEqual(body);
     expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
+  });
+
+  it("links a created Thesis by its number on the API's environment", () => {
+    const created = aThesis({ number: 7 });
+
+    expect(
+      thesisUrl(created, webOriginFromApiBase('https://api-llm.stg.alva.ai'))
+    ).toBe('https://stg.alva.ai/thesis/7');
+    expect(
+      thesisUrl(created, webOriginFromApiBase('https://api-llm.prd.alva.ai'))
+    ).toBe('https://alva.ai/thesis/7');
   });
 
   it('publishes an Update, its visibility and its unarchive in one write', async () => {

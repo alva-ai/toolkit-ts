@@ -24,7 +24,7 @@ import {
   formatV1PlaybookSkillGet,
   formatV1PlaybookSkillsList,
 } from './playbookSkillsFormat.js';
-import { webOriginFromApiBase } from '../resources/playbooks.js';
+import { webOriginFromApiBase } from '../resources/webOrigin.js';
 import {
   formatOwnedPlaybookList,
   formatPlaybook,
@@ -1692,6 +1692,7 @@ Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
+  asset-candidates  Read catalog IDs and the stances publishing would store, without publishing
   list     Read theses by author or market entity
   related  Read related current publications
   get      Get one thesis
@@ -1699,6 +1700,7 @@ Subcommands:
   version list  List visible Updates with editorial revisions folded together
   signals  Read published Signal history
   watchpoints  List a Thesis's current watchpoints
+  return   Read the Thesis return
   set-visibility  Change current access without publishing a version
   archive   Archive the current Update
   star      Add the Thesis to your bookmarks
@@ -1723,12 +1725,15 @@ Body input (create, update, rewrite): choose exactly one:
 Create, update and archive require --request-id: a caller-supplied UUID, sent
 as the write's Idempotency-Key. The toolkit retries transient failures with
 the same key; if a response is still ambiguous, reuse the same request ID
-only, never a fresh one. Create defaults --visibility to public. Update keeps
-the current visibility unless --visibility is given; a narrower visibility
-is set before the Update is published and a wider one after it.
+only, never a fresh one. Create requires --visibility public|private, so it
+cannot publish by accident. Update keeps the current visibility unless
+--visibility is given; a narrower visibility is set before the Update is
+published and a wider one after it. A Thesis's web page is
+<web origin>/thesis/<number>, with the number create prints:
+https://alva.ai/thesis/<number> on production, https://stg.alva.ai/... on STG.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] --visibility public|private [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
   Signals: omit both to show every Signal. Kinds: fundamentals, macro,
        technicals, commentary; with only one flag the other keeps its default.
   Images: public creation only, at most 20 in display order. Upload selected files
@@ -1755,6 +1760,8 @@ Other flags:
        --no-discovery only classifies --entity-ids (no ticker discovery) and
        returns returnPreview: the stances publishing would store, the return
        switch (askSwitch) and lastLegRemoved. --thesis-id seeds an Update.
+       A mention resolved UNRESOLVED or a stance UNKNOWN is an answer, not
+       an error: the text names no catalog asset or no clear direction.
   return  --id <id> [--detail]   the Thesis return; --detail adds each Update's positions
   get     --id <thesis-id> | --number <thesis-number>
   version get --author-version-id <thesis-version-id>
@@ -1822,7 +1829,7 @@ valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
 
 Examples:
-  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
+  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two' --visibility private
   alva thesis version get --number 42 --version 3
   alva thesis set-visibility --id thesis_0abc --visibility private
   alva thesis update --id thesis_0abc --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id thesis_version_0abd --body-file ./thesis.md --visibility private
@@ -4396,10 +4403,9 @@ export async function executeParsedCommand(
       }
       switch (subcommand) {
         case 'create': {
-          const visibility =
-            flags.visibility === undefined
-              ? undefined
-              : thesisCreateVisibility(flags.visibility);
+          const visibility = thesisCreateVisibility(
+            requireFlag(flags, 'visibility', 'thesis create')
+          );
           const images = thesisImages(flags);
           if (images?.length && visibility === 'PRIVATE') {
             throw new CliUsageError(

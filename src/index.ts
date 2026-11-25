@@ -36,6 +36,7 @@ export { AlertsResource } from './resources/alerts.js';
 export { CompanyNewsResource } from './resources/companyNews.js';
 export {
   ThesesResource,
+  thesisUrl,
   type ListThesesParams,
   type ThesisPageQuery,
   type ThesisWriteOptions,
@@ -50,12 +51,12 @@ export {
   PlaybooksResource,
   parsePlaybookRef,
   playbookUrl,
-  webOriginFromApiBase,
   type OwnPlaybooksQuery,
   type PlaybookCatalogQuery,
   type PlaybookPageQuery,
   type PlaybookWriteOptions,
 } from './resources/playbooks.js';
+export { webOriginFromApiBase } from './resources/webOrigin.js';
 export {
   PlaybookSkillsResource,
   parsePlaybookSkillId,

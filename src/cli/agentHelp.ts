@@ -136,7 +136,7 @@ Examples:
   alva for-you theses --cursor '<nextPageToken>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, update, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, return, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, update, rewrite.
 
 Every subcommand prints the /api/v2 JSON: a Thesis {id, number, visibility,
 archived, author, research, currentVersion}, a ThesisVersion {id, number,
@@ -164,8 +164,9 @@ directions without publishing. For known tickers, add --entity-ids <id,id>
 --no-discovery (and --thesis-id <id> for an Update): it skips ticker discovery
 and returns returnPreview, the stances publishing would store, whether to ask
 the Thesis return switch (askSwitch) and whether the draft would be rejected
-(lastLegRemoved). Publish with create/update --entity-ids <id,id> and
---entity-stances <json> equal to returnPreview.stances:
+(lastLegRemoved). UNRESOLVED or UNKNOWN is an answer, not an error: the text
+names no catalog asset or no clear direction. Publish with create/update
+--entity-ids <id,id> and --entity-stances <json> equal to returnPreview.stances:
 --entity-stances '[{"assetId":"asset_0abc","stance":"BEARISH"}]'. Valid stances:
 UNKNOWN, BULLISH, BEARISH, NONE. An optional "weight" (a decimal string, "0.4"
 is 40%, at most four decimals) sets that long or short's share and the rest is
@@ -198,7 +199,10 @@ author's only through an Update the author asks for.
 Embedded thesis commands accept literal --body text only; file and stdin body
 transports are intentionally unavailable because this runtime has no verified
 local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enrich;
-omitted, the server rewrites with reformat. Create defaults --visibility to public.
+omitted, the server rewrites with reformat. Create requires --visibility
+public|private. A Thesis's web page is <web origin>/thesis/<number>, with the
+number create prints: https://alva.ai/thesis/<number> on production,
+https://stg.alva.ai/... on STG.
 Set-visibility changes current access without publishing a new Update.
 It requires --id and --visibility public|private and never uses a request ID.
 Archive keeps the current Thesis content and uses the current Update for

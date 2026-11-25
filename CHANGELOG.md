@@ -253,6 +253,12 @@ resource:
   is one `POST …/updates` that also sets `visibility` and `archived`, and
   absent members carry over instead of being cleared. `setArchived` is
   `archive(id, { expectedVersionId, note })` and `unarchive(...)`.
+- `create()` returns the `Thesis` (0.38 returned `{thesis, url}`): the
+  route has no web URL, so new `thesisUrl(thesis, webOrigin)` builds the
+  page, `<web origin>/thesis/<number>`, with `webOrigin` from
+  `webOriginFromApiBase(client.baseUrl)`. CLI `thesis create` still requires
+  `--visibility public|private` and prints the Thesis; its help gives the
+  page.
 - `getVersion(versionId)` takes the Update's ID only; new
   `getByNumber(number)` and `getVersionByNumber(number, versionNumber)`.
 - `list()` takes `assetId` (was `entityId`), `archived` (was `status`) and

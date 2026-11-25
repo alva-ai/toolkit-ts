@@ -86,7 +86,9 @@ shapes as they are. CLIs and SDKs still on 0.x keep working against
   `create(newThesis, { idempotencyKey })`, `update(id, thesisUpdate)` (one
   write: absent members carry over, `visibility` and `archived` included),
   `archive`/`unarchive(id, { expectedVersionId })`, `getVersion(versionId)`
-  and `getVersionByNumber(number, versionNumber)`. A Related read that is
+  and `getVersionByNumber(number, versionNumber)`; `create()` returns the
+  `Thesis`, and `thesisUrl(thesis, webOriginFromApiBase(client.baseUrl))`
+  is its web page (was `url`). A Related read that is
   being prepared throws reason `RELATED_THESES_GENERATING`; leaving paid
   visibility needs `confirmEndPaidRenewals`
   (`PAID_RENEWALS_END_CONFIRMATION_REQUIRED`). CLI `--entity-stances` takes
@@ -175,7 +177,10 @@ skip the OAuth flow and store the key directly:
 alva configure --api-key alva_your_key_here
 ```
 
-Either path writes your credentials to `~/.config/alva/config.json`.
+Either path writes your credentials to `~/.config/alva/config.json`. Login
+saves the key with the API that issued it (`--base-url`, production by
+default), so later commands on that profile reach the same environment; it
+checks the file can be written before you sign in.
 
 Now use any command:
 
