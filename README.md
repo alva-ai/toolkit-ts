@@ -88,7 +88,10 @@ skip the OAuth flow and store the key directly:
 alva configure --api-key alva_your_key_here
 ```
 
-Either path writes your credentials to `~/.config/alva/config.json`.
+Either path writes your credentials to `~/.config/alva/config.json`. Login
+saves the key with the API that issued it (`--base-url`, production by
+default), so later commands on that profile reach the same environment; it
+checks the file can be written before you sign in.
 
 Now use any command:
 

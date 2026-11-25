@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as fsPromises from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { handleAuthLoginNoBrowser } from '../../src/cli/auth.js';
+import { loadConfig } from '../../src/cli/config.js';
 import { deriveChallenge } from '../../src/cli/pkce.js';
+
+const CONFIG_PATH = '/home/test/.config/alva/config.json';
 
 function makeWriteConfigDeps() {
   return {
@@ -8,8 +14,33 @@ function makeWriteConfigDeps() {
     homedir: () => '/home/test',
     mkdir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+    readFile: vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      ),
   };
+}
+
+// The API keys each config write stored, oldest first. Login checks the
+// config is writable before it signs in, so a write alone does not mean a key
+// was saved.
+function savedKeys(deps: ReturnType<typeof makeWriteConfigDeps>): string[] {
+  return deps.writeFile.mock.calls.flatMap(([, data]) =>
+    data === ''
+      ? []
+      : Object.values(
+          (
+            JSON.parse(data as string) as {
+              profiles: Record<string, { apiKey?: string }>;
+            }
+          ).profiles
+        ).flatMap((profile) => (profile.apiKey ? [profile.apiKey] : []))
+  );
+}
+
+function lastWrite(deps: ReturnType<typeof makeWriteConfigDeps>): unknown {
+  return JSON.parse(deps.writeFile.mock.calls.at(-1)![1] as string);
 }
 
 interface FetchCall {
@@ -157,7 +188,14 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
       apiKey: 'alva_test123',
       profile: 'default',
     });
-    expect(writeConfigDeps.writeFile).toHaveBeenCalledTimes(1);
+    expect(lastWrite(writeConfigDeps)).toEqual({
+      profiles: {
+        default: {
+          apiKey: 'alva_test123',
+          baseUrl: 'https://api-llm.prd.alva.ai',
+        },
+      },
+    });
 
     // fetch called once with the code verbatim (dash preserved — it's a
     // valid base64url character).
@@ -216,12 +254,12 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     const result = await handleAuthLoginNoBrowser(['auth', 'login'], deps);
 
     expect(result.status).toBe('logged_in');
-    expect(writeConfigDeps.writeFile).toHaveBeenCalledTimes(1);
+    expect(savedKeys(writeConfigDeps)).toEqual(['alva_test123']);
     // readline called twice (empty then valid)
     expect(readline.getCallCount()).toBeGreaterThanOrEqual(2);
   });
 
-  it('3 retries exhausted: throws and writeConfig NOT called', async () => {
+  it('3 retries exhausted: throws and saves no key', async () => {
     const { writeConfigDeps, fetchMock, deps } = makeBaseDeps({
       readlineLines: ['BAD1', 'BAD2', 'BAD3', 'BAD4'],
       fetchResponses: [
@@ -235,7 +273,7 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
       handleAuthLoginNoBrowser(['auth', 'login'], deps)
     ).rejects.toThrow(/alva auth login/);
 
-    expect(writeConfigDeps.writeFile).not.toHaveBeenCalled();
+    expect(savedKeys(writeConfigDeps)).toEqual([]);
     // Should not have attempted a 4th exchange
     expect(fetchMock.calls.length).toBeLessThanOrEqual(3);
   });
@@ -291,9 +329,151 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
       handleAuthLoginNoBrowser(['auth', 'login'], deps)
     ).rejects.toThrow(/ECONNREFUSED upstream/);
 
-    expect(writeConfigDeps.writeFile).not.toHaveBeenCalled();
+    expect(savedKeys(writeConfigDeps)).toEqual([]);
     // Only one exchange attempt for a non-invalid_grant failure
     expect(fetchMock.calls).toHaveLength(1);
     expect(readline.getCallCount()).toBe(1);
+  });
+
+  it('saves --base-url with the key, so later commands on the profile reach it', async () => {
+    const files = new Map<string, string>();
+    const { writeConfigDeps, fetchMock, deps } = makeBaseDeps();
+    writeConfigDeps.writeFile.mockImplementation(
+      async (path: string, data: string, options: { flag?: string }) => {
+        const kept = options.flag === 'a' ? (files.get(path) ?? '') : '';
+        files.set(path, kept + data);
+      }
+    );
+    writeConfigDeps.readFile.mockImplementation(async (path: string) => {
+      const data = files.get(path);
+      if (data === undefined)
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return data;
+    });
+
+    await handleAuthLoginNoBrowser(
+      [
+        'auth',
+        'login',
+        '--profile',
+        'agentlink-new',
+        '--base-url',
+        'https://api-llm.stg.alva.ai',
+      ],
+      deps
+    );
+
+    expect(fetchMock.calls[0].url).toBe(
+      'https://api-llm.stg.alva.ai/api/v1/oauth/token'
+    );
+    const next = loadConfig({
+      argv: ['whoami', '--profile', 'agentlink-new'],
+      env: {},
+      readFile: (path) => {
+        const data = files.get(path);
+        if (data === undefined) throw new Error('ENOENT');
+        return data;
+      },
+      homedir: () => '/home/test',
+    });
+    expect(next.apiKey).toBe('alva_test123');
+    expect(next.baseUrl).toBe('https://api-llm.stg.alva.ai');
+  });
+
+  it('a login without --base-url points the profile back at the default API', async () => {
+    const existing =
+      JSON.stringify({
+        profiles: {
+          default: {
+            apiKey: 'alva_stg_old',
+            baseUrl: 'https://api-llm.stg.alva.ai',
+          },
+        },
+      }) + '\n';
+    const { writeConfigDeps, deps } = makeBaseDeps();
+    writeConfigDeps.readFile.mockResolvedValue(existing);
+
+    await handleAuthLoginNoBrowser(['auth', 'login'], deps);
+
+    // The writability check opens the config for appending and adds nothing.
+    expect(writeConfigDeps.writeFile.mock.calls[0].slice(1)).toEqual([
+      '',
+      { mode: 0o600, flag: 'a' },
+    ]);
+    expect(lastWrite(writeConfigDeps)).toEqual({
+      profiles: {
+        default: {
+          apiKey: 'alva_test123',
+          baseUrl: 'https://api-llm.prd.alva.ai',
+        },
+      },
+    });
+  });
+
+  it('cannot write the config: fails before showing a URL or minting a key', async () => {
+    const { writeConfigDeps, fetchMock, readline, logged, deps } =
+      makeBaseDeps();
+    writeConfigDeps.writeFile.mockRejectedValue(
+      new Error('EPERM: operation not permitted')
+    );
+
+    await expect(
+      handleAuthLoginNoBrowser(['auth', 'login'], deps)
+    ).rejects.toThrow(
+      `Cannot write ${CONFIG_PATH} (EPERM: operation not permitted)`
+    );
+
+    expect(fetchMock.calls).toHaveLength(0);
+    expect(readline.getCallCount()).toBe(0);
+    expect(logged.join('')).not.toMatch(/Open this URL/);
+  });
+
+  it('a config that exists but cannot be read is left alone', async () => {
+    const { writeConfigDeps, fetchMock, readline, deps } = makeBaseDeps();
+    writeConfigDeps.readFile.mockRejectedValue(
+      Object.assign(new Error('EACCES: permission denied'), {
+        code: 'EACCES',
+      })
+    );
+
+    await expect(
+      handleAuthLoginNoBrowser(['auth', 'login'], deps)
+    ).rejects.toThrow(`Cannot read ${CONFIG_PATH} (EACCES: permission denied)`);
+
+    expect(writeConfigDeps.writeFile).not.toHaveBeenCalled();
+    expect(fetchMock.calls).toHaveLength(0);
+    expect(readline.getCallCount()).toBe(0);
+  });
+
+  it('a failed login leaves an existing config byte for byte (default file access)', async () => {
+    const home = await fsPromises.mkdtemp(
+      path.join(os.tmpdir(), 'alva-login-')
+    );
+    const file = path.join(home, 'alva', 'config.json');
+    const existing = JSON.stringify({
+      profiles: { default: { apiKey: 'alva_keep' } },
+    });
+    await fsPromises.mkdir(path.dirname(file), { recursive: true });
+    await fsPromises.writeFile(file, existing);
+    const previous = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = home;
+    try {
+      const { deps } = makeBaseDeps({
+        readlineLines: ['BAD1', 'BAD2', 'BAD3'],
+        fetchResponses: [invalidGrantResponse()],
+      });
+      // The CLI's own file access, not the mock.
+      delete (deps as { writeConfigDeps?: unknown }).writeConfigDeps;
+
+      await expect(
+        handleAuthLoginNoBrowser(['auth', 'login'], deps)
+      ).rejects.toThrow(/alva auth login/);
+
+      expect(await fsPromises.readFile(file, 'utf-8')).toBe(existing);
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previous;
+      await fsPromises.rm(home, { recursive: true, force: true });
+    }
   });
 });

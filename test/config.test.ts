@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { loadConfig, writeConfig } from '../src/cli/config.js';
+import * as fsPromises from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import {
+  assertConfigWritable,
+  loadConfig,
+  writeConfig,
+} from '../src/cli/config.js';
 
 describe('loadConfig', () => {
   it('--api-key flag wins over env and file', () => {
@@ -453,5 +460,78 @@ describe('writeConfig', () => {
       expect.any(String),
       expect.any(Object)
     );
+  });
+});
+
+describe('assertConfigWritable (real files)', () => {
+  async function tempConfigHome() {
+    const home = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'alva-cfg-'));
+    const file = path.join(home, 'alva', 'config.json');
+    const deps = {
+      env: { XDG_CONFIG_HOME: home } as Record<string, string | undefined>,
+      homedir: () => home,
+      mkdir: (dir: string, options: { recursive: boolean }) =>
+        fsPromises.mkdir(dir, options).then(() => undefined),
+      writeFile: (
+        target: string,
+        data: string,
+        options: { mode: number; flag?: string }
+      ) => fsPromises.writeFile(target, data, options),
+      readFile: (target: string) => fsPromises.readFile(target, 'utf-8'),
+    };
+    return { home, file, deps };
+  }
+
+  it('leaves an existing config byte for byte', async () => {
+    const { home, file, deps } = await tempConfigHome();
+    const existing = '{"apiKey":"alva_legacy","baseUrl":"https://x"}';
+    await fsPromises.mkdir(path.dirname(file), { recursive: true });
+    await fsPromises.writeFile(file, existing);
+
+    await assertConfigWritable(deps);
+
+    expect(await fsPromises.readFile(file, 'utf-8')).toBe(existing);
+    await fsPromises.rm(home, { recursive: true, force: true });
+  });
+
+  it('creates an empty config, readable only by the user, when there is none', async () => {
+    const { home, file, deps } = await tempConfigHome();
+
+    await assertConfigWritable(deps);
+
+    expect(JSON.parse(await fsPromises.readFile(file, 'utf-8'))).toEqual({
+      profiles: {},
+    });
+    if (process.platform !== 'win32') {
+      expect((await fsPromises.stat(file)).mode & 0o777).toBe(0o600);
+    }
+    await fsPromises.rm(home, { recursive: true, force: true });
+  });
+
+  it('a write that fails after opening the config leaves it intact', async () => {
+    // Models a full disk or file-size limit: the file opens, the write fails.
+    const { home, file, deps } = await tempConfigHome();
+    const existing = JSON.stringify({
+      profiles: { default: { apiKey: 'alva_keep' } },
+    });
+    await fsPromises.mkdir(path.dirname(file), { recursive: true });
+    await fsPromises.writeFile(file, existing);
+    const failingDeps = {
+      ...deps,
+      writeFile: async (
+        target: string,
+        _data: string,
+        options: { mode: number; flag?: string }
+      ) => {
+        await (await fsPromises.open(target, options.flag ?? 'w')).close();
+        throw new Error('EFBIG: file too large');
+      },
+    };
+
+    await expect(assertConfigWritable(failingDeps)).rejects.toThrow(
+      /Cannot write .*config\.json \(EFBIG: file too large\)/
+    );
+    expect(await fsPromises.readFile(file, 'utf-8')).toBe(existing);
+    await fsPromises.rm(home, { recursive: true, force: true });
   });
 });

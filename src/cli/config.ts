@@ -24,14 +24,14 @@ interface ConfigFile {
   baseUrl?: string;
 }
 
-interface WriteConfigDeps {
+export interface WriteConfigDeps {
   env: Record<string, string | undefined>;
   homedir: () => string;
   mkdir: (path: string, options: { recursive: boolean }) => Promise<void>;
   writeFile: (
     path: string,
     data: string,
-    options: { mode: number }
+    options: { mode: number; flag?: string }
   ) => Promise<void>;
   readFile: (path: string) => Promise<string>;
 }
@@ -75,6 +75,51 @@ function getProfile(config: ConfigFile, profileName: string): ProfileData {
     return { apiKey: config.apiKey, baseUrl: config.baseUrl };
   }
   return {};
+}
+
+/**
+ * Fail before a login mints a key the config could not then store (an agent
+ * sandbox that cannot write the config directory). Never changes an existing
+ * config: it opens it for appending and adds nothing, so a failed check cannot
+ * truncate it; with none, it creates an empty one. A config that exists but
+ * cannot be read is left alone.
+ */
+export async function assertConfigWritable(
+  deps: WriteConfigDeps
+): Promise<void> {
+  const path = configPath(deps);
+  const cannot = (action: string, err: unknown): Error => {
+    const reason = err instanceof Error ? err.message : String(err);
+    return new Error(
+      `Cannot ${action} ${path} (${reason}), where login stores the key. Allow reading and writing there and run \`alva auth login\` again; nothing was signed in.`
+    );
+  };
+  let exists = true;
+  try {
+    await deps.readFile(path);
+  } catch (err) {
+    if ((err as { code?: unknown } | null)?.code !== 'ENOENT') {
+      throw cannot('read', err);
+    }
+    exists = false;
+  }
+  try {
+    if (exists) {
+      await deps.writeFile(path, '', { mode: 0o600, flag: 'a' });
+    } else {
+      await deps.mkdir(configDir(deps), { recursive: true });
+      await deps.writeFile(
+        path,
+        JSON.stringify({ profiles: {} }, null, 2) + '\n',
+        {
+          mode: 0o600,
+          flag: 'wx',
+        }
+      );
+    }
+  } catch (err) {
+    throw cannot('write', err);
+  }
 }
 
 export async function writeConfig(
