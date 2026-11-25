@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
-import { writeConfig } from './config.js';
+import { assertConfigWritable, writeConfig } from './config.js';
 import { parseCommand } from './commandSchema.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
 
@@ -408,6 +408,7 @@ export async function handleAuthLogin(
   const timeout = d.timeout ?? 120_000;
   // Both paths below mint the same key; name it once.
   const mintedKeyName = d.keyName?.(flags.agent);
+  await assertConfigWritable(d.writeConfigDeps);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
@@ -485,7 +486,11 @@ export async function handleAuthLogin(
       })
         .then(async (apiKey) => {
           if (settled) return;
-          await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+          await writeConfig(
+            { apiKey, baseUrl },
+            d.writeConfigDeps,
+            profileName
+          );
           settle(() => {
             server.close();
             resolve({ status: 'logged_in', apiKey, profile: profileName });
@@ -571,7 +576,11 @@ export async function handleAuthLogin(
                 keyName: mintedKeyName,
               });
               if (settled) return;
-              await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+              await writeConfig(
+                { apiKey, baseUrl },
+                d.writeConfigDeps,
+                profileName
+              );
               settle(() => {
                 server.close();
                 resolve({ status: 'logged_in', apiKey, profile: profileName });
@@ -724,6 +733,7 @@ export async function handleAuthLoginNoBrowser(
   // Explicit dep wins (tests); otherwise derive from the resolved authUrl
   // so --auth-url stg/local-dev points at the matching OOB page.
   const oobRedirectUrl = d.oobRedirectUrl || deriveOobRedirectUrl(authUrl);
+  await assertConfigWritable(d.writeConfigDeps);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
@@ -774,7 +784,7 @@ export async function handleAuthLoginNoBrowser(
         fetch: d.fetch,
         keyName: d.keyName?.(flags.agent),
       });
-      await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+      await writeConfig({ apiKey, baseUrl }, d.writeConfigDeps, profileName);
       return { status: 'logged_in', apiKey, profile: profileName };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

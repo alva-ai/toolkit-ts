@@ -37,6 +37,12 @@ function makeWriteConfigDeps() {
   };
 }
 
+// The config as last written. Login also rewrites the config unchanged before
+// it signs in, so check what was saved rather than that a write happened.
+function lastWrite(deps: ReturnType<typeof makeWriteConfigDeps>): unknown {
+  return JSON.parse(deps.writeFile.mock.calls.at(-1)![1] as string);
+}
+
 interface FetchCall {
   url: string;
   init?: { method?: string; headers?: Record<string, string>; body?: string };
@@ -167,7 +173,14 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
 
     const result = await loginPromise;
     expect(result.apiKey).toBe('alva_test123');
-    expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+    expect(lastWrite(writeConfigDeps)).toEqual({
+      profiles: {
+        default: {
+          apiKey: 'alva_test123',
+          baseUrl: 'https://api-llm.prd.alva.ai',
+        },
+      },
+    });
 
     // Exchange happened with localhost redirect_uri.
     expect(fetchMock.calls).toHaveLength(1);
@@ -350,7 +363,9 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
 
     expect(result.apiKey).toBe('alva_test123');
     expect(openBrowser).toHaveBeenCalled();
-    expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+    expect(lastWrite(writeConfigDeps)).toMatchObject({
+      profiles: { default: { apiKey: 'alva_test123' } },
+    });
   });
 
   it('--profile flag is honored', async () => {
@@ -363,7 +378,58 @@ describe('handleAuthLogin (Mode A — dual-URL race)', () => {
     );
 
     expect(result.profile).toBe('stg');
-    expect(writeConfigDeps.writeFile).toHaveBeenCalled();
+    expect(lastWrite(writeConfigDeps)).toMatchObject({
+      profiles: { stg: { apiKey: 'alva_test123' } },
+    });
+  });
+
+  it('saves --base-url with the key it minted there', async () => {
+    const readlineMock = vi.fn().mockResolvedValueOnce('XYZ');
+    const { writeConfigDeps, fetchMock, deps } = makeDeps({
+      readline: readlineMock,
+    });
+
+    await handleAuthLogin(
+      [
+        'auth',
+        'login',
+        '--auth-url',
+        'https://stg.alva.xyz',
+        '--base-url',
+        'https://api-llm.stg.alva.ai',
+      ],
+      deps
+    );
+
+    expect(fetchMock.calls[0].url).toBe(
+      'https://api-llm.stg.alva.ai/api/v1/oauth/token'
+    );
+    expect(lastWrite(writeConfigDeps)).toEqual({
+      profiles: {
+        default: {
+          apiKey: 'alva_test123',
+          baseUrl: 'https://api-llm.stg.alva.ai',
+        },
+      },
+    });
+  });
+
+  it('cannot write the config: fails before opening a browser or minting a key', async () => {
+    const readlineMock = vi.fn().mockResolvedValueOnce('XYZ');
+    const { writeConfigDeps, fetchMock, deps } = makeDeps({
+      readline: readlineMock,
+    });
+    writeConfigDeps.mkdir.mockRejectedValue(
+      new Error('EPERM: operation not permitted')
+    );
+
+    await expect(handleAuthLogin(['auth', 'login'], deps)).rejects.toThrow(
+      /Cannot write \/home\/test\/\.config\/alva\/config\.json \(EPERM/
+    );
+
+    expect(deps.openBrowser).not.toHaveBeenCalled();
+    expect(readlineMock).not.toHaveBeenCalled();
+    expect(fetchMock.calls).toHaveLength(0);
   });
 });
 

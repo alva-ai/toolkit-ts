@@ -77,6 +77,32 @@ function getProfile(config: ConfigFile, profileName: string): ProfileData {
   return {};
 }
 
+/**
+ * Fail before a login mints a key the config could not then store (an agent
+ * sandbox that cannot write the config directory): writes the config back
+ * unchanged, creating an empty one when absent.
+ */
+export async function assertConfigWritable(
+  deps: WriteConfigDeps
+): Promise<void> {
+  const path = configPath(deps);
+  let raw: string;
+  try {
+    raw = await deps.readFile(path);
+  } catch {
+    raw = JSON.stringify({ profiles: {} }, null, 2) + '\n';
+  }
+  try {
+    await deps.mkdir(configDir(deps), { recursive: true });
+    await deps.writeFile(path, raw, { mode: 0o600 });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Cannot write ${path} (${reason}), where login stores the key. Allow writing there and run \`alva auth login\` again; nothing was signed in.`
+    );
+  }
+}
+
 export async function writeConfig(
   config: { apiKey: string; baseUrl?: string },
   deps: WriteConfigDeps,
