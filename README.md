@@ -88,7 +88,10 @@ skip the OAuth flow and store the key directly:
 alva configure --api-key alva_your_key_here
 ```
 
-Either path writes your credentials to `~/.config/alva/config.json`.
+Either path writes your credentials to `~/.config/alva/config.json`. Login
+saves the key with the API that issued it (`--base-url`, production by
+default), so later commands on that profile reach the same environment; it
+checks the file can be written before you sign in.
 
 Now use any command:
 
@@ -523,9 +526,9 @@ alva people follows list
 alva people follows theses --cursor <next_cursor>
 ```
 
-`people follows theses` lists the Thesis Updates of the profiles the user
-follows, in the order they reached Alva (a curated person's thesis can reach
-Alva hours after its post time). Without `--cursor` it reads the last 24 hours.
+`people follows theses` lists the Thesis Updates of the users the user
+follows, in the order they reached Alva (an imported thesis can reach Alva
+long after its post time). Without `--cursor` it reads the last 24 hours.
 Every answer carries a non-empty `next_cursor`, also after an empty page: page
 while `has_more` is true and keep the last `next_cursor` to read only what is
 new next time. The

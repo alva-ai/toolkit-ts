@@ -9,6 +9,7 @@ import {
 } from './thesisReads.js';
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { webOriginFromApiBase } from './webOrigin.js';
 
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
@@ -20,6 +21,14 @@ export interface ThesisEntityStance {
   stance: ThesisAssetStance;
   /** Full direction in responses; stance reports none as unknown there. */
   direction?: ThesisAssetStance;
+  /**
+   * The Update's share of this long or short as a fraction (0.4 is 40%), with
+   * at most four decimals. On create and update give one to every bullish or
+   * bearish entity, and the rest is cash, or to none, and the shares follow
+   * the default rules and what the body says. Responses carry it only on an
+   * Update published with weights.
+   */
+  weight?: number;
 }
 /** GraphQL direction, including NONE. */
 export type ThesisDirection = 'UNKNOWN' | 'BULLISH' | 'BEARISH' | 'NONE';
@@ -99,6 +108,11 @@ export interface Thesis {
 
 export interface ThesisResponse {
   thesis: Thesis;
+}
+
+/** A created Thesis and its clickable web url, e.g. `https://alva.ai/thesis/123`. */
+export interface ThesisCreateResponse extends ThesisResponse {
+  url: string;
 }
 
 export interface ThesisAuthor {
@@ -187,7 +201,43 @@ export interface CreateThesisParams {
   visibility?: 'public' | 'private';
   /** Thesis return switch; omitted keeps the default (on). */
   track_return?: boolean;
+  /** Which Signals the Thesis shows; omitted shows every Signal. */
+  signal_preferences?: ThesisSignalPreferences;
 }
+
+/** What a Thesis Signal is about. */
+export type ThesisSignalKind =
+  | 'fundamentals'
+  | 'macro'
+  | 'technicals'
+  | 'commentary';
+
+/** The least important Signals a Thesis shows; notable means notable and major. */
+export type ThesisSignalMinImportance = 'all' | 'notable' | 'major';
+
+/**
+ * Which Signals a Thesis shows to every reader, chosen by its author. Signals
+ * without a label always show.
+ */
+export interface ThesisSignalPreferences {
+  kinds: ThesisSignalKind[];
+  min_importance: ThesisSignalMinImportance;
+}
+
+export interface ThesisSignalPreferencesResponse {
+  /** The Thesis read or written; null for the caller's last choice. */
+  thesis_id: ThesisID | null;
+  preferences: ThesisSignalPreferences;
+}
+
+export const THESIS_SIGNAL_KINDS: readonly ThesisSignalKind[] = [
+  'fundamentals',
+  'macro',
+  'technicals',
+  'commentary',
+];
+export const THESIS_SIGNAL_MIN_IMPORTANCES: readonly ThesisSignalMinImportance[] =
+  ['all', 'notable', 'major'];
 
 export interface UpdateThesisParams {
   /** Full media replacement; pass current medias for a text-only update. */
@@ -371,12 +421,15 @@ export class ThesesResource {
     return thesisWatchpoints(this.client, id);
   }
 
-  async create(params: CreateThesisParams): Promise<ThesisResponse> {
+  async create(params: CreateThesisParams): Promise<ThesisCreateResponse> {
     this.client._requireAuth();
     const body = createBody(params);
-    return thesisResponse(
+    const response = thesisResponse(
       await this.client._request('POST', '/api/v1/theses', { body })
     );
+    requireKeptWeights(body.entity_stances, response.thesis.entity_stances);
+    const webOrigin = webOriginFromApiBase(this.client.baseUrl);
+    return { ...response, url: `${webOrigin}/thesis/${response.thesis.id}` };
   }
 
   async get(id: ThesisID): Promise<ThesisGetResponse> {
@@ -489,6 +542,7 @@ export class ThesesResource {
     if (response.thesis.id !== thesisID) {
       throw invalidResponse('update response must match the requested thesis');
     }
+    requireKeptWeights(body.entity_stances, response.thesis.entity_stances);
     return response;
   }
 
@@ -534,7 +588,11 @@ export class ThesesResource {
       body: current.thesis.body,
       title: current.thesis.title,
       entity_ids: current.thesis.entity_ids,
-      entity_stances: current.thesis.entity_stances,
+      // Directions only: archiving keeps the current Update and unarchiving
+      // keeps its shares without restating them.
+      entity_stances: current.thesis.entity_stances?.map(
+        ({ entity_id, stance }) => ({ entity_id, stance })
+      ),
       visibility: current.thesis.visibility,
       archived: params.archived,
       medias: current.thesis.medias,
@@ -595,6 +653,52 @@ export class ThesesResource {
       star_count: starCount,
       is_starred: returnedStarred,
     };
+  }
+
+  /**
+   * Reads which Signals one of the caller's Theses shows: its setting, or every
+   * kind and `all` when it has none. Without an id, reads the setting the caller
+   * last saved, which prefills a new Thesis. Only the Thesis's author can read it.
+   */
+  async getSignalPreferences(
+    id?: ThesisID
+  ): Promise<ThesisSignalPreferencesResponse> {
+    this.client._requireAuth();
+    if (id === undefined) {
+      return signalPreferencesResponse(
+        await this.client._request('GET', '/api/v1/theses/signal-preferences'),
+        null
+      );
+    }
+    const thesisID = requireID(id, 'id');
+    return signalPreferencesResponse(
+      await this.client._request(
+        'GET',
+        `/api/v1/theses/${thesisID}/signal-preferences`
+      ),
+      thesisID
+    );
+  }
+
+  /**
+   * Replaces which Signals one of the caller's Theses shows, for every reader,
+   * and records it as the caller's last choice. Author only.
+   */
+  async setSignalPreferences(
+    id: ThesisID,
+    preferences: ThesisSignalPreferences
+  ): Promise<ThesisSignalPreferencesResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const input = requireSignalPreferences(preferences);
+    return signalPreferencesResponse(
+      await this.client._request(
+        'PUT',
+        `/api/v1/theses/${thesisID}/signal-preferences`,
+        { body: { signal_preferences: input } }
+      ),
+      thesisID
+    );
   }
 
   async setSignalEnabled(
@@ -718,6 +822,10 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     body.tickers = requireTickers(params.tickers);
   if (params.track_return !== undefined)
     body.track_return = requireTrackReturn(params.track_return);
+  if (params.signal_preferences !== undefined)
+    body.signal_preferences = requireSignalPreferences(
+      params.signal_preferences
+    );
   if (params.entity_stances !== undefined) {
     body.entity_stances = requireEntityStances(
       params.entity_stances,
@@ -725,6 +833,58 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     );
   }
   return body;
+}
+
+/** A whole setting: at least one known kind, deduplicated, and a known minimum. */
+function requireSignalPreferences(value: unknown): ThesisSignalPreferences {
+  if (!isRecord(value) || !Array.isArray(value.kinds))
+    throw invalidArgument(
+      'signal_preferences must have kinds and min_importance'
+    );
+  const kinds = [...new Set(value.kinds)];
+  if (
+    kinds.length === 0 ||
+    !kinds.every((kind) =>
+      THESIS_SIGNAL_KINDS.includes(kind as ThesisSignalKind)
+    )
+  )
+    throw invalidArgument(
+      `signal kinds must be one or more of ${THESIS_SIGNAL_KINDS.join(', ')}`
+    );
+  if (
+    !THESIS_SIGNAL_MIN_IMPORTANCES.includes(
+      value.min_importance as ThesisSignalMinImportance
+    )
+  )
+    throw invalidArgument(
+      `min_importance must be ${THESIS_SIGNAL_MIN_IMPORTANCES.join(', ')}`
+    );
+  return {
+    kinds: kinds as ThesisSignalKind[],
+    min_importance: value.min_importance as ThesisSignalMinImportance,
+  };
+}
+
+/**
+ * The gateway's `{thesis_id, signal_preferences}`, checked against the Thesis
+ * asked for (null for the caller's last choice).
+ */
+function signalPreferencesResponse(
+  value: unknown,
+  thesisID: string | null
+): ThesisSignalPreferencesResponse {
+  if (!isRecord(value) || value.thesis_id !== thesisID)
+    throw invalidResponse(
+      'Signal setting response must name the requested thesis'
+    );
+  try {
+    return {
+      thesis_id: thesisID,
+      preferences: requireSignalPreferences(value.signal_preferences),
+    };
+  } catch {
+    throw invalidResponse('response contains an unknown Signal setting');
+  }
 }
 
 const ENTITY_STANCES: readonly string[] = [
@@ -811,8 +971,53 @@ function requireEntityStances(
     seen.add(entityID);
     if (!ENTITY_STANCES.includes(item.stance as string))
       throw invalidArgument(`entity_stances[${index}].stance is invalid`);
-    return { entity_id: entityID, stance: item.stance as ThesisAssetStance };
+    const stance: ThesisEntityStance = {
+      entity_id: entityID,
+      stance: item.stance as ThesisAssetStance,
+    };
+    if (item.weight !== undefined) {
+      if (!validWeight(item.weight))
+        throw invalidArgument(
+          `entity_stances[${index}].weight must be a fraction in (0, 1] with at most four decimals`
+        );
+      if (stance.stance !== 'bullish' && stance.stance !== 'bearish')
+        throw invalidArgument(
+          `entity_stances[${index}].weight needs a bullish or bearish stance`
+        );
+      stance.weight = item.weight as number;
+    }
+    return stance;
   });
+}
+
+function validWeight(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  const bps = Math.round(value * 10000);
+  return bps >= 1 && bps <= 10000 && Math.abs(value * 10000 - bps) <= 1e-6;
+}
+
+/**
+ * Fails loudly when the server dropped or changed the weights the request
+ * sent: an alva-gateway that predates weights ignores them
+ * (docs/changelogs/2026-11-23-thesis-weights.md F5).
+ */
+function requireKeptWeights(
+  sent: unknown,
+  returned: ThesisEntityStance[] | undefined
+): void {
+  if (!Array.isArray(sent)) return;
+  const weights = new Map<string, number>();
+  for (const item of returned ?? []) {
+    if (item.weight !== undefined) weights.set(item.entity_id, item.weight);
+  }
+  for (const item of sent as ThesisEntityStance[]) {
+    if (item.weight === undefined) continue;
+    const kept = weights.get(item.entity_id);
+    if (kept === undefined || Math.abs(kept - item.weight) > 1e-9)
+      throw invalidResponse(
+        'the Update was published without the weights sent: the server predates weights'
+      );
+  }
 }
 
 function updateBody(params: UpdateThesisParams): Record<string, unknown> {
@@ -926,6 +1131,13 @@ function thesisResponse(response: unknown): ThesisResponse {
             'thesis.entity_stances contains invalid direction'
           );
         stance.direction = item.direction as ThesisAssetStance;
+      }
+      if (item.weight !== undefined) {
+        if (!validWeight(item.weight))
+          throw invalidResponse(
+            'thesis.entity_stances contains invalid weight'
+          );
+        stance.weight = item.weight;
       }
       return stance;
     });

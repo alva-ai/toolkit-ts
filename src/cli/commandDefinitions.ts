@@ -206,6 +206,8 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       'tickers',
       'visibility',
       'track-return',
+      'signal-kinds',
+      'signal-min-importance',
     ],
     booleans: ['body-stdin'],
   }),
@@ -239,6 +241,10 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('thesis star', { values: ['id'] }),
   command('thesis unstar', { values: ['id'] }),
   command('thesis set-signal-enabled', { values: ['id', 'enabled'] }),
+  command('thesis signal-preferences get', { values: ['id'] }),
+  command('thesis signal-preferences set', {
+    values: ['id', 'kinds', 'min-importance'],
+  }),
   command('thesis update', {
     values: [
       'id',

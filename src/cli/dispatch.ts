@@ -51,14 +51,18 @@ import type { SavePersonalSkillFileInput } from '../resources/personalSkills.js'
 import {
   PLAYBOOK_VISIBILITIES,
   OWNED_PLAYBOOK_FILTERS,
-  webOriginFromApiBase,
   type PlaybookVisibility,
   type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
-import type {
-  ThesisMedia,
-  ThesisRewriteMode,
-  ThesisVisibility,
+import { webOriginFromApiBase } from '../resources/webOrigin.js';
+import {
+  THESIS_SIGNAL_KINDS,
+  type ThesisMedia,
+  type ThesisRewriteMode,
+  type ThesisSignalKind,
+  type ThesisSignalMinImportance,
+  type ThesisSignalPreferences,
+  type ThesisVisibility,
 } from '../resources/theses.js';
 
 import {
@@ -1645,6 +1649,7 @@ Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
+  asset-candidates  Read catalog IDs and the directions publishing would store, without publishing
   list     Read theses by author or market entity
   related  Read related current publications
   get      Get one thesis
@@ -1652,11 +1657,13 @@ Subcommands:
   version list  List visible Updates with editorial revisions folded together
   signals  Read published Signal history
   watchpoints  List a Thesis's current watchpoints
+  return   Read the Thesis return
   set-visibility  Change current access without publishing a version
   archive   Archive the current author version
   star      Add the Thesis to your bookmarks
   unstar    Remove the Thesis from your bookmarks
   set-signal-enabled  Enable or disable managed Signal research
+  signal-preferences get|set  Read or change which Signals your Thesis shows
   update   Publish a new Update replacing body, title, entities, visibility (all sent in full);
            with --archived false it also unarchives the Thesis
   rewrite  Explicitly request a candidate body rewrite; never called by another command
@@ -1669,11 +1676,14 @@ Body input (create, update, rewrite): choose exactly one:
 Create and update require --request-id: a caller-supplied non-zero UUID. The
 toolkit does not generate or retry request IDs. If a response is ambiguous
 after a write, reuse the same request ID only after resolving that ambiguity with
-the backend; do not send a fresh ID. Create defaults --visibility to public.
-Update requires --visibility explicitly so it cannot inadvertently publish.
+the backend; do not send a fresh ID. Create and update require --visibility
+explicitly so neither can publish by accident. Create returns the Thesis's web
+url.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] --visibility public|private [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
+  Signals: omit both to show every Signal. Kinds: fundamentals, macro,
+       technicals, commentary; with only one flag the other keeps its default.
   Images: public creation only, at most 20 in display order. Upload selected files
        with the existing host upload tool after publication confirmation. Private
        images and local/ALFS paths are not supported; this flag does not upload.
@@ -1695,6 +1705,8 @@ Other flags:
        --no-discovery only classifies --entity-ids (no ticker discovery) and
        returns returnPreview: the directions publishing would store, the return
        switch (askSwitch) and lastLegRemoved. --thesis-id seeds an Update.
+       A mention resolved UNRESOLVED or a direction UNKNOWN is an answer, not
+       an error: the text names no catalog asset or no clear direction.
   return  --id <id> [--detail]   the Thesis return; --detail adds each Update's positions
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
@@ -1714,6 +1726,13 @@ Other flags:
   archive --id <id> --request-id <uuid> [--note <text>]
   star|unstar --id <id>
   set-signal-enabled --id <id> --enabled true|false
+  signal-preferences get [--id <id>]
+       Which Signals your Thesis shows to every reader: {thesis_id, preferences:
+       {kinds, min_importance}}. Without --id: the setting you last saved, which
+       prefills a new Thesis. Only the author can read or set it.
+  signal-preferences set --id <id> [--kinds <kind,kind>] [--min-importance all|notable|major]
+       Changes only what is given. Applies to every reader, the Thesis's
+       deliveries and, from its next daily run, its Overview.
 
 Maintenance behavior:
   archive reads the current Thesis first, preserves its body, title,
@@ -1753,7 +1772,7 @@ valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
 
 Examples:
-  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
+  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two' --visibility private
   alva thesis set-visibility --id 9223372036854775807 --visibility private
   alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
   printf '%s' 'Draft body' | alva thesis rewrite --body-stdin --mode shorten`,
@@ -2982,6 +3001,32 @@ function thesisImages(flags: Record<string, string>): string[] | undefined {
   );
 }
 
+function thesisSignalKindList(raw: string, flag: string): ThesisSignalKind[] {
+  const kinds = raw.split(',').map((kind) => kind.trim());
+  if (kinds.some((kind) => kind === '')) {
+    throw new CliUsageError(`${flag} must not contain empty kinds`, 'thesis');
+  }
+  return kinds as ThesisSignalKind[];
+}
+
+// thesisCreateSignalPreferences reads the optional setting of a new Thesis:
+// without either flag the Thesis shows every Signal; with one, the other
+// keeps its default (every kind, or all importance).
+function thesisCreateSignalPreferences(
+  flags: Record<string, string>
+): ThesisSignalPreferences | undefined {
+  const kinds = flags['signal-kinds'];
+  const minImportance = flags['signal-min-importance'];
+  if (kinds === undefined && minImportance === undefined) return undefined;
+  return {
+    kinds:
+      kinds === undefined
+        ? [...THESIS_SIGNAL_KINDS]
+        : thesisSignalKindList(kinds, '--signal-kinds'),
+    min_importance: (minImportance ?? 'all') as ThesisSignalMinImportance,
+  };
+}
+
 function thesisTrackReturn(
   flags: Record<string, string>,
   command: string
@@ -3017,6 +3062,7 @@ function thesisEntityStances(flags: Record<string, string>):
   | Array<{
       entity_id: string;
       stance: 'unknown' | 'bullish' | 'bearish' | 'none';
+      weight?: number;
     }>
   | undefined {
   const raw = flags['entity-stances'];
@@ -3032,6 +3078,7 @@ function thesisEntityStances(flags: Record<string, string>):
   return parsed as Array<{
     entity_id: string;
     stance: 'unknown' | 'bullish' | 'bearish' | 'none';
+    weight?: number;
   }>;
 }
 
@@ -3864,11 +3911,11 @@ export async function executeParsedCommand(
             entity_ids: thesisEntityIDs(flags),
             entity_stances: thesisEntityStances(flags),
             tickers: thesisTickers(flags),
-            visibility:
-              flags.visibility === undefined
-                ? 'public'
-                : thesisCreateVisibility(flags.visibility),
+            visibility: thesisCreateVisibility(
+              requireFlag(flags, 'visibility', 'thesis create')
+            ),
             track_return: thesisTrackReturn(flags, 'thesis create'),
+            signal_preferences: thesisCreateSignalPreferences(flags),
           });
         case 'asset-candidates':
           return client.theses.assetCandidates(
@@ -3975,6 +4022,33 @@ export async function executeParsedCommand(
             requireFlag(flags, 'id', 'thesis unstar'),
             false
           );
+        case 'signal-preferences': {
+          if (parsedCommand.path[2] === 'get') {
+            return client.theses.getSignalPreferences(flags.id);
+          }
+          const id = requireFlag(flags, 'id', 'thesis signal-preferences set');
+          if (
+            flags.kinds === undefined &&
+            flags['min-importance'] === undefined
+          ) {
+            throw new CliUsageError(
+              'thesis signal-preferences set needs --kinds or --min-importance',
+              'thesis'
+            );
+          }
+          // Change only what is given: the rest of the setting stays.
+          const current = await client.theses.getSignalPreferences(id);
+          return client.theses.setSignalPreferences(id, {
+            kinds:
+              flags.kinds === undefined
+                ? current.preferences.kinds
+                : thesisSignalKindList(flags.kinds, '--kinds'),
+            min_importance:
+              flags['min-importance'] === undefined
+                ? current.preferences.min_importance
+                : (flags['min-importance'] as ThesisSignalMinImportance),
+          });
+        }
         case 'set-signal-enabled':
           return client.theses.setSignalEnabled(
             requireFlag(flags, 'id', 'thesis set-signal-enabled'),

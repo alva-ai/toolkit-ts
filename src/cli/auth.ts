@@ -4,7 +4,11 @@ import { execFileSync, spawn } from 'node:child_process';
 import * as os from 'node:os';
 import * as fsPromises from 'node:fs/promises';
 import * as readline from 'node:readline';
-import { writeConfig } from './config.js';
+import {
+  assertConfigWritable,
+  writeConfig,
+  type WriteConfigDeps,
+} from './config.js';
 import { parseCommand } from './commandSchema.js';
 import { generateCodeVerifier, deriveChallenge } from './pkce.js';
 
@@ -130,18 +134,6 @@ export function generateState(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-interface WriteConfigDeps {
-  env: Record<string, string | undefined>;
-  homedir: () => string;
-  mkdir: (path: string, options: { recursive: boolean }) => Promise<void>;
-  writeFile: (
-    path: string,
-    data: string,
-    options: { mode: number }
-  ) => Promise<void>;
-  readFile: (path: string) => Promise<string>;
-}
-
 /**
  * Minimal fetch-like surface used by the auth flow so tests can inject a mock
  * without touching the network. Mirrors the subset of `globalThis.fetch` we
@@ -261,8 +253,11 @@ function defaultDeps(): AuthLoginDeps {
       homedir: () => os.homedir(),
       mkdir: (path: string, options: { recursive: boolean }) =>
         fsPromises.mkdir(path, options).then(() => undefined),
-      writeFile: (path: string, data: string, options: { mode: number }) =>
-        fsPromises.writeFile(path, data, options).then(() => undefined),
+      writeFile: (
+        path: string,
+        data: string,
+        options: { mode: number; flag?: string }
+      ) => fsPromises.writeFile(path, data, options).then(() => undefined),
       readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
     },
     createServer: (handler: http.RequestListener) => http.createServer(handler),
@@ -408,6 +403,7 @@ export async function handleAuthLogin(
   const timeout = d.timeout ?? 120_000;
   // Both paths below mint the same key; name it once.
   const mintedKeyName = d.keyName?.(flags.agent);
+  await assertConfigWritable(d.writeConfigDeps);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
@@ -485,7 +481,11 @@ export async function handleAuthLogin(
       })
         .then(async (apiKey) => {
           if (settled) return;
-          await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+          await writeConfig(
+            { apiKey, baseUrl },
+            d.writeConfigDeps,
+            profileName
+          );
           settle(() => {
             server.close();
             resolve({ status: 'logged_in', apiKey, profile: profileName });
@@ -571,7 +571,11 @@ export async function handleAuthLogin(
                 keyName: mintedKeyName,
               });
               if (settled) return;
-              await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+              await writeConfig(
+                { apiKey, baseUrl },
+                d.writeConfigDeps,
+                profileName
+              );
               settle(() => {
                 server.close();
                 resolve({ status: 'logged_in', apiKey, profile: profileName });
@@ -685,8 +689,11 @@ function defaultNoBrowserDeps(): AuthLoginNoBrowserDeps {
       homedir: () => os.homedir(),
       mkdir: (path: string, options: { recursive: boolean }) =>
         fsPromises.mkdir(path, options).then(() => undefined),
-      writeFile: (path: string, data: string, options: { mode: number }) =>
-        fsPromises.writeFile(path, data, options).then(() => undefined),
+      writeFile: (
+        path: string,
+        data: string,
+        options: { mode: number; flag?: string }
+      ) => fsPromises.writeFile(path, data, options).then(() => undefined),
       readFile: (path: string) => fsPromises.readFile(path, 'utf-8'),
     },
     log: (msg: string) => process.stderr.write(msg),
@@ -724,6 +731,7 @@ export async function handleAuthLoginNoBrowser(
   // Explicit dep wins (tests); otherwise derive from the resolved authUrl
   // so --auth-url stg/local-dev points at the matching OOB page.
   const oobRedirectUrl = d.oobRedirectUrl || deriveOobRedirectUrl(authUrl);
+  await assertConfigWritable(d.writeConfigDeps);
 
   const state = d.generateState();
   const codeVerifier = d.generateCodeVerifier();
@@ -774,7 +782,7 @@ export async function handleAuthLoginNoBrowser(
         fetch: d.fetch,
         keyName: d.keyName?.(flags.agent),
       });
-      await writeConfig({ apiKey }, d.writeConfigDeps, profileName);
+      await writeConfig({ apiKey, baseUrl }, d.writeConfigDeps, profileName);
       return { status: 'logged_in', apiKey, profile: profileName };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

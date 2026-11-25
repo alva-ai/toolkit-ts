@@ -41,6 +41,7 @@ export {
   type ThesisAssetMention,
   type ThesisAssetCandidatesResponse,
   type ThesisResponse,
+  type ThesisCreateResponse,
   type ThesisGetResponse,
   type ThesisResearchStatus,
   type ThesisSignalEvidenceExcerpt,
