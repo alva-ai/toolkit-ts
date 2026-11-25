@@ -31,7 +31,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
   let server: ReturnType<typeof createServer>;
   let baseUrl = '';
   let requests: RecordedRequest[] = [];
-  let nextResponse: { status: number; body: unknown } = {
+  let nextResponse: { status: number; body: unknown; contentType?: string } = {
     status: 200,
     body: {},
   };
@@ -49,7 +49,10 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
           apiKey: req.headers['x-alva-api-key'] as string | undefined,
         });
         res.statusCode = nextResponse.status;
-        res.setHeader('Content-Type', 'application/json');
+        res.setHeader(
+          'Content-Type',
+          nextResponse.contentType ?? 'application/json'
+        );
         res.end(JSON.stringify(nextResponse.body));
       });
     });
@@ -65,42 +68,45 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('lists, gets, and reads revision-checked files via /api/v1/personal-skills', async () => {
+  it('lists, gets, and reads revision-checked files via /api/v2/me/personal-skills', async () => {
     const client = new AlvaClient({ baseUrl, apiKey: 'alva_test' });
 
     nextResponse = {
       status: 200,
       body: {
-        skills: [
+        items: [
           {
-            public_id: 'pskl_0123456789abcdef01234567',
+            id: 'personal_skill_0test',
             slug: 'earnings-review',
-            template_ref: 'personal:pskl_0123456789abcdef01234567',
-            display_name: '财报复盘',
+            templateRef: 'personal:pskl_0123456789abcdef01234567',
+            displayName: '财报复盘',
             description: '先看现金流再看指引',
             enabled: true,
-            current_rev: 2,
-            content_hash: 'sha256:abc',
-            updated_at: '2026-11-23T12:00:00Z',
+            currentRev: 2,
+            contentHash: 'sha256:abc',
+            updatedAt: '2026-11-23T12:00:00.000Z',
           },
         ],
+        nextPageToken: null,
       },
     };
     const listed = await client.personalSkills.list({ include_disabled: true });
     expect(listed.skills).toHaveLength(1);
+    expect(listed.skills[0].public_id).toBe('pskl_0123456789abcdef01234567');
     expect(requests[0].url).toBe(
-      '/api/v1/personal-skills?include_disabled=true'
+      '/api/v2/me/personal-skills?includeDisabled=true'
     );
 
     nextResponse = {
       status: 200,
       body: {
-        public_id: 'pskl_0123456789abcdef01234567',
+        id: 'personal_skill_0test',
         slug: 'earnings-review',
+        templateRef: 'personal:pskl_0123456789abcdef01234567',
         rev: 2,
         path: 'references/checklist.md',
         content: '- FCF',
-        updated_at: '2026-11-23T12:00:00Z',
+        updatedAt: '2026-11-23T12:00:00.000Z',
       },
     };
     const f = await client.personalSkills.file(
@@ -109,9 +115,31 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       { rev: 2 }
     );
     expect(f.rev).toBe(2);
+    expect(f.public_id).toBe('pskl_0123456789abcdef01234567');
     expect(requests[1].url).toBe(
-      '/api/v1/personal-skills/personal%3Apskl_0123456789abcdef01234567/files/references/checklist.md?rev=2'
+      '/api/v2/me/personal-skills/personal%3Apskl_0123456789abcdef01234567/files/by-path?path=references%2Fchecklist.md&rev=2'
     );
+
+    // Parses RFC 9457 application/problem+json errors cleanly into AlvaError.
+    nextResponse = {
+      status: 409,
+      contentType: 'application/problem+json',
+      body: {
+        type: 'https://alva.ai/problems/conflict',
+        title: 'Conflict',
+        status: 409,
+        detail: 'revision conflict: expected rev 1, current rev is 2',
+        code: 'CONFLICT',
+      },
+    };
+    await expect(
+      client.personalSkills.setEnabled('earnings-review', false)
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      status: 409,
+      message: 'revision conflict: expected rev 1, current rev is 2',
+    });
+    nextResponse = { status: 200, body: {} };
   });
 
   it('rejects path traversal, control/bidi chars, and oversized paths locally before sending request', async () => {
@@ -142,19 +170,19 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       writeFileSync(join(dir, 'references', 'check.md'), '- Cash flow\n');
 
       nextResponse = {
-        status: 201,
+        status: 200,
         body: {
           created: true,
           skill: {
-            public_id: 'pskl_0123456789abcdef01234567',
+            id: 'personal_skill_0test',
             slug: 'earnings-review',
-            template_ref: 'personal:pskl_0123456789abcdef01234567',
-            display_name: '财报复盘',
+            templateRef: 'personal:pskl_0123456789abcdef01234567',
+            displayName: '财报复盘',
             description: '先看现金流',
             enabled: true,
-            current_rev: 1,
-            content_hash: 'sha256:def',
-            updated_at: '2026-11-23T12:00:00Z',
+            currentRev: 1,
+            contentHash: 'sha256:def',
+            updatedAt: '2026-11-23T12:00:00.000Z',
           },
         },
       };
@@ -196,15 +224,15 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       body: {
         created: false,
         skill: {
-          public_id: 'pskl_0123456789abcdef01234567',
+          id: 'personal_skill_0test',
           slug: 'earnings-review',
-          template_ref: 'personal:pskl_0123456789abcdef01234567',
-          display_name: '财报复盘',
+          templateRef: 'personal:pskl_0123456789abcdef01234567',
+          displayName: '财报复盘',
           description: '先看现金流',
           enabled: true,
-          current_rev: 2,
-          content_hash: 'sha256:def',
-          updated_at: '2026-11-23T12:00:00Z',
+          currentRev: 2,
+          contentHash: 'sha256:def',
+          updatedAt: '2026-11-23T12:00:00.000Z',
         },
       },
     };
@@ -232,7 +260,7 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       'Updated personal:pskl_0123456789abcdef01234567'
     );
     const payload = JSON.parse(requests[0].body);
-    expect(payload.expected_rev).toBe(1);
+    expect(payload.expectedRev).toBe(1);
     expect(payload.files).toHaveLength(1);
   });
 
@@ -341,19 +369,19 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
         '---\nname: sec-test\n---\nOutside\n'
       );
       nextResponse = {
-        status: 201,
+        status: 200,
         body: {
           created: true,
           skill: {
-            public_id: 'pskl_0123456789abcdef01234567',
+            id: 'personal_skill_0test',
             slug: 'sec-test',
-            template_ref: 'personal:pskl_0123456789abcdef01234567',
-            display_name: 'Sec',
+            templateRef: 'personal:pskl_0123456789abcdef01234567',
+            displayName: 'Sec',
             description: 'Desc',
             enabled: true,
-            current_rev: 1,
-            content_hash: 'sha256:sym',
-            updated_at: '2026-11-23T12:00:00Z',
+            currentRev: 1,
+            contentHash: 'sha256:sym',
+            updatedAt: '2026-11-23T12:00:00.000Z',
           },
         },
       };
@@ -416,19 +444,19 @@ describe('PersonalSkillsResource & my-skills CLI', () => {
       // 4. After removing binary file, dotfiles and node_modules are skipped and UTF-8 BOM is preserved.
       rmSync(join(dir, 'assets'), { recursive: true, force: true });
       nextResponse = {
-        status: 201,
+        status: 200,
         body: {
           created: true,
           skill: {
-            public_id: 'pskl_0123456789abcdef01234567',
+            id: 'personal_skill_0test',
             slug: 'sec-test',
-            template_ref: 'personal:pskl_0123456789abcdef01234567',
-            display_name: 'Sec',
+            templateRef: 'personal:pskl_0123456789abcdef01234567',
+            displayName: 'Sec',
             description: 'Desc',
             enabled: true,
-            current_rev: 1,
-            content_hash: 'sha256:txt',
-            updated_at: '2026-11-23T12:00:00Z',
+            currentRev: 1,
+            contentHash: 'sha256:txt',
+            updatedAt: '2026-11-23T12:00:00.000Z',
           },
         },
       };

@@ -487,12 +487,21 @@ export class AlvaClient {
       } catch {
         bodyText = '';
       }
-      const contentType = response.headers.get('content-type') ?? '';
-      if (contentType.includes('application/json') && bodyText) {
+      const contentType = (
+        response.headers.get('content-type') ?? ''
+      ).toLowerCase();
+      if (
+        (contentType.includes('application/json') ||
+          contentType.includes('+json')) &&
+        bodyText
+      ) {
         try {
           const data = JSON.parse(bodyText) as {
             error?: { code?: string; message?: string };
             details?: unknown;
+            code?: string;
+            detail?: string;
+            title?: string;
           };
           if (data.error) {
             // details carries the typed reason (domain, reason, metadata) of
@@ -502,6 +511,15 @@ export class AlvaClient {
               data.error.message ?? `HTTP ${response.status}`,
               response.status,
               data.details
+            );
+          }
+          if (typeof data.code === 'string' && data.code) {
+            // RFC 9457 application/problem+json (/api/v2 errors).
+            throw new AlvaError(
+              data.code,
+              data.detail ?? data.title ?? `HTTP ${response.status}`,
+              response.status,
+              data
             );
           }
         } catch (e) {

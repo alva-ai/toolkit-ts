@@ -102,6 +102,65 @@ function validateRelPath(p: string): string {
   return trimmed;
 }
 
+interface WirePersonalSkill {
+  id: string;
+  slug: string;
+  templateRef: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  currentRev: number;
+  contentHash: string;
+  updatedAt: string;
+}
+
+interface WirePersonalSkillList {
+  items?: WirePersonalSkill[];
+  nextPageToken?: string | null;
+}
+
+interface WirePersonalSkillDetail extends WirePersonalSkill {
+  files?: Array<{ path: string; sizeBytes: number }>;
+}
+
+interface WirePersonalSkillFile {
+  id: string;
+  slug: string;
+  templateRef: string;
+  rev: number;
+  path: string;
+  content: string;
+  updatedAt: string;
+}
+
+interface WireSavePersonalSkillResult {
+  skill: WirePersonalSkill;
+  created: boolean;
+}
+
+function publicIDFromTemplateRef(
+  templateRef: string,
+  fallback: string
+): string {
+  return templateRef.startsWith('personal:')
+    ? templateRef.slice('personal:'.length)
+    : fallback;
+}
+
+function toSummary(w: WirePersonalSkill): PersonalSkillSummary {
+  return {
+    public_id: publicIDFromTemplateRef(w.templateRef, w.id),
+    slug: w.slug,
+    template_ref: w.templateRef,
+    display_name: w.displayName,
+    description: w.description,
+    enabled: w.enabled,
+    current_rev: w.currentRev,
+    content_hash: w.contentHash,
+    updated_at: w.updatedAt,
+  };
+}
+
 export class PersonalSkillsResource {
   constructor(private client: AlvaClient) {}
 
@@ -109,21 +168,30 @@ export class PersonalSkillsResource {
     include_disabled?: boolean;
   }): Promise<PersonalSkillListResponse> {
     const query: Record<string, string> = {};
-    if (params?.include_disabled) query.include_disabled = 'true';
-    const res = (await this.client._request('GET', '/api/v1/personal-skills', {
-      query,
-    })) as PersonalSkillListResponse | null | undefined;
+    if (params?.include_disabled) query.includeDisabled = 'true';
+    const res = (await this.client._request(
+      'GET',
+      '/api/v2/me/personal-skills',
+      { query }
+    )) as WirePersonalSkillList | null | undefined;
     return {
-      skills: res?.skills ?? [],
+      skills: (res?.items ?? []).map(toSummary),
     };
   }
 
   async get(ref: string): Promise<PersonalSkillDetail> {
     const encoded = encodeURIComponent(validateRef(ref));
-    return (await this.client._request(
+    const res = (await this.client._request(
       'GET',
-      `/api/v1/personal-skills/${encoded}`
-    )) as PersonalSkillDetail;
+      `/api/v2/me/personal-skills/${encoded}`
+    )) as WirePersonalSkillDetail;
+    return {
+      skill: toSummary(res),
+      files: (res.files ?? []).map((f) => ({
+        path: f.path,
+        size_bytes: f.sizeBytes,
+      })),
+    };
   }
 
   async file(
@@ -132,25 +200,46 @@ export class PersonalSkillsResource {
     opts?: { rev?: number }
   ): Promise<PersonalSkillFile> {
     const encodedRef = encodeURIComponent(validateRef(ref));
-    const encodedPath = validateRelPath(filePath)
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/');
-    const query: Record<string, string> = {};
+    const relPath = validateRelPath(filePath);
+    const query: Record<string, string> = { path: relPath };
     if (opts?.rev !== undefined) query.rev = String(opts.rev);
-    return (await this.client._request(
+    const res = (await this.client._request(
       'GET',
-      `/api/v1/personal-skills/${encodedRef}/files/${encodedPath}`,
+      `/api/v2/me/personal-skills/${encodedRef}/files/by-path`,
       { query }
-    )) as PersonalSkillFile;
+    )) as WirePersonalSkillFile;
+    return {
+      public_id: publicIDFromTemplateRef(res.templateRef, res.id),
+      slug: res.slug,
+      rev: res.rev,
+      path: res.path,
+      content: res.content,
+      updated_at: res.updatedAt,
+    };
   }
 
   async save(
     params: SavePersonalSkillParams
   ): Promise<SavePersonalSkillResponse> {
-    return (await this.client._request('POST', '/api/v1/personal-skills', {
-      body: params,
-    })) as SavePersonalSkillResponse;
+    const body: Record<string, unknown> = {
+      slug: params.slug,
+      displayName: params.display_name,
+      description: params.description,
+      files: params.files,
+    };
+    if (params.public_id !== undefined) body.ref = params.public_id;
+    if (params.expected_rev !== undefined) {
+      body.expectedRev = params.expected_rev;
+    }
+    const res = (await this.client._request(
+      'POST',
+      '/api/v2/me/personal-skills',
+      { body }
+    )) as WireSavePersonalSkillResult;
+    return {
+      skill: toSummary(res.skill),
+      created: res.created,
+    };
   }
 
   async setEnabled(
@@ -158,18 +247,20 @@ export class PersonalSkillsResource {
     enabled: boolean
   ): Promise<{ skill: PersonalSkillSummary }> {
     const encoded = encodeURIComponent(validateRef(ref));
-    return (await this.client._request(
+    const res = (await this.client._request(
       'PATCH',
-      `/api/v1/personal-skills/${encoded}/enabled`,
+      `/api/v2/me/personal-skills/${encoded}`,
       { body: { enabled } }
-    )) as { skill: PersonalSkillSummary };
+    )) as WirePersonalSkill;
+    return { skill: toSummary(res) };
   }
 
   async delete(ref: string): Promise<{ deleted: boolean }> {
     const encoded = encodeURIComponent(validateRef(ref));
-    return (await this.client._request(
+    await this.client._request(
       'DELETE',
-      `/api/v1/personal-skills/${encoded}`
-    )) as { deleted: boolean };
+      `/api/v2/me/personal-skills/${encoded}`
+    );
+    return { deleted: true };
   }
 }
