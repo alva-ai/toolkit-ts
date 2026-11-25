@@ -43,10 +43,10 @@ import {
 import {
   PLAYBOOK_VISIBILITIES,
   OWNED_PLAYBOOK_FILTERS,
-  webOriginFromApiBase,
   type PlaybookVisibility,
   type OwnedPlaybookFilter,
 } from '../resources/playbooks.js';
+import { webOriginFromApiBase } from '../resources/webOrigin.js';
 import {
   THESIS_SIGNAL_KINDS,
   type ThesisMedia,

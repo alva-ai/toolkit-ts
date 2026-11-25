@@ -9,7 +9,7 @@ import {
 } from './thesisReads.js';
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
-import { webOriginFromApiBase } from './playbooks.js';
+import { webOriginFromApiBase } from './webOrigin.js';
 
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
