@@ -203,6 +203,21 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis signal-preferences set', 'thesis signal-preferences set', {
       values: ['id', 'kinds', 'min-importance'],
     }),
+    route('thesis decision-mode get', 'thesis decision-mode get', {
+      values: ['id'],
+    }),
+    route('thesis decision-mode set', 'thesis decision-mode set', {
+      values: ['id', 'mode'],
+    }),
+    route('thesis proposals list', 'thesis proposals list', {
+      values: ['id', 'first', 'cursor'],
+    }),
+    route('thesis proposals accept', 'thesis proposals accept', {
+      values: ['id', 'proposal'],
+    }),
+    route('thesis proposals decline', 'thesis proposals decline', {
+      values: ['id', 'proposal'],
+    }),
     route('thesis update', 'thesis update', {
       values: [
         'id',

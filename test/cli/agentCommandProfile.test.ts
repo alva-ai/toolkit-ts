@@ -24,7 +24,7 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
-    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(139);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(144);
     for (const leaf of [
       'markets watchlist list',
       'markets watchlist add',
@@ -48,6 +48,11 @@ describe('Slim Alva Agent command profile', () => {
       'set-signal-enabled',
       'signal-preferences get',
       'signal-preferences set',
+      'decision-mode get',
+      'decision-mode set',
+      'proposals list',
+      'proposals accept',
+      'proposals decline',
     ]) {
       expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toContain(
         `thesis ${leaf}`
