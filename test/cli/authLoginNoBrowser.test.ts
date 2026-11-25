@@ -19,18 +19,20 @@ function makeWriteConfigDeps() {
   };
 }
 
-// The API keys each config write stored, oldest first. Login rewrites the
-// config unchanged before it signs in, so a write alone does not mean a key
+// The API keys each config write stored, oldest first. Login checks the
+// config is writable before it signs in, so a write alone does not mean a key
 // was saved.
 function savedKeys(deps: ReturnType<typeof makeWriteConfigDeps>): string[] {
   return deps.writeFile.mock.calls.flatMap(([, data]) =>
-    Object.values(
-      (
-        JSON.parse(data as string) as {
-          profiles: Record<string, { apiKey?: string }>;
-        }
-      ).profiles
-    ).flatMap((profile) => (profile.apiKey ? [profile.apiKey] : []))
+    data === ''
+      ? []
+      : Object.values(
+          (
+            JSON.parse(data as string) as {
+              profiles: Record<string, { apiKey?: string }>;
+            }
+          ).profiles
+        ).flatMap((profile) => (profile.apiKey ? [profile.apiKey] : []))
   );
 }
 
@@ -334,8 +336,9 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     const files = new Map<string, string>();
     const { writeConfigDeps, fetchMock, deps } = makeBaseDeps();
     writeConfigDeps.writeFile.mockImplementation(
-      async (path: string, data: string) => {
-        files.set(path, data);
+      async (path: string, data: string, options: { flag?: string }) => {
+        const kept = options.flag === 'a' ? (files.get(path) ?? '') : '';
+        files.set(path, kept + data);
       }
     );
     writeConfigDeps.readFile.mockImplementation(async (path: string) => {
@@ -389,8 +392,11 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
 
     await handleAuthLoginNoBrowser(['auth', 'login'], deps);
 
-    // The writability check rewrites the file as it was.
-    expect(writeConfigDeps.writeFile.mock.calls[0][1]).toBe(existing);
+    // The writability check opens the config for appending and adds nothing.
+    expect(writeConfigDeps.writeFile.mock.calls[0].slice(1)).toEqual([
+      '',
+      { mode: 0o600, flag: 'a' },
+    ]);
     expect(lastWrite(writeConfigDeps)).toEqual({
       profiles: {
         default: {

@@ -41,7 +41,7 @@ function makeWriteConfigDeps() {
   };
 }
 
-// The config as last written. Login also rewrites the config unchanged before
+// The config as last written. Login also checks the config is writable before
 // it signs in, so check what was saved rather than that a write happened.
 function lastWrite(deps: ReturnType<typeof makeWriteConfigDeps>): unknown {
   return JSON.parse(deps.writeFile.mock.calls.at(-1)![1] as string);

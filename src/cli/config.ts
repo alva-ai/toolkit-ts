@@ -31,7 +31,7 @@ interface WriteConfigDeps {
   writeFile: (
     path: string,
     data: string,
-    options: { mode: number }
+    options: { mode: number; flag?: string }
   ) => Promise<void>;
   readFile: (path: string) => Promise<string>;
 }
@@ -79,9 +79,10 @@ function getProfile(config: ConfigFile, profileName: string): ProfileData {
 
 /**
  * Fail before a login mints a key the config could not then store (an agent
- * sandbox that cannot write the config directory): writes the config back
- * unchanged, creating an empty one only when there is none. A config that
- * exists but cannot be read is left alone.
+ * sandbox that cannot write the config directory). Never changes an existing
+ * config: it opens it for appending and adds nothing, so a failed check cannot
+ * truncate it; with none, it creates an empty one. A config that exists but
+ * cannot be read is left alone.
  */
 export async function assertConfigWritable(
   deps: WriteConfigDeps
@@ -93,18 +94,29 @@ export async function assertConfigWritable(
       `Cannot ${action} ${path} (${reason}), where login stores the key. Allow reading and writing there and run \`alva auth login\` again; nothing was signed in.`
     );
   };
-  let raw: string;
+  let exists = true;
   try {
-    raw = await deps.readFile(path);
+    await deps.readFile(path);
   } catch (err) {
     if ((err as { code?: unknown } | null)?.code !== 'ENOENT') {
       throw cannot('read', err);
     }
-    raw = JSON.stringify({ profiles: {} }, null, 2) + '\n';
+    exists = false;
   }
   try {
-    await deps.mkdir(configDir(deps), { recursive: true });
-    await deps.writeFile(path, raw, { mode: 0o600 });
+    if (exists) {
+      await deps.writeFile(path, '', { mode: 0o600, flag: 'a' });
+    } else {
+      await deps.mkdir(configDir(deps), { recursive: true });
+      await deps.writeFile(
+        path,
+        JSON.stringify({ profiles: {} }, null, 2) + '\n',
+        {
+          mode: 0o600,
+          flag: 'wx',
+        }
+      );
+    }
   } catch (err) {
     throw cannot('write', err);
   }
