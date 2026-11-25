@@ -22,8 +22,11 @@ follow-up), where Claude Code and Codex each signed in with `--base-url`.
   login without `--base-url` saves the production endpoint, which also points
   a profile that was on STG back at production with its new production key.
 - D2: before printing a URL or opening a browser, login writes the config
-  back unchanged (an empty one when there is none). A failure stops there with
-  the path, the reason and "nothing was signed in", so no key is minted.
+  back unchanged (an empty one only when the file does not exist). A failure
+  stops there with the path, the reason and "nothing was signed in", so no key
+  is minted. A config that exists but cannot be read stops login the same way
+  and is not written (Codex review on the PR: writing an empty config there
+  would erase every profile even when the user then cancels).
   Tests that asserted "no config written" on a failed login now assert that no
   key was saved.
 
@@ -43,20 +46,23 @@ Ships with the next toolkit release; no gateway or backend change.
 
 ## Verification
 
-- `npx vitest run` (64 files, 1495 tests). New: `--base-url` is saved with
+- `npx vitest run` (64 files, 1496 tests). New: `--base-url` is saved with
   the key and `loadConfig` for `whoami --profile <it>` then resolves that
   endpoint (the bug report's steps); a login without `--base-url` rewrites an
   STG profile to production; a config that cannot be written fails before any
-  URL, prompt, browser or token request, in both modes. Reverting `src` with
-  the tests kept fails 7 of them.
+  URL, prompt, browser or token request, in both modes; an unreadable config
+  is neither written nor followed by a sign-in. Reverting `src` with the tests
+  kept fails 7 of them; dropping only the `ENOENT` check fails the unreadable
+  one.
 - `npx tsc --noEmit`, `npx eslint src test`, `npx prettier --check` on the
   changed files.
 - Built CLI (`npm run build`, `node dist/cli.js auth login --no-browser`)
   against real permissions: a read-only `XDG_CONFIG_HOME` and a read-only
-  `config.json` each exit 1 at once with `Cannot write <path> (EACCES …)`,
-  print no login URL, and leave the file as it was; a writable legacy flat
-  config is rewritten byte for byte (same hash, mode 600) and the URL is
-  printed. Signing in for real was not run (needs a person at the browser);
+  `config.json` each exit 1 at once with `Cannot write <path> (EACCES …)`; a
+  write-only `config.json` exits 1 with `Cannot read <path> (EACCES …)` and
+  keeps its profiles; none prints a login URL. A writable legacy flat config is
+  rewritten byte for byte (same hash, mode 600) and a missing one is created
+  as `{"profiles": {}}` with mode 600, each before the URL is printed. Signing in for real was not run (needs a person at the browser);
   the saved endpoint is covered by the tests above.
 
 ## Remaining
