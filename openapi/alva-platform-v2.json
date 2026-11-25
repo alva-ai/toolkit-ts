@@ -4530,6 +4530,156 @@
         ],
         "type": "object"
       },
+      "FollowedThesisUpdate": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/ThesisAsset"
+            },
+            "type": "array"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisAuthor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "categoryIds": {
+            "items": {
+              "$ref": "#/components/schemas/ThesisCategoryID"
+            },
+            "type": "array"
+          },
+          "changeKind": {
+            "$ref": "#/components/schemas/ChangeKind"
+          },
+          "editedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ThesisVersionID"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "materialVersionId": {
+            "$ref": "#/components/schemas/ThesisVersionID"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/Media"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thesisId": {
+            "$ref": "#/components/schemas/ThesisID"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assets",
+          "author",
+          "body",
+          "categoryIds",
+          "changeKind",
+          "editedAt",
+          "excerpt",
+          "id",
+          "locked",
+          "materialVersionId",
+          "media",
+          "note",
+          "number",
+          "publishedAt",
+          "sources",
+          "summary",
+          "thesisId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "FollowedThesisUpdateSyncList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FollowedThesisUpdate"
+            },
+            "type": "array"
+          },
+          "nextPageToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nextSyncToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextPageToken",
+          "nextSyncToken"
+        ],
+        "type": "object"
+      },
       "ForYouItem": {
         "properties": {
           "itemId": {
@@ -7412,6 +7562,7 @@
                   "QUOTA_EXCEEDED",
                   "RANGE_NOT_SATISFIABLE",
                   "RELATED_THESES_GENERATING",
+                  "SYNC_TOKEN_INVALID",
                   "TASK_LIMIT_EXCEEDED",
                   "THESIS_ACTIVE_LIMIT_EXCEEDED",
                   "THESIS_ARCHIVED",
@@ -16885,6 +17036,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProfileFollow"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/me/followed-profiles/thesis-updates": {
+      "get": {
+        "description": "Requires content:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "syncToken",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowedThesisUpdateSyncList"
                 }
               }
             },

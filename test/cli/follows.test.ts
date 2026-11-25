@@ -1,11 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-import { AlvaClient } from '../../src/client.js';
+import { describe, expect, it } from 'vitest';
 import { dispatchCli } from '../../src/cli/dispatch.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
 import { AlvaError } from '../../src/error.js';
 import type { V2RequestOptions } from '../../src/platformApi.js';
 import { v2Client } from '../helpers/v2Client.js';
 import { anAsset, aProfile } from '../socialV2.js';
+import { aVersion, anAuthor, MATERIAL } from '../contentV2.js';
+import { v2 } from '../v2Schema.js';
 
 // New commands use one path in both the terminal and the embedded tree.
 const commands = {
@@ -17,25 +18,6 @@ const commands = {
   profiles: ['people', 'follows', 'list'],
   theses: ['people', 'follows', 'theses'],
 } as const;
-
-// A REST thesis as GET /api/v1/me/following/theses returns it.
-function restThesis(versionID: string, changeKind: string) {
-  return {
-    id: '7',
-    author_version_id: versionID,
-    material_version_id: versionID,
-    title: 'Power caps neocloud growth',
-    body: 'Power caps neocloud growth into 2027.',
-    entity_ids: ['3'],
-    visibility: 'public',
-    closed: false,
-    archived: false,
-    closing_note: '',
-    author_kind: 'public_source',
-    author_ref: 'cathie-wood',
-    change_kind: changeKind,
-  };
-}
 
 const paths = {
   terminal: { dispatch: dispatchCli, ...commands },
@@ -161,80 +143,45 @@ for (const [name, cli] of Object.entries(paths)) {
       });
     });
 
-    it('reads followed theses with the largest page and the given cursor', async () => {
-      const client = new AlvaClient({ apiKey: 'host-key' });
-      const author = {
-        kind: 'user',
-        username: 'carol',
-        display_name: 'Carol',
-      };
-      const request = vi.spyOn(client, '_request').mockResolvedValueOnce({
-        items: [
-          { thesis: restThesis('11', 'initial'), author },
-          { thesis: restThesis('12', 'material'), author: null },
-        ],
-        next_cursor: 'c2',
-        has_more: true,
+    it('reads followed Thesis Updates as a sync list, largest page first', async () => {
+      const update = v2('FollowedThesisUpdate', {
+        ...aVersion(),
+        author: anAuthor(),
       });
-      const page = await cli.dispatch(client, [
-        ...cli.theses,
-        '--cursor',
-        'c1',
+      const lastPage = v2('FollowedThesisUpdateSyncList', {
+        items: [
+          update,
+          v2('FollowedThesisUpdate', {
+            ...aVersion({ id: MATERIAL }),
+            author: null,
+          }),
+        ],
+        nextPageToken: null,
+        nextSyncToken: 'sync-2',
+      });
+      const { client, v2: transport } = v2Client({
+        'GET /me/followed-profiles/thesis-updates': lastPage,
+      });
+      expect(await cli.dispatch(client, [...cli.theses])).toEqual(lastPage);
+      await cli.dispatch(client, [...cli.theses, '--cursor', 'page-2']);
+      await cli.dispatch(client, [...cli.theses, '--sync-token', 'sync-1']);
+      expect(transport.mock.calls.map((c) => c[2])).toEqual([
+        {
+          query: { pageSize: 100, pageToken: undefined, syncToken: undefined },
+        },
+        { query: { pageSize: 100, pageToken: 'page-2', syncToken: undefined } },
+        { query: { pageSize: 100, pageToken: undefined, syncToken: 'sync-1' } },
       ]);
-      expect(request).toHaveBeenCalledWith(
-        'GET',
-        '/api/v1/me/following/theses',
-        { query: { first: '100', cursor: 'c1' } }
-      );
-      expect(page).toMatchObject({
-        items: [
-          {
-            thesis: { author_version_id: '11', change_kind: 'initial' },
-            author,
-          },
-          { thesis: { change_kind: 'material' }, author: null },
-        ],
-        next_cursor: 'c2',
-        has_more: true,
-      });
     });
 
-    it('refuses a following page it cannot resume or read', async () => {
-      const client = new AlvaClient({ apiKey: 'host-key' });
-      vi.spyOn(client, '_request')
-        .mockResolvedValueOnce({ items: [], has_more: false })
-        .mockResolvedValueOnce({
-          items: [{ thesis: { id: '7' }, author: null }],
-          next_cursor: 'c2',
-          has_more: false,
-        })
-        .mockResolvedValueOnce({
-          items: [
-            {
-              thesis: restThesis('11', 'initial'),
-              author: { kind: 'person', slug: 'x', display_name: 'x' },
-            },
-          ],
-          next_cursor: 'c2',
-          has_more: false,
-        })
-        .mockResolvedValueOnce({
-          items: [
-            {
-              thesis: restThesis('11', 'initial'),
-              author: { kind: 'user', display_name: 'x' },
-            },
-          ],
-          next_cursor: 'c2',
-          has_more: false,
-        });
-      for (let i = 0; i < 4; i++) {
+    it('refuses an empty token before the request', async () => {
+      const { client, v2: transport } = v2Client({});
+      for (const flag of ['--cursor', '--sync-token']) {
         await expect(
-          cli.dispatch(client, [...cli.theses])
-        ).rejects.toMatchObject({
-          code: 'INVALID_RESPONSE',
-        });
+          cli.dispatch(client, [...cli.theses, flag, ' '])
+        ).rejects.toThrow(`${flag} must be a non-empty`);
       }
+      expect(transport).not.toHaveBeenCalled();
     });
 
     it('mixes kinds in one atomic write with a per-symbol suffix', async () => {

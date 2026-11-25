@@ -428,3 +428,12 @@ resource:
   `addToWatchlist` and `removeFromWatchlist` by ticker are gone: CLI
   `markets watchlist add|remove` resolves the tickers and refuses an
   unknown one before writing.
+- `follows.theses(query)` reads `GET /me/followed-profiles/thesis-updates`, a
+  sync list (`FollowedThesisUpdateSyncList`): each item is the Update (a
+  `ThesisVersion`) with its `author`; page with `pageToken` while
+  `nextPageToken` is set, and keep the last page's `nextSyncToken` to send as
+  `syncToken` next time (was `{cursor, first}` and the `/api/v1` page
+  `{items, next_cursor, has_more}`). CLI `people follows theses` takes
+  `--cursor <nextPageToken>` and `--sync-token <nextSyncToken>`. The
+  `FollowingThesesParams`, `FollowingThesesPage`, `FollowingThesisItem` and
+  `FollowingThesisAuthor` types are gone.

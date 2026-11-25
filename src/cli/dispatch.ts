@@ -1542,19 +1542,21 @@ Flags:
   --id <id>                 follow/unfollow: profile id from a search or list
                             result (required)
   --limit <1-50>            search/list: page size
-  --cursor <token>          list: nextPageToken of the previous page;
-                            theses: next_cursor of the previous read (omitted:
-                            the last 24 hours)
+  --cursor <token>          list, theses: nextPageToken of the previous page
+  --sync-token <token>      theses: nextSyncToken of the previous read's last
+                            page, to read only what arrived since (without it
+                            and --cursor: the last 24 hours)
 
 Output is the /api/v2 shape: search and list print a ProfileList page,
-follow and unfollow the ProfileFollow {following, profile}. theses prints the
-/api/v1 following feed page {items, next_cursor, has_more}.
+follow and unfollow the ProfileFollow {following, profile}. theses prints a
+FollowedThesisUpdateSyncList {items, nextPageToken, nextSyncToken}: each item
+is the Update (a ThesisVersion) with its author. Keep nextSyncToken.
 
 Examples:
   alva people search --query "cathie wood" --kind person
   alva people follows follow --id profile_0abc
   alva people follows list
-  alva people follows theses --cursor <next_cursor>`,
+  alva people follows theses --sync-token <nextSyncToken>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
@@ -2240,11 +2242,14 @@ function upperFlag(val: string | undefined): string | undefined {
   return val === undefined ? undefined : val.trim().toUpperCase();
 }
 
-function optionalCursorFlag(val: string | undefined): string | undefined {
+function optionalCursorFlag(
+  val: string | undefined,
+  flag = '--cursor'
+): string | undefined {
   if (val === undefined) return undefined;
   if (!val.trim() || val.length > 4096) {
     throw new Error(
-      '--cursor must be a non-empty cursor of at most 4096 characters'
+      `${flag} must be a non-empty cursor of at most 4096 characters`
     );
   }
   return val;
@@ -2336,12 +2341,15 @@ function dispatchPeople(
         ),
       });
     case 'follows theses':
-      // Agents page with next_cursor; the largest page keeps calls few.
+      // Agents keep nextSyncToken; the largest page keeps calls few.
       return client.follows.theses({
-        cursor: usageChecked(command, () =>
+        pageSize: 100,
+        pageToken: usageChecked(command, () =>
           optionalCursorFlag(flags['cursor'])
         ),
-        first: 100,
+        syncToken: usageChecked(command, () =>
+          optionalCursorFlag(flags['sync-token'], '--sync-token')
+        ),
       });
     // The Profile ID names the kind; --kind is only checked.
     case 'follows follow':

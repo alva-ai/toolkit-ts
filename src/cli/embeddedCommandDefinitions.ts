@@ -333,7 +333,7 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['kind', 'limit', 'cursor'],
     }),
     route('people follows theses', 'people follows theses', {
-      values: ['cursor'],
+      values: ['cursor', 'sync-token'],
     }),
     route('people follows follow', 'people follows follow', {
       values: ['kind', 'id'],

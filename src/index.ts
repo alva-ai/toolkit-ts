@@ -189,10 +189,6 @@ export {
 export {
   FollowsResource,
   type FollowWriteOptions,
-  type FollowingThesesParams,
-  type FollowingThesisAuthor,
-  type FollowingThesisItem,
-  type FollowingThesesPage,
 } from './resources/follows.js';
 export {
   SubscriptionsResource,

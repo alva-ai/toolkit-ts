@@ -3631,6 +3631,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/followed-profiles/thesis-updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires content:read. */
+        get: {
+            parameters: {
+                query?: {
+                    pageSize?: number;
+                    pageToken?: string;
+                    syncToken?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FollowedThesisUpdateSyncList"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/followed-profiles/{profileId}": {
         parameters: {
             query?: never;
@@ -8708,6 +8749,32 @@ export interface components {
             items: components["schemas"]["FollowedThesis"][];
             nextPageToken: string | null;
         };
+        FollowedThesisUpdate: {
+            assets: components["schemas"]["ThesisAsset"][];
+            author: components["schemas"]["ThesisAuthor"] | null;
+            body: string;
+            categoryIds: components["schemas"]["ThesisCategoryID"][];
+            changeKind: components["schemas"]["ChangeKind"];
+            editedAt: components["schemas"]["DateTime"] | null;
+            excerpt: string | null;
+            id: components["schemas"]["ThesisVersionID"];
+            locked: boolean;
+            materialVersionId: components["schemas"]["ThesisVersionID"];
+            media: components["schemas"]["Media"][];
+            note: string | null;
+            /** Format: int64 */
+            number: number;
+            publishedAt: components["schemas"]["DateTime"] | null;
+            sources: components["schemas"]["Source"][];
+            summary: string | null;
+            thesisId: components["schemas"]["ThesisID"];
+            title: string;
+        };
+        FollowedThesisUpdateSyncList: {
+            items: components["schemas"]["FollowedThesisUpdate"][];
+            nextPageToken: string | null;
+            nextSyncToken: string | null;
+        };
         ForYouItem: {
             itemId: string;
             kind: components["schemas"]["ForYouItemKind"];
@@ -9265,7 +9332,7 @@ export interface components {
             code: "CANCELED" | "CONFLICT" | "CREDENTIAL_NOT_ACCEPTED" | "DEADLINE_EXCEEDED" | "HUMAN_SESSION_REQUIRED" | "INSUFFICIENT_PERMISSION" | "INTERNAL" | "INVALID_ARGUMENT" | "NOT_FOUND" | "PERMISSION_DENIED" | "RATE_LIMITED" | "REQUEST_TOO_LARGE" | "UNAUTHENTICATED" | "UNAVAILABLE";
             detail: string;
             invalidParams: components["schemas"]["InvalidParam"][] | null;
-            reason: ("ACCOUNT_BANNED" | "ACCOUNT_DELETION_IN_PROGRESS" | "ADMIN_REQUIRED" | "ADMISSION_REQUIRED" | "ALLOWANCE_REQUIRED" | "API_KEY_SCOPE_DENIED" | "BUNDLED_FEED_EXPOSURE_CONFIRMATION_REQUIRED" | "CHANNEL_MAIN_SESSION_REQUIRED" | "CONCURRENCY_LIMIT_EXCEEDED" | "CONTENT_PLAN_REQUIRED" | "CREDENTIAL_EXPIRED" | "DURABLE_USER_STORAGE_FORBIDDEN" | "EXECUTION_DEPTH_EXCEEDED" | "FEATURED_MEDIA_NOT_FOUND" | "FEATURED_MEDIA_QUOTA_EXCEEDED" | "FEATURED_MEDIA_SOURCE_INVALID" | "FEATURED_MEDIA_SOURCE_UNSUPPORTED" | "FEATURED_MEDIA_UPSTREAM_UNAVAILABLE" | "FEATURED_MEDIA_X_UNAVAILABLE" | "FILE_TOO_LARGE" | "GROUP_SESSION_REFUSED" | "IDEMPOTENCY_KEY_INVALID" | "IDEMPOTENCY_KEY_IN_USE" | "IDEMPOTENCY_KEY_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_RESULT_UNAVAILABLE" | "INSUFFICIENT_CREDITS" | "MODEL_TIER_REQUIRED" | "PAGE_TOKEN_INVALID" | "PAID_RENEWALS_END_CONFIRMATION_REQUIRED" | "PLAYBOOK_QUOTA_EXCEEDED" | "PRICING_REQUIRED" | "QUOTA_EXCEEDED" | "RANGE_NOT_SATISFIABLE" | "RELATED_THESES_GENERATING" | "TASK_LIMIT_EXCEEDED" | "THESIS_ACTIVE_LIMIT_EXCEEDED" | "THESIS_ARCHIVED" | "THESIS_RETURN_LAST_LEG" | "THESIS_RETURN_SWITCH_FINAL" | "THESIS_WEIGHTS_INCOMPLETE" | "UNSUPPORTED_MEDIA_TYPE" | "X_SCOPE_REVOKED" | "X_TOKEN_REVOKED") | null;
+            reason: ("ACCOUNT_BANNED" | "ACCOUNT_DELETION_IN_PROGRESS" | "ADMIN_REQUIRED" | "ADMISSION_REQUIRED" | "ALLOWANCE_REQUIRED" | "API_KEY_SCOPE_DENIED" | "BUNDLED_FEED_EXPOSURE_CONFIRMATION_REQUIRED" | "CHANNEL_MAIN_SESSION_REQUIRED" | "CONCURRENCY_LIMIT_EXCEEDED" | "CONTENT_PLAN_REQUIRED" | "CREDENTIAL_EXPIRED" | "DURABLE_USER_STORAGE_FORBIDDEN" | "EXECUTION_DEPTH_EXCEEDED" | "FEATURED_MEDIA_NOT_FOUND" | "FEATURED_MEDIA_QUOTA_EXCEEDED" | "FEATURED_MEDIA_SOURCE_INVALID" | "FEATURED_MEDIA_SOURCE_UNSUPPORTED" | "FEATURED_MEDIA_UPSTREAM_UNAVAILABLE" | "FEATURED_MEDIA_X_UNAVAILABLE" | "FILE_TOO_LARGE" | "GROUP_SESSION_REFUSED" | "IDEMPOTENCY_KEY_INVALID" | "IDEMPOTENCY_KEY_IN_USE" | "IDEMPOTENCY_KEY_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_RESULT_UNAVAILABLE" | "INSUFFICIENT_CREDITS" | "MODEL_TIER_REQUIRED" | "PAGE_TOKEN_INVALID" | "PAID_RENEWALS_END_CONFIRMATION_REQUIRED" | "PLAYBOOK_QUOTA_EXCEEDED" | "PRICING_REQUIRED" | "QUOTA_EXCEEDED" | "RANGE_NOT_SATISFIABLE" | "RELATED_THESES_GENERATING" | "SYNC_TOKEN_INVALID" | "TASK_LIMIT_EXCEEDED" | "THESIS_ACTIVE_LIMIT_EXCEEDED" | "THESIS_ARCHIVED" | "THESIS_RETURN_LAST_LEG" | "THESIS_RETURN_SWITCH_FINAL" | "THESIS_WEIGHTS_INCOMPLETE" | "UNSUPPORTED_MEDIA_TYPE" | "X_SCOPE_REVOKED" | "X_TOKEN_REVOKED") | null;
             requiredPermission: string | null;
             /** Format: int32 */
             retryAfter: number | null;

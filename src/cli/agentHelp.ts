@@ -302,8 +302,9 @@ unfollow.`,
   'people follows': `Usage: alva people follows <list|theses|follow|unfollow> [options]
 
 list: [--kind user|person] [--limit <1-50>] [--cursor <nextPageToken>]
-theses: [--cursor <next_cursor>] Thesis Updates by followed profiles in the
-  order they reached Alva; page while has_more, keep the last next_cursor
+theses: [--cursor <nextPageToken> | --sync-token <nextSyncToken>] Thesis
+  Updates by followed profiles in the order they reached Alva; page while
+  nextPageToken is set, then keep nextSyncToken to read only what is new
 follow|unfollow: --id <profile id>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand>
