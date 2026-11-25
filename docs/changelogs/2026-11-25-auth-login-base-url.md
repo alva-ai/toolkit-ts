@@ -38,6 +38,12 @@ Not changed: login still ignores `ALVA_ENDPOINT` (there is no matching
 variable for `--auth-url`, so honoring one without the other would mint at one
 environment after signing in at another).
 
+- D3: `auth.ts` uses the `WriteConfigDeps` of `config.ts` instead of its own
+  copy, so the file-access contract the check relies on (`flag`) is stated
+  once. Types cannot stop an implementation from dropping an optional `flag`,
+  so a login test on the CLI's own file access pins it: a failed login leaves
+  an existing config byte for byte.
+
 Occam (final diff): nothing removed. Saving the production endpoint too is
 what keeps a re-login's key and endpoint paired without changing
 `writeConfig`; the check opens the file for writing because only that shows
@@ -50,7 +56,7 @@ Ships with the next toolkit release; no gateway or backend change.
 
 ## Verification
 
-- `npx vitest run` (64 files, 1499 tests). New: `--base-url` is saved with
+- `npx vitest run` (64 files, 1500 tests). New: `--base-url` is saved with
   the key and `loadConfig` for `whoami --profile <it>` then resolves that
   endpoint (the bug report's steps); a login without `--base-url` rewrites an
   STG profile to production; a config that cannot be written fails before any
@@ -59,7 +65,8 @@ Ships with the next toolkit release; no gateway or backend change.
   config keeps its bytes, a missing one is created empty with mode 600, and a
   write that fails after opening the file leaves it intact. Reverting `src`
   with the tests kept fails 7 tests; restoring the in-place rewrite fails the
-  failed-write one.
+  failed-write one; making the CLI's file access drop `flag` still type-checks
+  but fails the default-file-access login test.
 - `npx tsc --noEmit`, `npx eslint src test`, `npx prettier --check` on the
   changed files.
 - Built CLI (`npm run build`, `node dist/cli.js auth login --no-browser`)
@@ -71,6 +78,14 @@ Ships with the next toolkit release; no gateway or backend change.
   the URL is printed. A missing config is created as `{"profiles": {}}` with
   mode 600. Signing in for real was not run (needs a person at the browser);
   the saved endpoint is covered by the tests above.
+
+## Review
+
+Final net diff against `main` (through D3), all six passes: behavior and
+scope, code quality, tests, security/data/compatibility, operations, docs. No
+open findings. Codex review found the two D2 data-loss cases in earlier
+versions (both fixed above); the shared type and its pinning test came from
+the final pass. E2E not required: CLI-only, no service change.
 
 ## Remaining
 
