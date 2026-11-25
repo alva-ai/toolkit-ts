@@ -49,6 +49,17 @@ export {
   type SetThesisVisibilityParams,
   type RewriteThesisParams,
   type RewriteThesisResponse,
+  type ThesisRebalanceCondition,
+  type ThesisPositionDirection,
+  type ThesisPositionChange,
+  type ThesisRebalance,
+  type ThesisDecisionMode,
+  type ThesisDecisionModeResponse,
+  type ThesisRebalanceProposalState,
+  type ThesisRebalanceProposal,
+  type ListThesisRebalanceProposalsParams,
+  type ThesisRebalanceProposalsResponse,
+  type ThesisRebalanceProposalResponse,
 } from './resources/theses.js';
 export {
   ForYouResource,
@@ -233,6 +244,9 @@ export type {
   ThesisReadScope,
   ThesisListPage,
   RelatedThesesPage,
+  ThesisWatchpoint,
+  ThesisWatchpointCondition,
+  ThesisWatchpointsResult,
 } from './resources/thesisReads.js';
 
 export {

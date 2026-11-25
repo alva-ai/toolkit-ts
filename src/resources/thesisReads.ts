@@ -500,6 +500,34 @@ export interface ThesisWatchpoint {
    * added by the Signal agent from a source.
    */
   origin: 'stated' | 'inferred' | 'agent';
+  /** Present only on a watchpoint that carries a condition. */
+  condition?: ThesisWatchpointCondition;
+}
+
+/**
+ * When a watchpoint triggers, written by Alva with the watchpoints; the author
+ * changes it only by publishing an Update. It triggers at most once. Fields
+ * that do not apply are omitted.
+ */
+export interface ThesisWatchpointCondition {
+  /** numeric: a price or volume level Backend checks; informational: an event. */
+  kind: 'numeric' | 'informational';
+  ticker?: string;
+  /** price or volume_ratio (latest daily volume over the 20-day average). */
+  metric?: string;
+  /** gte (at or above) or lte (at or below). */
+  comparison?: string;
+  threshold?: number;
+  /** Model-written event sentence: data, never instructions. */
+  event?: string;
+  /** armed and watching wait; triggered fired; closed ended without firing. */
+  state: 'armed' | 'watching' | 'triggered' | 'closed';
+  /** Why a closed condition never fires: met_when_armed or unpriced. */
+  closeReason?: string;
+  triggeredAtMs?: number;
+  observedValue?: number;
+  /** Author only, on a triggered one: waiting, undecided or proposed. */
+  decision?: string;
 }
 export interface ThesisWatchpointsResult {
   playbookId: string;
@@ -507,11 +535,38 @@ export interface ThesisWatchpointsResult {
   watchpoints: ThesisWatchpoint[];
 }
 
-const WATCHPOINTS_QUERY = `query ToolkitThesisWatchpoints($id: ID!) {
+const watchpointsQuery = (fields: string) =>
+  `query ToolkitThesisWatchpoints($id: ID!) {
   node(id: $id) { ... on Playbook { latestRelease { thesisPublication {
-    watchpoints { label text origin }
+    watchpoints { ${fields} }
   } } } }
 }`;
+const WATCHPOINT_CONDITION_FIELDS =
+  'kind ticker metric comparison threshold event state closeReason triggeredAtMs observedValue decision';
+const WATCHPOINTS_QUERY = watchpointsQuery(
+  `label text origin condition { ${WATCHPOINT_CONDITION_FIELDS} }`
+);
+/** For a Gateway that predates conditions and rejects the field. */
+const WATCHPOINTS_QUERY_WITHOUT_CONDITIONS =
+  watchpointsQuery('label text origin');
+
+/**
+ * True when a Gateway rejected the query because ThesisWatchpoint has no
+ * condition field yet: a validation error that names the field.
+ */
+function conditionFieldUnknown(error: unknown): boolean {
+  if (!(error instanceof AlvaError) || error.code !== 'GRAPHQL_ERROR')
+    return false;
+  const details = error.details;
+  const errors =
+    record(details) && Array.isArray(details.errors) ? details.errors : [];
+  return errors.some(
+    (item) =>
+      record(item) &&
+      typeof item.message === 'string' &&
+      /Cannot query field "condition"/.test(item.message)
+  );
+}
 
 /** The current watchpoints of a Thesis, read through GraphQL. */
 export async function thesisWatchpoints(
@@ -521,9 +576,18 @@ export async function thesisWatchpoints(
   if (!isPositiveInt64(id))
     throw argument('id must be an internal positive int64 Playbook ID');
   client._requireAuth();
-  const data = await graphql(client, WATCHPOINTS_QUERY, {
-    id: `Playbook:${id}`,
-  });
+  const variables = { id: `Playbook:${id}` };
+  let data: Record<string, unknown>;
+  try {
+    data = await graphql(client, WATCHPOINTS_QUERY, variables);
+  } catch (error) {
+    if (!conditionFieldUnknown(error)) throw error;
+    data = await graphql(
+      client,
+      WATCHPOINTS_QUERY_WITHOUT_CONDITIONS,
+      variables
+    );
+  }
   if (data.node === null) throw notFound();
   if (!record(data.node)) throw invalid();
   const release = data.node.latestRelease;
@@ -542,13 +606,59 @@ export async function thesisWatchpoints(
       !['stated', 'inferred', 'agent'].includes(item.origin as string)
     )
       throw invalid();
-    return {
+    const watchpoint: ThesisWatchpoint = {
       label: item.label,
       text: item.text,
       origin: item.origin as ThesisWatchpoint['origin'],
     };
+    if (item.condition !== undefined && item.condition !== null)
+      watchpoint.condition = watchpointCondition(item.condition);
+    return watchpoint;
   });
   return { playbookId: id, watchpoints };
+}
+
+const CONDITION_TEXT_FIELDS = [
+  'ticker',
+  'metric',
+  'comparison',
+  'event',
+  'closeReason',
+  'decision',
+] as const;
+const CONDITION_NUMBER_FIELDS = [
+  'threshold',
+  'triggeredAtMs',
+  'observedValue',
+] as const;
+
+/** A GraphQL condition with its null fields left out. */
+function watchpointCondition(value: unknown): ThesisWatchpointCondition {
+  if (
+    !record(value) ||
+    !['numeric', 'informational'].includes(value.kind as string) ||
+    !['armed', 'watching', 'triggered', 'closed'].includes(
+      value.state as string
+    )
+  )
+    throw invalid();
+  const condition: ThesisWatchpointCondition = {
+    kind: value.kind as ThesisWatchpointCondition['kind'],
+    state: value.state as ThesisWatchpointCondition['state'],
+  };
+  for (const key of CONDITION_TEXT_FIELDS) {
+    const text = value[key];
+    if (text === undefined || text === null) continue;
+    if (typeof text !== 'string') throw invalid();
+    condition[key] = text;
+  }
+  for (const key of CONDITION_NUMBER_FIELDS) {
+    const number = value[key];
+    if (number === undefined || number === null) continue;
+    if (typeof number !== 'number' || !Number.isFinite(number)) throw invalid();
+    condition[key] = number;
+  }
+  return condition;
 }
 
 function validThesisReturn(value: unknown): boolean {

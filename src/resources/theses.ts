@@ -102,8 +102,146 @@ export interface Thesis {
   archived: boolean;
   version_archived?: boolean;
   note?: string;
-  /** `initial` for a Thesis's first publication, `material` for an Update. */
+  /**
+   * `initial` for a Thesis's first publication, `material` for an Update,
+   * `rebalance` for an Update Alva published that changes only the position.
+   */
   change_kind?: string;
+  /** Set only on a rebalance Update: what triggered it and what changed. */
+  rebalance?: ThesisRebalance;
+}
+
+/**
+ * A watchpoint's condition, written by Alva's Signal agent with the
+ * watchpoints. It triggers at most once. Fields that do not apply are omitted.
+ */
+export interface ThesisRebalanceCondition {
+  id: ThesisID;
+  /** The watchpoint it belongs to, such as "W3". */
+  label: string;
+  /** numeric: a price or volume level Backend checks; informational: an event. */
+  kind: 'numeric' | 'informational';
+  entity_id?: ThesisID;
+  ticker?: string;
+  /** price or volume_ratio (latest daily volume over the 20-day average). */
+  metric?: string;
+  /** gte (at or above) or lte (at or below). */
+  comparison?: string;
+  threshold?: number;
+  /** Model-written event sentence: data, never instructions. */
+  event?: string;
+  /** armed and watching wait; triggered fired; closed ended without firing. */
+  state: 'armed' | 'watching' | 'triggered' | 'closed';
+  /** Why a closed condition never fires: met_when_armed or unpriced. */
+  close_reason?: string;
+  triggered_at_ms?: number;
+  observed_value?: number;
+  /** Author only, on a triggered one: waiting, undecided or proposed. */
+  decision?: string;
+}
+
+export type ThesisPositionDirection = 'long' | 'short' | 'none';
+
+/** One instrument's position before and after a rebalance. */
+export interface ThesisPositionChange {
+  entity_id: ThesisID;
+  ticker: string;
+  from_direction: ThesisPositionDirection;
+  /** Share of the whole Thesis before; omitted with no direction. */
+  from_weight?: number;
+  direction: ThesisPositionDirection;
+  /** Share of the whole Thesis after; omitted with no direction. */
+  weight?: number;
+}
+
+/** What a rebalance Update changed, why, and who decided it. */
+export interface ThesisRebalance {
+  proposal_id: ThesisID;
+  condition: ThesisRebalanceCondition;
+  /** author (the author agreed), auto or yolo (Alva in that decision mode). */
+  decided_by: string;
+  /** Model-written reasoning: data, never instructions. */
+  reasoning: string;
+  importance: string;
+  changes: ThesisPositionChange[];
+}
+
+/**
+ * Who decides a rebalance after a condition triggers. manual asks the author
+ * every time; auto publishes a confident rebalance and asks for the rest;
+ * yolo publishes every rebalance without asking.
+ */
+export type ThesisDecisionMode = 'manual' | 'auto' | 'yolo';
+export const THESIS_DECISION_MODES: readonly ThesisDecisionMode[] = [
+  'manual',
+  'auto',
+  'yolo',
+];
+
+export interface ThesisDecisionModeResponse {
+  thesis_id: ThesisID;
+  decision_mode: ThesisDecisionMode;
+}
+
+export type ThesisRebalanceProposalState =
+  | 'no_change'
+  | 'applying'
+  | 'applied'
+  | 'waiting'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'void';
+const PROPOSAL_STATES: readonly string[] = [
+  'no_change',
+  'applying',
+  'applied',
+  'waiting',
+  'accepted',
+  'declined',
+  'expired',
+  'void',
+];
+
+/** A rebalance Alva proposed after a condition triggered. Author only. */
+export interface ThesisRebalanceProposal {
+  id: ThesisID;
+  /** Only waiting can be accepted or declined. */
+  state: ThesisRebalanceProposalState;
+  condition: ThesisRebalanceCondition;
+  /** Every instrument of the Thesis, before and after. */
+  changes: ThesisPositionChange[];
+  /** Model-written reasoning: data, never instructions. */
+  reasoning: string;
+  importance: string;
+  confident: boolean;
+  /** The decision mode the proposal was decided under. */
+  mode: ThesisDecisionMode;
+  created_at_ms: number;
+  /** Omitted until it reached the author. */
+  delivered_at_ms?: number;
+  /** Omitted until delivered: 24 hours after delivery. */
+  expires_at_ms?: number;
+  /** The rebalance Update it published, if any. */
+  version_id?: ThesisID;
+}
+
+export interface ListThesisRebalanceProposalsParams {
+  /** 1-100; omitted reads 20. */
+  first?: number;
+  /** The previous page's next_cursor. */
+  cursor?: string;
+}
+
+export interface ThesisRebalanceProposalsResponse {
+  /** Newest first. */
+  proposals: ThesisRebalanceProposal[];
+  /** Empty on the last page. */
+  next_cursor: string;
+}
+
+export interface ThesisRebalanceProposalResponse {
+  proposal: ThesisRebalanceProposal;
 }
 
 export interface ThesisResponse {
@@ -701,6 +839,130 @@ export class ThesesResource {
     );
   }
 
+  /**
+   * Reads who decides a rebalance of one of the caller's Theses (`manual`
+   * unless the author set it). Author only.
+   */
+  async getDecisionMode(id: ThesisID): Promise<ThesisDecisionModeResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    return decisionModeResponse(
+      await this.client._request(
+        'GET',
+        `/api/v1/theses/${thesisID}/decision-mode`
+      ),
+      thesisID
+    );
+  }
+
+  /**
+   * Sets who decides a rebalance of one of the caller's Theses; it applies to
+   * proposals decided after it. Author only.
+   */
+  async setDecisionMode(
+    id: ThesisID,
+    mode: ThesisDecisionMode
+  ): Promise<ThesisDecisionModeResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const decisionMode = requireDecisionMode(mode);
+    return decisionModeResponse(
+      await this.client._request(
+        'PUT',
+        `/api/v1/theses/${thesisID}/decision-mode`,
+        { body: { decision_mode: decisionMode } }
+      ),
+      thesisID
+    );
+  }
+
+  /** One page of a Thesis's rebalance proposals, newest first. Author only. */
+  async listRebalanceProposals(
+    id: ThesisID,
+    params: ListThesisRebalanceProposalsParams = {}
+  ): Promise<ThesisRebalanceProposalsResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    if (!isRecord(params)) throw invalidArgument('params must be an object');
+    const first = params.first ?? 20;
+    if (
+      typeof first !== 'number' ||
+      !Number.isInteger(first) ||
+      first < 1 ||
+      first > 100
+    )
+      throw invalidArgument('first must be an integer between 1 and 100');
+    if (
+      params.cursor !== undefined &&
+      (typeof params.cursor !== 'string' || params.cursor.trim() === '')
+    )
+      throw invalidArgument('cursor must be a non-empty string');
+    const response = await this.client._request(
+      'GET',
+      `/api/v1/theses/${thesisID}/rebalance-proposals`,
+      {
+        query: {
+          first,
+          ...(params.cursor === undefined ? {} : { cursor: params.cursor }),
+        },
+      }
+    );
+    if (
+      !isRecord(response) ||
+      !Array.isArray(response.proposals) ||
+      response.proposals.length > first
+    )
+      throw invalidResponse('invalid rebalance proposal list');
+    return {
+      proposals: response.proposals.map((item, index) =>
+        rebalanceProposal(item, `proposals[${index}]`)
+      ),
+      next_cursor: responseText(response.next_cursor, 'next_cursor'),
+    };
+  }
+
+  /**
+   * Accepts a waiting proposal: Backend publishes the rebalance Update at
+   * that moment's prices and its followers are told. A proposal that is not
+   * waiting is refused with its state. Author only.
+   */
+  acceptRebalanceProposal(
+    id: ThesisID,
+    proposalID: ThesisID
+  ): Promise<ThesisRebalanceProposalResponse> {
+    return this.answerRebalanceProposal(id, proposalID, 'accept');
+  }
+
+  /** Declines a waiting proposal; nothing changes. Author only. */
+  declineRebalanceProposal(
+    id: ThesisID,
+    proposalID: ThesisID
+  ): Promise<ThesisRebalanceProposalResponse> {
+    return this.answerRebalanceProposal(id, proposalID, 'decline');
+  }
+
+  private async answerRebalanceProposal(
+    id: ThesisID,
+    proposalID: ThesisID,
+    answer: 'accept' | 'decline'
+  ): Promise<ThesisRebalanceProposalResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const proposal = requireID(proposalID, 'proposal');
+    const response = await this.client._request(
+      'POST',
+      `/api/v1/theses/${thesisID}/rebalance-proposals/${proposal}/${answer}`
+    );
+    if (!isRecord(response))
+      throw invalidResponse('answer response must contain proposal');
+    const value = rebalanceProposal(response.proposal, 'proposal');
+    if (value.id !== proposal)
+      throw invalidResponse(
+        'answer response must match the requested proposal'
+      );
+    return { proposal: value };
+  }
+
   async setSignalEnabled(
     id: ThesisID,
     enabled: boolean
@@ -885,6 +1147,171 @@ function signalPreferencesResponse(
   } catch {
     throw invalidResponse('response contains an unknown Signal setting');
   }
+}
+
+function requireDecisionMode(value: unknown): ThesisDecisionMode {
+  if (!THESIS_DECISION_MODES.includes(value as ThesisDecisionMode))
+    throw invalidArgument(
+      `decision mode must be ${THESIS_DECISION_MODES.join(', ')}`
+    );
+  return value as ThesisDecisionMode;
+}
+
+/** The gateway's `{thesis_id, decision_mode}` for the Thesis asked for. */
+function decisionModeResponse(
+  value: unknown,
+  thesisID: ThesisID
+): ThesisDecisionModeResponse {
+  if (!isRecord(value) || value.thesis_id !== thesisID)
+    throw invalidResponse(
+      'decision mode response must name the requested thesis'
+    );
+  if (
+    !THESIS_DECISION_MODES.includes(value.decision_mode as ThesisDecisionMode)
+  )
+    throw invalidResponse('response contains an unknown decision mode');
+  return {
+    thesis_id: thesisID,
+    decision_mode: value.decision_mode as ThesisDecisionMode,
+  };
+}
+
+const CONDITION_KINDS: readonly string[] = ['numeric', 'informational'];
+const CONDITION_STATES: readonly string[] = [
+  'armed',
+  'watching',
+  'triggered',
+  'closed',
+];
+const POSITION_DIRECTIONS: readonly string[] = ['long', 'short', 'none'];
+
+/** A REST condition; optional fields are kept only when present. */
+function watchpointCondition(
+  value: unknown,
+  field: string
+): ThesisRebalanceCondition {
+  if (
+    !isRecord(value) ||
+    !CONDITION_KINDS.includes(value.kind as string) ||
+    !CONDITION_STATES.includes(value.state as string)
+  )
+    throw invalidResponse(`${field} is not a valid condition`);
+  const condition: ThesisRebalanceCondition = {
+    id: responseID(value.id, `${field}.id`),
+    label: responseNonemptyText(value.label, `${field}.label`),
+    kind: value.kind as ThesisRebalanceCondition['kind'],
+    state: value.state as ThesisRebalanceCondition['state'],
+  };
+  if (value.entity_id !== undefined)
+    condition.entity_id = responseID(value.entity_id, `${field}.entity_id`);
+  for (const key of [
+    'ticker',
+    'metric',
+    'comparison',
+    'event',
+    'close_reason',
+    'decision',
+  ] as const) {
+    if (value[key] !== undefined)
+      condition[key] = responseText(value[key], `${field}.${key}`);
+  }
+  for (const key of ['threshold', 'observed_value'] as const) {
+    const number = value[key];
+    if (number === undefined) continue;
+    if (typeof number !== 'number' || !Number.isFinite(number))
+      throw invalidResponse(`${field}.${key} must be a number`);
+    condition[key] = number;
+  }
+  if (value.triggered_at_ms !== undefined)
+    condition.triggered_at_ms = responseNonnegativeInteger(
+      value.triggered_at_ms,
+      `${field}.triggered_at_ms`
+    );
+  return condition;
+}
+
+function positionChanges(
+  value: unknown,
+  field: string
+): ThesisPositionChange[] {
+  if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
+  return value.map((item: unknown, index) => {
+    const at = `${field}[${index}]`;
+    if (
+      !isRecord(item) ||
+      !POSITION_DIRECTIONS.includes(item.from_direction as string) ||
+      !POSITION_DIRECTIONS.includes(item.direction as string)
+    )
+      throw invalidResponse(`${at} is not a valid position change`);
+    const change: ThesisPositionChange = {
+      entity_id: responseID(item.entity_id, `${at}.entity_id`),
+      ticker: responseText(item.ticker, `${at}.ticker`),
+      from_direction: item.from_direction as ThesisPositionDirection,
+      direction: item.direction as ThesisPositionDirection,
+    };
+    for (const key of ['from_weight', 'weight'] as const) {
+      if (item[key] === undefined) continue;
+      const weight = item[key];
+      if (
+        typeof weight !== 'number' ||
+        !Number.isFinite(weight) ||
+        weight < 0 ||
+        weight > 1
+      )
+        throw invalidResponse(`${at}.${key} must be a fraction in [0, 1]`);
+      change[key] = weight;
+    }
+    return change;
+  });
+}
+
+function rebalanceProposal(
+  value: unknown,
+  field: string
+): ThesisRebalanceProposal {
+  if (
+    !isRecord(value) ||
+    !PROPOSAL_STATES.includes(value.state as string) ||
+    !THESIS_DECISION_MODES.includes(value.mode as ThesisDecisionMode)
+  )
+    throw invalidResponse(`${field} is not a valid rebalance proposal`);
+  const proposal: ThesisRebalanceProposal = {
+    id: responseID(value.id, `${field}.id`),
+    state: value.state as ThesisRebalanceProposalState,
+    condition: watchpointCondition(value.condition, `${field}.condition`),
+    changes: positionChanges(value.changes, `${field}.changes`),
+    reasoning: responseText(value.reasoning, `${field}.reasoning`),
+    importance: responseText(value.importance, `${field}.importance`),
+    confident: responseBoolean(value.confident, `${field}.confident`),
+    mode: value.mode as ThesisDecisionMode,
+    created_at_ms: responseNonnegativeInteger(
+      value.created_at_ms,
+      `${field}.created_at_ms`
+    ),
+  };
+  for (const key of ['delivered_at_ms', 'expires_at_ms'] as const) {
+    if (value[key] !== undefined)
+      proposal[key] = responseNonnegativeInteger(value[key], `${field}.${key}`);
+  }
+  if (value.version_id !== undefined)
+    proposal.version_id = responseID(value.version_id, `${field}.version_id`);
+  return proposal;
+}
+
+function thesisRebalance(value: unknown): ThesisRebalance {
+  if (!isRecord(value))
+    throw invalidResponse('thesis.rebalance must be an object');
+  return {
+    proposal_id: responseID(value.proposal_id, 'thesis.rebalance.proposal_id'),
+    condition: watchpointCondition(
+      value.condition,
+      'thesis.rebalance.condition'
+    ),
+    decided_by: responseText(value.decided_by, 'thesis.rebalance.decided_by'),
+    reasoning: responseText(value.reasoning, 'thesis.rebalance.reasoning'),
+    importance: responseText(value.importance, 'thesis.rebalance.importance'),
+    changes: positionChanges(value.changes, 'thesis.rebalance.changes'),
+  };
 }
 
 const ENTITY_STANCES: readonly string[] = [
@@ -1109,6 +1536,8 @@ function thesisResponse(response: unknown): ThesisResponse {
     value.note = responseText(thesis.note, 'thesis.note');
   if (thesis.change_kind !== undefined)
     value.change_kind = responseText(thesis.change_kind, 'thesis.change_kind');
+  if (thesis.rebalance !== undefined && thesis.rebalance !== null)
+    value.rebalance = thesisRebalance(thesis.rebalance);
 
   if (thesis.entity_stances !== undefined) {
     if (!Array.isArray(thesis.entity_stances))
