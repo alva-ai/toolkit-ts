@@ -1743,7 +1743,7 @@ valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
 
 Examples:
-  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two'
+  alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two' --visibility private
   alva thesis set-visibility --id 9223372036854775807 --visibility private
   alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
   printf '%s' 'Draft body' | alva thesis rewrite --body-stdin --mode shorten`,

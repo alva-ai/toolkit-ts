@@ -610,6 +610,10 @@ describe('thesis terminal dispatch', () => {
     expect(result.text).toContain('Publish a new Update replacing');
     expect(result.text).toContain('response is ambiguous');
     expect(result.text).toContain('Create and update require --visibility');
+    for (const line of result.text.split('\n')) {
+      if (line.includes('alva thesis create '))
+        expect(line).toContain('--visibility');
+    }
     expect(result.text).toContain('asset-candidates  Read catalog IDs');
     expect(result.text).not.toContain('defaults --visibility to public');
     expect(result.text).toContain('--tickers <ticker,ticker>');

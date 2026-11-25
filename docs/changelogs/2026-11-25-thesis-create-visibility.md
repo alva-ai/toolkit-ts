@@ -24,6 +24,10 @@ CLI 0.37.0.
 The CLI keeps group-level help only; a per-subcommand `--help` for
 `asset-candidates` would be the only one of its kind, so it is not added.
 
+After code review: the `create` example in `alva thesis --help` passes
+`--visibility private`; it would otherwise fail as written. A test checks every
+`alva thesis create` line in the help carries the flag.
+
 ## Rollout
 
 Release only after the Alva skill passes `--visibility` on every create:
