@@ -33,7 +33,11 @@ function makeWriteConfigDeps() {
     homedir: () => '/home/test',
     mkdir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+    readFile: vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      ),
   };
 }
 

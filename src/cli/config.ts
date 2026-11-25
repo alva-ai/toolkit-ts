@@ -80,26 +80,33 @@ function getProfile(config: ConfigFile, profileName: string): ProfileData {
 /**
  * Fail before a login mints a key the config could not then store (an agent
  * sandbox that cannot write the config directory): writes the config back
- * unchanged, creating an empty one when absent.
+ * unchanged, creating an empty one only when there is none. A config that
+ * exists but cannot be read is left alone.
  */
 export async function assertConfigWritable(
   deps: WriteConfigDeps
 ): Promise<void> {
   const path = configPath(deps);
+  const cannot = (action: string, err: unknown): Error => {
+    const reason = err instanceof Error ? err.message : String(err);
+    return new Error(
+      `Cannot ${action} ${path} (${reason}), where login stores the key. Allow reading and writing there and run \`alva auth login\` again; nothing was signed in.`
+    );
+  };
   let raw: string;
   try {
     raw = await deps.readFile(path);
-  } catch {
+  } catch (err) {
+    if ((err as { code?: unknown } | null)?.code !== 'ENOENT') {
+      throw cannot('read', err);
+    }
     raw = JSON.stringify({ profiles: {} }, null, 2) + '\n';
   }
   try {
     await deps.mkdir(configDir(deps), { recursive: true });
     await deps.writeFile(path, raw, { mode: 0o600 });
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `Cannot write ${path} (${reason}), where login stores the key. Allow writing there and run \`alva auth login\` again; nothing was signed in.`
-    );
+    throw cannot('write', err);
   }
 }
 

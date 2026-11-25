@@ -11,7 +11,11 @@ function makeWriteConfigDeps() {
     homedir: () => '/home/test',
     mkdir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+    readFile: vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      ),
   };
 }
 
@@ -336,7 +340,8 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     );
     writeConfigDeps.readFile.mockImplementation(async (path: string) => {
       const data = files.get(path);
-      if (data === undefined) throw new Error('ENOENT');
+      if (data === undefined)
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       return data;
     });
 
@@ -412,5 +417,22 @@ describe('handleAuthLoginNoBrowser (PKCE Mode B)', () => {
     expect(fetchMock.calls).toHaveLength(0);
     expect(readline.getCallCount()).toBe(0);
     expect(logged.join('')).not.toMatch(/Open this URL/);
+  });
+
+  it('a config that exists but cannot be read is left alone', async () => {
+    const { writeConfigDeps, fetchMock, readline, deps } = makeBaseDeps();
+    writeConfigDeps.readFile.mockRejectedValue(
+      Object.assign(new Error('EACCES: permission denied'), {
+        code: 'EACCES',
+      })
+    );
+
+    await expect(
+      handleAuthLoginNoBrowser(['auth', 'login'], deps)
+    ).rejects.toThrow(`Cannot read ${CONFIG_PATH} (EACCES: permission denied)`);
+
+    expect(writeConfigDeps.writeFile).not.toHaveBeenCalled();
+    expect(fetchMock.calls).toHaveLength(0);
+    expect(readline.getCallCount()).toBe(0);
   });
 });
