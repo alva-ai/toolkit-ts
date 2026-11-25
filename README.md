@@ -456,7 +456,7 @@ alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoint
 alva thesis decision-mode get --id <thesis-id>  # who decides a rebalance: manual (default), auto or yolo; author only
 alva thesis decision-mode set --id <thesis-id> --mode manual|auto|yolo
 alva thesis proposals list --id <thesis-id> [--first <1-100>] [--cursor <next_cursor>]  # rebalance proposals, newest first; author only
-alva thesis proposals accept --id <thesis-id> --proposal <proposal-id>   # publishes the rebalance Update now
+alva thesis proposals accept --id <thesis-id> --proposal <proposal-id>   # the opaque id proposals list prints; publishes the rebalance Update now
 alva thesis proposals decline --id <thesis-id> --proposal <proposal-id>  # changes nothing
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>

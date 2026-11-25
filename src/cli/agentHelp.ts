@@ -205,8 +205,11 @@ decided after it. proposals list --id <id> [--first <1-100>] [--cursor
 <next_cursor>] reads them newest first: {proposals: [{id, state, condition,
 changes: [{entity_id, ticker, from_direction, from_weight, direction,
 weight}], reasoning, importance, confident, mode, created_at_ms,
-delivered_at_ms, expires_at_ms, version_id}], next_cursor}. Only a waiting
-proposal can be answered: proposals accept --id <id> --proposal <proposal-id>
+delivered_at_ms, expires_at_ms, version_id}], next_cursor}. A proposal's id
+(thesis_rebalance_proposal_0...), condition.id, entity_id and version_id are
+opaque strings: pass id to --proposal exactly as listed, never a number. Only
+a waiting proposal can be answered: proposals accept --id <id> --proposal
+<proposal-id>
 publishes the rebalance Update at this moment's prices and tells the Thesis's
 followers; proposals decline --id <id> --proposal <proposal-id> changes
 nothing. An answer to a proposal that is no longer waiting fails with its

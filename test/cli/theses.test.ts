@@ -1138,10 +1138,10 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
 
 describe('thesis watchpoint conditions: decision mode and proposals', () => {
   const PROPOSAL = {
-    id: '77',
+    id: 'thesis_rebalance_proposal_09x2k',
     state: 'waiting' as const,
     condition: {
-      id: '4412',
+      id: 'thesis_watchpoint_condition_04g7m',
       label: 'W3',
       kind: 'numeric' as const,
       state: 'triggered' as const,
@@ -1206,6 +1206,23 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
       expect(request).not.toHaveBeenCalled();
     });
 
+    it(`${name}: proposals accept refuses a numeric proposal id before any request`, async () => {
+      const value = client();
+      const request = vi.spyOn(value, '_request');
+      await expect(
+        run(value, [
+          'thesis',
+          'proposals',
+          'accept',
+          '--id',
+          '9451',
+          '--proposal',
+          '77',
+        ])
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(request).not.toHaveBeenCalled();
+    });
+
     it(`${name}: proposals list, accept and decline call the REST resource`, async () => {
       const value = client();
       const list = vi
@@ -1244,10 +1261,13 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
           '--id',
           '9451',
           '--proposal',
-          '77',
+          'thesis_rebalance_proposal_09x2k',
         ])
       ).resolves.toMatchObject({ proposal: { state: 'accepted' } });
-      expect(accept).toHaveBeenLastCalledWith('9451', '77');
+      expect(accept).toHaveBeenLastCalledWith(
+        '9451',
+        'thesis_rebalance_proposal_09x2k'
+      );
       await run(value, [
         'thesis',
         'proposals',
@@ -1255,15 +1275,24 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
         '--id',
         '9451',
         '--proposal',
-        '77',
+        'thesis_rebalance_proposal_09x2k',
       ]);
-      expect(decline).toHaveBeenLastCalledWith('9451', '77');
+      expect(decline).toHaveBeenLastCalledWith(
+        '9451',
+        'thesis_rebalance_proposal_09x2k'
+      );
 
       await expect(
         run(value, ['thesis', 'proposals', 'accept', '--id', '9451'])
       ).rejects.toBeInstanceOf(CliUsageError);
       await expect(
-        run(value, ['thesis', 'proposals', 'decline', '--proposal', '77'])
+        run(value, [
+          'thesis',
+          'proposals',
+          'decline',
+          '--proposal',
+          'thesis_rebalance_proposal_09x2k',
+        ])
       ).rejects.toBeInstanceOf(CliUsageError);
       await expect(
         run(value, ['thesis', 'proposals', 'list'])
@@ -1285,7 +1314,7 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
           '--id',
           '9451',
           '--proposal',
-          '77',
+          'thesis_rebalance_proposal_09x2k',
         ])
       ).rejects.toMatchObject({
         code: 'FAILED_PRECONDITION',
@@ -1300,6 +1329,8 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
       expect(result.text).toContain('decision-mode get');
       expect(result.text).toContain('--mode manual|auto|yolo');
       expect(result.text).toContain('proposals accept --id <id> --proposal');
+      expect(result.text).toContain('thesis_rebalance_proposal_0');
+      expect(result.text).toContain('never a number');
       expect(result.text).toContain('proposals decline --id <id> --proposal');
       expect(result.text).toMatch(/condition/);
       expect(result.text).toMatch(/model-written/);

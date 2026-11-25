@@ -48,49 +48,134 @@ const CHANGES = [
     weight: 0.5,
   },
 ];
-const PROPOSAL = {
-  id: '77',
+// /api/v2 wire (alva-gateway pkg/v2/api/theses/rebalance.go): opaque ids,
+// every member present, null without a value, decimals as strings.
+const V2_THESIS = 'thesis_0ab3c';
+const V2_PROPOSAL = 'thesis_rebalance_proposal_09x2k';
+const BY_NUMBER = { id: V2_THESIS, number: 9451 };
+const V2_CONDITION = {
+  id: 'thesis_watchpoint_condition_04g7m',
+  label: 'W3',
+  kind: 'NUMERIC',
+  assetId: 'asset_0fz1',
+  symbol: 'NVDA',
+  metric: 'PRICE',
+  comparison: 'LTE',
+  threshold: '150',
+  event: null,
+  state: 'TRIGGERED',
+  closeReason: null,
+  triggeredAt: '2026-11-25T14:20:00.000Z',
+  observedValue: '149.6',
+  decision: 'PROPOSED',
+};
+const V2_PROPOSAL_BODY = {
+  id: V2_PROPOSAL,
+  thesisId: V2_THESIS,
+  state: 'WAITING',
+  condition: V2_CONDITION,
+  changes: [
+    {
+      assetId: 'asset_0fz1',
+      symbol: 'NVDA',
+      fromDirection: 'NONE',
+      fromWeight: null,
+      direction: 'BULLISH',
+      weight: '0.25',
+    },
+    {
+      assetId: 'asset_0fz2',
+      symbol: 'AMD',
+      fromDirection: 'BULLISH',
+      fromWeight: '0.5',
+      direction: 'BULLISH',
+      weight: '0.5',
+    },
+  ],
+  reasoning: 'NVDA closed at 149.6, under the 150 level (W3).',
+  importance: 'MAJOR',
+  confident: true,
+  mode: 'MANUAL',
+  createdAt: '2026-11-25T14:21:00.000Z',
+  deliveredAt: '2026-11-25T14:22:00.000Z',
+  expiresAt: '2026-11-26T14:22:00.000Z',
+  versionId: null,
+};
+const PROPOSAL_OUT = {
+  id: V2_PROPOSAL,
   state: 'waiting',
-  condition: CONDITION,
-  changes: CHANGES,
+  condition: {
+    id: 'thesis_watchpoint_condition_04g7m',
+    label: 'W3',
+    kind: 'numeric',
+    state: 'triggered',
+    entity_id: 'asset_0fz1',
+    ticker: 'NVDA',
+    metric: 'price',
+    comparison: 'lte',
+    decision: 'proposed',
+    threshold: 150,
+    observed_value: 149.6,
+    triggered_at_ms: Date.parse('2026-11-25T14:20:00.000Z'),
+  },
+  changes: [
+    {
+      entity_id: 'asset_0fz1',
+      ticker: 'NVDA',
+      from_direction: 'none',
+      direction: 'long',
+      weight: 0.25,
+    },
+    {
+      entity_id: 'asset_0fz2',
+      ticker: 'AMD',
+      from_direction: 'long',
+      direction: 'long',
+      from_weight: 0.5,
+      weight: 0.5,
+    },
+  ],
   reasoning: 'NVDA closed at 149.6, under the 150 level (W3).',
   importance: 'major',
   confident: true,
   mode: 'manual',
-  created_at_ms: 1795530060000,
-  delivered_at_ms: 1795530120000,
-  expires_at_ms: 1795616520000,
+  created_at_ms: Date.parse('2026-11-25T14:21:00.000Z'),
+  delivered_at_ms: Date.parse('2026-11-25T14:22:00.000Z'),
+  expires_at_ms: Date.parse('2026-11-26T14:22:00.000Z'),
 };
 
-describe('Thesis decision mode', () => {
-  it('reads and writes the mode over REST', async () => {
-    const client = stubbed(
-      { thesis_id: ID, decision_mode: 'manual' },
-      { thesis_id: ID, decision_mode: 'yolo' }
-    );
+describe('Thesis decision mode over /api/v2', () => {
+  it('resolves the Thesis number, then reads and patches the mode', async () => {
+    const client = stubbed(BY_NUMBER, { mode: 'MANUAL' }, BY_NUMBER, {
+      mode: 'YOLO',
+    });
     await expect(client.theses.getDecisionMode(ID)).resolves.toEqual({
       thesis_id: ID,
       decision_mode: 'manual',
     });
-    expect(client._request).toHaveBeenLastCalledWith(
-      'GET',
-      `/api/v1/theses/${ID}/decision-mode`
-    );
+    expect(client._request.mock.calls).toEqual([
+      ['GET', `/api/v2/theses/by-number/${ID}`],
+      ['GET', `/api/v2/theses/${V2_THESIS}/decision-mode`],
+    ]);
     await expect(client.theses.setDecisionMode(ID, 'yolo')).resolves.toEqual({
       thesis_id: ID,
       decision_mode: 'yolo',
     });
     expect(client._request).toHaveBeenLastCalledWith(
-      'PUT',
-      `/api/v1/theses/${ID}/decision-mode`,
-      { body: { decision_mode: 'yolo' } }
+      'PATCH',
+      `/api/v2/theses/${V2_THESIS}/decision-mode`,
+      { body: { mode: 'YOLO' } }
     );
   });
 
   it('rejects bad input before any request and odd responses after', async () => {
     const client = stubbed(
-      { thesis_id: ID, decision_mode: 'reckless' },
-      { thesis_id: '1', decision_mode: 'manual' }
+      BY_NUMBER,
+      { mode: 'RECKLESS' },
+      { id: 'playbook_0ab', number: 9451 },
+      { id: V2_THESIS, number: 1 },
+      BY_NUMBER,
+      { mode: 'MANUAL' }
     );
     await expect(
       client.theses.setDecisionMode(ID, 'reckless' as never)
@@ -99,87 +184,196 @@ describe('Thesis decision mode', () => {
       code: 'INVALID_ARGUMENT',
     });
     expect(client._request).not.toHaveBeenCalled();
-    for (let i = 0; i < 2; i++) {
+    // An unknown mode, a by-number answer without a Thesis id, another
+    // Thesis, and a mode that was not applied.
+    for (let i = 0; i < 3; i++) {
       await expect(client.theses.getDecisionMode(ID)).rejects.toMatchObject({
         code: 'INVALID_RESPONSE',
       });
     }
+    await expect(
+      client.theses.setDecisionMode(ID, 'auto')
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it("passes the gateway's refusal through", async () => {
+  it("passes the gateway's problem through", async () => {
     const client = stubbed(
+      BY_NUMBER,
       new AlvaError('PERMISSION_DENIED', 'only the author', 403)
     );
     await expect(client.theses.getDecisionMode(ID)).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       status: 403,
     });
+    const missing = stubbed(new AlvaError('NOT_FOUND', 'no Thesis', 404));
+    await expect(missing.theses.getDecisionMode(ID)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
   });
 });
 
-describe('Thesis rebalance proposals', () => {
-  it('lists one page newest first with its cursor', async () => {
+describe('Thesis rebalance proposals over /api/v2', () => {
+  it('lists one page newest first with its token', async () => {
     const client = stubbed(
-      { proposals: [PROPOSAL], next_cursor: 'c2' },
-      { proposals: [], next_cursor: '' }
+      BY_NUMBER,
+      { items: [V2_PROPOSAL_BODY], nextPageToken: 'c2' },
+      BY_NUMBER,
+      { items: [], nextPageToken: null }
     );
     await expect(client.theses.listRebalanceProposals(ID)).resolves.toEqual({
-      proposals: [PROPOSAL],
+      proposals: [PROPOSAL_OUT],
       next_cursor: 'c2',
     });
     expect(client._request).toHaveBeenLastCalledWith(
       'GET',
-      `/api/v1/theses/${ID}/rebalance-proposals`,
-      { query: { first: 20 } }
+      `/api/v2/theses/${V2_THESIS}/rebalance-proposals`,
+      { query: { pageSize: 20 } }
     );
-    await client.theses.listRebalanceProposals(ID, {
-      first: 100,
-      cursor: 'c2',
-    });
+    await expect(
+      client.theses.listRebalanceProposals(ID, { first: 100, cursor: 'c2' })
+    ).resolves.toEqual({ proposals: [], next_cursor: '' });
     expect(client._request).toHaveBeenLastCalledWith(
       'GET',
-      `/api/v1/theses/${ID}/rebalance-proposals`,
-      { query: { first: 100, cursor: 'c2' } }
+      `/api/v2/theses/${V2_THESIS}/rebalance-proposals`,
+      { query: { pageSize: 100, pageToken: 'c2' } }
     );
+  });
+
+  it('omits every null member of a sparse proposal', async () => {
+    const sparse = {
+      ...V2_PROPOSAL_BODY,
+      state: 'NO_CHANGE',
+      importance: 'UNKNOWN',
+      changes: [],
+      condition: {
+        id: 'thesis_watchpoint_condition_04g7n',
+        label: 'W5',
+        kind: 'INFORMATIONAL',
+        assetId: null,
+        symbol: null,
+        metric: null,
+        comparison: null,
+        threshold: null,
+        event: 'NVIDIA announces a share buyback',
+        state: 'TRIGGERED',
+        closeReason: null,
+        triggeredAt: null,
+        observedValue: null,
+        decision: null,
+      },
+      deliveredAt: null,
+      expiresAt: null,
+      versionId: null,
+    };
+    const client = stubbed(BY_NUMBER, { items: [sparse], nextPageToken: null });
+    const page = await client.theses.listRebalanceProposals(ID);
+    expect(page.proposals[0]).toEqual({
+      id: V2_PROPOSAL,
+      state: 'no_change',
+      condition: {
+        id: 'thesis_watchpoint_condition_04g7n',
+        label: 'W5',
+        kind: 'informational',
+        state: 'triggered',
+        event: 'NVIDIA announces a share buyback',
+      },
+      changes: [],
+      reasoning: PROPOSAL_OUT.reasoning,
+      importance: 'unknown',
+      confident: true,
+      mode: 'manual',
+      created_at_ms: PROPOSAL_OUT.created_at_ms,
+    });
   });
 
   it('accepts and declines with no body and checks the proposal returned', async () => {
     const client = stubbed(
-      { proposal: { ...PROPOSAL, state: 'accepted', version_id: '145991' } },
-      { proposal: { ...PROPOSAL, state: 'declined' } },
-      { proposal: { ...PROPOSAL, id: '78' } }
+      BY_NUMBER,
+      {
+        ...V2_PROPOSAL_BODY,
+        state: 'ACCEPTED',
+        versionId: 'thesis_version_0k2p',
+      },
+      BY_NUMBER,
+      { ...V2_PROPOSAL_BODY, state: 'DECLINED' },
+      BY_NUMBER,
+      { ...V2_PROPOSAL_BODY, id: 'thesis_rebalance_proposal_09x2m' }
     );
     await expect(
-      client.theses.acceptRebalanceProposal(ID, '77')
+      client.theses.acceptRebalanceProposal(ID, V2_PROPOSAL)
     ).resolves.toMatchObject({
-      proposal: { id: '77', state: 'accepted', version_id: '145991' },
+      proposal: {
+        id: V2_PROPOSAL,
+        state: 'accepted',
+        version_id: 'thesis_version_0k2p',
+      },
     });
     expect(client._request).toHaveBeenLastCalledWith(
       'POST',
-      `/api/v1/theses/${ID}/rebalance-proposals/77/accept`
+      `/api/v2/theses/${V2_THESIS}/rebalance-proposals/${V2_PROPOSAL}/accept`
     );
     await expect(
-      client.theses.declineRebalanceProposal(ID, '77')
+      client.theses.declineRebalanceProposal(ID, V2_PROPOSAL)
     ).resolves.toMatchObject({ proposal: { state: 'declined' } });
     expect(client._request).toHaveBeenLastCalledWith(
       'POST',
-      `/api/v1/theses/${ID}/rebalance-proposals/77/decline`
+      `/api/v2/theses/${V2_THESIS}/rebalance-proposals/${V2_PROPOSAL}/decline`
     );
     await expect(
-      client.theses.acceptRebalanceProposal(ID, '77')
+      client.theses.acceptRebalanceProposal(ID, V2_PROPOSAL)
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('surfaces a refused answer with the state the server names', async () => {
-    const client = stubbed(
-      new AlvaError('FAILED_PRECONDITION', 'rebalance proposal is expired', 400)
-    );
-    await expect(
-      client.theses.acceptRebalanceProposal(ID, '77')
-    ).rejects.toMatchObject({
-      code: 'FAILED_PRECONDITION',
-      message: 'rebalance proposal is expired',
-    });
+  it('surfaces a refused answer (409 problem) once, without retrying', async () => {
+    const problem = {
+      type: 'https://alva.ai/problems/conflict',
+      title: 'Conflict',
+      status: 409,
+      detail: 'the proposal is expired',
+      code: 'CONFLICT',
+      reason: null,
+      requiredPermission: null,
+      invalidParams: null,
+      retryAfter: null,
+    };
+    const client = new AlvaClient({ apiKey: 'key' });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(BY_NUMBER), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(problem), {
+          status: 409,
+          headers: { 'content-type': 'application/problem+json' },
+        })
+      );
+    const original = globalThis.fetch;
+    globalThis.fetch = fetch;
+    try {
+      await expect(
+        client.theses.acceptRebalanceProposal(ID, V2_PROPOSAL)
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: 'the proposal is expired',
+        status: 409,
+      });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const [url, init] = fetch.mock.calls[1] as [string, RequestInit];
+      expect(url).toMatch(
+        new RegExp(
+          `/api/v2/theses/${V2_THESIS}/rebalance-proposals/${V2_PROPOSAL}/accept$`
+        )
+      );
+      expect(init.method).toBe('POST');
+      expect(init.body).toBeUndefined();
+      expect(init.headers).toMatchObject({ 'X-Alva-Api-Key': 'key' });
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
   it('rejects bad input before any request', async () => {
@@ -194,27 +388,41 @@ describe('Thesis rebalance proposals', () => {
         client.theses.listRebalanceProposals(ID, params)
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     }
+    for (const proposal of [
+      '77',
+      'W3',
+      'thesis_0ab3c',
+      'thesis_rebalance_proposal_0IL',
+    ]) {
+      await expect(
+        client.theses.acceptRebalanceProposal(ID, proposal)
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    }
     await expect(
-      client.theses.acceptRebalanceProposal(ID, 'W3')
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    await expect(
-      client.theses.declineRebalanceProposal('0', '77')
+      client.theses.declineRebalanceProposal('0', V2_PROPOSAL)
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(client._request).not.toHaveBeenCalled();
   });
 
   it('fails closed on malformed proposals', async () => {
     for (const bad of [
-      { ...PROPOSAL, state: 'pending' },
-      { ...PROPOSAL, id: 77 },
-      { ...PROPOSAL, condition: { ...CONDITION, kind: 'script' } },
+      { ...V2_PROPOSAL_BODY, state: 'UNKNOWN' },
+      { ...V2_PROPOSAL_BODY, id: '77' },
+      { ...V2_PROPOSAL_BODY, thesisId: 'thesis_0zz' },
+      { ...V2_PROPOSAL_BODY, condition: { ...V2_CONDITION, kind: 'UNKNOWN' } },
+      { ...V2_PROPOSAL_BODY, condition: { ...V2_CONDITION, threshold: 150 } },
+      { ...V2_PROPOSAL_BODY, createdAt: 1795530060000 },
       {
-        ...PROPOSAL,
-        changes: [{ ...CHANGES[0], direction: 'bullish' }],
+        ...V2_PROPOSAL_BODY,
+        changes: [{ ...V2_PROPOSAL_BODY.changes[0], direction: 'UNKNOWN' }],
       },
-      { ...PROPOSAL, changes: [{ ...CHANGES[0], weight: 1.5 }] },
+      {
+        ...V2_PROPOSAL_BODY,
+        changes: [{ ...V2_PROPOSAL_BODY.changes[0], weight: '1.5' }],
+      },
+      { ...V2_PROPOSAL_BODY, versionId: '145991' },
     ]) {
-      const client = stubbed({ proposals: [bad], next_cursor: '' });
+      const client = stubbed(BY_NUMBER, { items: [bad], nextPageToken: null });
       await expect(
         client.theses.listRebalanceProposals(ID)
       ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });

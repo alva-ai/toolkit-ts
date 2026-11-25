@@ -10,6 +10,13 @@ import {
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 import { webOriginFromApiBase } from './webOrigin.js';
+import {
+  V2_REBALANCE_PROPOSAL_ID,
+  decisionModeOf,
+  proposalOf,
+  proposalPageOf,
+  resolveV2ThesisID,
+} from './thesisRebalanceV2.js';
 
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
@@ -116,12 +123,17 @@ export interface Thesis {
  * watchpoints. It triggers at most once. Fields that do not apply are omitted.
  */
 export interface ThesisRebalanceCondition {
-  id: ThesisID;
+  /**
+   * A decimal string on a Thesis or version read (v1); an opaque v2 id
+   * (`thesis_watchpoint_condition_0…`) on a proposal.
+   */
+  id: string;
   /** The watchpoint it belongs to, such as "W3". */
   label: string;
   /** numeric: a price or volume level Backend checks; informational: an event. */
   kind: 'numeric' | 'informational';
-  entity_id?: ThesisID;
+  /** Decimal on a Thesis or version read; an opaque `asset_0…` id on a proposal. */
+  entity_id?: string;
   ticker?: string;
   /** price or volume_ratio (latest daily volume over the 20-day average). */
   metric?: string;
@@ -144,7 +156,8 @@ export type ThesisPositionDirection = 'long' | 'short' | 'none';
 
 /** One instrument's position before and after a rebalance. */
 export interface ThesisPositionChange {
-  entity_id: ThesisID;
+  /** Decimal on a Thesis or version read; an opaque `asset_0…` id on a proposal. */
+  entity_id: string;
   ticker: string;
   from_direction: ThesisPositionDirection;
   /** Share of the whole Thesis before; omitted with no direction. */
@@ -179,6 +192,7 @@ export const THESIS_DECISION_MODES: readonly ThesisDecisionMode[] = [
 ];
 
 export interface ThesisDecisionModeResponse {
+  /** The numeric Thesis id asked for. */
   thesis_id: ThesisID;
   decision_mode: ThesisDecisionMode;
 }
@@ -192,20 +206,11 @@ export type ThesisRebalanceProposalState =
   | 'declined'
   | 'expired'
   | 'void';
-const PROPOSAL_STATES: readonly string[] = [
-  'no_change',
-  'applying',
-  'applied',
-  'waiting',
-  'accepted',
-  'declined',
-  'expired',
-  'void',
-];
 
 /** A rebalance Alva proposed after a condition triggered. Author only. */
 export interface ThesisRebalanceProposal {
-  id: ThesisID;
+  /** Opaque v2 id (`thesis_rebalance_proposal_0…`); pass it as is to answer. */
+  id: string;
   /** Only waiting can be accepted or declined. */
   state: ThesisRebalanceProposalState;
   condition: ThesisRebalanceCondition;
@@ -222,8 +227,8 @@ export interface ThesisRebalanceProposal {
   delivered_at_ms?: number;
   /** Omitted until delivered: 24 hours after delivery. */
   expires_at_ms?: number;
-  /** The rebalance Update it published, if any. */
-  version_id?: ThesisID;
+  /** The rebalance Update it published, if any: an opaque `thesis_version_0…` id. */
+  version_id?: string;
 }
 
 export interface ListThesisRebalanceProposalsParams {
@@ -841,18 +846,22 @@ export class ThesesResource {
 
   /**
    * Reads who decides a rebalance of one of the caller's Theses (`manual`
-   * unless the author set it). Author only.
+   * unless the author set it). Author only. Calls /api/v2 after resolving the
+   * Thesis number.
    */
   async getDecisionMode(id: ThesisID): Promise<ThesisDecisionModeResponse> {
     this.client._requireAuth();
     const thesisID = requireID(id, 'id');
-    return decisionModeResponse(
-      await this.client._request(
-        'GET',
-        `/api/v1/theses/${thesisID}/decision-mode`
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    return {
+      thesis_id: thesisID,
+      decision_mode: decisionModeOf(
+        await this.client._request(
+          'GET',
+          `/api/v2/theses/${v2ID}/decision-mode`
+        )
       ),
-      thesisID
-    );
+    };
   }
 
   /**
@@ -866,14 +875,17 @@ export class ThesesResource {
     this.client._requireAuth();
     const thesisID = requireID(id, 'id');
     const decisionMode = requireDecisionMode(mode);
-    return decisionModeResponse(
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    const written = decisionModeOf(
       await this.client._request(
-        'PUT',
-        `/api/v1/theses/${thesisID}/decision-mode`,
-        { body: { decision_mode: decisionMode } }
-      ),
-      thesisID
+        'PATCH',
+        `/api/v2/theses/${v2ID}/decision-mode`,
+        { body: { mode: decisionMode.toUpperCase() } }
+      )
     );
+    if (written !== decisionMode)
+      throw invalidResponse('decision mode response did not apply the mode');
+    return { thesis_id: thesisID, decision_mode: written };
   }
 
   /** One page of a Thesis's rebalance proposals, newest first. Author only. */
@@ -897,38 +909,34 @@ export class ThesesResource {
       (typeof params.cursor !== 'string' || params.cursor.trim() === '')
     )
       throw invalidArgument('cursor must be a non-empty string');
-    const response = await this.client._request(
-      'GET',
-      `/api/v1/theses/${thesisID}/rebalance-proposals`,
-      {
-        query: {
-          first,
-          ...(params.cursor === undefined ? {} : { cursor: params.cursor }),
-        },
-      }
-    );
-    if (
-      !isRecord(response) ||
-      !Array.isArray(response.proposals) ||
-      response.proposals.length > first
-    )
-      throw invalidResponse('invalid rebalance proposal list');
-    return {
-      proposals: response.proposals.map((item, index) =>
-        rebalanceProposal(item, `proposals[${index}]`)
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    return proposalPageOf(
+      await this.client._request(
+        'GET',
+        `/api/v2/theses/${v2ID}/rebalance-proposals`,
+        {
+          query: {
+            pageSize: first,
+            ...(params.cursor === undefined
+              ? {}
+              : { pageToken: params.cursor }),
+          },
+        }
       ),
-      next_cursor: responseText(response.next_cursor, 'next_cursor'),
-    };
+      v2ID,
+      first
+    );
   }
 
   /**
    * Accepts a waiting proposal: Backend publishes the rebalance Update at
    * that moment's prices and its followers are told. A proposal that is not
-   * waiting is refused with its state. Author only.
+   * waiting is refused (409 CONFLICT naming its state). Author only.
+   * `proposalID` is the opaque id `listRebalanceProposals` returns.
    */
   acceptRebalanceProposal(
     id: ThesisID,
-    proposalID: ThesisID
+    proposalID: string
   ): Promise<ThesisRebalanceProposalResponse> {
     return this.answerRebalanceProposal(id, proposalID, 'accept');
   }
@@ -936,27 +944,34 @@ export class ThesesResource {
   /** Declines a waiting proposal; nothing changes. Author only. */
   declineRebalanceProposal(
     id: ThesisID,
-    proposalID: ThesisID
+    proposalID: string
   ): Promise<ThesisRebalanceProposalResponse> {
     return this.answerRebalanceProposal(id, proposalID, 'decline');
   }
 
   private async answerRebalanceProposal(
     id: ThesisID,
-    proposalID: ThesisID,
+    proposalID: string,
     answer: 'accept' | 'decline'
   ): Promise<ThesisRebalanceProposalResponse> {
     this.client._requireAuth();
     const thesisID = requireID(id, 'id');
-    const proposal = requireID(proposalID, 'proposal');
-    const response = await this.client._request(
-      'POST',
-      `/api/v1/theses/${thesisID}/rebalance-proposals/${proposal}/${answer}`
+    if (
+      typeof proposalID !== 'string' ||
+      !V2_REBALANCE_PROPOSAL_ID.test(proposalID)
+    )
+      throw invalidArgument(
+        'proposal must be a rebalance proposal id as proposals list returns it'
+      );
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    const value = proposalOf(
+      await this.client._request(
+        'POST',
+        `/api/v2/theses/${v2ID}/rebalance-proposals/${proposalID}/${answer}`
+      ),
+      v2ID
     );
-    if (!isRecord(response))
-      throw invalidResponse('answer response must contain proposal');
-    const value = rebalanceProposal(response.proposal, 'proposal');
-    if (value.id !== proposal)
+    if (value.id !== proposalID)
       throw invalidResponse(
         'answer response must match the requested proposal'
       );
@@ -1157,25 +1172,6 @@ function requireDecisionMode(value: unknown): ThesisDecisionMode {
   return value as ThesisDecisionMode;
 }
 
-/** The gateway's `{thesis_id, decision_mode}` for the Thesis asked for. */
-function decisionModeResponse(
-  value: unknown,
-  thesisID: ThesisID
-): ThesisDecisionModeResponse {
-  if (!isRecord(value) || value.thesis_id !== thesisID)
-    throw invalidResponse(
-      'decision mode response must name the requested thesis'
-    );
-  if (
-    !THESIS_DECISION_MODES.includes(value.decision_mode as ThesisDecisionMode)
-  )
-    throw invalidResponse('response contains an unknown decision mode');
-  return {
-    thesis_id: thesisID,
-    decision_mode: value.decision_mode as ThesisDecisionMode,
-  };
-}
-
 const CONDITION_KINDS: readonly string[] = ['numeric', 'informational'];
 const CONDITION_STATES: readonly string[] = [
   'armed',
@@ -1263,39 +1259,6 @@ function positionChanges(
     }
     return change;
   });
-}
-
-function rebalanceProposal(
-  value: unknown,
-  field: string
-): ThesisRebalanceProposal {
-  if (
-    !isRecord(value) ||
-    !PROPOSAL_STATES.includes(value.state as string) ||
-    !THESIS_DECISION_MODES.includes(value.mode as ThesisDecisionMode)
-  )
-    throw invalidResponse(`${field} is not a valid rebalance proposal`);
-  const proposal: ThesisRebalanceProposal = {
-    id: responseID(value.id, `${field}.id`),
-    state: value.state as ThesisRebalanceProposalState,
-    condition: watchpointCondition(value.condition, `${field}.condition`),
-    changes: positionChanges(value.changes, `${field}.changes`),
-    reasoning: responseText(value.reasoning, `${field}.reasoning`),
-    importance: responseText(value.importance, `${field}.importance`),
-    confident: responseBoolean(value.confident, `${field}.confident`),
-    mode: value.mode as ThesisDecisionMode,
-    created_at_ms: responseNonnegativeInteger(
-      value.created_at_ms,
-      `${field}.created_at_ms`
-    ),
-  };
-  for (const key of ['delivered_at_ms', 'expires_at_ms'] as const) {
-    if (value[key] !== undefined)
-      proposal[key] = responseNonnegativeInteger(value[key], `${field}.${key}`);
-  }
-  if (value.version_id !== undefined)
-    proposal.version_id = responseID(value.version_id, `${field}.version_id`);
-  return proposal;
 }
 
 function thesisRebalance(value: unknown): ThesisRebalance {
