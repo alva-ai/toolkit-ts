@@ -78,6 +78,130 @@ for (const [name, dispatch] of RUNTIMES) {
       });
     });
 
+    it('creates with weights and a Signal setting', async () => {
+      fake = fakeV2({ 'POST /theses': () => aThesis() });
+
+      await dispatch(client(), [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'NVDA 40%, short AMD 10%',
+        '--entity-ids',
+        `${ASSET},${ASSET_2}`,
+        '--entity-stances',
+        `[{"assetId":"${ASSET}","stance":"BULLISH","weight":"0.4"},{"assetId":"${ASSET_2}","stance":"BEARISH","weight":"0.1"}]`,
+        '--signal-kinds',
+        'macro, TECHNICALS',
+        '--signal-min-importance',
+        'notable',
+      ]);
+      expect(fake.calls[0].body).toMatchObject({
+        assets: [
+          { assetId: ASSET, stance: 'BULLISH', weight: '0.4' },
+          { assetId: ASSET_2, stance: 'BEARISH', weight: '0.1' },
+        ],
+        signalPreferences: {
+          kinds: ['MACRO', 'TECHNICALS'],
+          minImportance: 'NOTABLE',
+        },
+      });
+
+      // One flag keeps the other's default.
+      await dispatch(client(), [
+        'thesis',
+        'create',
+        '--request-id',
+        REQUEST_ID,
+        '--body',
+        'b',
+        '--signal-min-importance',
+        'major',
+      ]);
+      expect(fake.calls[1].body).toMatchObject({
+        signalPreferences: {
+          kinds: ['FUNDAMENTALS', 'MACRO', 'TECHNICALS', 'COMMENTARY'],
+          minImportance: 'MAJOR',
+        },
+      });
+    });
+
+    it.each([
+      [
+        'a numeric weight',
+        [
+          '--entity-ids',
+          ASSET,
+          '--entity-stances',
+          `[{"assetId":"${ASSET}","stance":"BULLISH","weight":0.4}]`,
+        ],
+      ],
+      ['an unknown Signal kind', ['--signal-kinds', 'macro,rumors']],
+      ['an empty Signal kind', ['--signal-kinds', 'macro,,technicals']],
+      ['an unknown importance', ['--signal-min-importance', 'some']],
+    ])('refuses %s before any request', async (_, flags) => {
+      fake = fakeV2({});
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'create',
+          '--request-id',
+          REQUEST_ID,
+          '--body',
+          'b',
+          ...flags,
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(fake.calls).toHaveLength(0);
+    });
+
+    it('reads the Signal setting and patches only what is given', async () => {
+      const setting = { kinds: ['MACRO'], minImportance: 'ALL' };
+      fake = fakeV2({
+        [`GET /theses/${THESIS}/signal-preferences`]: () => setting,
+        'GET /me/thesis-signal-preferences': () => setting,
+        [`PATCH /theses/${THESIS}/signal-preferences`]: () => setting,
+      });
+
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'signal-preferences',
+          'get',
+          '--id',
+          THESIS,
+        ])
+      ).resolves.toEqual(setting);
+      await dispatch(client(), ['thesis', 'signal-preferences', 'get']);
+      await dispatch(client(), [
+        'thesis',
+        'signal-preferences',
+        'set',
+        '--id',
+        THESIS,
+        '--kinds',
+        'macro,commentary',
+      ]);
+      expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+        `GET /theses/${THESIS}/signal-preferences`,
+        'GET /me/thesis-signal-preferences',
+        `PATCH /theses/${THESIS}/signal-preferences`,
+      ]);
+      expect(fake.calls[2].body).toEqual({ kinds: ['MACRO', 'COMMENTARY'] });
+
+      await expect(
+        dispatch(client(), [
+          'thesis',
+          'signal-preferences',
+          'set',
+          '--id',
+          THESIS,
+        ])
+      ).rejects.toThrow('needs --kinds or --min-importance');
+      expect(fake.calls).toHaveLength(3);
+    });
+
     it.each([
       [
         'a stance on an asset not in --entity-ids',

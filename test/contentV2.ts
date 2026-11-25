@@ -32,6 +32,7 @@ export function aVersion(
       {
         assetId: ASSET,
         stance: 'BULLISH',
+        weight: null,
         symbol: 'NVDA',
         name: 'NVIDIA Corporation',
         logoUrl: 'https://example.com/nvda.svg',

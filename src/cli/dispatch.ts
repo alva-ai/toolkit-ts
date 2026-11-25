@@ -1702,6 +1702,7 @@ Subcommands:
   star      Add the Thesis to your bookmarks
   unstar    Remove the Thesis from your bookmarks
   set-signal-enabled  Enable or disable managed Signal research
+  signal-preferences get|set  Read or change which Signals your Thesis shows
   update   Publish a new Update from the one it edits (omitted parts carry over);
            with --archived false it also unarchives the Thesis
   rewrite  Explicitly request a candidate body rewrite; never called by another command
@@ -1725,7 +1726,9 @@ the current visibility unless --visibility is given; a narrower visibility
 is set before the Update is published and a wider one after it.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
+  Signals: omit both to show every Signal. Kinds: fundamentals, macro,
+       technicals, commentary; with only one flag the other keeps its default.
   Images: public creation only, at most 20 in display order. Upload selected files
        with the existing host upload tool after publication confirmation. Private
        images and local/ALFS paths are not supported; this flag does not upload.
@@ -1771,6 +1774,13 @@ Other flags:
   archive --id <id> --request-id <uuid> [--expected-author-version-id <id>] [--note <text>]
   star|unstar --id <id>
   set-signal-enabled --id <id> --enabled true|false
+  signal-preferences get [--id <id>]
+       Which Signals your Thesis shows to every reader: {thesis_id, preferences:
+       {kinds, min_importance}}. Without --id: the setting you last saved, which
+       prefills a new Thesis. Only the author can read or set it.
+  signal-preferences set --id <id> [--kinds <kind,kind>] [--min-importance all|notable|major]
+       Changes only what is given. Applies to every reader, the Thesis's
+       deliveries and, from its next daily run, its Overview.
 
 Maintenance behavior:
   archive archives the current Update, keeping its content; without
@@ -3432,6 +3442,58 @@ function thesisImages(flags: Record<string, string>): string[] | undefined {
   );
 }
 
+const SIGNAL_KINDS: readonly Schema<'SignalKind'>[] = [
+  'FUNDAMENTALS',
+  'MACRO',
+  'TECHNICALS',
+  'COMMENTARY',
+];
+
+function thesisSignalKinds(
+  raw: string,
+  flag: string,
+  command: string
+): Schema<'SignalKind'>[] {
+  const kinds = raw.split(',').map((kind) => kind.trim());
+  if (kinds.some((kind) => kind === '')) {
+    throw new CliUsageError(`--${flag} must not contain empty kinds`, 'thesis');
+  }
+  return kinds.map((kind) => enumFlag(kind, SIGNAL_KINDS, flag, command));
+}
+
+function thesisSignalMinImportance(
+  raw: string,
+  flag: string,
+  command: string
+): Schema<'SignalMinImportance'> {
+  return enumFlag(raw, ['ALL', 'NOTABLE', 'MAJOR'], flag, command);
+}
+
+// thesisCreateSignalPreferences reads the optional setting of a new Thesis:
+// without either flag the Thesis shows every Signal; with one, the other
+// keeps its default (every kind, or ALL).
+function thesisCreateSignalPreferences(
+  flags: Record<string, string>
+): Schema<'SignalPreferencesInput'> | undefined {
+  const kinds = flags['signal-kinds'];
+  const minImportance = flags['signal-min-importance'];
+  if (kinds === undefined && minImportance === undefined) return undefined;
+  return {
+    kinds:
+      kinds === undefined
+        ? [...SIGNAL_KINDS]
+        : thesisSignalKinds(kinds, 'signal-kinds', 'thesis create'),
+    minImportance:
+      minImportance === undefined
+        ? 'ALL'
+        : thesisSignalMinImportance(
+            minImportance,
+            'signal-min-importance',
+            'thesis create'
+          ),
+  };
+}
+
 function thesisTrackReturn(
   flags: Record<string, string>,
   command: string
@@ -3465,8 +3527,9 @@ function thesisUnarchive(
 
 /**
  * The Thesis's assets: each --entity-ids asset with its --entity-stances
- * direction (`[{assetId, stance}]`, stance UNKNOWN, BULLISH, BEARISH or
- * NONE), undefined when neither flag is given.
+ * direction and optional weight (`[{assetId, stance, weight}]`, stance
+ * UNKNOWN, BULLISH, BEARISH or NONE, weight a decimal string such as "0.4"),
+ * undefined when neither flag is given.
  */
 function thesisAssets(
   flags: Record<string, string>
@@ -3474,7 +3537,10 @@ function thesisAssets(
   const raw = flags['entity-stances'];
   if (flags['entity-ids'] === undefined && raw === undefined) return undefined;
   const assetIds = thesisEntityIDs(flags);
-  const stances = new Map<string, Schema<'Stance'>>();
+  const stances = new Map<
+    string,
+    Pick<Schema<'ThesisAssetInput'>, 'stance' | 'weight'>
+  >();
   if (raw !== undefined) {
     let parsed: unknown;
     try {
@@ -3489,24 +3555,33 @@ function thesisAssets(
       );
     }
     for (const item of parsed as unknown[]) {
-      const { assetId, stance } = (item ?? {}) as Record<string, unknown>;
+      const { assetId, stance, weight } = (item ?? {}) as Record<
+        string,
+        unknown
+      >;
       if (
         typeof assetId !== 'string' ||
         !assetIds.includes(assetId) ||
         stances.has(assetId) ||
-        typeof stance !== 'string'
+        typeof stance !== 'string' ||
+        (weight !== undefined && typeof weight !== 'string')
       ) {
         throw new CliUsageError(
-          '--entity-stances items are {assetId, stance}, each naming one --entity-ids asset once',
+          '--entity-stances items are {assetId, stance, weight?}, each naming one --entity-ids asset once; weight is a decimal string such as "0.4"',
           'thesis'
         );
       }
-      stances.set(assetId, stance as Schema<'Stance'>);
+      stances.set(
+        assetId,
+        weight === undefined
+          ? { stance: stance as Schema<'Stance'> }
+          : { stance: stance as Schema<'Stance'>, weight }
+      );
     }
   }
   return assetIds.map((assetId) => {
-    const stance = stances.get(assetId);
-    return stance === undefined ? { assetId } : { assetId, stance };
+    const given = stances.get(assetId);
+    return given === undefined ? { assetId } : { assetId, ...given };
   });
 }
 
@@ -4337,6 +4412,7 @@ export async function executeParsedCommand(
               })),
               tickers: thesisTickers(flags),
               trackReturn: thesisTrackReturn(flags, 'thesis create'),
+              signalPreferences: thesisCreateSignalPreferences(flags),
             },
             {
               idempotencyKey: requireFlag(flags, 'request-id', 'thesis create'),
@@ -4448,6 +4524,39 @@ export async function executeParsedCommand(
             requireFlag(flags, 'id', 'thesis unstar'),
             false
           );
+        case 'signal-preferences': {
+          if (parsedCommand.path[2] === 'get') {
+            return flags.id === undefined
+              ? client.theses.lastSignalPreferences()
+              : client.theses.signalPreferences(flags.id);
+          }
+          const command = 'thesis signal-preferences set';
+          const id = requireFlag(flags, 'id', command);
+          if (
+            flags.kinds === undefined &&
+            flags['min-importance'] === undefined
+          ) {
+            throw new CliUsageError(
+              'thesis signal-preferences set needs --kinds or --min-importance',
+              'thesis'
+            );
+          }
+          // A merge patch: what is not given stays.
+          return client.theses.updateSignalPreferences(id, {
+            kinds:
+              flags.kinds === undefined
+                ? undefined
+                : thesisSignalKinds(flags.kinds, 'kinds', command),
+            minImportance:
+              flags['min-importance'] === undefined
+                ? undefined
+                : thesisSignalMinImportance(
+                    flags['min-importance'],
+                    'min-importance',
+                    command
+                  ),
+          });
+        }
         case 'set-signal-enabled':
           return client.theses.setSignalEnabled(
             requireFlag(flags, 'id', 'thesis set-signal-enabled'),

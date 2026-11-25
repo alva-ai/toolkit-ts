@@ -16,12 +16,10 @@ export interface FollowingThesesParams {
 }
 
 /** The author of a Thesis in the following feed. */
+/** The followed user who wrote a Thesis Update. Persons cannot be followed. */
 export interface FollowingThesisAuthor {
-  kind: 'user' | 'person';
-  /** Set for a user. */
-  username?: string;
-  /** Set for a person. */
-  slug?: string;
+  kind: 'user';
+  username: string;
   display_name: string;
 }
 
@@ -235,17 +233,15 @@ function followingThesisAuthor(value: unknown): FollowingThesisAuthor | null {
   if (value === null) return null;
   if (
     !record(value) ||
-    (value.kind !== 'user' && value.kind !== 'person') ||
-    typeof value.display_name !== 'string' ||
-    (value.username !== undefined && typeof value.username !== 'string') ||
-    (value.slug !== undefined && typeof value.slug !== 'string')
+    value.kind !== 'user' ||
+    typeof value.username !== 'string' ||
+    typeof value.display_name !== 'string'
   ) {
     throw invalidFollowingTheses('invalid following theses author');
   }
   return {
     kind: value.kind,
-    ...(value.username === undefined ? {} : { username: value.username }),
-    ...(value.slug === undefined ? {} : { slug: value.slug }),
+    username: value.username,
     display_name: value.display_name,
   };
 }

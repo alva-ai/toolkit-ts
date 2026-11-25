@@ -164,9 +164,9 @@ for (const [name, cli] of Object.entries(paths)) {
     it('reads followed theses with the largest page and the given cursor', async () => {
       const client = new AlvaClient({ apiKey: 'host-key' });
       const author = {
-        kind: 'person',
-        slug: 'cathie-wood',
-        display_name: 'Cathie Wood',
+        kind: 'user',
+        username: 'carol',
+        display_name: 'Carol',
       };
       const request = vi.spyOn(client, '_request').mockResolvedValueOnce({
         items: [
@@ -212,13 +212,23 @@ for (const [name, cli] of Object.entries(paths)) {
           items: [
             {
               thesis: restThesis('11', 'initial'),
-              author: { kind: 'team', display_name: 'x' },
+              author: { kind: 'person', slug: 'x', display_name: 'x' },
+            },
+          ],
+          next_cursor: 'c2',
+          has_more: false,
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              thesis: restThesis('11', 'initial'),
+              author: { kind: 'user', display_name: 'x' },
             },
           ],
           next_cursor: 'c2',
           has_more: false,
         });
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         await expect(
           cli.dispatch(client, [...cli.theses])
         ).rejects.toMatchObject({

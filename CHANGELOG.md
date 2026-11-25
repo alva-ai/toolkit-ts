@@ -274,6 +274,18 @@ resource:
   New `get --number`, `version get --number --version` (replacing
   `version get --id`), `archive --expected-author-version-id`, and
   `--confirm-end-paid-renewals` on `set-visibility` and `update`.
+- The Signal setting (0.38.0-beta): `signalPreferences(id)`,
+  `lastSignalPreferences()` and `updateSignalPreferences(id, patch)`, a merge
+  patch (was `getSignalPreferences(id?)` and `setSignalPreferences(id, whole)`
+  over `{kinds, min_importance}`); kinds and importance are the uppercase
+  enums. `create()` takes `signalPreferences`, and the CLI's
+  `signal-preferences set` sends only the flags given.
+- Weights (0.38.0-beta): `assets[].weight` is a decimal string (`"0.4"`; was
+  `entity_stances[].weight`, a number), and a partial set fails with reason
+  `THESIS_WEIGHTS_INCOMPLETE` naming `assets[i].weight`. Reads carry
+  `ThesisAsset.weight`, each position's `weight` and, with `detail`, the
+  return's `allocation`. The client no longer checks that the server kept
+  the weights: `/api/v2` refuses a member it does not know.
 
 #### For You
 

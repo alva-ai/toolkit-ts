@@ -3084,7 +3084,35 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /** @description Requires agent:invoke. */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["NewChannel"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Channel"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -4520,6 +4548,43 @@ export interface paths {
                 default: components["responses"]["Problem"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/thesis-signal-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires content:read. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignalPreferences"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6986,6 +7051,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/theses/{thesisId}/signal-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires content:read. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    thesisId: components["schemas"]["ThesisID"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignalPreferences"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Requires content:write. */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    thesisId: components["schemas"]["ThesisID"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/merge-patch+json": components["schemas"]["SignalPreferencesPatch"];
+                };
+            };
+            responses: {
+                /** @description OK. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignalPreferences"];
+                    };
+                };
+                default: components["responses"]["Problem"];
+            };
+        };
+        trace?: never;
+    };
     "/theses/{thesisId}/signals": {
         parameters: {
             query?: never;
@@ -8804,6 +8938,11 @@ export interface components {
             peers: string | null;
             summary: string | null;
         };
+        NewChannel: {
+            effort?: string;
+            prompt: string;
+            thesisId?: components["schemas"]["ThesisID"] | null;
+        };
         NewChannelTurn: {
             channelId?: components["schemas"]["ChannelID"] | null;
             effort?: string;
@@ -8842,6 +8981,7 @@ export interface components {
             body: string;
             categoryIds?: components["schemas"]["ThesisCategoryID"][];
             media?: components["schemas"]["MediaInput"][];
+            signalPreferences?: components["schemas"]["SignalPreferencesInput"] | null;
             summary?: string | null;
             tickers?: string[];
             title: string;
@@ -9125,7 +9265,7 @@ export interface components {
             code: "CANCELED" | "CONFLICT" | "CREDENTIAL_NOT_ACCEPTED" | "DEADLINE_EXCEEDED" | "HUMAN_SESSION_REQUIRED" | "INSUFFICIENT_PERMISSION" | "INTERNAL" | "INVALID_ARGUMENT" | "NOT_FOUND" | "PERMISSION_DENIED" | "RATE_LIMITED" | "REQUEST_TOO_LARGE" | "UNAUTHENTICATED" | "UNAVAILABLE";
             detail: string;
             invalidParams: components["schemas"]["InvalidParam"][] | null;
-            reason: ("ACCOUNT_BANNED" | "ACCOUNT_DELETION_IN_PROGRESS" | "ADMIN_REQUIRED" | "ADMISSION_REQUIRED" | "ALLOWANCE_REQUIRED" | "API_KEY_SCOPE_DENIED" | "BUNDLED_FEED_EXPOSURE_CONFIRMATION_REQUIRED" | "CHANNEL_MAIN_SESSION_REQUIRED" | "CONCURRENCY_LIMIT_EXCEEDED" | "CONTENT_PLAN_REQUIRED" | "CREDENTIAL_EXPIRED" | "DURABLE_USER_STORAGE_FORBIDDEN" | "EXECUTION_DEPTH_EXCEEDED" | "FEATURED_MEDIA_NOT_FOUND" | "FEATURED_MEDIA_QUOTA_EXCEEDED" | "FEATURED_MEDIA_SOURCE_INVALID" | "FEATURED_MEDIA_SOURCE_UNSUPPORTED" | "FEATURED_MEDIA_UPSTREAM_UNAVAILABLE" | "FEATURED_MEDIA_X_UNAVAILABLE" | "FILE_TOO_LARGE" | "GROUP_SESSION_REFUSED" | "IDEMPOTENCY_KEY_INVALID" | "IDEMPOTENCY_KEY_IN_USE" | "IDEMPOTENCY_KEY_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_RESULT_UNAVAILABLE" | "INSUFFICIENT_CREDITS" | "MODEL_TIER_REQUIRED" | "PAGE_TOKEN_INVALID" | "PAID_RENEWALS_END_CONFIRMATION_REQUIRED" | "PLAYBOOK_QUOTA_EXCEEDED" | "PRICING_REQUIRED" | "QUOTA_EXCEEDED" | "RANGE_NOT_SATISFIABLE" | "RELATED_THESES_GENERATING" | "TASK_LIMIT_EXCEEDED" | "THESIS_ACTIVE_LIMIT_EXCEEDED" | "THESIS_ARCHIVED" | "THESIS_RETURN_LAST_LEG" | "THESIS_RETURN_SWITCH_FINAL" | "UNSUPPORTED_MEDIA_TYPE" | "X_SCOPE_REVOKED" | "X_TOKEN_REVOKED") | null;
+            reason: ("ACCOUNT_BANNED" | "ACCOUNT_DELETION_IN_PROGRESS" | "ADMIN_REQUIRED" | "ADMISSION_REQUIRED" | "ALLOWANCE_REQUIRED" | "API_KEY_SCOPE_DENIED" | "BUNDLED_FEED_EXPOSURE_CONFIRMATION_REQUIRED" | "CHANNEL_MAIN_SESSION_REQUIRED" | "CONCURRENCY_LIMIT_EXCEEDED" | "CONTENT_PLAN_REQUIRED" | "CREDENTIAL_EXPIRED" | "DURABLE_USER_STORAGE_FORBIDDEN" | "EXECUTION_DEPTH_EXCEEDED" | "FEATURED_MEDIA_NOT_FOUND" | "FEATURED_MEDIA_QUOTA_EXCEEDED" | "FEATURED_MEDIA_SOURCE_INVALID" | "FEATURED_MEDIA_SOURCE_UNSUPPORTED" | "FEATURED_MEDIA_UPSTREAM_UNAVAILABLE" | "FEATURED_MEDIA_X_UNAVAILABLE" | "FILE_TOO_LARGE" | "GROUP_SESSION_REFUSED" | "IDEMPOTENCY_KEY_INVALID" | "IDEMPOTENCY_KEY_IN_USE" | "IDEMPOTENCY_KEY_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_RESULT_UNAVAILABLE" | "INSUFFICIENT_CREDITS" | "MODEL_TIER_REQUIRED" | "PAGE_TOKEN_INVALID" | "PAID_RENEWALS_END_CONFIRMATION_REQUIRED" | "PLAYBOOK_QUOTA_EXCEEDED" | "PRICING_REQUIRED" | "QUOTA_EXCEEDED" | "RANGE_NOT_SATISFIABLE" | "RELATED_THESES_GENERATING" | "TASK_LIMIT_EXCEEDED" | "THESIS_ACTIVE_LIMIT_EXCEEDED" | "THESIS_ARCHIVED" | "THESIS_RETURN_LAST_LEG" | "THESIS_RETURN_SWITCH_FINAL" | "THESIS_WEIGHTS_INCOMPLETE" | "UNSUPPORTED_MEDIA_TYPE" | "X_SCOPE_REVOKED" | "X_TOKEN_REVOKED") | null;
             requiredPermission: string | null;
             /** Format: int32 */
             retryAfter: number | null;
@@ -9541,9 +9681,25 @@ export interface components {
         };
         /** @description The ID of a Signal. */
         SignalID: string;
+        /** @enum {string} */
+        SignalKind: "FUNDAMENTALS" | "MACRO" | "TECHNICALS" | "COMMENTARY";
         SignalList: {
             items: components["schemas"]["Signal"][];
             nextPageToken: string | null;
+        };
+        /** @enum {string} */
+        SignalMinImportance: "ALL" | "NOTABLE" | "MAJOR";
+        SignalPreferences: {
+            kinds: components["schemas"]["SignalKind"][];
+            minImportance: components["schemas"]["SignalMinImportance"];
+        };
+        SignalPreferencesInput: {
+            kinds?: components["schemas"]["SignalKind"][];
+            minImportance: components["schemas"]["SignalMinImportance"];
+        };
+        SignalPreferencesPatch: {
+            kinds?: components["schemas"]["SignalKind"][];
+            minImportance?: components["schemas"]["SignalMinImportance"];
         };
         SignalSource: {
             publishedAt: components["schemas"]["DateTime"] | null;
@@ -9865,6 +10021,10 @@ export interface components {
             signalAutomationId: components["schemas"]["AutomationID"] | null;
             visibility: components["schemas"]["Visibility"];
         };
+        ThesisAllocation: {
+            cash: components["schemas"]["Decimal"] | null;
+            holdings: components["schemas"]["ThesisHolding"][];
+        };
         ThesisAsset: {
             assetId: components["schemas"]["AssetID"];
             kind: string | null;
@@ -9872,10 +10032,12 @@ export interface components {
             name: string | null;
             stance: components["schemas"]["Stance"];
             symbol: string | null;
+            weight: components["schemas"]["Decimal"] | null;
         };
         ThesisAssetInput: {
             assetId: components["schemas"]["AssetID"];
             stance?: components["schemas"]["Stance"];
+            weight?: components["schemas"]["Decimal"];
         };
         ThesisAuthor: {
             avatarUrl: string | null;
@@ -9913,6 +10075,12 @@ export interface components {
             following: boolean;
             thesisId: components["schemas"]["ThesisID"];
         };
+        ThesisHolding: {
+            assetId: components["schemas"]["AssetID"];
+            direction: components["schemas"]["Stance"];
+            symbol: string;
+            weight: components["schemas"]["Decimal"] | null;
+        };
         /** @description The ID of a Thesis. */
         ThesisID: string;
         ThesisList: {
@@ -9934,8 +10102,10 @@ export interface components {
             startAt: components["schemas"]["DateTime"] | null;
             startPrice: components["schemas"]["Decimal"] | null;
             symbol: string;
+            weight: components["schemas"]["Decimal"] | null;
         };
         ThesisReturn: {
+            allocation: components["schemas"]["ThesisAllocation"] | null;
             computedAt: components["schemas"]["DateTime"] | null;
             firstFillAt: components["schemas"]["DateTime"] | null;
             live: boolean;

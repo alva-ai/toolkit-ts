@@ -128,7 +128,52 @@ describe('ThesesResource reads', () => {
   });
 
   it('reads the return with its detail flag and the watchpoints', async () => {
-    const info = v2('ThesisReturnInfo', { tracking: 'UNSET', return: null });
+    // The detail return: each position's target share and the allocation.
+    const info = v2('ThesisReturnInfo', {
+      tracking: 'ON',
+      return: {
+        live: true,
+        value: '0.03',
+        firstFillAt: '2026-11-01T14:30:00Z',
+        pricedAt: '2026-11-24T21:00:00Z',
+        stale: false,
+        computedAt: '2026-11-24T21:00:00Z',
+        updates: [
+          {
+            versionId: VERSION,
+            publishedAt: '2026-11-01T10:00:00Z',
+            startValue: '0',
+            updateReturn: '0.03',
+            positions: [
+              {
+                assetId: ASSET,
+                symbol: 'NVDA',
+                direction: 'BULLISH',
+                startPrice: '100',
+                startAt: '2026-11-01T14:30:00Z',
+                endPrice: '107.5',
+                endAt: '2026-11-24T21:00:00Z',
+                end: 'LATEST',
+                positionReturn: '0.075',
+                currency: 'USD',
+                weight: '0.4',
+              },
+            ],
+          },
+        ],
+        allocation: {
+          holdings: [
+            {
+              assetId: ASSET,
+              symbol: 'NVDA',
+              direction: 'BULLISH',
+              weight: '0.4',
+            },
+          ],
+          cash: '0.6',
+        },
+      },
+    });
     const watchpoints = v2('ThesisWatchpoints', {
       versionId: VERSION,
       watchpoints: [{ label: 'W1', text: 'Margins', origin: 'STATED' }],
@@ -379,6 +424,36 @@ describe('ThesesResource writes', () => {
     );
     expect(fake.calls[0].body).toEqual({ thesisId: THESIS });
     expect(fake.calls[1].body).toBeUndefined();
+  });
+
+  it('reads and patches the Signal setting', async () => {
+    const setting = v2('SignalPreferences', {
+      kinds: ['MACRO'],
+      minImportance: 'MAJOR',
+    });
+    fake = fakeV2({
+      [`GET /theses/${THESIS}/signal-preferences`]: () => setting,
+      'GET /me/thesis-signal-preferences': () => setting,
+      [`PATCH /theses/${THESIS}/signal-preferences`]: () => setting,
+    });
+
+    await expect(client().theses.signalPreferences(THESIS)).resolves.toEqual(
+      setting
+    );
+    await expect(client().theses.lastSignalPreferences()).resolves.toEqual(
+      setting
+    );
+    await expect(
+      client().theses.updateSignalPreferences(THESIS, {
+        minImportance: 'MAJOR',
+      })
+    ).resolves.toEqual(setting);
+    expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      `GET /theses/${THESIS}/signal-preferences`,
+      'GET /me/thesis-signal-preferences',
+      `PATCH /theses/${THESIS}/signal-preferences`,
+    ]);
+    expect(fake.calls[2].body).toEqual({ minImportance: 'MAJOR' });
   });
 
   it('pauses and resumes Signal research', async () => {

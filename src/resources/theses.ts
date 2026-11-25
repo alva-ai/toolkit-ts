@@ -280,6 +280,39 @@ export class ThesesResource {
     });
   }
 
+  /**
+   * Which Signals one of the caller's Theses shows to every reader: its
+   * setting, or every kind and ALL when it has none. Author only.
+   */
+  async signalPreferences(id: string): Promise<Schema<'SignalPreferences'>> {
+    return this.client._v2Request(
+      'GET',
+      v2Path`/theses/${id}/signal-preferences`
+    );
+  }
+
+  /** The setting the caller last saved, which prefills a new Thesis. */
+  async lastSignalPreferences(): Promise<Schema<'SignalPreferences'>> {
+    return this.client._v2Request('GET', '/me/thesis-signal-preferences');
+  }
+
+  /**
+   * Changes which Signals a Thesis shows, for every reader, and records it as
+   * the caller's last choice: a merge patch, so an absent member keeps its
+   * value and `kinds` replaces the list. Author only; no Update is published.
+   */
+  async updateSignalPreferences(
+    id: string,
+    patch: Schema<'SignalPreferencesPatch'>,
+    options: ThesisWriteOptions = {}
+  ): Promise<Schema<'SignalPreferences'>> {
+    return this.client._v2Request(
+      'PATCH',
+      v2Path`/theses/${id}/signal-preferences`,
+      { body: patch, idempotencyKey: options.idempotencyKey }
+    );
+  }
+
   /** Rewrites a Thesis text; nothing is saved. */
   async rewrite(
     input: Schema<'RewriteInput'>,

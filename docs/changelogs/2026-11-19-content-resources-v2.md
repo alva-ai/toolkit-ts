@@ -90,3 +90,21 @@ Primary record: alva-gateway/docs/changelogs/2026-11-19-agent-api-permissions.md
 - v2 problems drop backend reasons (`THESIS_RETURN_LAST_LEG` in 0.x
   `details`); `thesis update --archived false` with new content publishes two
   Updates; profile search has no bio (taken from a listed Thesis's author).
+
+## 7. Merge of 0.38.0-beta main (2026-11-24)
+
+main gained the Thesis Signal setting (#219), weights and the allocation
+(#221) and the following-feed author type (#220) on `/api/v1`. The merge keeps
+the 1.0 resources and rebuilds the first two on the `/api/v2` routes that
+alva-gateway#1512 adds (contract synced from it): `signalPreferences`,
+`lastSignalPreferences`, `updateSignalPreferences` (PATCH, a merge patch, so
+the CLI no longer reads before it writes), `NewThesis.signalPreferences`,
+`assets[].weight` and the return's `allocation`. `requireKeptWeights` and the
+v1 read validators are dropped: `/api/v2` refuses an unknown member, and the
+types come from the contract. #220's `people follows theses` stays on
+`/api/v1` and merged as is. `test/resources/thesis-weights.test.ts` and
+`thesisSignalPreferences.test.ts` tested the v1 resources and are replaced by
+cases in `test/resources/theses.test.ts` and `test/cli/theses.test.ts`.
+
+Verification: `npm run typecheck`, `npm run lint`, `npm run format:check`,
+`npm test` (76 files, 1,274 tests): pass.

@@ -649,9 +649,9 @@ alva people follows list
 alva people follows theses --cursor <next_cursor>
 ```
 
-`people follows theses` lists the Thesis Updates of the profiles the user
-follows, in the order they reached Alva (a curated person's thesis can reach
-Alva hours after its post time). Without `--cursor` it reads the last 24 hours.
+`people follows theses` lists the Thesis Updates of the users the user
+follows, in the order they reached Alva (an imported thesis can reach Alva
+long after its post time). Without `--cursor` it reads the last 24 hours.
 Every answer carries a non-empty `next_cursor`, also after an empty page: page
 while `has_more` is true and keep the last `next_cursor` to read only what is
 new next time. It reads `GET /api/v1/me/following/theses` and prints its

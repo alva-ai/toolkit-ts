@@ -148,6 +148,8 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
         'tickers',
         'visibility',
         'track-return',
+        'signal-kinds',
+        'signal-min-importance',
       ],
     }),
     route('thesis asset-candidates', 'thesis asset-candidates', {
@@ -195,6 +197,12 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis unstar', 'thesis unstar', { values: ['id'] }),
     route('thesis set-signal-enabled', 'thesis set-signal-enabled', {
       values: ['id', 'enabled'],
+    }),
+    route('thesis signal-preferences get', 'thesis signal-preferences get', {
+      values: ['id'],
+    }),
+    route('thesis signal-preferences set', 'thesis signal-preferences set', {
+      values: ['id', 'kinds', 'min-importance'],
     }),
     route('thesis update', 'thesis update', {
       values: [

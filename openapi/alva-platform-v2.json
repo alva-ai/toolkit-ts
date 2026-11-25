@@ -5594,6 +5594,31 @@
         ],
         "type": "object"
       },
+      "NewChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "thesisId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "type": "object"
+      },
       "NewChannelTurn": {
         "additionalProperties": false,
         "properties": {
@@ -5768,6 +5793,16 @@
               "$ref": "#/components/schemas/MediaInput"
             },
             "type": "array"
+          },
+          "signalPreferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalPreferencesInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": [
@@ -7382,6 +7417,7 @@
                   "THESIS_ARCHIVED",
                   "THESIS_RETURN_LAST_LEG",
                   "THESIS_RETURN_SWITCH_FINAL",
+                  "THESIS_WEIGHTS_INCOMPLETE",
                   "UNSUPPORTED_MEDIA_TYPE",
                   "X_SCOPE_REVOKED",
                   "X_TOKEN_REVOKED"
@@ -9337,6 +9373,15 @@
         "type": "string",
         "x-alva-id-type": "Signal"
       },
+      "SignalKind": {
+        "enum": [
+          "FUNDAMENTALS",
+          "MACRO",
+          "TECHNICALS",
+          "COMMENTARY"
+        ],
+        "type": "string"
+      },
       "SignalList": {
         "properties": {
           "items": {
@@ -9356,6 +9401,65 @@
           "items",
           "nextPageToken"
         ],
+        "type": "object"
+      },
+      "SignalMinImportance": {
+        "enum": [
+          "ALL",
+          "NOTABLE",
+          "MAJOR"
+        ],
+        "type": "string"
+      },
+      "SignalPreferences": {
+        "properties": {
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/SignalKind"
+            },
+            "type": "array"
+          },
+          "minImportance": {
+            "$ref": "#/components/schemas/SignalMinImportance"
+          }
+        },
+        "required": [
+          "kinds",
+          "minImportance"
+        ],
+        "type": "object"
+      },
+      "SignalPreferencesInput": {
+        "additionalProperties": false,
+        "properties": {
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/SignalKind"
+            },
+            "type": "array"
+          },
+          "minImportance": {
+            "$ref": "#/components/schemas/SignalMinImportance"
+          }
+        },
+        "required": [
+          "minImportance"
+        ],
+        "type": "object"
+      },
+      "SignalPreferencesPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/SignalKind"
+            },
+            "type": "array"
+          },
+          "minImportance": {
+            "$ref": "#/components/schemas/SignalMinImportance"
+          }
+        },
         "type": "object"
       },
       "SignalSource": {
@@ -11007,6 +11111,31 @@
         ],
         "type": "object"
       },
+      "ThesisAllocation": {
+        "properties": {
+          "cash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/ThesisHolding"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cash",
+          "holdings"
+        ],
+        "type": "object"
+      },
       "ThesisAsset": {
         "properties": {
           "assetId": {
@@ -11038,6 +11167,16 @@
               "string",
               "null"
             ]
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -11046,7 +11185,8 @@
           "logoUrl",
           "name",
           "stance",
-          "symbol"
+          "symbol",
+          "weight"
         ],
         "type": "object"
       },
@@ -11058,6 +11198,9 @@
           },
           "stance": {
             "$ref": "#/components/schemas/Stance"
+          },
+          "weight": {
+            "$ref": "#/components/schemas/Decimal"
           }
         },
         "required": [
@@ -11231,6 +11374,36 @@
         ],
         "type": "object"
       },
+      "ThesisHolding": {
+        "properties": {
+          "assetId": {
+            "$ref": "#/components/schemas/AssetID"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/Stance"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId",
+          "direction",
+          "symbol",
+          "weight"
+        ],
+        "type": "object"
+      },
       "ThesisID": {
         "description": "The ID of a Thesis.",
         "maxLength": 4096,
@@ -11340,6 +11513,16 @@
           },
           "symbol": {
             "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -11352,12 +11535,23 @@
           "positionReturn",
           "startAt",
           "startPrice",
-          "symbol"
+          "symbol",
+          "weight"
         ],
         "type": "object"
       },
       "ThesisReturn": {
         "properties": {
+          "allocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisAllocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "computedAt": {
             "anyOf": [
               {
@@ -11412,6 +11606,7 @@
           }
         },
         "required": [
+          "allocation",
           "computedAt",
           "firstFillAt",
           "live",
@@ -16128,6 +16323,46 @@
             "$ref": "#/components/responses/Problem"
           }
         }
+      },
+      "post": {
+        "description": "Requires agent:invoke.",
+        "parameters": [
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewChannel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
       }
     },
     "/me/credit-entries": {
@@ -17622,6 +17857,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SpawnedTask"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/me/thesis-signal-preferences": {
+      "get": {
+        "description": "Requires content:read.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalPreferences"
                 }
               }
             },
@@ -20074,6 +20329,83 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ThesisReturnInfo"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/theses/{thesisId}/signal-preferences": {
+      "get": {
+        "description": "Requires content:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thesisId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThesisID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalPreferences"
+                }
+              }
+            },
+            "description": "OK."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "patch": {
+        "description": "Requires content:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thesisId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThesisID"
+            }
+          },
+          {
+            "description": "A unique key of this request, the same on every retry: the first result is replayed (Idempotent-Replayed: true) for 24 hours. Send a UUIDv4 as an RFC 9651 string.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "pattern": "^(\"[!#-\\[\\]-~]{1,255}\"|[!#-\\[\\]-~]{1,255})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalPreferencesPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalPreferences"
                 }
               }
             },
