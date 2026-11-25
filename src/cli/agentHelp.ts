@@ -135,7 +135,7 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, update, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, return, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, update, rewrite.
 
 list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
@@ -156,7 +156,8 @@ directions without publishing. For known tickers, add --entity-ids <id,id>
 --no-discovery (and --thesis-id <id> for an Update): it skips ticker discovery
 and returns returnPreview, the directions publishing would store, whether to ask
 the Thesis return switch (askSwitch) and whether the draft would be rejected
-(lastLegRemoved). Publish with create/update --entity-ids <id,id> and
+(lastLegRemoved). UNRESOLVED or UNKNOWN is an answer, not an error: the text
+names no catalog asset or no clear direction. Publish with create/update --entity-ids <id,id> and
 --entity-stances <json> equal to returnPreview.directions, lowercased:
 --entity-stances '[{"entity_id":"745337","stance":"bearish"}]'. Valid stances:
 unknown, bullish, bearish, none. An optional "weight" (a fraction, 0.4 is 40%,
@@ -190,7 +191,9 @@ author's only through an Update the author asks for.
 Embedded thesis commands accept literal --body text only; file and stdin body
 transports are intentionally unavailable because this runtime has no verified
 local filesystem or stdin adapter. Rewrite accepts --mode reformat|shorten|enrich;
-only omission defaults to canonical reformat, which is sent to the API. Create defaults --visibility to public.
+only omission defaults to canonical reformat, which is sent to the API. Create
+and update require --visibility public|private explicitly; create returns the
+Thesis's web url.
 Set-visibility changes current access without publishing a new author version.
 It requires --id and --visibility public|private and never uses a request ID.
 Archive preserves the current Thesis fields and uses the current author version

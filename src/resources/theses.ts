@@ -9,6 +9,7 @@ import {
 } from './thesisReads.js';
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
+import { webOriginFromApiBase } from './playbooks.js';
 
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
@@ -107,6 +108,11 @@ export interface Thesis {
 
 export interface ThesisResponse {
   thesis: Thesis;
+}
+
+/** A created Thesis and its clickable web url, e.g. `https://alva.ai/thesis/123`. */
+export interface ThesisCreateResponse extends ThesisResponse {
+  url: string;
 }
 
 export interface ThesisAuthor {
@@ -415,14 +421,15 @@ export class ThesesResource {
     return thesisWatchpoints(this.client, id);
   }
 
-  async create(params: CreateThesisParams): Promise<ThesisResponse> {
+  async create(params: CreateThesisParams): Promise<ThesisCreateResponse> {
     this.client._requireAuth();
     const body = createBody(params);
     const response = thesisResponse(
       await this.client._request('POST', '/api/v1/theses', { body })
     );
     requireKeptWeights(body.entity_stances, response.thesis.entity_stances);
-    return response;
+    const webOrigin = webOriginFromApiBase(this.client.baseUrl);
+    return { ...response, url: `${webOrigin}/thesis/${response.thesis.id}` };
   }
 
   async get(id: ThesisID): Promise<ThesisGetResponse> {

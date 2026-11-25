@@ -96,6 +96,21 @@ describe('ThesesResource', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it('returns the created Thesis web url on the environment of the API', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api-llm.stg.alva.ai',
+    });
+
+    const created = await client.theses.create({
+      request_id: REQUEST_ID,
+      body: 'draft',
+      visibility: 'private',
+    });
+    expect(created.url).toBe(`https://stg.alva.ai/thesis/${MAX_ID}`);
+  });
+
   it('uses one real HTTP boundary call and preserves CRLF and decimal IDs', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
     globalThis.fetch = fetch;
@@ -112,7 +127,10 @@ describe('ThesesResource', () => {
         entity_ids: [MAX_ID],
         tickers: ['NVDA', 'AAPL'],
       })
-    ).resolves.toEqual(thesis());
+    ).resolves.toEqual({
+      ...thesis(),
+      url: `https://alva.ai/thesis/${MAX_ID}`,
+    });
 
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
@@ -295,7 +313,10 @@ describe('ThesesResource', () => {
           stance: 'bearish' as const,
         })),
       })
-    ).resolves.toEqual(response);
+    ).resolves.toEqual({
+      ...response,
+      url: `https://alva.ai/thesis/${MAX_ID}`,
+    });
     expect(client._request).toHaveBeenCalledWith(
       'POST',
       '/api/v1/theses',

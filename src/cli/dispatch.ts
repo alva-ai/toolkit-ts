@@ -1620,6 +1620,7 @@ Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
+  asset-candidates  Read catalog IDs and the directions publishing would store, without publishing
   list     Read theses by author or market entity
   related  Read related current publications
   get      Get one thesis
@@ -1627,6 +1628,7 @@ Subcommands:
   version list  List visible Updates with editorial revisions folded together
   signals  Read published Signal history
   watchpoints  List a Thesis's current watchpoints
+  return   Read the Thesis return
   set-visibility  Change current access without publishing a version
   archive   Archive the current author version
   star      Add the Thesis to your bookmarks
@@ -1645,11 +1647,12 @@ Body input (create, update, rewrite): choose exactly one:
 Create and update require --request-id: a caller-supplied non-zero UUID. The
 toolkit does not generate or retry request IDs. If a response is ambiguous
 after a write, reuse the same request ID only after resolving that ambiguity with
-the backend; do not send a fresh ID. Create defaults --visibility to public.
-Update requires --visibility explicitly so it cannot inadvertently publish.
+the backend; do not send a fresh ID. Create and update require --visibility
+explicitly so neither can publish by accident. Create returns the Thesis's web
+url.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] [--visibility <value>] [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] --visibility public|private [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
   Signals: omit both to show every Signal. Kinds: fundamentals, macro,
        technicals, commentary; with only one flag the other keeps its default.
   Images: public creation only, at most 20 in display order. Upload selected files
@@ -1673,6 +1676,8 @@ Other flags:
        --no-discovery only classifies --entity-ids (no ticker discovery) and
        returns returnPreview: the directions publishing would store, the return
        switch (askSwitch) and lastLegRemoved. --thesis-id seeds an Update.
+       A mention resolved UNRESOLVED or a direction UNKNOWN is an answer, not
+       an error: the text names no catalog asset or no clear direction.
   return  --id <id> [--detail]   the Thesis return; --detail adds each Update's positions
   get     --id <signed-int64-decimal>
   version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
@@ -3877,10 +3882,9 @@ export async function executeParsedCommand(
             entity_ids: thesisEntityIDs(flags),
             entity_stances: thesisEntityStances(flags),
             tickers: thesisTickers(flags),
-            visibility:
-              flags.visibility === undefined
-                ? 'public'
-                : thesisCreateVisibility(flags.visibility),
+            visibility: thesisCreateVisibility(
+              requireFlag(flags, 'visibility', 'thesis create')
+            ),
             track_return: thesisTrackReturn(flags, 'thesis create'),
             signal_preferences: thesisCreateSignalPreferences(flags),
           });
