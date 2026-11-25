@@ -21,12 +21,16 @@ follow-up), where Claude Code and Codex each signed in with `--base-url`.
   three paths. A key is valid only there, so the two are saved together: a
   login without `--base-url` saves the production endpoint, which also points
   a profile that was on STG back at production with its new production key.
-- D2: before printing a URL or opening a browser, login writes the config
-  back unchanged (an empty one only when the file does not exist). A failure
-  stops there with the path, the reason and "nothing was signed in", so no key
-  is minted. A config that exists but cannot be read stops login the same way
-  and is not written (Codex review on the PR: writing an empty config there
-  would erase every profile even when the user then cancels).
+- D2: before printing a URL or opening a browser, login checks that it can
+  write the config, and a failure stops there with the path, the reason and
+  "nothing was signed in", so no key is minted. The check never changes an
+  existing config: it opens it for appending and adds nothing, so a write that
+  fails after the open (full disk, file-size limit) cannot truncate it. With
+  no config it creates an empty one (`wx`, mode 600). A config that exists but
+  cannot be read stops login the same way and is not written. Both points came
+  from Codex review on the PR: the first version rewrote the file in place,
+  replacing an unreadable config with an empty one and truncating on a failed
+  write, each before the user had signed in.
   Tests that asserted "no config written" on a failed login now assert that no
   key was saved.
 
@@ -36,9 +40,9 @@ environment after signing in at another).
 
 Occam (final diff): nothing removed. Saving the production endpoint too is
 what keeps a re-login's key and endpoint paired without changing
-`writeConfig`; the check writes for real because only a write shows what a
-sandbox allows, and keeps the file's bytes and mode; each login mode calls it,
-so each has its own test.
+`writeConfig`; the check opens the file for writing because only that shows
+what a sandbox allows, and appending nothing is the one open that cannot lose
+data; each login mode calls it, so each has its own test.
 
 ## Rollout
 
@@ -46,23 +50,26 @@ Ships with the next toolkit release; no gateway or backend change.
 
 ## Verification
 
-- `npx vitest run` (64 files, 1496 tests). New: `--base-url` is saved with
+- `npx vitest run` (64 files, 1499 tests). New: `--base-url` is saved with
   the key and `loadConfig` for `whoami --profile <it>` then resolves that
   endpoint (the bug report's steps); a login without `--base-url` rewrites an
   STG profile to production; a config that cannot be written fails before any
   URL, prompt, browser or token request, in both modes; an unreadable config
-  is neither written nor followed by a sign-in. Reverting `src` with the tests
-  kept fails 7 of them; dropping only the `ENOENT` check fails the unreadable
-  one.
+  is neither written nor followed by a sign-in. On real files: an existing
+  config keeps its bytes, a missing one is created empty with mode 600, and a
+  write that fails after opening the file leaves it intact. Reverting `src`
+  with the tests kept fails 7 tests; restoring the in-place rewrite fails the
+  failed-write one.
 - `npx tsc --noEmit`, `npx eslint src test`, `npx prettier --check` on the
   changed files.
 - Built CLI (`npm run build`, `node dist/cli.js auth login --no-browser`)
-  against real permissions: a read-only `XDG_CONFIG_HOME` and a read-only
+  against real permissions: a read-only config directory and a read-only
   `config.json` each exit 1 at once with `Cannot write <path> (EACCES …)`; a
-  write-only `config.json` exits 1 with `Cannot read <path> (EACCES …)` and
-  keeps its profiles; none prints a login URL. A writable legacy flat config is
-  rewritten byte for byte (same hash, mode 600) and a missing one is created
-  as `{"profiles": {}}` with mode 600, each before the URL is printed. Signing in for real was not run (needs a person at the browser);
+  write-only `config.json` exits 1 with `Cannot read <path> (EACCES …)`; none
+  prints a login URL and every existing file keeps its profiles. Under
+  `ulimit -f 1` a 3,313-byte config passes the check unchanged (same hash) and
+  the URL is printed. A missing config is created as `{"profiles": {}}` with
+  mode 600. Signing in for real was not run (needs a person at the browser);
   the saved endpoint is covered by the tests above.
 
 ## Remaining
