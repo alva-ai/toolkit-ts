@@ -85,7 +85,6 @@ describe('thesis terminal dispatch', () => {
     const localFiles = {
       readText: () => 'file\r\nbody',
       readBytes: () => new TextEncoder().encode('file\r\nbody'),
-      writeBytes: () => undefined,
     };
 
     await dispatchTerminal(value, [
@@ -456,7 +455,6 @@ describe('thesis terminal dispatch', () => {
           localFiles: {
             readText: () => 'unused',
             readBytes: () => invalidBytes,
-            writeBytes: () => undefined,
           },
         }
       )
@@ -497,7 +495,6 @@ describe('thesis terminal dispatch', () => {
           readText: () => 'unused',
           readBytes: () =>
             new Uint8Array([0xef, 0xbb, 0xbf, 0x64, 0x72, 0x61, 0x66, 0x74]),
-          writeBytes: () => undefined,
         },
       }
     );

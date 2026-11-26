@@ -369,7 +369,7 @@ Subcommands:
 
 Subcommands:
   trending  list  mine  get  set-visibility
-  draft  release  lint  screenshot  remix
+  draft  release  lint  remix
   comments  follows  functions`,
 
   'playbooks comments': `Usage: alva playbooks comments <subcommand>

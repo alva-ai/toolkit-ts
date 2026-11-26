@@ -76,7 +76,6 @@ const nodeRuntimeDeps: DispatchRuntimeDeps = {
   localFiles: {
     readText: (path) => fs.readFileSync(path, 'utf-8'),
     readBytes: (path) => fs.readFileSync(path) as unknown as BodyInit,
-    writeBytes: (path, data) => fs.writeFileSync(path, data),
   },
   readStdin: readAllStdin,
   readStdinBytes: readAllStdinBytes,
@@ -243,15 +242,6 @@ async function main(): Promise<void> {
       const output = (result as { _cliOutput: string })._cliOutput;
       process.stdout.write(output + (output.endsWith('\n') ? '' : '\n'));
       process.exitCode = (result as { _exitCode: number })._exitCode;
-      return;
-    }
-    if (
-      result &&
-      typeof result === 'object' &&
-      (result as Record<string, unknown>)._image === true &&
-      typeof (result as Record<string, unknown>).data === 'string'
-    ) {
-      process.stdout.write((result as { data: string }).data + '\n');
       return;
     }
     if (isArrayBuffer(result)) {
