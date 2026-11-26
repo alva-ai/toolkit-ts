@@ -24,7 +24,7 @@ describe('Slim Alva Agent command profile', () => {
   });
 
   it('publishes a unique leaf inventory for exhaustive safety smokes', () => {
-    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(139);
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).toHaveLength(138);
     for (const leaf of [
       'markets watchlist list',
       'markets watchlist add',
@@ -121,6 +121,9 @@ describe('Slim Alva Agent command profile', () => {
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).not.toContain(
       'feedback submit'
     );
+    expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).not.toContain(
+      'playbooks screenshot'
+    );
     expect(embeddedDispatch.ALPI_ALVA_COMMAND_PATHS).not.toContain('sdk doc');
     expect(embeddedDispatch).not.toHaveProperty('dispatchCli');
     expect(embeddedDispatch).not.toHaveProperty('HELP_TEXT');
@@ -193,6 +196,7 @@ describe('Slim Alva Agent command profile', () => {
       ['sdk', 'partitions'],
       ['arrays', 'token', 'status'],
       ['feedback', 'submit'],
+      ['playbooks', 'screenshot', '--url', '/p'],
       ['trading', 'portfolio'],
       ['trading', 'update-risk-rules'],
     ]) {
@@ -266,10 +270,10 @@ describe('Slim Alva Agent command profile', () => {
   it('elevates shared execution prerequisites above Signal and Broker', () => {
     expect(
       embeddedCommandArgv(parseEmbeddedCommand(['trading', 'accounts']))
-    ).toEqual(['broker', 'accounts']);
+    ).toEqual(['trading', 'accounts']);
     expect(
       embeddedCommandArgv(parseEmbeddedCommand(['trading', 'risk-rules']))
-    ).toEqual(['broker', 'risk-rules']);
+    ).toEqual(['trading', 'risk-rules']);
   });
 
   it('isolates legacy Signal commands and removes execute-latest', () => {
@@ -344,7 +348,7 @@ describe('Slim Alva Agent command profile', () => {
     ).toThrow(/--playbook is not supported/);
   });
 
-  it('omits local-file flags and returns screenshots as Agent images', () => {
+  it('omits local-file flags', () => {
     for (const argv of [
       ['fs', 'write', '--path', '~/x', '--file', './x'],
       ['run', '--local-file', './x.js'],
@@ -355,23 +359,9 @@ describe('Slim Alva Agent command profile', () => {
         '--params-schema-file',
         './schema.json',
       ],
-      ['playbooks', 'screenshot', '--url', '/p', '--out', './p.png'],
     ]) {
       expect(() => parseEmbeddedCommand(argv)).toThrow(/is not supported/);
     }
-
-    const screenshot = parseEmbeddedCommand([
-      'playbooks',
-      'screenshot',
-      '--url',
-      '/p',
-    ]);
-    expect(embeddedCommandArgv(screenshot)).toEqual([
-      'screenshot',
-      '--url',
-      '/p',
-      '--base64',
-    ]);
   });
 
   it('preserves every broker token after the nested prefix', () => {

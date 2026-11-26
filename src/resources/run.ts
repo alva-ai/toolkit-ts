@@ -1,47 +1,58 @@
 import type { AlvaClient } from '../client.js';
-import type { RunRequest, RunResponse } from '../types.js';
+import type { Schema } from '../platformApi.js';
 import {
   objectWithRawJSONField,
   serializeStructuredArgs,
 } from '../jsonPayload.js';
 
+export interface RunOptions {
+  /** Idempotency-Key of the run: the same key never runs the script twice. */
+  idempotencyKey?: string;
+  /** Client-side HTTP timeout of each attempt, in milliseconds; not sent. */
+  timeoutMs?: number;
+}
+
+/** Runs JavaScript in the Jagent runtime (POST /api/v2/runs), synchronously. */
 export class RunResource {
   constructor(private client: AlvaClient) {}
 
-  async execute(params: RunRequest): Promise<RunResponse> {
+  /**
+   * Runs code or an ALFS entry path. args is a JSON object sent as is; the
+   * run's returnValue is the JSON text of the script's return value.
+   */
+  async execute(
+    request: Schema<'RunRequest'>,
+    options: RunOptions = {}
+  ): Promise<Schema<'Run'>> {
     this.client._requireAuth();
-    return params.args === undefined
-      ? this.request(params)
-      : this.request(params, serializeStructuredArgs(params.args));
+    return request.args === undefined
+      ? this.send(request, undefined, options)
+      : this.send(request, serializeStructuredArgs(request.args), options);
   }
 
-  /** @internal Used by the CLI to preserve the exact --args JSON text. */
+  /** @internal Used by the CLI to send the exact --args JSON text. */
   async _executeSerializedArgs(
-    params: RunRequest,
-    serializedArgs: string
-  ): Promise<RunResponse> {
+    request: Omit<Schema<'RunRequest'>, 'args'>,
+    serializedArgs: string,
+    options: RunOptions = {}
+  ): Promise<Schema<'Run'>> {
     this.client._requireAuth();
-    return this.request(params, serializedArgs);
+    return this.send(request, serializedArgs, options);
   }
 
-  private request(
-    params: RunRequest,
-    serializedArgs?: string
-  ): Promise<RunResponse> {
-    const body = {
-      code: params.code,
-      entry_path: params.entry_path,
-      working_dir: params.working_dir,
-      args: params.args,
-      max_heap_size_mb: params.max_heap_size_mb,
-    };
-    return this.client._request('POST', '/api/v1/run', {
+  private send(
+    request: Schema<'RunRequest'>,
+    serializedArgs: string | undefined,
+    options: RunOptions
+  ): Promise<Schema<'Run'>> {
+    return this.client._v2Request('POST', '/runs', {
       ...(serializedArgs === undefined
-        ? { body }
+        ? { body: request }
         : {
-            jsonBody: objectWithRawJSONField(body, 'args', serializedArgs),
+            jsonBody: objectWithRawJSONField(request, 'args', serializedArgs),
           }),
-      timeoutMs: params.timeout_ms,
-    }) as Promise<RunResponse>;
+      idempotencyKey: options.idempotencyKey,
+      timeoutMs: options.timeoutMs,
+    });
   }
 }

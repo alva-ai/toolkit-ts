@@ -1,187 +1,118 @@
-import { describe, it, expect, vi } from 'vitest';
-import { DeployResource } from '../../src/resources/deploy.js';
+import { afterEach, describe, it, expect } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
+import { aCronjob, aCronjobRun, CRONJOB } from '../automationV2.js';
+import { fakeV2 } from '../fakeV2.js';
+import { v2 } from '../v2Schema.js';
 
-function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
-  const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-    _request: ReturnType<typeof vi.fn>;
-  };
-  client._request = vi.fn().mockResolvedValue({});
-  return client;
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
+
+function client() {
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
 }
 
 describe('DeployResource', () => {
-  it('create sends POST /api/v1/deploy/cronjob', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.create({
-      name: 'my-job',
-      path: '~/scripts/job.js',
-      cron_expression: '*/5 * * * *',
-      start_at: '2026-07-15T12:00:00Z',
-      end_at: '2026-07-15T14:00:00Z',
-      max_runs: 12,
-      execution_timeout_seconds: 3600,
+  it('create() posts the CreateCronjobBody with argsJson as written', async () => {
+    const fake = fakeV2({ 'POST /me/cronjobs': () => aCronjob() });
+    restore = fake.restore;
+    const body = {
+      name: 'btc-ema',
+      entryPath: '~/feeds/btc-ema/v1/src/index.js',
+      cronExpression: '0 */4 * * *',
+      argsJson: '{"n":9007199254740993}',
+      runAsAccountId: 'account_0sa',
+    };
+    expect(
+      await client().deploy.create(body, { idempotencyKey: 'create-1' })
+    ).toEqual(aCronjob());
+    expect(fake.calls[0].body).toEqual(body);
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe('"create-1"');
+  });
+
+  it('list() and get() return the CronjobList page and the Cronjob', async () => {
+    const page = { items: [aCronjob()], nextPageToken: 'p2' };
+    const fake = fakeV2({
+      'GET /me/cronjobs': () => page,
+      [`GET /cronjobs/${CRONJOB}`]: () => aCronjob(),
     });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/deploy/cronjob',
-      {
-        body: {
-          name: 'my-job',
-          path: '~/scripts/job.js',
-          cron_expression: '*/5 * * * *',
-          args: undefined,
-          push_notify: undefined,
-          max_heap_size_mb: undefined,
-          run_as_user_id: undefined,
-          start_at: '2026-07-15T12:00:00Z',
-          end_at: '2026-07-15T14:00:00Z',
-          max_runs: 12,
-          execution_timeout_seconds: 3600,
-        },
-      }
-    );
+    restore = fake.restore;
+    const c = client();
+    expect(await c.deploy.list({ pageSize: 5, pageToken: 'p1' })).toEqual(page);
+    expect(await c.deploy.get(CRONJOB)).toEqual(aCronjob());
+    expect(fake.calls[0].query.toString()).toBe('pageSize=5&pageToken=p1');
   });
 
-  it('list sends GET /api/v1/deploy/cronjobs with pagination', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.list({ limit: 10, cursor: 'abc' });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjobs',
-      { query: { limit: 10, cursor: 'abc' } }
-    );
-  });
-
-  it('list sends GET with default params', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.list();
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjobs',
-      { query: { limit: undefined, cursor: undefined } }
-    );
-  });
-
-  it('get sends GET /api/v1/deploy/cronjob/:id', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.get({ id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjob/123'
-    );
-  });
-
-  it('update sends PATCH /api/v1/deploy/cronjob/:id', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.update({
-      id: 123,
-      name: 'new-name',
-      execution_timeout_seconds: 900,
+  it('update() sends a merge patch where null clears the run-as account', async () => {
+    const fake = fakeV2({ [`PATCH /cronjobs/${CRONJOB}`]: () => aCronjob() });
+    restore = fake.restore;
+    await client().deploy.update(CRONJOB, {
+      cronExpression: '0 */2 * * *',
+      runAsAccountId: null,
     });
-    expect(client._request).toHaveBeenCalledWith(
-      'PATCH',
-      '/api/v1/deploy/cronjob/123',
-      {
-        body: {
-          name: 'new-name',
-          execution_timeout_seconds: 900,
-        },
-      }
-    );
-  });
-
-  it('delete sends DELETE /api/v1/deploy/cronjob/:id', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.delete({ id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'DELETE',
-      '/api/v1/deploy/cronjob/123'
-    );
-  });
-
-  it('pause sends POST /api/v1/deploy/cronjob/:id/pause', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.pause({ id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/deploy/cronjob/123/pause'
-    );
-  });
-
-  it('resume sends POST /api/v1/deploy/cronjob/:id/resume', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.resume({ id: 123 });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/deploy/cronjob/123/resume'
-    );
-  });
-
-  it('trigger sends POST /api/v1/deploy/cronjob/:id/trigger and returns workflow_run_id', async () => {
-    const client = makeClient();
-    client._request.mockResolvedValueOnce({
-      workflow_run_id: 'hatchet-wf-abc-123',
+    expect(fake.calls[0].body).toEqual({
+      cronExpression: '0 */2 * * *',
+      runAsAccountId: null,
     });
-    const deploy = new DeployResource(client);
-    const result = await deploy.trigger({ id: 42 });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/deploy/cronjob/42/trigger'
-    );
-    expect(result).toEqual({ workflow_run_id: 'hatchet-wf-abc-123' });
-  });
-
-  it('listRuns sends GET /api/v1/deploy/cronjob/:id/runs with pagination', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.listRuns({ cronjob_id: 42, first: 10, cursor: 99 });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjob/42/runs',
-      { query: { first: 10, cursor: 99 } }
+    expect(fake.calls[0].headers['Content-Type']).toBe(
+      'application/merge-patch+json'
     );
   });
 
-  it('listRuns sends GET with default params', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.listRuns({ cronjob_id: 42 });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjob/42/runs',
-      { query: { first: undefined, cursor: undefined } }
-    );
-  });
-
-  it('getRunStatus sends GET /api/v1/deploy/cronjob/:id/runs/by-workflow/:workflowRunId', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.getRunStatus({
-      cronjob_id: 42,
-      workflow_run_id: 'hatchet-wf/abc',
+  it('pause, resume and delete return the Cronjob and {}', async () => {
+    const paused = aCronjob({ status: 'PAUSED' });
+    const fake = fakeV2({
+      [`POST /cronjobs/${CRONJOB}/pause`]: () => paused,
+      [`POST /cronjobs/${CRONJOB}/resume`]: () => aCronjob(),
+      [`DELETE /cronjobs/${CRONJOB}`]: () => ({}),
     });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjob/42/runs/by-workflow/hatchet-wf%2Fabc'
-    );
+    restore = fake.restore;
+    const c = client();
+    expect(await c.deploy.pause(CRONJOB)).toEqual(paused);
+    expect(await c.deploy.resume(CRONJOB)).toEqual(aCronjob());
+    expect(await c.deploy.delete(CRONJOB)).toEqual({});
   });
 
-  it('getRunLogs sends GET /api/v1/deploy/cronjob/:id/runs/:runId/logs', async () => {
-    const client = makeClient();
-    const deploy = new DeployResource(client);
-    await deploy.getRunLogs({ cronjob_id: 42, run_id: 7 });
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      '/api/v1/deploy/cronjob/42/runs/7/logs'
-    );
+  it('trigger() returns the DispatchReceipt and getDispatch() the dispatch', async () => {
+    const dispatch = v2('CronjobDispatch', {
+      id: 'cronjob_dispatch_0d',
+      cronjobId: CRONJOB,
+      state: 'SUCCEEDED',
+      run: aCronjobRun(),
+    });
+    const fake = fakeV2({
+      [`POST /cronjobs/${CRONJOB}/trigger`]: () =>
+        v2('DispatchReceipt', { dispatchId: 'cronjob_dispatch_0d' }),
+      'GET /cronjob-dispatches/cronjob_dispatch_0d': () => dispatch,
+    });
+    restore = fake.restore;
+    const c = client();
+    expect(await c.deploy.trigger(CRONJOB)).toEqual({
+      dispatchId: 'cronjob_dispatch_0d',
+    });
+    expect(await c.deploy.getDispatch('cronjob_dispatch_0d')).toEqual(dispatch);
+  });
+
+  it('listRuns(), runStats() and getRunLogs() read their own routes', async () => {
+    const page = { items: [aCronjobRun()], nextPageToken: null };
+    const stats = v2('CronjobRunStats', {
+      totalRuns: 3,
+      succeededRuns: 2,
+      failedRuns: 1,
+      skippedRuns: 0,
+      lastRunAt: '2026-11-02T00:00:00Z',
+      lastSucceededAt: null,
+    });
+    const logs = v2('CronjobRunLogs', { logs: 'ok\n', error: null });
+    const fake = fakeV2({
+      [`GET /cronjobs/${CRONJOB}/runs`]: () => page,
+      [`GET /cronjobs/${CRONJOB}/run-stats`]: () => stats,
+      'GET /cronjob-runs/run_0r/logs': () => logs,
+    });
+    restore = fake.restore;
+    const c = client();
+    expect(await c.deploy.listRuns(CRONJOB, { pageSize: 10 })).toEqual(page);
+    expect(await c.deploy.runStats(CRONJOB)).toEqual(stats);
+    expect(await c.deploy.getRunLogs('run_0r')).toEqual(logs);
+    expect(fake.calls[0].query.get('pageSize')).toBe('10');
   });
 });

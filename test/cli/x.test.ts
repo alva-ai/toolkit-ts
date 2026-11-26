@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { dispatchCli } from '../../src/cli/dispatch.js';
 import { dispatch as embedded } from '../../src/cli/embeddedDispatch.js';
+import { fakeV2, problem } from '../fakeV2.js';
+import { page, xAccount, xConnection, xPost } from '../marketV2.js';
+
+let restore = () => {};
+afterEach(() => restore());
 
 for (const [name, dispatch] of [
   ['terminal', dispatchCli],
@@ -10,25 +15,16 @@ for (const [name, dispatch] of [
   describe(`connected X ${name} contract`, () => {
     it('uses the real authenticated resource for defaults, continuation, and status', async () => {
       const client = new AlvaClient({ apiKey: 'host-key' });
-      const request = vi.spyOn(client, '_request').mockResolvedValue({
-        data: {
-          viewer: {
-            xFollowing: {
-              edges: [],
-              pageInfo: {
-                startCursor: '',
-                endCursor: 'next',
-                hasNextPage: true,
-                hasPreviousPage: false,
-              },
-            },
-          },
-        },
+      const fake = fakeV2({
+        'GET /me/x-following': () => page([xAccount()], 'next'),
+        'GET /me/x-connection': () => xConnection(),
+        'GET /me/x-posts': () => page([xPost()]),
       });
-      expect(await dispatch(client, ['x', 'following'])).toMatchObject({
-        edges: [],
-        pageInfo: { endCursor: 'next', hasNextPage: true },
-      });
+      restore = fake.restore;
+      expect(await dispatch(client, ['x', 'following'])).toEqual(
+        page([xAccount()], 'next')
+      );
+      expect(fake.calls[0].query.toString()).toBe('');
       await dispatch(client, [
         'x',
         'following',
@@ -37,41 +33,10 @@ for (const [name, dispatch] of [
         '--cursor',
         'next',
       ]);
-      expect(request.mock.calls[1][2]?.body).toMatchObject({
-        variables: { first: 25, after: 'next' },
-      });
-      request.mockResolvedValueOnce({
-        data: {
-          viewer: {
-            xConnection: {
-              connected: true,
-              canReadFollowing: true,
-              canReadPosts: true,
-            },
-          },
-        },
-      });
-      expect(await dispatch(client, ['x', 'status'])).toMatchObject({
-        connected: true,
-      });
-      request.mockResolvedValueOnce({
-        data: {
-          viewer: {
-            xPosts: {
-              edges: [],
-              pageInfo: {
-                startCursor: '',
-                endCursor: '',
-                hasNextPage: false,
-                hasPreviousPage: false,
-              },
-            },
-          },
-        },
-      });
-      expect(await dispatch(client, ['x', 'posts'])).toMatchObject({
-        edges: [],
-      });
+      expect(fake.calls[1].query.toString()).toBe('pageSize=25&pageToken=next');
+      expect(fake.calls[1].headers['X-Alva-Api-Key']).toBe('host-key');
+      expect(await dispatch(client, ['x', 'status'])).toEqual(xConnection());
+      expect(await dispatch(client, ['x', 'posts'])).toEqual(page([xPost()]));
     });
     it.each(
       [
@@ -84,24 +49,21 @@ for (const [name, dispatch] of [
       ].map((args) => ({ args }))
     )('rejects invalid/unsupported argv $args', async ({ args }) => {
       const client = new AlvaClient({ apiKey: 'host-key' });
-      const request = vi.spyOn(client, '_request');
+      const request = vi.spyOn(client, '_v2Request');
       await expect(dispatch(client, args)).rejects.toThrow();
       expect(request).not.toHaveBeenCalled();
     });
     it('propagates upstream denial without retrying or returning empty success', async () => {
       const client = new AlvaClient({ apiKey: 'host-key' });
-      const request = vi.spyOn(client, '_request').mockResolvedValue({
-        errors: [
-          {
-            message: 'X API rate limit reached',
-            extensions: { code: 'RESOURCE_EXHAUSTED' },
-          },
-        ],
+      const fake = fakeV2({
+        'GET /me/x-following': () =>
+          problem(429, 'RATE_LIMITED', { detail: 'X API rate limit reached' }),
       });
+      restore = fake.restore;
       await expect(dispatch(client, ['x', 'following'])).rejects.toThrow(
         'rate limit'
       );
-      expect(request).toHaveBeenCalledTimes(1);
+      expect(fake.calls).toHaveLength(1);
     });
   });
 }

@@ -1,15 +1,99 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatTrendingPlaybooks,
+  formatOwnedPlaybookList,
   formatPlaybook,
   formatPlaybookList,
-  formatOwnedPlaybookList,
+  formatV1Playbook,
+  formatV1PlaybookList,
+  formatV1TrendingPlaybooks,
 } from '../../src/cli/playbooksFormat.js';
-import type {
-  TrendingPlaybookItem,
-  PlaybookDiscoveryItem,
-  OwnedPlaybookItem,
-} from '../../src/resources/playbooks.js';
+import type { TrendingPlaybookItem } from '../../src/v1/playbooks.js';
+import { aPlaybook } from '../contentV2.js';
+
+const ORIGIN = 'https://alva.ai';
+
+const MU = aPlaybook({
+  id: 'playbook_0m7',
+  slug: 'mu-deep-dive',
+  title: 'MU Deep-Dive',
+  description: 'Single-stock deep analysis on Micron.',
+  tags: ['mu', 'micron'],
+  followerCount: 3,
+  owner: { id: null, handle: 'lake', displayName: null, avatarUrl: null },
+});
+
+describe('formatPlaybookList (the /api/v2 Playbook)', () => {
+  it('renders title, visibility, ref, clickable url, description, tags and ID', () => {
+    const out = formatPlaybookList([MU], ORIGIN);
+    expect(out).toBe(
+      [
+        '1 playbook(s):',
+        '',
+        '• MU Deep-Dive  [public]  ★ 3',
+        '    lake/mu-deep-dive',
+        '    https://alva.ai/u/lake/playbooks/mu-deep-dive',
+        '    Single-stock deep analysis on Micron.',
+        '    tags: mu, micron',
+        '    id: playbook_0m7',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('truncates long descriptions, omits an empty follow count and a missing owner', () => {
+    const out = formatPlaybookList(
+      [
+        aPlaybook({
+          description: 'x'.repeat(400),
+          followerCount: 0,
+          owner: null,
+        }),
+      ],
+      ORIGIN
+    );
+    expect(out).toContain('…');
+    expect(out).not.toContain('x'.repeat(400));
+    expect(out).toContain('• Scanner  [public]\n');
+    expect(out).not.toContain('https://');
+  });
+
+  it('hints at the next page and handles an empty list', () => {
+    expect(formatPlaybookList([MU], ORIGIN, { hasNext: true })).toContain(
+      '--cursor <nextPageToken>'
+    );
+    expect(formatPlaybookList([], ORIGIN)).toBe('(no playbooks)\n');
+  });
+
+  it('renders one Playbook or not found', () => {
+    expect(formatPlaybook(MU, 'https://stg.alva.ai')).toContain(
+      'https://stg.alva.ai/u/lake/playbooks/mu-deep-dive'
+    );
+    expect(formatPlaybook(null, ORIGIN)).toBe('(not found)\n');
+  });
+});
+
+describe('formatOwnedPlaybookList', () => {
+  it('renders title, visibility, slug and ID of my Playbooks', () => {
+    const out = formatOwnedPlaybookList([
+      aPlaybook({ visibility: 'PRIVATE' }),
+      aPlaybook({ id: 'playbook_0d', title: '', slug: 'draft-one' }),
+    ]);
+    expect(out).toContain(
+      '• Scanner  [private]\n    scanner\n    id: playbook_0abc'
+    );
+    // The slug is the title: it is not printed twice.
+    expect(out).toContain('• draft-one  [public]\n    id: playbook_0d');
+  });
+
+  it('hints at --all only when it was not used', () => {
+    expect(formatOwnedPlaybookList([MU], { hasNext: true })).toContain(
+      '--all for every page'
+    );
+    expect(
+      formatOwnedPlaybookList([MU], { hasNext: true, all: true })
+    ).not.toContain('more results');
+  });
+});
 
 function trendingItem(
   over: Partial<TrendingPlaybookItem> = {}
@@ -30,145 +114,29 @@ function trendingItem(
   };
 }
 
-describe('formatTrendingPlaybooks', () => {
-  it('renders title, ref, clickable url, description and tags', () => {
-    const out = formatTrendingPlaybooks({
-      playbooks: [trendingItem()],
-      has_next: false,
-    });
-    expect(out).toContain('1 playbook(s):');
-    expect(out).toContain('• MU Deep-Dive  ★ 3');
-    expect(out).toContain('    lake/mu-deep-dive');
-    expect(out).toContain('    https://alva.ai/u/lake/playbooks/mu-deep-dive');
-    expect(out).toContain('    Single-stock deep analysis on Micron.');
-    expect(out).toContain('    tags: mu, micron');
-  });
-
-  it('truncates long descriptions to keep the list scannable', () => {
-    const long = 'x'.repeat(400);
-    const out = formatTrendingPlaybooks({
-      playbooks: [trendingItem({ description: long })],
-      has_next: false,
-    });
-    expect(out).toContain('…');
-    expect(out).not.toContain('x'.repeat(400));
-  });
-
-  it('omits the follow marker when follow_count is 0', () => {
-    const out = formatTrendingPlaybooks({
-      playbooks: [trendingItem({ follow_count: 0 })],
-      has_next: false,
-    });
-    expect(out).toContain('• MU Deep-Dive\n');
-    expect(out).not.toContain('★');
-  });
-
-  it('hints at pagination when more results exist', () => {
-    const out = formatTrendingPlaybooks({
+describe('keyless formatters (the /api/v1 0.x shapes)', () => {
+  it('renders trending items with their ref and url', () => {
+    const out = formatV1TrendingPlaybooks({
       playbooks: [trendingItem()],
       has_next: true,
     });
-    expect(out).toContain('(more results');
-  });
-
-  it('handles an empty result set', () => {
-    expect(formatTrendingPlaybooks({ playbooks: [], has_next: false })).toBe(
-      '(no playbooks)\n'
-    );
-  });
-});
-
-function discoveryItem(
-  over: Partial<PlaybookDiscoveryItem> = {}
-): PlaybookDiscoveryItem {
-  return {
-    id: '6601',
-    owner_username: 'lake',
-    name: 'mu-deep-dive',
-    display_name: 'MU Deep-Dive',
-    visibility: 'public',
-    ref: 'lake/mu-deep-dive',
-    ...over,
-  };
-}
-
-describe('formatPlaybook / formatPlaybookList', () => {
-  it('builds the absolute url for a discovery item from the web origin', () => {
-    const out = formatPlaybook(discoveryItem(), 'https://stg.alva.ai');
-    expect(out).toContain('• MU Deep-Dive  [public]');
+    expect(out).toContain('• MU Deep-Dive  ★ 3');
     expect(out).toContain('    lake/mu-deep-dive');
-    expect(out).toContain(
-      '    https://stg.alva.ai/u/lake/playbooks/mu-deep-dive'
-    );
-    expect(out).toContain('    id: 6601');
-  });
-
-  it('renders not-found for a null item', () => {
-    expect(formatPlaybook(null, 'https://alva.ai')).toBe(
-      '(not found or not visible)\n'
-    );
-  });
-
-  it('renders a list with a pagination hint', () => {
-    const out = formatPlaybookList([discoveryItem()], 'https://alva.ai', {
-      hasNext: true,
-    });
-    expect(out).toContain('1 playbook(s):');
     expect(out).toContain('    https://alva.ai/u/lake/playbooks/mu-deep-dive');
     expect(out).toContain('(more results');
   });
 
-  it('handles an empty list', () => {
-    expect(formatPlaybookList([], 'https://alva.ai')).toBe('(no playbooks)\n');
-  });
-});
-
-function ownedItem(over: Partial<OwnedPlaybookItem> = {}): OwnedPlaybookItem {
-  return {
-    id: '8832',
-    name: 'wip-scanner',
-    display_name: 'WIP Scanner',
-    visibility: 'private',
-    cursor: 'abc',
-    ...over,
-  };
-}
-
-describe('formatOwnedPlaybookList', () => {
-  it('renders id / name / visibility for owned rows', () => {
-    const out = formatOwnedPlaybookList([ownedItem()]);
-    expect(out).toContain('1 playbook(s):');
-    expect(out).toContain('• WIP Scanner  [private]');
-    expect(out).toContain('    wip-scanner');
-    expect(out).toContain('    id: 8832');
-  });
-
-  it('hints at pagination when truncated and --all was not passed', () => {
-    const out = formatOwnedPlaybookList([ownedItem()], { hasNext: true });
-    expect(out).toContain('--all');
-    expect(out).toContain('(more results');
-  });
-
-  it('omits the pagination hint when --all fetched every page', () => {
-    const out = formatOwnedPlaybookList([ownedItem()], {
-      hasNext: true,
-      all: true,
-    });
-    expect(out).not.toContain('more results');
-  });
-
-  it('does not print the name twice when display_name is absent', () => {
-    const out = formatOwnedPlaybookList([
-      ownedItem({ display_name: undefined }),
-    ]);
-    // Title falls back to the name; the name must not also appear on its
-    // own indented line.
-    expect(out).toContain('• wip-scanner  [private]');
-    expect(out).not.toContain('    wip-scanner');
-    expect(out).toContain('    id: 8832');
-  });
-
-  it('handles an empty list', () => {
-    expect(formatOwnedPlaybookList([])).toBe('(no playbooks)\n');
+  it('renders discovery items and not found', () => {
+    const item = {
+      id: '6601',
+      owner_username: 'lake',
+      name: 'mu-deep-dive',
+      display_name: 'MU Deep-Dive',
+      visibility: 'public',
+    };
+    expect(formatV1PlaybookList([item], ORIGIN)).toContain(
+      'https://alva.ai/u/lake/playbooks/mu-deep-dive'
+    );
+    expect(formatV1Playbook(null, ORIGIN)).toBe('(not found or not visible)\n');
   });
 });

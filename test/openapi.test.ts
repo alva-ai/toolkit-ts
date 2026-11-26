@@ -1,0 +1,386 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+import { describe, expect, it } from 'vitest';
+import {
+  CONTRACT_PATH,
+  generatePlatformTypes,
+  TYPES_PATH,
+} from '../scripts/openapi.js';
+import { AlvaClient } from '../src/client.js';
+import { DECIMAL_PATTERN, type Schema } from '../src/platformApi.js';
+import { requestBodyErrors } from './contractShape.js';
+import { fakeV2 } from './fakeV2.js';
+
+// The /api/v2 contract (openapi/alva-platform-v2.json) against the generated
+// types and every transport call site in src/.
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const TRANSPORT = new Set(['_v2Request', '_v2Fetch', '_v2Pages']);
+const METHODS = ['get', 'post', 'patch', 'delete'] as const;
+
+interface CallSite {
+  file: string;
+  fn: string;
+  /** The method, or `<source text>` when it is not a string literal. */
+  method: string;
+  /** The path with `{}` per v2Path value, or `<source text>`. */
+  path: string;
+}
+
+function sourceText(node: ts.Node, source: ts.SourceFile): string {
+  return `<${node.getText(source).replace(/\s+/g, ' ')}>`;
+}
+
+/**
+ * The paths an argument may name, `{}` for each v2Path value: a string
+ * literal, a v2Path template, or each branch of a conditional.
+ */
+function pathTemplates(node: ts.Expression, source: ts.SourceFile): string[] {
+  if (ts.isParenthesizedExpression(node)) {
+    return pathTemplates(node.expression, source);
+  }
+  if (ts.isConditionalExpression(node)) {
+    return [
+      ...pathTemplates(node.whenTrue, source),
+      ...pathTemplates(node.whenFalse, source),
+    ];
+  }
+  if (ts.isStringLiteralLike(node)) return [node.text];
+  if (
+    ts.isTaggedTemplateExpression(node) &&
+    ts.isIdentifier(node.tag) &&
+    node.tag.text === 'v2Path'
+  ) {
+    const t = node.template;
+    if (ts.isNoSubstitutionTemplateLiteral(t)) return [t.text];
+    return [
+      t.head.text + t.templateSpans.map((s) => `{}${s.literal.text}`).join(''),
+    ];
+  }
+  return [sourceText(node, source)];
+}
+
+/** The _v2Request, _v2Fetch and _v2Pages calls of a file, except the transport's own (`this._v2…`). */
+function callSites(file: string, text: string): CallSite[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const sites: CallSite[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      TRANSPORT.has(node.expression.name.text) &&
+      node.expression.expression.kind !== ts.SyntaxKind.ThisKeyword
+    ) {
+      const fn = node.expression.name.text;
+      const [first, second] = node.arguments;
+      const pages = fn === '_v2Pages';
+      const method = pages
+        ? 'GET'
+        : ts.isStringLiteralLike(first)
+          ? first.text
+          : sourceText(first, source);
+      for (const p of pathTemplates(pages ? first : second, source)) {
+        sites.push({ file, fn, method, path: p });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return sites;
+}
+
+function sourceFiles(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return entry.name === 'generated' ? [] : sourceFiles(full);
+    }
+    return entry.name.endsWith('.ts') ? [full] : [];
+  });
+}
+
+interface ContractOperation {
+  parameters?: { in: string; name: string; required?: boolean }[];
+  responses: Record<string, { content?: Record<string, unknown> }>;
+}
+
+/** Operations by `METHOD /path`, with `{}` for each path parameter. */
+function contractOperations(): Map<string, ContractOperation> {
+  const doc = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as {
+    paths: Record<string, Partial<Record<string, ContractOperation>>>;
+  };
+  const ops = new Map<string, ContractOperation>();
+  for (const [p, item] of Object.entries(doc.paths)) {
+    for (const m of METHODS) {
+      const op = item[m];
+      if (op)
+        ops.set(`${m.toUpperCase()} ${p.replace(/\{[^}]+\}/g, '{}')}`, op);
+    }
+  }
+  return ops;
+}
+
+function answersJson(op: ContractOperation): boolean {
+  return Object.entries(op.responses).some(
+    ([status, r]) =>
+      status.startsWith('2') && 'application/json' in (r.content ?? {})
+  );
+}
+
+/** Why a call site does not match the contract, or undefined when it does. */
+function mismatch(
+  site: CallSite,
+  ops: Map<string, ContractOperation>
+): string | undefined {
+  if (site.method.startsWith('<') || site.path.startsWith('<')) {
+    return 'not literal';
+  }
+  const op = ops.get(`${site.method} ${site.path}`);
+  if (!op) return 'no such operation';
+  if (site.fn !== '_v2Fetch' && !answersJson(op)) {
+    return 'not a JSON route: use _v2Fetch';
+  }
+  return undefined;
+}
+
+describe('the /api/v2 contract', () => {
+  it('generates the committed types (npm run openapi:gen)', async () => {
+    const generated = await generatePlatformTypes();
+    const committed = fs.readFileSync(TYPES_PATH, 'utf8');
+    expect(
+      generated === committed,
+      'src/generated/platform-v2.ts is stale: run npm run openapi:gen'
+    ).toBe(true);
+  });
+
+  it('reads the method and path templates of each call site', () => {
+    const text = [
+      "client._v2Request<X>('POST', v2Path`/theses/${id}/updates`, { body });",
+      'this.client._v2Pages(v2Path`/me/tasks`, { pageSize: 5 });',
+      "c._v2Fetch('GET', '/fs/read', {});",
+      "c._v2Request('POST', on ? v2Path`/a/${id}/pause` : (v2Path`/a/${id}/resume`));",
+      'c._v2Request(method, `/fs/${op}`);',
+      "this._v2Request('GET', path);",
+    ].join('\n');
+
+    expect(
+      callSites('x.ts', text).map(({ fn, method, path }) => [fn, method, path])
+    ).toEqual([
+      ['_v2Request', 'POST', '/theses/{}/updates'],
+      ['_v2Pages', 'GET', '/me/tasks'],
+      ['_v2Fetch', 'GET', '/fs/read'],
+      ['_v2Request', 'POST', '/a/{}/pause'],
+      ['_v2Request', 'POST', '/a/{}/resume'],
+      ['_v2Request', '<method>', '<`/fs/${op}`>'],
+    ]);
+  });
+
+  it('has an operation for every call site in src/', () => {
+    const ops = contractOperations();
+    const sites = sourceFiles(path.join(ROOT, 'src')).flatMap((file) =>
+      callSites(path.relative(ROOT, file), fs.readFileSync(file, 'utf8'))
+    );
+    expect(sites.length).toBeGreaterThan(0);
+
+    const failing = sites.flatMap((site) => {
+      const why = mismatch(site, ops);
+      return why ? [`${site.file}: ${site.method} ${site.path} (${why})`] : [];
+    });
+    expect(failing.sort()).toEqual([]);
+  });
+});
+
+describe('the /api/v2 request schemas', () => {
+  const PATCH = 'application/merge-patch+json';
+  const CRONJOB = {
+    name: 'n',
+    entryPath: '/a.js',
+    cronExpression: '0 9 * * *',
+  };
+
+  it.each([
+    [
+      'part of a risk rule',
+      'PATCH',
+      '/me/risk-rules',
+      PATCH,
+      { maxOrderValue: { enabled: true } },
+      ['body.maxOrderValue.value: missing'],
+    ],
+    [
+      'a null risk-rule value',
+      'PATCH',
+      '/me/risk-rules',
+      PATCH,
+      { maxDailyOrders: { enabled: false, value: null } },
+      ['body.maxDailyOrders.value: is null, not string'],
+    ],
+    [
+      'part of a schedule',
+      'PATCH',
+      '/automations/automation_0abc',
+      PATCH,
+      { schedule: { cron: '0 9 * * *' } },
+      ['body.schedule.timezone: missing'],
+    ],
+    [
+      'a Thesis patch without its visibility',
+      'PATCH',
+      '/theses/thesis_0abc',
+      PATCH,
+      { confirmEndPaidRenewals: true },
+      ['body.visibility: missing'],
+    ],
+    [
+      'a null Decimal',
+      'POST',
+      '/me/allowances',
+      'application/json',
+      { playbookId: 'playbook_0abc', credits: null },
+      ['body.credits: is null, not string'],
+    ],
+    [
+      'an int32 out of range',
+      'PATCH',
+      '/cronjobs/cronjob_0c',
+      PATCH,
+      { maxHeapSizeMb: 2 ** 31 },
+      ['body.maxHeapSizeMb: 2147483648 is out of the int32 range'],
+    ],
+    [
+      'an int64 out of range',
+      'POST',
+      '/fs/chmod',
+      'application/json',
+      { path: '/a', mode: 2 ** 63 },
+      ['body.mode: 9223372036854776000 is out of the int64 range'],
+    ],
+    [
+      'a date that does not exist',
+      'POST',
+      '/x-post-searches',
+      'application/json; charset=utf-8',
+      { query: 'nvda', fromDate: '2026-02-29' },
+      [
+        'body.fromDate: matches no branch (body.fromDate: "2026-02-29" is not a date; body.fromDate: is string, not null)',
+      ],
+    ],
+    [
+      'a date-time without an offset',
+      'POST',
+      '/me/cronjobs',
+      'Application/JSON; charset=utf-8',
+      { ...CRONJOB, endsAt: '2026-11-22T10:00:00' },
+      [
+        'body.endsAt: matches no branch (body.endsAt: "2026-11-22T10:00:00" is not a date-time; body.endsAt: is string, not null)',
+      ],
+    ],
+    [
+      'a date-time at hour 24',
+      'POST',
+      '/me/cronjobs',
+      'application/json',
+      { ...CRONJOB, endsAt: '2026-11-22T24:00:00Z' },
+      [
+        'body.endsAt: matches no branch (body.endsAt: "2026-11-22T24:00:00Z" is not a date-time; body.endsAt: is string, not null)',
+      ],
+    ],
+  ])('refuse %s', (_name, method, path, contentType, body, expected) => {
+    expect(requestBodyErrors(method, path, contentType, body)).toEqual(
+      expected
+    );
+  });
+
+  it.each([
+    [
+      'PATCH',
+      '/me/risk-rules',
+      { maxDailyOrders: { enabled: false, value: '50' } },
+    ],
+    [
+      'PATCH',
+      '/automations/automation_0abc',
+      { schedule: { cron: '0 9 * * *', timezone: 'UTC' } },
+    ],
+    ['PATCH', '/theses/thesis_0abc', { visibility: 'PRIVATE' }],
+    ['PATCH', '/cronjobs/cronjob_0c', { maxHeapSizeMb: 2 ** 31 - 1 }],
+  ])('take a whole %s %s', (method, path, body) => {
+    expect(requestBodyErrors(method, path, PATCH, body)).toEqual([]);
+  });
+
+  it('take an RFC 3339 date-time with fractions and an offset, and a leap day', () => {
+    expect(
+      requestBodyErrors('POST', '/me/cronjobs', 'application/json', {
+        ...CRONJOB,
+        endsAt: '2028-02-29T23:59:59.123456789+05:30',
+      })
+    ).toEqual([]);
+    expect(
+      requestBodyErrors('POST', '/x-post-searches', 'application/json', {
+        query: 'nvda',
+        fromDate: '2028-02-29',
+      })
+    ).toEqual([]);
+  });
+
+  it("use the contract's Decimal pattern in the client", () => {
+    const doc = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as {
+      components: { schemas: { Decimal: { pattern: string } } };
+    };
+    expect(DECIMAL_PATTERN.source).toBe(doc.components.schemas.Decimal.pattern);
+  });
+
+  it('are checked by fakeV2 whatever the JSON media type parameters', async () => {
+    const fake = fakeV2({ 'PATCH /me/risk-rules': () => ({}) });
+    try {
+      const response = await fetch('https://api.test/api/v2/me/risk-rules', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'Application/Merge-Patch+JSON; charset=utf-8',
+        },
+        body: JSON.stringify({ maxOrderValue: { enabled: true } }),
+      });
+      expect(response.status).toBe(400);
+      expect(fake.calls).toHaveLength(1);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it('are what fakeV2 answers a refused body with, as the gateway does', async () => {
+    const fake = fakeV2({ 'PATCH /me/risk-rules': () => ({}) });
+    const client = new AlvaClient({
+      apiKey: 'test-key',
+      baseUrl: 'https://api.test',
+    });
+    try {
+      await expect(
+        client.trading.updateRiskRules({
+          maxOrderValue: { enabled: true },
+        } as unknown as Schema<'RiskRulesPatch'>)
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        status: 400,
+        message:
+          'the contract refuses the request body: body.maxOrderValue.value: missing',
+      });
+      expect(fake.calls).toHaveLength(1);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it('declare an Idempotency-Key only on POST and PATCH, which carry one per call', () => {
+    const declared = [...contractOperations()].flatMap(([key, op]) =>
+      (op.parameters ?? []).some(
+        (p) => p.in === 'header' && p.name === 'Idempotency-Key'
+      )
+        ? [key.split(' ')[0]]
+        : []
+    );
+    expect(declared.length).toBeGreaterThan(0);
+    expect([...new Set(declared)].sort()).toEqual(['PATCH', 'POST']);
+  });
+});

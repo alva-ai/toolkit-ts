@@ -1,16 +1,48 @@
+import type { Schema } from '../platformApi.js';
 import type {
-  PlaybookSkillSummary,
   PlaybookSkillMeta,
-  PlaybookSkillFile,
-  PlaybookSkillTagEntry,
-} from '../resources/playbookSkills.js';
+  PlaybookSkillSummary,
+} from '../v1/playbookSkills.js';
 
-export function formatPlaybookSkillsList(result: {
+export function formatPlaybookSkillsList(skills: Schema<'Skill'>[]): string {
+  if (skills.length === 0) return 'No playbook skills found.\n';
+  const lines: string[] = [];
+  for (const s of skills) {
+    lines.push(`• ${s.owner.handle}/${s.name}`);
+    if (s.description) lines.push(`  ${s.description}`);
+    if (s.tags.length > 0) lines.push(`  tags: ${s.tags.join(', ')}`);
+    if (s.updatedAt) lines.push(`  updated: ${s.updatedAt}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+export function formatPlaybookSkillsTags(tags: { name: string }[]): string {
+  if (tags.length === 0) return 'No tags.\n';
+  return tags.map((t) => `• ${t.name}`).join('\n') + '\n';
+}
+
+export function formatPlaybookSkillGet(skill: Schema<'SkillDetail'>): string {
+  const lines: string[] = [`${skill.owner.handle}/${skill.name}`];
+  if (skill.description) lines.push(skill.description);
+  lines.push(`tags:       ${skill.tags.join(', ') || '(none)'}`);
+  lines.push(`id:         ${skill.id}`);
+  lines.push(`updated at: ${skill.updatedAt ?? '(unknown)'}`);
+  lines.push('', 'Files:');
+  if (skill.files.length === 0) {
+    lines.push('  (no files)');
+  } else {
+    for (const f of skill.files) lines.push(`  ${f.path}  (${f.sizeBytes} B)`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// Keyless Skillhub reads (client.v1.playbookSkills) answer with the 0.x shapes.
+
+export function formatV1PlaybookSkillsList(result: {
   skills: PlaybookSkillSummary[];
 }): string {
   const skills = result.skills ?? [];
   if (skills.length === 0) return 'No playbook skills found.\n';
-
   const lines: string[] = [];
   for (const s of skills) {
     lines.push(`• ${s.username}/${s.name}`);
@@ -22,15 +54,7 @@ export function formatPlaybookSkillsList(result: {
   return lines.join('\n') + '\n';
 }
 
-export function formatPlaybookSkillsTags(result: {
-  tags: PlaybookSkillTagEntry[];
-}): string {
-  const tags = result.tags ?? [];
-  if (tags.length === 0) return 'No tags.\n';
-  return tags.map((t) => `• ${t.name}`).join('\n') + '\n';
-}
-
-export function formatPlaybookSkillGet(meta: PlaybookSkillMeta): string {
+export function formatV1PlaybookSkillGet(meta: PlaybookSkillMeta): string {
   const lines: string[] = [];
   lines.push(`${meta.username}/${meta.name}`);
   if (meta.description) lines.push(meta.description);
@@ -48,8 +72,4 @@ export function formatPlaybookSkillGet(meta: PlaybookSkillMeta): string {
     }
   }
   return lines.join('\n') + '\n';
-}
-
-export function formatPlaybookSkillFile(file: PlaybookSkillFile): string {
-  return file.content;
 }

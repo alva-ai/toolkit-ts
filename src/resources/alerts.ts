@@ -1,76 +1,49 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  FeedNotificationListResponse,
-  FollowsListParams,
-  FollowsListResponse,
-  NotificationListParams,
-  NotificationPreferencesResponse,
-  NotificationPreferenceUpdateParams,
-  NotificationPreferenceUpdateResponse,
-  PushSubscriptionFeedParams,
-  PushSubscriptionListParams,
-  PushSubscriptionListResponse,
-  SubscribeFeedParams,
-  SubscribeBatchParams,
-  SubscribeBatchResponse,
-  SubscribeFeedResponse,
-  UnsubscribeBatchParams,
-  UnsubscribeBatchResponse,
-  UnsubscribeResponse,
-} from '../types.js';
+import type { Schema, V2Query } from '../platformApi.js';
 
 /**
- * Product-facing alert API. The current transport still calls the legacy
- * subscription and notification-history endpoints.
+ * Product-facing alert API: delegates to the subscriptions, notifications and
+ * notification preferences resources. Enabling one feed by owner and name is
+ * `client.v1.subscriptions.subscribeFeed`.
  */
 export class AlertsResource {
   constructor(private client: AlvaClient) {}
 
   list(
-    params: PushSubscriptionListParams = {}
-  ): Promise<PushSubscriptionListResponse> {
-    return this.client.subscriptions.list(params);
+    query: V2Query<'/me/notification-subscriptions', 'get'> = {}
+  ): Promise<Schema<'NotificationSubscriptionList'>> {
+    return this.client.subscriptions.list(query);
   }
 
-  follows(params: FollowsListParams = {}): Promise<FollowsListResponse> {
-    return this.client.subscriptions.follows(params);
+  follows(
+    query: V2Query<'/me/followed-playbooks', 'get'> = {}
+  ): Promise<Schema<'FollowedPlaybookList'>> {
+    return this.client.subscriptions.follows(query);
   }
 
-  enableAutomation(
-    params: SubscribeFeedParams
-  ): Promise<SubscribeFeedResponse> {
-    return this.client.subscriptions.subscribeFeed(params);
+  enableBatch(
+    body: Schema<'Subscription'>
+  ): Promise<Schema<'SubscribeResponse'>> {
+    return this.client.subscriptions.subscribeBatch(body);
   }
 
-  disableAutomation(
-    params: PushSubscriptionFeedParams
-  ): Promise<UnsubscribeResponse> {
-    return this.client.subscriptions.unsubscribeFeed(params);
+  disableBatch(automationIds: string[]): Promise<Schema<'Removed'>[]> {
+    return this.client.subscriptions.unsubscribeBatch(automationIds);
   }
 
-  enableBatch(params: SubscribeBatchParams): Promise<SubscribeBatchResponse> {
-    return this.client.subscriptions.subscribeBatch(params);
+  history(
+    query: V2Query<'/me/notification-deliveries', 'get'>
+  ): Promise<Schema<'NotificationDeliveryList'>> {
+    return this.client.notifications.list(query);
   }
 
-  disableBatch(
-    params: UnsubscribeBatchParams
-  ): Promise<UnsubscribeBatchResponse> {
-    return this.client.subscriptions.unsubscribeBatch(params);
+  preferences(): Promise<Schema<'NotificationPreferences'>> {
+    return this.client.notificationPreferences.get();
   }
 
-  historyAutomation(
-    params: NotificationListParams
-  ): Promise<FeedNotificationListResponse> {
-    return this.client.notifications.listFeed(params);
-  }
-
-  preferences(): Promise<NotificationPreferencesResponse> {
-    return this.client.notificationPreferences.list();
-  }
-
-  updatePreference(
-    params: NotificationPreferenceUpdateParams
-  ): Promise<NotificationPreferenceUpdateResponse> {
-    return this.client.notificationPreferences.update(params);
+  updatePreferences(
+    patch: Schema<'NotificationPreferencesPatch'>
+  ): Promise<Schema<'NotificationPreferences'>> {
+    return this.client.notificationPreferences.update(patch);
   }
 }

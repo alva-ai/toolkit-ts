@@ -1,16 +1,18 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  SubmitFeedbackRequest,
-  SubmitFeedbackResponse,
-} from '../types.js';
+import type { Schema } from '../platformApi.js';
 
 export class FeedbackResource {
   constructor(private client: AlvaClient) {}
 
-  async submit(params: SubmitFeedbackRequest): Promise<SubmitFeedbackResponse> {
+  /** Files product feedback. */
+  async submit(
+    body: Schema<'SubmitFeedbackRequest'>,
+    options: { idempotencyKey?: string } = {}
+  ): Promise<Schema<'Feedback'>> {
     this.client._requireAuth();
-    return this.client._request('POST', '/api/v1/feedback', {
-      body: params,
-    }) as Promise<SubmitFeedbackResponse>;
+    return this.client._v2Request('POST', '/feedback', {
+      body,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 }

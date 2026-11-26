@@ -1,29 +1,11 @@
-import { validateXReadParams } from '../resources/x.js';
-import {
-  normalizeWatchlistTickersParams,
-  parseTickerSpec,
-  validateProfileRef,
-  validateSearchProfilesParams,
-  type FollowProfileKind,
-  type WatchlistTickerKind,
-} from '../resources/follows.js';
-import {
-  validateListThesesParams,
-  validateThesisPageParams,
-  type ListThesesParams,
-} from '../resources/thesisReads.js';
+import type { ListThesesParams } from '../resources/theses.js';
 import { AlvaClient } from '../client.js';
-import {
-  validateForYouListParams,
-  validateForYouThesesParams,
-} from '../resources/forYou.js';
-import { requireDecision } from '../resources/steward.js';
-import {
-  validateCompanyNewsCreateParams,
-  type CreateCompanyNewsParams,
-} from '../resources/companyNews.js';
-import { parseRfc3339Milliseconds } from '../resources/schedules.js';
-import { CliUsageError } from '../error.js';
+import { requireDecision } from '../v1/steward.js';
+import { AlvaError, CliUsageError } from '../error.js';
+import { DECIMAL_PATTERN, type Schema, type V2Query } from '../platformApi.js';
+import { allPages } from './pages.js';
+import { parseTickers, resolveTickers } from './watchlist.js';
+import { optionalRfc3339Flag, rfc3339Flag } from './timeFlags.js';
 import { parseCommand, type ParsedCommand } from './commandSchema.js';
 import {
   COMMAND_DEFINITIONS,
@@ -35,33 +17,20 @@ import {
   formatSkillEndpoint,
 } from './dataSkillsFormat.js';
 import {
+  formatPlaybookSkillGet,
   formatPlaybookSkillsList,
   formatPlaybookSkillsTags,
-  formatPlaybookSkillGet,
-  formatPlaybookSkillFile,
+  formatV1PlaybookSkillGet,
+  formatV1PlaybookSkillsList,
 } from './playbookSkillsFormat.js';
-import {
-  PLAYBOOK_VISIBILITIES,
-  OWNED_PLAYBOOK_FILTERS,
-  type PlaybookVisibility,
-  type OwnedPlaybookFilter,
-} from '../resources/playbooks.js';
 import { webOriginFromApiBase } from '../resources/webOrigin.js';
 import {
-  THESIS_SIGNAL_KINDS,
-  type ThesisMedia,
-  type ThesisRewriteMode,
-  type ThesisSignalKind,
-  type ThesisSignalMinImportance,
-  type ThesisSignalPreferences,
-  type ThesisVisibility,
-} from '../resources/theses.js';
-
-import {
-  formatTrendingPlaybooks,
+  formatOwnedPlaybookList,
   formatPlaybook,
   formatPlaybookList,
-  formatOwnedPlaybookList,
+  formatV1Playbook,
+  formatV1PlaybookList,
+  formatV1TrendingPlaybooks,
 } from './playbooksFormat.js';
 import {
   formatAlertList,
@@ -168,9 +137,8 @@ Commands:
   people      Search, follow, and unfollow Alva users and curated people (search, follows list|follow|unfollow)
   trading-pairs  Discover and strictly verify canonical trading pairs (search, resolve)
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
-  broker      Agentic order execution — venue-native passthrough to trex (accounts, quote, order, balance, positions, ...; run 'alva broker describe')
+  broker      Agentic order execution — venue-native passthrough to trex (quote, order, balance, positions, ...; --account-id names the account; run 'alva broker describe')
   auth        Authentication (login)
-  screenshot  Capture a web screenshot as PNG
   arrays      Arrays backend operations (token ensure, token status)
 
 Global options:
@@ -178,6 +146,7 @@ Global options:
   --base-url <url>       API base URL (overrides env and config file)
   --profile <name>       Named profile to use (default: "default")
   --arrays-endpoint <url>  Arrays backend URL (or ARRAYS_ENDPOINT env; default: https://data-tools.prd.space.id)
+  --json               Print the /api/v2 JSON result (the default of commands without a human format)
   -v, --version        Show CLI version
   --help               Show help (use 'alva <command> --help' for command details)
 
@@ -201,9 +170,10 @@ Options:
   --initial-lookback-hours <0-168> Initial history window (default: 24; 0 selects default)
   --page-size <0-100>              Editorial batch size (default: 20; 0 selects default)
 
-New feeds are paused. Returns decimal-string feed_id and cronjob_id.
-Creation does not run the model or resume the producer. After reviewing the
-configuration, use 'alva feed resume --id <feed_id>' to start paid execution.
+New feeds are paused. Returns the /api/v2 CompanyNewsFeed: id (the feed's
+Automation ID) and cronjobId (its producer). Creation does not run the model
+or resume the producer. After reviewing the configuration, use
+'alva feed resume --id <id>' to start paid execution.
 Model credits are charged to the authenticated creator, not the platform.
 This is pull-only: starting the producer does not enable push notifications.
 Retry an unclear result with the same name and configuration; an existing
@@ -309,9 +279,11 @@ Verify that your credentials are valid by calling the Alva API. Shows your
 username, subscription tier, and which profile/endpoint is being used.
 Use this after 'alva configure' to confirm everything works.
 
-Output includes active_im_provider (telegram, discord, slack, whatsapp,
-imessage, or empty) and _meta.arrays_jwt (exists, expires_at, renewal_needed,
-tier). arrays_jwt is omitted when the backend status call fails.
+Output is the /api/v2 Me (id, profileId, username, planTier,
+messagingBindings, preferredMessagingApp, toolkitMinVersion, homePath) and
+_meta.arrays_jwt (the /api/v2 DataSkillsToken: exists, expiresAt,
+renewalNeeded, tier). arrays_jwt is omitted when the backend status call
+fails.
 
 Examples:
   alva whoami
@@ -322,16 +294,15 @@ Examples:
 Subcommands:
   me    Get the authenticated user's profile
 
-Response fields:
-  id                  User ID
-  username            Username (used in ALFS paths and playbook URLs)
-  subscription_tier   "free", "pro", or "max" — determines release flow and feature gates
-  telegram_username   Telegram display name if connected, empty otherwise
-  discord_username    Discord display name if connected, empty otherwise
-  slack_username      Slack display name if connected, empty otherwise
-  whatsapp_username   WhatsApp display name if connected, empty otherwise
-  imessage_username   iMessage display name if connected, empty otherwise
-  active_im_provider  Currently selected IM provider
+Response fields (the /api/v2 Me):
+  id                     Account ID
+  profileId              Public Profile ID
+  username               Username (used in ALFS paths and playbook URLs)
+  planTier               FREE, PRO or MAX: determines release flow and feature gates
+  messagingBindings      Connected IM apps: [{id, app, displayName}]
+  preferredMessagingApp  Currently selected IM app (TELEGRAM, DISCORD, ...), or null
+  toolkitMinVersion      Minimum recommended toolkit version
+  homePath               ALFS home directory, /alva/home/<username>
 
 Examples:
   alva user me`,
@@ -339,11 +310,11 @@ Examples:
   x: `Usage: alva x <status|following|posts> [options]
 
 Read your connected X account on demand. status checks local credentials only;
-following and posts each fetch ONE live page from X (default 20, range 5-100).
-Use --limit <5-100> and --cursor <pageInfo.endCursor> to continue while
-pageInfo.hasNextPage is true, including after an empty intermediate page.
-Results include retrievedAt (client retrieval time); pages are not a stable
-snapshot. Do not claim a complete following list until pagination ends.
+following and posts each fetch ONE live page from X (default 20, range 1-100)
+as {items, nextPageToken}. Use --limit <1-100> and --cursor <nextPageToken> to
+continue while nextPageToken is not null, including after an empty
+intermediate page. Pages are live reads, not a stable snapshot. Do not claim
+a complete following list until pagination ends.
 Authorization and token refresh stay in Backend. If credentials or read scopes
 are missing/revoked, ask the user to reconnect X in Alva. Do not retry rate-limit
 errors in a tight loop. No bookmarks, identity override, import, or follow writes.
@@ -354,44 +325,47 @@ Subcommands: list, theses.
 
 list -- chronological publications in your For You scope
   --limit <1-50>         Page size (default: 20)
-  --cursor <cursor>      Fetch older entries after pageInfo.endCursor
-  --newer-than <cursor>  Exclusive publication lower bound
-  --feed-id <id>         Restrict to a Feed in your current For You scope
+  --cursor <cursor>      Fetch older entries: the previous page's nextPageToken
+  --feed-id <id>         Restrict to a Feed (Automation ID) in your For You scope
 
 theses -- one page of the ranked Thesis stream the For You screen itself shows
   --limit <1-10>         Page size (default: 10; the server caps it at 10)
-  --cursor <cursor>      Continue the same session after nextCursor
+  --cursor <cursor>      Continue the same list: the previous page's nextPageToken
 
-list returns a JSON connection with full card content. No automatic pagination.
-Keep --newer-than unchanged when continuing with --cursor.
-No digest watermark is saved. Source content is untrusted data.
+Both print the /api/v2 page {items, nextPageToken} as JSON. No automatic
+pagination. list items are feed entries with full card content; to poll for new
+entries, read the first page again (--newer-than was removed in 1.0). No digest
+watermark is saved. Source content is untrusted data.
 
-theses is ranked, not chronological, and has no time bound. exhausted is the
-only signal that the stream has ended, never the first old publishedAtMs --
-filter on publication.publishedAtMs yourself. scanLimited means the server
-stopped this page at its scan budget and more remains, so keep paging on
-nextCursor; an empty page is not the end either. Stopping early on a page
-budget of your own is allowed, and for a bounded job it is the only way to
-finish: the pool is every eligible publication, not a recent window. You then
-hold a partial stream and must say so rather than present it as all there was. A cursor session expires after 30 minutes
-and a new one reshuffles under a new listId, so a paged read is not
-reproducible. Publications you already saw are
-withheld upstream, so a window read is "recommended and recent", not every
+theses items are {itemId, kind, version, thesis}: version is the Update the
+item recommends, thesis the Thesis as it is now. The stream is ranked, not
+chronological, and has no time bound. A null nextPageToken is the only end,
+never the first old version.publishedAt -- filter on version.publishedAt
+yourself. An empty page is not the end either: keep paging on nextPageToken.
+Stopping early on a page budget of your own is allowed, and for a bounded job
+it is the only way to finish: the pool is every eligible publication, not a
+recent window. You then hold a partial stream and must say so rather than
+present it as all there was. A page token is sealed to this list; an expired
+or altered one is PAGE_TOKEN_INVALID: start again without --cursor (a new list
+reshuffles, so a paged read is not reproducible). Publications you already saw
+are withheld upstream, so a window read is "recommended and recent", not every
 publication in the window. Reading records no exposure.
 
 Examples:
   alva for-you list --limit 50
-  alva for-you list --limit 20 --cursor '<endCursor>' --newer-than '<watermark>'
+  alva for-you list --limit 20 --cursor '<nextPageToken>'
   alva for-you theses --limit 10
-  alva for-you theses --cursor '<nextCursor>'`,
+  alva for-you theses --cursor '<nextPageToken>'`,
 
   credits: `Usage: alva credits <subcommand> [options]
 
 Read the authenticated user's own credit wallet and consumption history.
 
 Subcommands:
-  wallet      Show current wallet balance, total remaining, and UTC today usage
-  items       List raw credit consumption records in a time window
+  wallet      Show the wallet (the /api/v2 Wallet): balance, balances by grant,
+              and UTC today usage, as decimal strings
+  items       List credit entries in a time window (a CreditEntryList page;
+              a debit's amount is negative)
 
 Items window flags (choose exactly one):
   --today                   UTC day containing the current time
@@ -399,9 +373,11 @@ Items window flags (choose exactly one):
   --start <time> --end <time>  Explicit UTC window; accepts ISO, YYYY-MM-DD, or Unix ms
 
 Items optional flags:
-  --session-id <id>         Filter to one chat/session
+  --session-id <id>         Filter to one chat/session (a Session ID)
   --first <n>               Page size (1-500)
-  --after <cursor>          Opaque cursor from pageInfo.endCursor
+  --after <token>           nextPageToken of the previous page, with the same
+                            window and filters (--last moves with the clock:
+                            page an explicit --start/--end window)
 
 Notes:
   - Results are viewer-scoped by the backend; there is no --user-id override.
@@ -410,15 +386,16 @@ Notes:
 Examples:
   alva credits wallet
   alva credits items --today --first 20
-  alva credits items --last 7d --session-id 2069373335591239680
+  alva credits items --last 7d --session-id session_0abc
   alva credits items --start 2026-06-23 --end 2026-06-24`,
 
   fs: `Usage: alva fs <subcommand> [options]
 
 Subcommands:
-  read       Read a file or time series data
+  read       Read a file or time series data (prints the bytes: text as is)
   write      Write content to a file (use --data for inline, --file for upload)
-  stat       Get file metadata (name, size, mode, mod_time, is_dir)
+  stat       Get file metadata (the /api/v2 FileInfo: name, sizeBytes, mode,
+             updatedAt, isDirectory, contentType, meta)
   readdir    List directory contents
   mkdir      Create a directory (recursive by default)
   remove     Delete a file or directory
@@ -431,7 +408,8 @@ Subcommands:
   revoke     Revoke access permission
 
 Subcommand flags:
-  read       --path (required), [--offset <n>], [--size <n>]
+  read       --path (required), [--offset <n>], [--size <n>] (one byte range;
+             a file over 32 MiB needs one)
   write      --path (required), --data <text> OR --file <local-path> (one required),
              [--append], [--mkdir-parents | --no-mkdir-parents]
   stat       --path (required)
@@ -448,7 +426,8 @@ Subcommand flags:
 
 Path conventions:
   ~/...                  Home-relative filesystem location (for example, --path and --link-path)
-  /alva/home/alice/...   Absolute path (required for public/unauthenticated reads)
+  /alva/home/alice/...   Absolute path (required for public reads without an API
+                         key, which read /api/v1)
   Quote tilde paths to prevent shell expansion: --path "~/data" (not --path ~/data).
 
 Symlink targets:
@@ -503,17 +482,20 @@ Options:
   --args <json>          JSON object passed to require("env").args
   --args-stdin           Read the JSON object from stdin (mutually exclusive with --args)
   --max-heap-size-mb <mb>   Override the V8 heap limit in MB (1-2048, default 256)
-  --timeout-ms <ms>      Client HTTP timeout for /api/v1/run (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
+  --timeout-ms <ms>      Client HTTP timeout for /api/v2/runs (default: ${DEFAULT_RUN_TIMEOUT_MS}; env: ${RUN_TIMEOUT_ENV})
 
 At least one of --code, --local-file, or --entry-path is required.
 These three options are mutually exclusive.
 
-Response fields:
-  result    The script's return value. Return objects directly; a script
-            returning JSON.stringify(x) is shown as x.
-  logs      Captured stderr output
-  status    "completed" or "failed"
-  error     Error message (when status is "failed")
+Response fields (the /api/v2 Run):
+  returnValue  The script's return value, decoded from its JSON text. Return
+               objects directly; a script returning JSON.stringify(x) is
+               shown as x.
+  logs         Captured stderr output
+  status       SUCCEEDED or FAILED
+  error        Error message (null when the run succeeded)
+  durationMs, creditsUsed (a decimal string), subscriptionRequired and
+  entitlementFailure (the plan a refused run needs)
 
 Available runtime modules:
   require("alfs")            Cloud filesystem (absolute paths only)
@@ -539,26 +521,33 @@ Examples:
   printf '%s' '{"symbol":"BTC"}' | alva run --local-file ./my-script.js --args-stdin
   alva run --entry-path "~/tasks/heavy/src/index.js" --max-heap-size-mb 1024
   alva run --entry-path "~/feeds/slow/v1/src/index.js" --timeout-ms 900000
-  alva run --local-file ./research.js > research.json && jq -c '.result.income[:4]' research.json`,
+  alva run --local-file ./research.js > research.json && jq -c '.returnValue.income[:4]' research.json`,
 
   deploy: `Usage: alva deploy <subcommand> [options]
 
 Manage scheduled cronjobs that run your scripts on a cron schedule.
 Min interval: 1 minute.
 
+Output is the /api/v2 shape: create, get, update, pause and resume print the
+Cronjob; list a CronjobList page; delete {}; trigger the DispatchReceipt
+{dispatchId}; runs a CronjobRunList page; run-stats the CronjobRunStats;
+run-status the CronjobDispatch {id, cronjobId, state, run}; run-logs the
+CronjobRunLogs {logs, error}.
+
 Subcommands:
   create     Create a new cronjob
-  list       List all cronjobs (supports cursor-based pagination)
+  list       List all cronjobs (one page; pass nextPageToken as --cursor)
   get        Get a single cronjob by ID
   update     Update a cronjob (partial update — only include changed fields)
   delete     Delete a cronjob
   pause      Pause a running cronjob
   resume     Resume a paused cronjob
   trigger    Fire the cronjob once, immediately, bypassing the schedule
-             (returns workflow_run_id; poll 'run-status' with a timeout)
+             (returns dispatchId; poll 'run-status' with a timeout)
              This is not a dry run and may deliver Feed alerts to subscribers.
-  runs       List runs for a cronjob (cursor-paginated)
-  run-status Get one triggered run's pollable status by workflow_run_id
+  runs       List runs for a cronjob (one page)
+  run-stats  Run counts and the last run and success times of a cronjob
+  run-status Get one triggered run's pollable status by its dispatch ID
   run-logs   Get stdout/stderr logs for a single cronjob run
 
 Create/Update flags:
@@ -573,28 +562,27 @@ Create/Update flags:
   --run-as-service-account <id>  Run the cronjob under a service-account identity
                          (id from "alva service-account create"); restricts file
                          access to the SA's grants. Omit on update ⇒ unchanged (#602)
-  --clear-run-as         Clear run_as on update — run the cronjob as yourself
-                         again (mutually exclusive with --run-as-service-account)
+  --clear-run-as         Clear the run-as account on update — run the cronjob as
+                         yourself again (mutually exclusive with --run-as-service-account)
 
 List flags:
   --limit <n>            Max results per page (default: 20)
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <token>       nextPageToken of the previous page
 
-Get/Update/Delete/Pause/Resume/Trigger flags:
+Get/Update/Delete/Pause/Resume/Trigger/Run-stats flags:
   --id <id>              Cronjob ID (required)
 
 Runs flags:
   --id <id>              Cronjob ID (required)
   --first <n>            Max results per page
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <token>       nextPageToken of the previous page
 
 Run-status flags:
   --id <id>              Cronjob ID (required)
-  --workflow-run-id <id> Workflow run ID returned by deploy trigger
+  --workflow-run-id <id> The dispatchId deploy trigger printed
 
 Run-logs flags:
-  --id <id>              Cronjob ID (required)
-  --run-id <id>          Run ID (required)
+  --run-id <id>          Run ID (required; it names its cronjob)
 
 Name format: 1-63 lowercase alphanumeric or hyphens, no leading/trailing hyphens.
   Valid:   btc-ema-update, my-strategy-1
@@ -611,35 +599,41 @@ Examples:
   alva deploy create --name alert --path "~/feeds/alert/v1/src/index.js" --cron "*/5 * * * *" --push-notify --args '{"threshold":100}'
   alva deploy list
   alva deploy list --limit 10
-  alva deploy get --id 42
-  alva deploy update --id 42 --cron "0 */2 * * *" --no-push-notify
-  alva deploy pause --id 42
-  alva deploy resume --id 42
-  alva deploy delete --id 42
-  alva deploy runs --id 42
-  alva deploy runs --id 42 --first 10
-  alva deploy run-status --id 42 --workflow-run-id hatchet-run-id
-  alva deploy run-logs --id 42 --run-id 123
+  alva deploy get --id cronjob_0abc
+  alva deploy update --id cronjob_0abc --cron "0 */2 * * *" --no-push-notify
+  alva deploy pause --id cronjob_0abc
+  alva deploy resume --id cronjob_0abc
+  alva deploy delete --id cronjob_0abc
+  alva deploy runs --id cronjob_0abc
+  alva deploy runs --id cronjob_0abc --first 10
+  alva deploy run-stats --id cronjob_0abc
+  alva deploy run-status --id cronjob_0abc --workflow-run-id cronjob_dispatch_0xyz
+  alva deploy run-logs --run-id run_0xyz
 
 Build-time verify (fire once, then poll up to 5 minutes):
   WARNING: trigger uses production delivery semantics. If --push-notify and
   subscriber alert bindings are enabled, this run may send real notifications.
-  WF=$(alva deploy trigger --id 42 | jq -r .workflow_run_id)
+  WF=$(alva deploy trigger --id cronjob_0abc | jq -r .dispatchId)
   for _ in {1..60}; do
-    STATUS_JSON=$(alva deploy run-status --id 42 --workflow-run-id "$WF")
+    STATUS_JSON=$(alva deploy run-status --id cronjob_0abc --workflow-run-id "$WF")
     STATE=$(echo "$STATUS_JSON" | jq -r .state)
-    case "$STATE" in PENDING|DISPATCHED|RUNNING) ;; *) break ;; esac
+    case "$STATE" in PENDING|QUEUED|RUNNING) ;; *) break ;; esac
     sleep 5
   done
   case "$STATE" in
-    PENDING|DISPATCHED|RUNNING) echo "Timed out waiting for run completion" >&2; exit 1 ;;
+    PENDING|QUEUED|RUNNING) echo "Timed out waiting for run completion" >&2; exit 1 ;;
   esac
-  [ "$STATE" = COMPLETED ] || alva deploy run-logs --id 42 \\
+  [ "$STATE" = SUCCEEDED ] || alva deploy run-logs \\
                                   --run-id "$(echo "$STATUS_JSON" | jq -r .run.id)"`,
 
   schedule: `Usage: alva schedule <subcommand> [options]
 
 Manage named future and recurring work for an Alva Channel Agent or Session Inbox.
+
+Output is the /api/v2 Schedule (a Channel target) or SessionSchedule (an
+Inbox target): list prints every one as {items, nextPageToken: null}; put,
+pause and resume print the schedule; delete prints {}. Rules are
+{kind: AT|EVERY|CRON, fireAt, everySeconds, cron, timezone}.
 
 Subcommands:
   list       List schedules
@@ -680,28 +674,31 @@ Subcommands:
   create     Create a service account (--name <label>)
   list       List the service accounts you own
   delete     Delete a service account (--id <id>); referencing jobs fail-close
-  grant      Grant an ALFS path (--id <id> --path <path> --permission read|write|import)
-  revoke     Revoke an ALFS path (--id <id> --path <path> --permission ...)
+  grant      Grant an ALFS path (--id <id> --path <path> --permission read|write|import);
+             prints the grant and its id
+  revoke     Revoke one grant (--id <id> --grant-id <grant id>); granting the
+             same path and permission again prints the same grant id
 
 Examples:
   alva service-account create --name fintwit-bot
-  alva service-account grant --id 90123 --path '~/feeds/x/v1/src/index.js' --permission read
-  alva service-account grant --id 90123 --path '~/feeds/x/v1/' --permission read
+  alva service-account grant --id account_0abc --path '~/feeds/x/v1/src/index.js' --permission read
+  alva service-account grant --id account_0abc --path '~/feeds/x/v1/' --permission read
   alva deploy create --name x-update --path '~/feeds/x/v1/src/index.js' \\
-    --cron "0 */4 * * *" --run-as-service-account 90123
-  alva service-account revoke --id 90123 --path '~/feeds/x/v1/' --permission read
-  alva service-account delete --id 90123`,
+    --cron "0 */4 * * *" --run-as-service-account account_0abc
+  alva service-account revoke --id account_0abc --grant-id service_account_grant_0xyz
+  alva service-account delete --id account_0abc`,
 
   automation: `Usage: alva automation <subcommand> [options]
 
 Manage automations. This is the product-facing surface for what older CLI
-commands called "feeds"; ids are currently the same underlying feed ids.
+commands called "feeds"; an automation and its feed share one ID
+(automation_0…).
 
 Subcommands:
   list      List automations owned by the caller
   inspect   Inspect one automation and show its flow config path when available
   publish   First-publish/register a new automation after deploying its cronjob
-  update    Partially update an existing automation by numeric id
+  update    Partially update an existing automation by id
   delivery  Get or partially update per-automation alert destinations
   stop      Stop an automation's producer cronjob
   resume    Resume a stopped automation's producer cronjob
@@ -744,27 +741,32 @@ Delivery subcommands:
 
 Delivery flags:
   --id <automation_id>       Existing automation id (required)
-  --alva-channel-ids <a,b>   Replace Alva destinations; empty clears them
+  --alva-channel-ids <a,b>   Replace Alva destinations (channel ids; 0 is your
+                             Agent channel); empty clears them
   --email-enabled            Enable verified-account email delivery
   --no-email-enabled         Disable email delivery
 
 Lifecycle flags:
-  --id <automation_id>   Numeric automation id (required for inspect/update/stop/resume/delete)
+  --id <automation_id>   Automation id (required for inspect/update/stop/resume/delete)
+
+Output: inspect prints a summary (--json: the /api/v2 Automation); update
+the AutomationVersion; delivery get the AutomationDelivery {channelIds,
+email}; delivery update the Automation.
 
 Examples:
   alva automation list
   alva automation list --status all --limit 20
-  alva automation inspect --id 42
-  alva automation publish --name btc-ema --version 1.0.0 --cronjob-id 42
-  alva automation update --id 42 --description "Updated BTC EMA"
-  alva automation update --id 42 --version 2.0.0 --trigger
-  alva automation delivery get --id 42
-  alva automation delivery update --id 42 --email-enabled
-  alva automation delivery update --id 42 --no-email-enabled
-  alva automation delivery update --id 42 --alva-channel-ids 0,123
-  alva automation stop --id 42
-  alva automation resume --id 42
-  alva automation delete --id 42`,
+  alva automation inspect --id automation_0abc
+  alva automation publish --name btc-ema --version 1.0.0 --cronjob-id cronjob_0abc
+  alva automation update --id automation_0abc --description "Updated BTC EMA"
+  alva automation update --id automation_0abc --version 2.0.0 --trigger
+  alva automation delivery get --id automation_0abc
+  alva automation delivery update --id automation_0abc --email-enabled
+  alva automation delivery update --id automation_0abc --no-email-enabled
+  alva automation delivery update --id automation_0abc --alva-channel-ids 0,channel_0xyz
+  alva automation stop --id automation_0abc
+  alva automation resume --id automation_0abc
+  alva automation delete --id automation_0abc`,
 
   alert: `Usage: alva alert <subcommand> [options]
 
@@ -790,7 +792,10 @@ Target flags (choose one):
   --automation-ids <a,b>     Comma-separated automation target ids
 
 Enable routing:
-  --channel-id <id>          Alva channel ID for name or id targets (optional)
+  --channel-id <id>          Alva channel ID (optional; omit or 0 for your Agent
+                             channel). With --automation-ids it is a channel_0…
+                             ID; --automation still takes the numeric channel id
+                             of the v1 API
 
 Group subcommands:
   alva alert group list
@@ -800,9 +805,16 @@ Group subcommands:
 Group commands must run inside the attached external IM-group sandbox. The
 current group is inferred automatically; there is no session-id argument.
 
+Output: list --json prints the /api/v2 NotificationSubscriptionList; follows
+a FollowedPlaybookList page; enable/disable --automation-ids print the
+SubscribeResponse and the removed destinations [{id}]; history
+--automation-id a NotificationDeliveryList page; preferences the
+NotificationPreferences. --automation <owner/name> and the group commands
+call /api/v1 and print its 0.x output.
+
 List flags:
   --first <n>      Optional page size
-  --cursor <token> Optional cursor from previous response
+  --cursor <token> Optional nextPageToken of the previous page
   --json           Print raw JSON instead of a human-readable summary
 
 Follows flags:
@@ -810,18 +822,24 @@ Follows flags:
   --cursor <token> Optional cursor from previous response
 
 History flags:
+  --automation-id <id>        The automation by ID: prints the /api/v2
+                              NotificationDeliveryList page
+  --automation <owner/name>   The automation by owner and name (/api/v1 history)
   --delivery-provider <name>  Optional provider filter (telegram, web, ...)
-  --status <status>  Optional status filter (sent, failed, filtered)
-  --since <seconds>  Optional Unix seconds lower bound
+  --status <status>  Optional status filter (sent, failed, filtered, ...)
+  --since <time>     Optional RFC 3339 lower bound (2026-11-20T09:00:00Z)
+  --first <n>        Optional page size
+  --cursor <token>   Optional nextPageToken (or v1 cursor) of the previous page
 
 Examples:
   alva alert list
   alva alert follows --limit 20
   alva alert enable --automation alice/btc-ema
   alva alert disable --automation alice/btc-ema
-  alva alert enable --automation-ids 13292,13293
-  alva alert disable --automation-ids 13292
+  alva alert enable --automation-ids automation_0abc,automation_0abd
+  alva alert disable --automation-ids automation_0abc
   alva alert group enable --automation-ids 13292
+  alva alert history --automation-id automation_0abc --since 2026-11-20T00:00:00Z
   alva alert history --automation alice/btc-ema --status sent
   alva alert preferences`,
 
@@ -837,17 +855,18 @@ Subcommands:
   set-visibility  Publish or unpublish a feed (--visibility public|private)
 
 Flags:
-  --id <feed_id>       Numeric feed id (required for stop/resume/delete/set-visibility)
+  --id <id>            Feed (Automation) ID (required for stop/resume/delete/set-visibility)
   --visibility <level> public | private (required for set-visibility)
 
 List flags:
   --limit <n>      Max results per page (default 50, max 100 server-side)
-  --cursor <token> Pagination cursor from previous response
+  --cursor <token> The previous page's nextPageToken
   --status <s>     active | paused | all (default: active)
 
 Notes:
-  - list returns the raw JSON envelope. Prefer "alva automation list" for
-    human-readable output or "alva automation list --json" for explicit JSON.
+  - Every subcommand prints the /api/v2 JSON: list the page
+    {items, nextPageToken}, stop/resume the Automation, set-visibility
+    {id, visibility}. Prefer "alva automation list" for human-readable output.
   - stop/resume affect future scheduled runs; existing feed data remains.
   - delete cascades to all active feed_majors in the same DB transaction.
   - delete removes producer cronjobs best-effort; the cronjob scavenger
@@ -861,15 +880,15 @@ Notes:
 Examples:
   alva feed list
   alva feed list --status all --limit 20
-  alva feed stop --id 42
-  alva feed resume --id 42
-  alva feed delete --id 42
-  alva feed set-visibility --id 42 --visibility public
-  alva feed set-visibility --id 42 --visibility private`,
+  alva feed stop --id automation_0abc
+  alva feed resume --id automation_0abc
+  alva feed delete --id automation_0abc
+  alva feed set-visibility --id automation_0abc --visibility public
+  alva feed set-visibility --id automation_0abc --visibility private`,
 
   playbooks: `Usage: alva playbooks <subcommand> [options]
 
-Find and resolve playbooks with an agent-friendly response shape.
+Find and resolve playbooks.
 
 Subcommands:
   trending        List trending playbooks
@@ -879,7 +898,7 @@ Subcommands:
   set-visibility  Set a playbook's visibility (requires auth)
 
 Get flags:
-  --id <n>               Single numeric playbook id
+  --id <id>              Single playbook ID (playbook_0…)
   --ids <a,b>            Comma-separated ids (max 100); ids you cannot see
                          — and DELETED playbooks — return no row
   --ref <owner/name>     Resolve by handle
@@ -887,14 +906,14 @@ Get flags:
 List flags:
   --owner <username>     Owner username (required)
   --limit <n>            Max results per page (default one page of ~50)
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <cursor>      The previous page's nextPageToken
   --all                  Fetch every page (auto-paginate); without it a
-                         single page is returned — check has_next
+                         single page is returned — check nextPageToken
 
 Mine flags (your own playbooks, drafts included):
   --filter <f>           draft | running | paused (optional; omit for all)
   --limit <n>            Max results per page (default one page of ~50)
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <cursor>      The previous page's nextPageToken
   --all                  Fetch every page (auto-paginate)
 
 Trending flags:
@@ -903,29 +922,32 @@ Trending flags:
   --tag <tag>            Single tag convenience alias
   --sort <sort>          FOLLOWS or RECENT (case-insensitive)
   --limit <n>            Max results per page
-  --cursor <cursor>      Pagination cursor from previous response
+  --cursor <cursor>      The previous page's nextPageToken
   --current <cursor>     Backward-compatible cursor alias
 
 Set-visibility flags:
   --name <name>          Playbook name (required; owner derived from auth)
   --visibility <v>       public, private, or paid (required, case-insensitive)
+  --confirm-end-paid-renewals
+                         Confirm that leaving paid ends paid renewals
+                         (refused with PAID_RENEWALS_END_CONFIRMATION_REQUIRED
+                         otherwise)
 
 Output:
-  trending / get / list print a readable summary (title, ref, clickable
-  URL, description, tags) by default. Pass --json for the raw envelope
-  (for scripting / jq).
-  --json                 Emit raw JSON instead of the readable rendering
+  trending / get / list / mine print a readable summary (title, ref,
+  clickable URL, description, tags) by default. Pass --json for the /api/v2
+  JSON (for scripting / jq).
+  --json                 Emit the /api/v2 JSON instead of the readable rendering
 
-JSON response fields:
-  playbooks[].ref          "username/name" identifier for agents
-  playbooks[].url_path     Relative web path: /u/username/playbooks/name
-  playbooks[].url          Absolute web URL: https://alva.ai/u/username/playbooks/name
-  playbooks[].description  Short summary
-  playbooks[].tags         Discovery tags
-  playbooks[].follow_count Social proof signal
-  playbooks[].cursor       Cursor for pagination
-  has_next                 Whether another page exists
-  playbook_path            "<owner>/<name>" echoed by set-visibility
+JSON (the /api/v2 Playbook, https://api-llm.prd.alva.ai/api/v2/openapi.json):
+  trending / list / mine   {items: [Playbook], nextPageToken}
+  get --ids                [Playbook]; get --id/--ref: Playbook, or null
+  set-visibility           the updated Playbook
+  Playbook                 {id, slug, title, description, visibility, tags,
+                            followerCount, owner: {handle, ...}, path, ...};
+                            its web page is https://alva.ai/u/<owner.handle>/playbooks/<slug>
+Without an API key, trending, get and list read the public /api/v1 catalog
+and print its 0.x shapes (client.v1.playbooks).
 
 Notes:
   private and paid are paid-tier features; free-tier accounts get a
@@ -933,7 +955,7 @@ Notes:
 
 Examples:
   alva playbooks trending --keyword scanner --tags macro,ai --sort recent --limit 5
-  alva playbooks get --ids 8009,8010
+  alva playbooks get --ids playbook_0abc,playbook_0abd
   alva playbooks get --ref alice/btc-dashboard
   alva playbooks list --owner alice --all
   alva playbooks mine --filter draft
@@ -953,10 +975,10 @@ Subcommands:
   allowance   Manage your viewer credit allowance for a playbook
 
 Register flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name exposed to window.alva.udf (required)
   --entry-script-path <path>  Absolute ALFS path to a .js entry script (required)
-  --params-schema <json>      JSON Schema object/string for parameters_json
+  --params-schema <json>      JSON Schema object/string for parametersJson
   --params-schema-file <path> Read JSON Schema from a local file
   --allow-charges             Allow this function to charge viewer allowance
   --no-allow-charges          Explicitly register as no-charge
@@ -964,20 +986,20 @@ Register flags:
                               (id from "alva service-account create"); scopes file
                               access to the SA's grants. Omit on re-register ⇒
                               unchanged (#602)
-  --clear-run-as              Clear run_as on re-register — run as the owner again
-                              (mutually exclusive with --run-as-service-account)
+  --clear-run-as              Not available for functions: the platform API keeps
+                              the identity; omit both flags to leave it unchanged
 
 List flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
 
 Delete flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name to delete (required)
 
 Invoke flags:
-  --playbook-id <id>          Numeric playbook id (required)
+  --playbook-id <id>          Playbook ID (required)
   --function-name <name>      Function name to invoke (required)
-  --params <json>             Parameters object passed as parameters_json
+  --params <json>             Parameters object, sent as parametersJson
 
 Allowance subcommands:
   allowance get      Get your allowance for a playbook
@@ -986,26 +1008,32 @@ Allowance subcommands:
   allowance revoke   Revoke your allowance for a playbook
 
 Allowance flags:
-  --playbook-id <id>          Numeric playbook id (required for get/create/revoke)
+  --playbook-id <id>          Playbook ID (required for get/create/revoke)
   --amount <credits>          Positive integer allowance amount (required for create)
 
+Output: the /api/v2 shapes: register prints the PlaybookFunction, list a
+PlaybookFunctionList page, invoke the FunctionInvocation (resultJson is the
+result's JSON text; credits are decimal strings), allowance get an Allowance
+or null, allowance list an AllowanceList page. delete and allowance revoke
+print nothing; revoke without an allowance does nothing.
+
 Notes:
-  entry_script_path must be an absolute ALFS path under your home, such as
+  --entry-script-path must be an absolute ALFS path under your home, such as
   /alva/home/alice/playbooks/my-playbook/udf/analyze.js. Use alva whoami to
-  discover home_path. Use the browser runtime window.alva.udf for released
+  discover homePath. Use the browser runtime window.alva.udf for released
   playbook UI; this CLI is mainly for creator-side setup and smoke tests.
-  Allowance commands use the gateway GraphQL session-user surface and reject
-  playbook-scoped viewer tokens.
+  Allowance commands act for the signed-in user and reject playbook-scoped
+  viewer tokens.
 
 Examples:
-  alva functions register --playbook-id 123 --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
-  alva functions list --playbook-id 123
-  alva functions delete --playbook-id 123 --function-name analyze
-  alva functions invoke --playbook-id 123 --function-name analyze --params '{"ticker":"AAPL"}'
-  alva functions allowance create --playbook-id 123 --amount 25
-  alva functions allowance get --playbook-id 123
+  alva functions register --playbook-id playbook_0abc --function-name analyze --entry-script-path /alva/home/alice/playbooks/my-playbook/udf/analyze.js --params-schema-file ./schema.json --no-allow-charges
+  alva functions list --playbook-id playbook_0abc
+  alva functions delete --playbook-id playbook_0abc --function-name analyze
+  alva functions invoke --playbook-id playbook_0abc --function-name analyze --params '{"ticker":"AAPL"}'
+  alva functions allowance create --playbook-id playbook_0abc --amount 25
+  alva functions allowance get --playbook-id playbook_0abc
   alva functions allowance list
-  alva functions allowance revoke --playbook-id 123`,
+  alva functions allowance revoke --playbook-id playbook_0abc`,
 
   release: `Usage: alva release <subcommand> [options]
 
@@ -1043,10 +1071,10 @@ Feed release behavior:
 Playbook-draft flags:
   --name <name>              URL-safe playbook name, unique per user (required)
   --display-name <name>      Human-readable title, max 40 chars (required)
-  --feeds <json>             JSON array of {feed_id, feed_major?} (required)
+  --feeds <json>             JSON array of {automationId, major?} (required)
   --description <text>       Playbook description
   --trading-symbols <json>   JSON array of tickers, e.g. '["BTC","ETH"]' (max 50)
-  --skill-id <id>            Source-skill reference "username/name", e.g.
+  --skill-id <id>            Source skill: its ID, or "username/name", e.g.
                              "alva/screener". Discover skills via
                              "alva skillhub list". Persisted set-once on first draft.
   --tags <json>              JSON array of discovery tags, e.g. '["btc","macro"]'
@@ -1059,7 +1087,7 @@ Playbook flags:
                          the Playbook audience. Defaults to unconfirmed.
   --name <name>          Playbook name, must already exist as draft (required)
   --version <version>    Semantic version, e.g. "v1.0.0" (required)
-  --feeds <json>         JSON array of {feed_id, feed_major?} (required)
+  --feeds <json>         JSON array of {automationId, major?} (required)
   --changelog <text>     Release changelog (required)
   --readme-url <url>     Owner-attested README location (required). Must be
                          the absolute ALFS path
@@ -1077,13 +1105,13 @@ Display name conventions:
   Bad:  "My Dashboard", "Test V2", "Stock Dashboard"
 
 Examples:
-  alva release feed --name btc-ema --version 1.0.0 --cronjob-id 42
-  alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id 43 --description "NVDA insider trading activity"
-  alva release feed --name market-pulse --version 1.0.0 --cronjob-id 44 --agent-type alpi
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --trading-symbols '["BTC"]'
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --skill-id alva/screener
-  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"feed_id":100}]' --tags '["btc","macro"]'
-  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"feed_id":100}]' --changelog "Initial release" --readme-url "/alva/home/<username>/playbooks/btc-dashboard/README.md"`,
+  alva release feed --name btc-ema --version 1.0.0 --cronjob-id cronjob_0abc
+  alva release feed --name nvda-insiders --version 1.0.0 --cronjob-id cronjob_0abd --description "NVDA insider trading activity"
+  alva release feed --name market-pulse --version 1.0.0 --cronjob-id cronjob_0abe --agent-type alpi
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"automationId":"automation_0abc"}]' --trading-symbols '["BTC"]'
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"automationId":"automation_0abc"}]' --skill-id alva/screener
+  alva release playbook-draft --name btc-dashboard --display-name "BTC Trend Dashboard" --feeds '[{"automationId":"automation_0abc"}]' --tags '["btc","macro"]'
+  alva release playbook --name btc-dashboard --version v1.0.0 --feeds '[{"automationId":"automation_0abc"}]' --changelog "Initial release" --readme-url "/alva/home/<username>/playbooks/btc-dashboard/README.md"`,
 
   lint: `Usage: alva lint <subcommand> [options]
 
@@ -1115,8 +1143,10 @@ Use the CLI for agent-managed CRUD operations.
 
 Subcommands:
   create     Create a new secret (fails if name already exists)
-  list       List all secrets (metadata only: name, keyPrefix, timestamps)
-  get        Get a secret's plaintext value
+  list       List all secrets: one {items, nextPageToken: null} page of the
+             /api/v2 Secret (metadata only: id, name, prefix, version,
+             valueLength, timestamps)
+  get        Get a secret's plaintext value (/api/v1: {name, value, ...})
   update     Update a secret's value (fails if name doesn't exist)
   delete     Delete a secret (fails if name doesn't exist)
 
@@ -1201,13 +1231,17 @@ fetch individual file contents (progressive loading).
 Subcommands:
   list       List skill summaries (filter by --tag and/or --username)
   tags       Distinct tag set used across skills
-  get        Get one skill's metadata + file listing (path + size_bytes only)
+  get        Get one skill's metadata + file listing (path + sizeBytes only)
   file       Get one file's content from a skill
 
 Flags:
   --tag <tag>           (list) filter by tag
   --username <user>     (list) filter by owner username
-  --json                Return raw envelope instead of pretty output
+  --json                Print the /api/v2 JSON instead of pretty output:
+                        list and tags {items, nextPageToken: null} (every
+                        page), get the SkillDetail, file the SkillFile
+                        {skillId, path, content, updatedAt}. Without an API
+                        key the /api/v1 catalog answers in its 0.x shapes.
 
 Examples:
   alva skillhub list
@@ -1240,9 +1274,9 @@ Pin/Unpin flags:
 
 Examples:
   alva comments create --username alice --name btc-dashboard --content "Great analysis!"
-  alva comments create --username alice --name btc-dashboard --content "Thanks!" --parent-id 5
-  alva comments pin --comment-id 12
-  alva comments unpin --comment-id 12`,
+  alva comments create --username alice --name btc-dashboard --content "Thanks!" --parent-id comment_0abc
+  alva comments pin --comment-id comment_0abc
+  alva comments unpin --comment-id comment_0abc`,
 
   'notification-history': `Usage: alva notification-history <subcommand> [options]
 
@@ -1257,7 +1291,7 @@ Common flags:
   --name <name>      URL-safe feed name (required)
   --delivery-provider <name>  Optional provider filter (telegram, web, ...)
   --status <status>  Optional status filter (sent, failed, filtered)
-  --since <seconds>  Optional Unix seconds lower bound
+  --since <time>     Optional RFC 3339 lower bound (2026-11-20T09:00:00Z)
   --first <n>        Optional page size (default 50, max 200 server-side)
   --cursor <token>   Optional cursor from the previous page
 
@@ -1309,10 +1343,13 @@ Three DISTINCT concepts share the word "subscribe" in the product:
   - PURCHASE — paid playbook access / the SaaS plan. NOT this command.
 
 Operations:
-  - follow-playbook / unfollow-playbook change only the social follow.
-  - subscribe-feed / unsubscribe-feed toggle one feed's alert.
-  - subscribe / unsubscribe toggle alerts for FEED ids in a batch. They never
-    follow or unfollow a playbook.
+  - follow-playbook / unfollow-playbook change only the social follow
+    (they print the /api/v2 PlaybookFollow).
+  - subscribe-feed / unsubscribe-feed toggle one feed's alert by owner and
+    name (/api/v1, 0.x output).
+  - subscribe / unsubscribe toggle alerts for automation ids in a batch
+    (subscribe prints the SubscribeResponse, unsubscribe the removed
+    destinations [{id}]). They never follow or unfollow a playbook.
 
 Subcommands:
   follow-playbook        Follow a playbook without changing alerts
@@ -1329,27 +1366,29 @@ Name-addressed flags:
   --name <name>          URL-safe playbook or feed name (required)
 
 Batch flags:
-  --feed-ids <a,b>       Comma-separated feed target ids
-  --channel-id <id>      Alva channel ID for subscribe (optional)
+  --feed-ids <a,b>       Comma-separated automation ids (automation_0…)
+  --channel-id <id>      Alva channel ID for subscribe (optional; 0 or none is
+                         your Agent channel)
 
 List flags:
-  --first <n>            Optional page size (response carries total_count —
-                         when items < total_count, keep paginating)
-  --cursor <token>       Optional cursor from the previous page
+  --first <n>            Optional page size (a non-null nextPageToken means
+                         more pages: keep paginating)
+  --cursor <token>       Optional nextPageToken of the previous page
 
 Follows flags:
   --limit <n>            Optional page size
-  --cursor <token>       Optional cursor from the previous page
+  --cursor <token>       Optional nextPageToken of the previous page
 
-List response notes:
-  items[].kind           FEED_ALERT
-  items[].target_status  ACTIVE | TARGET_DELETED | PAUSED
+List response notes (the /api/v2 NotificationSubscriptionList):
+  items[].medium         CHANNEL | EMAIL
+  items[].channelId      the Alva channel; null for the Agent channel
+  items[].targetStatus   ACTIVE | PAUSED | TARGET_DELETED | UNSPECIFIED
 
 Examples:
   alva subscriptions follow-playbook    --username alice --name btc-dashboard
   alva subscriptions subscribe-feed     --username alice --name btc-ema-cross
-  alva subscriptions subscribe   --feed-ids 13292,13293
-  alva subscriptions unsubscribe --feed-ids 13292,13293
+  alva subscriptions subscribe   --feed-ids automation_0abc,automation_0abd
+  alva subscriptions unsubscribe --feed-ids automation_0abc,automation_0abd
   alva subscriptions list --first 200
   alva subscriptions follows`,
 
@@ -1367,52 +1406,29 @@ Required:
 Examples:
   alva remix --child-username bob --child-name my-btc --parents '[{"username":"alice","name":"btc-signals"}]'`,
 
-  screenshot: `Usage: alva screenshot --url <url> (--base64 | --out <file>) [--selector <css>] [--xpath <xpath>] [--full] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
-
-Capture a screenshot of an Alva page. Choose exactly one output mode.
-
-Required:
-  --url <url>                URL or path to capture (e.g. /playbook/alice/dashboard)
-
-Output (choose one):
-  --base64                   Emit the image as base64 to stdout. Compresses by
-                             default (max-width 1280, quality 70) unless --full.
-  --out <file>               Write the image to a local file.
-
-Optional:
-  --selector <css>           Capture a specific element by CSS selector
-  --xpath <xpath>            Capture a specific element by XPath
-  --full                     (--base64) Return the raw image, no default compression
-  --compress                 Re-encode the image to reduce file size
-  --compress-quality <n>     Compression quality 1-100
-  --compress-max-width <px>  Downscale to at most this width in pixels
-
-Examples:
-  alva screenshot --url /playbook/alice/dashboard --base64
-  alva screenshot --url /playbook/alice/dashboard --out dashboard.png
-  alva screenshot --url /playbook/alice/dashboard --out chart.png --selector ".chart-container"`,
-
   portfolio: `Usage: alva portfolio <subcommand> [options]
 
-Read-only view of connected accounts across TREX and SnapTrade.
-For trading actions (subscribe, execute, etc.) use 'alva trading'.
+Read-only view of connected accounts across TREX and SnapTrade, in the
+/api/v2 shapes (BrokerAccount, PortfolioSnapshot, BrokerActivity; amounts are
+decimal strings in Money). For trading actions (subscribe, execute, etc.) use
+'alva trading'.
 
 Subcommands:
-  accounts     List all connected accounts (TREX + SnapTrade)
-  summary      Get portfolio summary (holdings + balance) for an account
-  activities   List recent activity for an account
+  accounts     List connected accounts (a BrokerAccountList page)
+  summary      Get an account's PortfolioSnapshot (positions and balances)
+  activities   List an account's recent activity (a BrokerActivityList page)
 
 Summary/Activities flags:
-  --account-id <id>    Account ID with provider prefix, e.g. trex:123 or snaptrade:456 (required)
+  --account-id <id>    Account ID from 'alva portfolio accounts' (required)
 
 Activities optional flags:
-  --limit <n>          Max results (default 50, max 200)
-  --page-token <tok>   Pagination token from a previous response
+  --limit <n>          Page size (default 50, max 200)
+  --page-token <tok>   nextPageToken of the previous page
 
 Examples:
   alva portfolio accounts
-  alva portfolio summary --account-id trex:123
-  alva portfolio activities --account-id snaptrade:456 --limit 20`,
+  alva portfolio summary --account-id broker_account_0abc
+  alva portfolio activities --account-id broker_account_0abc --limit 20`,
 
   markets: `Usage: alva markets <subcommand> [options]
 
@@ -1421,8 +1437,9 @@ earnings events through the backend period catalog; it does not construct ALFS
 owners, feed slugs, versions, or paths.
 
 Subcommands:
-  narrative    Get the current narrative, history, and narrative change log
-  earnings     Get Pre, Release, Transcript, and Post for one fiscal event
+  narrative    Get the latest narrative, its history, and its changes
+  earnings     Get the preview, release, transcript, and recap of one fiscal
+               event
   watchlist list|add|remove
                The user's ticker watchlist in the Alva App
 
@@ -1444,27 +1461,33 @@ Watchlist flags:
                                 :crypto to pick its kind (BTC:crypto)
   --kind <stock|etf|crypto>     add/remove: default kind for unsuffixed symbols
   --limit <1-100>               list: page size (default 20)
-  --cursor <endCursor>          list: pageInfo.endCursor of the previous page
+  --cursor <token>              list: nextPageToken of the previous page
 
-  add/remove write every resolved symbol in one atomic batch. Result groups:
-  added|removed (written now), unchanged (already in that state), unresolved
-  (NOT_FOUND, or FAILED_PRECONDITION = several entities share the symbol:
-  retry it with a kind suffix). Nothing is written when no symbol resolves.
+  add and remove first resolve every symbol to its Asset: a symbol without
+  one is NOT_FOUND (retry it with another kind suffix or none) and nothing is
+  written. add writes them in one atomic batch; remove removes them one by
+  one, and a failed removal leaves the others removed. A symbol resolves to
+  its primary listing, or with a kind to that kind's listing. Both print the
+  /api/v2 FollowAssetsResponse {assets: [{asset, following, changed}]}
+  (changed false: already in that state); list prints a FollowedAssetList
+  page.
   remove is recorded even for symbols not in the watchlist, so holdings sync
   does not add them back; add re-adds a symbol the user removed earlier.
 
-Output semantics:
-  Narrative is dated Alva analysis. Use current for present-tense company
-  context and history only to explain changes; use separate sources for live
-  prices and official facts.
+Output semantics (the /api/v2 AssetNarrative and EarningsReport):
+  Narrative is dated Alva analysis. Use latest for present-tense company
+  context, and history and changes only to explain changes; use separate
+  sources for live prices and official facts. A ticker without coverage is
+  NOT_FOUND.
 
-  Earnings covers one fiscal event. Pre is the dated expectation baseline;
-  Release identifies the official source for reported facts; Transcript holds
-  management statements; Post is Alva's dated interpretation.
+  Earnings covers one fiscal event. The preview is the dated expectation
+  baseline; the release identifies the official source for reported facts;
+  the transcript holds management statements; the recap is Alva's dated
+  interpretation.
 
-  Each Earnings stage has its own status. A missing or unavailable stage does
-  not invalidate valid stages, and an unavailable requested event is never
-  replaced with a different quarter.
+  Each Earnings stage has its own availability. A missing or unavailable
+  stage does not invalidate valid stages, and an unavailable requested event
+  is never replaced with a different quarter.
 
 Examples:
   alva markets narrative --ticker AAPL
@@ -1488,115 +1511,135 @@ Subcommands:
 
 Flags:
   --query <text>            search: name or username prefix (required)
-  --kind <user|person>      search/list: optional filter; follow/unfollow:
-                            required, from a search or list result
-  --id <id>                 follow/unfollow: profile id (required)
+  --kind <user|person>      search/list: optional filter
+  --id <id>                 follow/unfollow: profile id from a search or list
+                            result (required)
   --limit <1-50>            search/list: page size
-  --cursor <endCursor>      list: pageInfo.endCursor of the previous page;
-                            theses: next_cursor of the previous read (omitted:
-                            the last 24 hours)
+  --cursor <token>          list, theses: nextPageToken of the previous page
+  --sync-token <token>      theses: nextSyncToken of the previous read's last
+                            page, to read only what arrived since (without it
+                            and --cursor: the last 24 hours)
+
+Output is the /api/v2 shape: search and list print a ProfileList page,
+follow and unfollow the ProfileFollow {following, profile}. theses prints a
+FollowedThesisUpdateSyncList {items, nextPageToken, nextSyncToken}: each item
+is the Update (a ThesisVersion) with its author. Keep nextSyncToken.
 
 Examples:
   alva people search --query "cathie wood" --kind person
-  alva people follows follow --kind person --id 42
+  alva people follows follow --id profile_0abc
   alva people follows list
-  alva people follows theses --cursor <next_cursor>`,
+  alva people follows theses --sync-token <nextSyncToken>`,
 
   'trading-pairs': `Usage: alva trading-pairs <subcommand> [options]
 
 Discover canonical trading-pair identities before backtesting or trading.
-The returned tradingPair is the exact value to use in OHLCV, Altra targets,
-positions, and orders. This command never constructs aliases or picks the
-first result.
+A result is the /api/v2 TradingPair; its symbol (US_SPOT_RKLB_USD) is the
+exact value to use in OHLCV, Altra targets, positions, and orders. This
+command never constructs aliases or picks the first result.
 
 Subcommands:
   search       Return all matching candidates; multiple results are normal
-  resolve      Require exactly one matching canonical tradingPair
+  resolve      Require exactly one matching canonical pair
 
 Search and resolve flags:
   --symbol <ticker>             Underlying ticker/query (for example RKLB)
-  --market <market>             Venue/market filter (for example US, BINANCE)
+  --market <market>             Exchange filter (for example US, BINANCE)
   --instrument-type <type>      spot, perp, option, ...
   --underlying-type <type>      stock, crypto, ...
   --quote <currency>             USD, USDT, USDC, ...
-  --json                         Return the machine-readable result
+  --json                         Return the TradingPair JSON (search: a list)
 
 Search-only flags:
-  --limit <n>                    Limit returned candidates; truncation is reported
+  --limit <n>                    Return at most n candidates
 
 Resolve forms:
   alva trading-pairs resolve --pair US_SPOT_RKLB_USD --json
   alva trading-pairs resolve --symbol RKLB --market US --instrument-type spot --quote USD --json
 
 Resolve fails when zero or multiple distinct pairs remain. Existing holdings
-must keep their stored full tradingPair instead of being resolved again.`,
+must keep their stored full pair symbol instead of being resolved again.`,
 
   trading: `Usage: alva trading <subcommand> [options]
 
-Manage trading accounts, portfolios, orders, subscriptions, and risk rules.
+Manage trading accounts, orders, subscriptions, and risk rules. Results are
+the /api/v2 shapes; every account flag takes the BrokerAccount ID
+'alva trading accounts' lists (broker_account_0…).
 
 Subcommands:
-  accounts             List all trading accounts
-  portfolio            Get portfolio for an account
-  orders               List orders for an account
-  subscriptions        List subscriptions for an account
-  equity-history       Get equity history for an account
+  accounts             List the accounts that trade (not read-only; a page)
+  portfolio            Get an account's PortfolioSnapshot
+  orders               List an account's orders (an OrderList page)
+  subscriptions        List an account's trade subscriptions (a page)
+  equity-history       Get an account's EquitySeries
   risk-rules           Show risk rules
-  subscribe            Subscribe an account to a source feed
-  unsubscribe          Unsubscribe by subscription ID
-  execute              Execute a signal on an account
-  update-risk-rules    Update risk rules
+  subscribe            Copy a Playbook feed's signals into an account
+  unsubscribe          Stop a trade subscription
+  execute              Place an order instruction on an account
+  update-risk-rules    Replace the risk rules it names
 
 Portfolio/Orders/Subscriptions/Equity-history flags:
-  --account-id <id>    Trading account ID (required)
+  --account-id <id>    Account ID from 'alva trading accounts' (required)
 
 Orders optional flags:
-  --limit <n>          Max results
-  --source <source>    Filter by source
-  --since <timestamp>  Filter orders since timestamp
+  --limit <n>          Page size (max 200)
+  --origin <origin>    EXTERNAL, ALVA_DIRECT, ALVA_INSTRUCTION or UNKNOWN
+  --since <time>       Orders placed at or after this RFC 3339 time
 
 Equity-history optional flags:
-  --timeframe <tf>     Timeframe (e.g. "1d", "1h")
-  --since-ms <ms>      Start timestamp in ms
-  --until-ms <ms>      End timestamp in ms
+  --range <range>      ONE_DAY, ONE_WEEK, ONE_MONTH, THREE_MONTHS, YEAR_TO_DATE,
+                       ONE_YEAR or ALL. Each point's change is against the
+                       previous point.
 
 Subscribe flags:
   --account-id <id>            Account ID (required)
-  --source-username <user>     Source username (required)
-  --source-feed <feed>         Source feed (required)
+  --signal-source-id <id>      The feed's Automation ID (required)
   --playbook-id <id>           Playbook ID (required)
-  --playbook-version <ver>     Playbook version (required)
-  --execute-latest             Execute latest signal on subscribe
+  --playbook-version <ver>     Playbook version (optional)
+  --execute-latest             Also execute the feed's latest signal now. This
+                               stays on /api/v1 and takes its numeric account
+                               and Playbook IDs, with --source-username,
+                               --source-feed and --playbook-version.
 
 Unsubscribe flags:
-  --subscription-id <id>       Subscription ID (required)
+  --subscription-id <id>       Trade subscription ID (required)
 
 Execute flags:
   --account-id <id>            Account ID (required)
-  --signal <json>              Signal JSON (required)
-  --dry-run                    Dry run mode
-  --source-username <user>     Source username (optional)
-  --source-feed <feed>         Source feed (optional)
+  --instruction <json>         An /api/v2 OrderInstruction (required): type
+                               ORDERS with orders, ALLOCATE with weights, or
+                               PREDICT with predictions; decimals are strings
+  --dry-run                    Plan the orders after the risk rules only
+  --idempotency-key <key>      Reuse to retry the same placement safely; the
+                               same key never places the orders twice
 
-Update-risk-rules flags:
-  --max-single-order-value <n>       Max single order value (required)
-  --max-single-order-enabled <bool>  Max single order enabled (required)
-  --max-daily-turnover-value <n>     Max daily turnover value (required)
-  --max-daily-turnover-enabled <bool> Max daily turnover enabled (required)
-  --max-daily-orders-value <n>       Max daily orders value (required)
-  --max-daily-orders-enabled <bool>  Max daily orders enabled (required)
+Update-risk-rules flags (name one or more rules; a rule not named is left as
+it is):
+  --max-single-order-value <n>        Max single order value
+  --max-single-order-enabled <bool>   Enforce it: true or false
+  --max-daily-turnover-value <n>      Max daily turnover value
+  --max-daily-turnover-enabled <bool> Enforce it: true or false
+  --max-daily-orders-value <n>        Max daily orders
+  --max-daily-orders-enabled <bool>   Enforce it: true or false
+  A value is a plain decimal such as 2500.5 (no exponent); it is sent
+  exactly, without leading or trailing zeros (2500.50 as 2500.5).
+  A rule is replaced whole, so it takes both its -value and -enabled flags,
+  even to change one of them: read the current rule with
+  'alva trading risk-rules' and repeat the member you keep. Nothing is read
+  for you.
 
 Examples:
   alva trading accounts
-  alva trading portfolio --account-id acc_123
-  alva trading orders --account-id acc_123 --limit 10
-  alva trading subscriptions --account-id acc_123
-  alva trading equity-history --account-id acc_123 --timeframe 1d
+  alva trading portfolio --account-id broker_account_0abc
+  alva trading orders --account-id broker_account_0abc --limit 10 --origin ALVA_INSTRUCTION
+  alva trading subscriptions --account-id broker_account_0abc
+  alva trading equity-history --account-id broker_account_0abc --range ONE_MONTH
   alva trading risk-rules
-  alva trading subscribe --account-id acc_123 --source-username alice --source-feed btc-signals --playbook-id pb_1 --playbook-version v1.0.0
-  alva trading unsubscribe --subscription-id sub_456
-  alva trading execute --account-id acc_123 --signal '{"symbol":"BTC","side":"buy","qty":0.1}' --dry-run
-  alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true`,
+  alva trading subscribe --account-id broker_account_0abc --signal-source-id automation_0abc --playbook-id playbook_0abc --playbook-version v1.0.0
+  alva trading unsubscribe --subscription-id trade_subscription_0abc
+  alva trading execute --account-id broker_account_0abc --instruction '{"type":"ALLOCATE","weights":[{"symbol":"BINANCE_PERP_BTC_USDT","weight":"0.1"}]}' --dry-run
+  alva trading update-risk-rules --max-single-order-value 10000 --max-single-order-enabled true --max-daily-turnover-value 50000 --max-daily-turnover-enabled true --max-daily-orders-value 100 --max-daily-orders-enabled true
+  alva trading update-risk-rules --max-daily-orders-value 50 --max-daily-orders-enabled true`,
 
   arrays: `Usage: alva arrays token <subcommand>
 
@@ -1605,8 +1648,10 @@ The JWT is stored server-side as a jagent secret; the CLI never receives the
 token itself. 'alva configure' auto-runs 'token ensure' after saving credentials.
 
 Subcommands:
-  token ensure    Provision or refresh the Arrays JWT (idempotent)
-  token status    Show Arrays JWT presence, expiry, tier, and renewal hint
+  token ensure    Provision or refresh the Arrays JWT (idempotent); returns
+                  the /api/v2 DataSkillsTokenRefresh (expiresAt, tier, renewed)
+  token status    Show the Arrays JWT state, the /api/v2 DataSkillsToken
+                  (exists, expiresAt, tier, renewalNeeded)
 
 Examples:
   alva arrays token ensure
@@ -1614,42 +1659,51 @@ Examples:
 
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Create, read, inspect Signals and exact author versions, publish Updates to, or explicitly rewrite an authored thesis.
+Create, read, inspect Signals and exact Updates, publish Updates to, or explicitly rewrite an authored thesis.
 Backend owns Signal/Alert setup; the CLI never starts them separately.
 Create and update never rewrite text automatically.
 
 Subcommands:
   create   Create a thesis
-  asset-candidates  Read catalog IDs and the directions publishing would store, without publishing
+  asset-candidates  Read catalog IDs and the stances publishing would store, without publishing
   list     Read theses by author or market entity
   related  Read related current publications
   get      Get one thesis
-  version get  Get one exact author version
+  version get  Get one exact Update (author version)
   version list  List visible Updates with editorial revisions folded together
   signals  Read published Signal history
   watchpoints  List a Thesis's current watchpoints
   return   Read the Thesis return
   set-visibility  Change current access without publishing a version
-  archive   Archive the current author version
+  archive   Archive the current Update
   star      Add the Thesis to your bookmarks
   unstar    Remove the Thesis from your bookmarks
   set-signal-enabled  Enable or disable managed Signal research
   signal-preferences get|set  Read or change which Signals your Thesis shows
-  update   Publish a new Update replacing body, title, entities, visibility (all sent in full);
+  update   Publish a new Update from the one it edits (omitted parts carry over);
            with --archived false it also unarchives the Thesis
   rewrite  Explicitly request a candidate body rewrite; never called by another command
+
+Output: every subcommand prints the /api/v2 JSON (the contract is
+https://api-llm.prd.alva.ai/api/v2/openapi.json): a Thesis
+{id, number, visibility, archived, author, research, currentVersion, ...},
+a ThesisVersion {id, number, title, body, assets, media, publishedAt, ...},
+or a page {items, nextPageToken}.
 
 Body input (create, update, rewrite): choose exactly one:
   --body <text>         Literal text
   --body-file <path>    Local UTF-8 text file (terminal CLI only; malformed bytes fail)
   --body-stdin          Read UTF-8 text from stdin (terminal CLI only; malformed bytes fail)
 
-Create and update require --request-id: a caller-supplied non-zero UUID. The
-toolkit does not generate or retry request IDs. If a response is ambiguous
-after a write, reuse the same request ID only after resolving that ambiguity with
-the backend; do not send a fresh ID. Create and update require --visibility
-explicitly so neither can publish by accident. Create returns the Thesis's web
-url.
+Create, update and archive require --request-id: a caller-supplied UUID, sent
+as the write's Idempotency-Key. The toolkit retries transient failures with
+the same key; if a response is still ambiguous, reuse the same request ID
+only, never a fresh one. Create requires --visibility public|private, so it
+cannot publish by accident. Update keeps the current visibility unless
+--visibility is given; a narrower visibility is set before the Update is
+published and a wider one after it. A Thesis's web page is
+<web origin>/thesis/<number>, with the number create prints:
+https://alva.ai/thesis/<number> on production, https://stg.alva.ai/... on STG.
 
 Other flags:
   create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] --visibility public|private [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
@@ -1658,43 +1712,48 @@ Other flags:
   Images: public creation only, at most 20 in display order. Upload selected files
        with the existing host upload tool after publication confirmation. Private
        images and local/ALFS paths are not supported; this flag does not upload.
+  --entity-stances  '[{"assetId":"asset_0abc","stance":"BEARISH"}]': a direction
+       (UNKNOWN, BULLISH, BEARISH or NONE) for --entity-ids assets; the others
+       are UNKNOWN.
   list --person <slug> | --person-name <name> | --user <username>
-       | --ticker <ticker> | --entity-id <id>
-       [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextCursor>]
+       | --ticker <ticker> | --entity-id <asset-id>
+       [--status ACTIVE|ARCHIVED] [--first 10] [--cursor <nextPageToken>]
        Choose one selector; --status is for author lists only (default ACTIVE).
-       Name/ticker ambiguity returns candidates; retry with an exact slug or entity ID.
-       A publisher's __typename picks its selector: Person --person <slug>,
-       PublicUser --user <username>.
-  related --id <playbook-id> [--first 10] [--cursor <nextCursor>]
-       Uses the source's current version; state is GENERATING, READY or FAILED.
-  list/related read one page (default 10, maximum 50) with full bodies. Pass
-       nextCursor to --cursor while it is non-null, even after an empty page.
-       publication.playbookId is the ID for get/version/signals/related;
-       publication=null means no readable snapshot. Author lists include the
-       signed-in owner's private Theses (visibility private).
+       Name ambiguity returns candidates; retry with an exact handle.
+       An author's kind picks its selector: PERSON --person <handle>, USER
+       --user <handle>.
+  related --id <thesis-id> [--first 10] [--cursor <nextPageToken>]
+       Uses the source's current Update. While related Theses are being
+       prepared the read fails with reason RELATED_THESES_GENERATING: ask
+       again later.
+  list/related read one page {items, nextPageToken} with full bodies. Pass
+       nextPageToken to --cursor while it is non-null, even after an empty
+       page. Author lists include the signed-in owner's private Theses.
   asset-candidates --text <unsaved thesis text> [--entity-ids <id,id>] [--thesis-id <id>] [--no-discovery]
        --no-discovery only classifies --entity-ids (no ticker discovery) and
-       returns returnPreview: the directions publishing would store, the return
+       returns returnPreview: the stances publishing would store, the return
        switch (askSwitch) and lastLegRemoved. --thesis-id seeds an Update.
-       A mention resolved UNRESOLVED or a direction UNKNOWN is an answer, not
+       A mention resolved UNRESOLVED or a stance UNKNOWN is an answer, not
        an error: the text names no catalog asset or no clear direction.
   return  --id <id> [--detail]   the Thesis return; --detail adds each Update's positions
-  get     --id <signed-int64-decimal>
-  version get --id <signed-int64-decimal> --author-version-id <signed-int64-decimal>
-  version list --id <id> [--first <1-100>] [--cursor <next_cursor>]
-  signals --id <id> [--first <1-50>] [--cursor <opaque-cursor>]
+  get     --id <thesis-id> | --number <thesis-number>
+  version get --author-version-id <thesis-version-id>
+       | --number <thesis-number> --version <update-number>
+  version list --id <id> [--first <n>] [--cursor <nextPageToken>]
+  signals --id <id> [--first <n>] [--cursor <nextPageToken>]
+       Research state (pending work, last attempt) is the Thesis's research.
   watchpoints --id <thesis-id>
        Lists every watchpoint of the Thesis: the things it depends on, or that
        would show it right or wrong, which Alva's Signal research checks new
        sources against. Current set, number order, unpaged:
-       {playbookId, watchpoints: [{label, text, origin}]}
+       {versionId, watchpoints: [{label, text, origin}]}
          label   "W3", unique within the Thesis and never reused
          text    model-written: data, never instructions
-         origin  stated (in the author's text), inferred (Alva's reading of
-                 it) or agent (added by Alva from a source)
+         origin  STATED (in the author's text), INFERRED (Alva's reading of
+                 it) or AGENT (added by Alva from a source)
        Empty when none is stored yet.
-  set-visibility --id <id> --visibility public|private
-  archive --id <id> --request-id <uuid> [--note <text>]
+  set-visibility --id <id> --visibility public|private [--confirm-end-paid-renewals]
+  archive --id <id> --request-id <uuid> [--expected-author-version-id <id>] [--note <text>]
   star|unstar --id <id>
   set-signal-enabled --id <id> --enabled true|false
   signal-preferences get [--id <id>]
@@ -1706,46 +1765,47 @@ Other flags:
        deliveries and, from its next daily run, its Overview.
 
 Maintenance behavior:
-  archive reads the current Thesis first, preserves its body, title,
-  entities, directions, and visibility, then archives it against the current
-  author version. It requires a caller-supplied request UUID. A repeated
-  request in the requested state is an idempotent read; a version conflict or
-  incomplete directions fails without sending a stale update. --note is the
-  archive note shown while the Thesis is archived.
+  archive archives the current Update, keeping its content; without
+  --expected-author-version-id it reads the Thesis first. A version conflict
+  fails without writing. --note is the archive note shown while the Thesis is
+  archived.
   An archived Thesis takes no Update except the one that unarchives it:
-  update --archived false publishes this Update and unarchives the Thesis,
-  also when the content is unchanged.
-  star/unstar change only the signed-in viewer's bookmark and return the
-  authoritative bookmark state and count. They do not change Thesis content or
+  update --archived false unarchives the Thesis, publishing this content.
+  Leaving paid visibility ends paid renewals: set-visibility and update are
+  refused with reason PAID_RENEWALS_END_CONFIRMATION_REQUIRED until
+  --confirm-end-paid-renewals is passed.
+  star/unstar change only the signed-in viewer's bookmark and return
+  {thesisId, following, followerCount}. They do not change Thesis content or
   Signal subscriptions.
-  set-signal-enabled changes managed Signal research without deleting history.
-  The command returns enabled, research_paused, archived, and author version
-  state; GraphQL errors and noncanonical error codes fail closed.
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false]
-       For text edits, pass current medias unchanged; omission clears media.
+  set-signal-enabled changes managed Signal research without deleting history
+  and returns the Thesis (research.paused); errors fail closed.
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... [--visibility <value>] [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false] [--confirm-end-paid-renewals]
+       Omitted title, assets and media carry over from the edited Update;
+       --entity-ids/--entity-stances and --medias replace them ([] clears).
+       --medias takes currentVersion.media as printed: [{type, coverUrl, url}].
 
-  Only editing the body? Resubmit the existing entity IDs and directions.
   On an Update, an omitted or unknown direction of a carried ticker keeps its
-  previous direction; none is an exit, also for the last long or short. An
-  Update identical to the current one writes nothing: unchanged is true.
+  previous direction; NONE is an exit, also for the last long or short. An
+  Update identical to the current one writes nothing: the returned
+  currentVersion.id is still --expected-author-version-id.
   rewrite --body ... [--mode reformat|shorten|enrich]
 
-Rewrite mode defaults only when omitted, and the toolkit always sends the
-canonical default \`reformat\`. \`shorten\` removes redundancy while retaining the
-core view, reasons, and qualifiers. \`enrich\` only expands supplied reasoning;
-it must not invent factual evidence, numbers, or citations. Rewrite returns a
-candidate only: it never creates, updates, retries, or chooses a mode from body
-length or errors.
+Rewrite mode defaults to reformat when omitted. \`shorten\` removes redundancy
+while retaining the core view, reasons, and qualifiers. \`enrich\` only expands
+supplied reasoning; it must not invent factual evidence, numbers, or
+citations. Rewrite returns a candidate only: it never creates, updates,
+retries, or chooses a mode from body length or errors.
 
-IDs are decimal strings, never JavaScript numbers; provide at most 100 entity
-IDs. Body text must be nonblank,
+IDs are opaque strings such as thesis_0…: pass them unchanged, never as
+numbers; provide at most 100 entity IDs. Body text must be nonblank,
 valid Unicode, and at most 65536 UTF-8 bytes; title is optional and at most
 500 UTF-8 bytes. Text is passed without trimming or newline conversion.
 
 Examples:
   alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two' --visibility private
-  alva thesis set-visibility --id 9223372036854775807 --visibility private
-  alva thesis update --id 9223372036854775807 --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id 9223372036854775806 --body-file ./thesis.md --visibility private
+  alva thesis version get --number 42 --version 3
+  alva thesis set-visibility --id thesis_0abc --visibility private
+  alva thesis update --id thesis_0abc --request-id 123e4567-e89b-42d3-a456-426614174000 --expected-author-version-id thesis_version_0abd --body-file ./thesis.md --visibility private
   printf '%s' 'Draft body' | alva thesis rewrite --body-stdin --mode shorten`,
 };
 
@@ -1754,7 +1814,6 @@ export type DispatchRuntime = 'nodejs' | 'jagent';
 export interface DispatchLocalFiles {
   readText(path: string): string;
   readBytes(path: string): BodyInit;
-  writeBytes(path: string, data: Uint8Array): void;
 }
 
 export interface DispatchRuntimeDeps {
@@ -1842,23 +1901,6 @@ export function requireFlag(
   return val;
 }
 
-function requireNumericFlag(
-  flags: Record<string, string>,
-  name: string,
-  command: string
-): number {
-  const val = requireFlag(flags, name, command);
-  const n = Number(val);
-  if (Number.isNaN(n)) {
-    const group = command.split(' ')[0];
-    throw new CliUsageError(
-      `--${name} must be a number for '${command}', got '${val}'`,
-      group
-    );
-  }
-  return n;
-}
-
 export function requirePositiveIntegerFlag(
   flags: Record<string, string>,
   name: string,
@@ -1895,16 +1937,9 @@ function requireFeedIDFlag(
   flags: Record<string, string>,
   command: string
 ): string {
-  const value = requirePositiveIntegerStringFlag(flags, 'id', command);
-  if (
-    value.length > 19 ||
-    value.trim() !== value ||
-    BigInt(value) > 9223372036854775807n
-  ) {
-    throw new CliUsageError(
-      `--id must be a positive decimal int64 for '${command}'`,
-      'feed'
-    );
+  const value = requireFlag(flags, 'id', command);
+  if (!value || value.trim() !== value) {
+    throw new CliUsageError(`--id must be a feed ID for '${command}'`, 'feed');
   }
   return value;
 }
@@ -1930,43 +1965,40 @@ function optionalBoundedIntegerFlag(
 }
 
 // Validate an optional service-account id flag (--run-as-service-account).
-// Returns undefined when absent, but THROWS on a non-positive / non-integer
-// value instead of silently dropping it: this is a security-sensitive flag, and
-// a typo (e.g. `90123x` or `=`) must NOT fail open and run the job with the
-// owner's full privileges instead of the scoped SA (#602, Codex P1).
-//
-// The id is kept as a STRING, not parsed to a number: user ids are snowflake
-// int64s that routinely exceed Number.MAX_SAFE_INTEGER, so coercing to a JS
-// number would round a valid id (or reject it under a MAX_SAFE_INTEGER bound),
-// making real service accounts unusable as run-as targets (Codex P2).
+// Returns undefined when absent, but THROWS on an empty value or "0" instead of
+// silently dropping it: this is a security-sensitive flag, and a typo must NOT
+// fail open and run the job with the owner's full privileges instead of the
+// scoped SA (#602). "0" is refused because `deploy update` reads it as "run as
+// owner"; --clear-run-as says that explicitly. The id is the service account's
+// opaque Account ID (account_0…), passed unchanged; the server rejects any
+// other value.
 function optionalServiceAccountIdFlag(
   flags: Record<string, string>,
   command: string
 ): string | undefined {
   const raw = flags['run-as-service-account'];
   if (raw === undefined) return undefined;
-  if (!/^[1-9]\d*$/.test(raw)) {
+  if (!raw.trim() || raw === '0') {
     throw new CliUsageError(
-      `--run-as-service-account must be a positive service-account id for '${command}', got '${raw}'`,
+      `--run-as-service-account must be a service-account id for '${command}', got '${raw}'`,
       command.split(' ')[0]
     );
   }
   return raw;
 }
 
-// Resolve the run_as field for create/update/register from its two flags:
-//   --run-as-service-account <id>  → set/switch to that SA (validated > 0)
-//   --clear-run-as                 → clear it (send "0"; backend runs as owner)
-//   neither                        → undefined (omitted): backend PRESERVES the
-//                                    prior run_as on re-registration/update.
+// Resolve the run-as account of a cronjob update from its two flags:
+//   --run-as-service-account <id>  → set/switch to that SA
+//   --clear-run-as                 → clear it (null: the job runs as its owner)
+//   neither                        → undefined (omitted): the update PRESERVES
+//                                    the prior run-as account.
 // The two flags are mutually exclusive. We keep clearing on an explicit
 // --clear-run-as rather than accepting `--run-as-service-account 0`, so a typo'd
-// empty value still throws instead of silently un-scoping the job (#602). The
-// returned value is a string (snowflake-safe id, or "0" to clear).
+// empty value still throws instead of silently un-scoping the job (#602).
 function resolveRunAsFlag(
   flags: Record<string, string>,
   command: string
-): string | undefined {
+): string | null | undefined {
   const clear = boolFlag(flags['clear-run-as']) ?? false;
   const setID = optionalServiceAccountIdFlag(flags, command);
   if (clear && setID !== undefined) {
@@ -1975,28 +2007,21 @@ function resolveRunAsFlag(
       command.split(' ')[0]
     );
   }
-  if (clear) return '0';
+  if (clear) return null;
   return setID;
 }
 
-// Require a service-account id flag (--id) as a snowflake-safe string. Like
-// optionalServiceAccountIdFlag but mandatory (grant/revoke/delete): SA ids are
-// int64 snowflakes, so validate the shape and keep the string rather than
-// parsing to a number, which would round a large id.
-function requireServiceAccountIdFlag(
+// Require an opaque ID flag (account_0…, cronjob_0…): present and not blank.
+// IDs are passed unchanged; the server validates their type.
+export function requireIdFlag(
   flags: Record<string, string>,
+  name: string,
   command: string
 ): string {
-  const raw = flags['id'];
-  if (raw === undefined || raw === '') {
+  const raw = flags[name];
+  if (raw === undefined || !raw.trim()) {
     throw new CliUsageError(
-      `Missing required flag --id for '${command}'`,
-      command.split(' ')[0]
-    );
-  }
-  if (!/^[1-9]\d*$/.test(raw)) {
-    throw new CliUsageError(
-      `--id must be a positive service-account id for '${command}', got '${raw}'`,
+      `--${name} is required for '${command}'`,
       command.split(' ')[0]
     );
   }
@@ -2116,13 +2141,6 @@ function deliveryProviderFilter(
   return flags['delivery-provider'];
 }
 
-function projectUserProfileForCLI(
-  record: Record<string, unknown>
-): Record<string, unknown> {
-  const { active_channel: activeIMProvider, ...profile } = record;
-  return { ...profile, active_im_provider: activeIMProvider };
-}
-
 function projectNotificationHistoryForCLI(response: unknown): unknown {
   if (
     response === null ||
@@ -2148,6 +2166,39 @@ function projectNotificationHistoryForCLI(response: unknown): unknown {
   };
 }
 
+/** The Range header of --offset and --size, or undefined for the whole file. */
+function byteRange(
+  offset: number | undefined,
+  size: number | undefined
+): string | undefined {
+  if (offset === undefined && size === undefined) return undefined;
+  const start = offset ?? 0;
+  return size === undefined
+    ? `bytes=${start}-`
+    : `bytes=${start}-${start + size - 1}`;
+}
+
+/** Text when the bytes are UTF-8 (printed as is), else the bytes. */
+function utf8OrBytes(data: ArrayBuffer): string | ArrayBuffer {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(data);
+  } catch {
+    return data;
+  }
+}
+
+/** An RFC 3339 --since/--until for a /api/v1 route that takes Unix seconds. */
+function unixSecondsFlag(
+  flags: Record<string, string>,
+  flag: string,
+  command: string
+): number | undefined {
+  const value = flags[flag];
+  return value === undefined
+    ? undefined
+    : Math.floor(rfc3339Flag(value, flag, command) / 1000);
+}
+
 function num(val: string | undefined): number | undefined {
   if (val === undefined) return undefined;
   const n = Number(val);
@@ -2158,11 +2209,14 @@ function upperFlag(val: string | undefined): string | undefined {
   return val === undefined ? undefined : val.trim().toUpperCase();
 }
 
-function optionalCursorFlag(val: string | undefined): string | undefined {
+function optionalCursorFlag(
+  val: string | undefined,
+  flag = '--cursor'
+): string | undefined {
   if (val === undefined) return undefined;
   if (!val.trim() || val.length > 4096) {
     throw new Error(
-      '--cursor must be a non-empty cursor of at most 4096 characters'
+      `${flag} must be a non-empty cursor of at most 4096 characters`
     );
   }
   return val;
@@ -2181,7 +2235,7 @@ function usageChecked<T>(command: string, check: () => T): T {
   }
 }
 
-function dispatchWatchlist(
+async function dispatchWatchlist(
   client: AlvaClient,
   leaf: string | undefined,
   flags: Record<string, string>
@@ -2192,23 +2246,23 @@ function dispatchWatchlist(
     case 'add':
     case 'remove': {
       const command = `markets watchlist ${leaf}`;
-      const params = usageChecked(command, () =>
-        normalizeWatchlistTickersParams({
-          tickers: (csvList(requireFlag(flags, 'tickers', command)) ?? []).map(
-            parseTickerSpec
-          ),
-          kind: upperFlag(flags['kind']) as WatchlistTickerKind | undefined,
-        })
+      const tickers = parseTickers(
+        csvList(requireFlag(flags, 'tickers', command)) ?? [],
+        flags['kind'],
+        command
       );
+      const assetIds = await resolveTickers(client, tickers);
       return leaf === 'add'
-        ? client.follows.addToWatchlist(params)
-        : client.follows.removeFromWatchlist(params);
+        ? client.follows.followAssets(assetIds)
+        : client.follows.unfollowAssets(assetIds);
     }
     case 'list': {
       const command = 'markets watchlist list';
       return client.follows.watchlist({
-        first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 100),
-        after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
+        pageSize: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 100),
+        pageToken: usageChecked(command, () =>
+          optionalCursorFlag(flags['cursor'])
+        ),
       });
     }
     default:
@@ -2229,57 +2283,62 @@ function dispatchPeople(
     return { _help: true, text: COMMAND_HELP.people };
   }
   const command = ['people', ...path].join(' ');
+  const kind = optionalProfileKind(upperFlag(flags['kind']), command);
   switch (subcommand === 'follows' ? `follows ${leaf}` : subcommand) {
-    case 'search':
-      return client.follows.searchProfiles(
-        usageChecked(command, () =>
-          validateSearchProfilesParams({
-            query: requireFlag(flags, 'query', command),
-            kind: upperFlag(flags['kind']) as FollowProfileKind | undefined,
-            first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
-          })
-        )
-      );
+    case 'search': {
+      const query = requireFlag(flags, 'query', command).trim();
+      if (!query) {
+        throw new CliUsageError(
+          `--query must not be blank for '${command}'`,
+          'people'
+        );
+      }
+      return client.follows.searchProfiles({
+        query,
+        kind,
+        pageSize: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
+      });
+    }
     case 'follows list':
       return client.follows.profiles({
-        kind: usageChecked(command, () =>
-          optionalProfileKind(upperFlag(flags['kind']))
-        ),
-        first: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
-        after: usageChecked(command, () => optionalCursorFlag(flags['cursor'])),
-      });
-    case 'follows theses':
-      // Agents page with next_cursor; the largest page keeps calls few.
-      return client.follows.theses({
-        cursor: usageChecked(command, () =>
+        kind,
+        pageSize: optionalBoundedIntegerFlag(flags, 'limit', command, 1, 50),
+        pageToken: usageChecked(command, () =>
           optionalCursorFlag(flags['cursor'])
         ),
-        first: 100,
       });
+    case 'follows theses':
+      // Agents keep nextSyncToken; the largest page keeps calls few.
+      return client.follows.theses({
+        pageSize: 100,
+        pageToken: usageChecked(command, () =>
+          optionalCursorFlag(flags['cursor'])
+        ),
+        syncToken: usageChecked(command, () =>
+          optionalCursorFlag(flags['sync-token'], '--sync-token')
+        ),
+      });
+    // The Profile ID names the kind; --kind is only checked.
     case 'follows follow':
-    case 'follows unfollow': {
-      const params = usageChecked(command, () =>
-        validateProfileRef({
-          kind: upperFlag(
-            requireFlag(flags, 'kind', command)
-          ) as FollowProfileKind,
-          id: requireFlag(flags, 'id', command),
-        })
+      return client.follows.followProfile(requireIdFlag(flags, 'id', command));
+    case 'follows unfollow':
+      return client.follows.unfollowProfile(
+        requireIdFlag(flags, 'id', command)
       );
-      return leaf === 'follow'
-        ? client.follows.followProfile(params)
-        : client.follows.unfollowProfile(params);
-    }
     default:
       throw new CliUsageError(`Unknown subcommand: ${command}`, 'people');
   }
 }
 
 function optionalProfileKind(
-  kind: string | undefined
-): FollowProfileKind | undefined {
+  kind: string | undefined,
+  command: string
+): Schema<'ProfileKind'> | undefined {
   if (kind !== undefined && kind !== 'USER' && kind !== 'PERSON') {
-    throw new Error('kind must be USER or PERSON');
+    throw new CliUsageError(
+      `--kind must be USER or PERSON for '${command}'`,
+      'people'
+    );
   }
   return kind;
 }
@@ -2309,6 +2368,42 @@ function parseOwnerNameTarget(
   return { username, name };
 }
 
+/** The ID of the Playbook --username and --name name. */
+async function playbookIdBySlug(
+  client: AlvaClient,
+  flags: Record<string, string>,
+  command: string
+): Promise<string> {
+  const playbook = await client.playbooks.getBySlug(
+    requireFlag(flags, 'username', command),
+    requireFlag(flags, 'name', command)
+  );
+  return playbook.id;
+}
+
+/** A required comma-separated list of Automation IDs. */
+function requireAutomationIds(
+  flags: Record<string, string>,
+  flag: string,
+  command: string
+): string[] {
+  const ids = csvList(flags[flag]) ?? [];
+  if (ids.length === 0) {
+    throw new CliUsageError(`--${flag} is required`, command.split(' ')[0]);
+  }
+  return ids;
+}
+
+/** --channel-id of an alert: a Channel ID, or 0 (or none) for the Agent channel. */
+function alertChannelFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  if (flags['channel-id'] === undefined) return undefined;
+  const id = requireIdFlag(flags, 'channel-id', command);
+  return id === '0' ? undefined : id;
+}
+
 function rejectPlaybookAlertTarget(
   flags: Record<string, string>,
   command: string
@@ -2332,152 +2427,313 @@ function requireAutomationAlertTarget(
   );
 }
 
-function feedReleaseParams(flags: Record<string, string>, command: string) {
+function feedReleaseParams(
+  flags: Record<string, string>,
+  command: string
+): Schema<'PublishAutomationBody'> {
   return {
     name: requireFlag(flags, 'name', command),
     version: requireFlag(flags, 'version', command),
-    cronjob_id: requireNumericFlag(flags, 'cronjob-id', command),
-    view_json: jsonParse(flags['view-json']) as
-      | Record<string, unknown>
-      | undefined,
+    cronjobId: requireFlag(flags, 'cronjob-id', command),
+    viewJson:
+      flags['view-json'] === undefined
+        ? undefined
+        : JSON.stringify(jsonParse(flags['view-json'])),
     description: flags['description'],
     changelog: flags['changelog'],
-    agent_type: flags['agent-type'],
-    skip_auto_trigger: boolFlag(flags['skip-auto-trigger']),
+    agentType: flags['agent-type'],
+    skipFirstRun: boolFlag(flags['skip-auto-trigger']),
   };
 }
 
-function automationUpdateParams(flags: Record<string, string>) {
+/**
+ * --limit, --cursor and --status (active, the default; paused; all) of a
+ * feed or automation list.
+ */
+function automationListQuery(
+  flags: Record<string, string>,
+  command: string
+): { pageSize?: number; pageToken?: string; status?: 'ACTIVE' | 'PAUSED' } {
+  const status = enumFlag(
+    flags['status'] ?? 'active',
+    ['ACTIVE', 'PAUSED', 'ALL'],
+    'status',
+    command
+  );
+  return {
+    pageSize: num(flags['limit']),
+    pageToken: flags['cursor'] || undefined,
+    status: status === 'ALL' ? undefined : status,
+  };
+}
+
+/** --feeds: the automations a Playbook bundles, `[{automationId, major?}]`. */
+function automationPins(
+  flags: Record<string, string>,
+  command: string
+): Schema<'AutomationPin'>[] {
+  const pins = jsonRequiredFlag(flags, 'feeds', command);
+  if (
+    !Array.isArray(pins) ||
+    !pins.every(
+      (pin: unknown) =>
+        typeof pin === 'object' &&
+        pin !== null &&
+        typeof (pin as Record<string, unknown>).automationId === 'string'
+    )
+  ) {
+    throw new CliUsageError(
+      `--feeds must be a JSON array of {automationId, major?} for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return pins as Schema<'AutomationPin'>[];
+}
+
+function automationUpdateParams(flags: Record<string, string>): {
+  id: string;
+  body: Schema<'PublishVersionBody'>;
+} {
   const command = 'automation update';
-  const cronjobID =
-    flags['cronjob-id'] === undefined
-      ? undefined
-      : optionalBoundedIntegerFlag(
-          flags,
-          'cronjob-id',
-          command,
-          1,
-          Number.MAX_SAFE_INTEGER
-        );
-  const trigger = boolFlag(flags['trigger']);
-  const params = {
-    id: requirePositiveIntegerStringFlag(flags, 'id', command),
+  const body: Schema<'PublishVersionBody'> = {
     version: flags['version'],
-    cronjob_id: cronjobID,
+    cronjobId:
+      flags['cronjob-id'] === undefined
+        ? undefined
+        : requireIdFlag(flags, 'cronjob-id', command),
     description: flags['description'],
     changelog: flags['changelog'],
-    agent_type: flags['agent-type'],
-    trigger: trigger === true ? true : undefined,
+    agentType: flags['agent-type'],
+    triggerRun: boolFlag(flags['trigger']) === true ? true : undefined,
   };
-  if (
-    params.version === undefined &&
-    params.cronjob_id === undefined &&
-    params.description === undefined &&
-    params.changelog === undefined &&
-    params.agent_type === undefined &&
-    params.trigger !== true
-  ) {
+  if (Object.values(body).every((value) => value === undefined)) {
     throw new CliUsageError(
       'automation update requires at least one field or --trigger',
       'automation'
     );
   }
-  return params;
+  return { id: requireIdFlag(flags, 'id', command), body };
 }
 
-function automationDeliveryUpdateParams(flags: Record<string, string>) {
+/** v1's alias of the caller's Agent channel in --alva-channel-ids. */
+const AGENT_CHANNEL_ALIAS = '0';
+
+async function automationDeliveryUpdateParams(
+  client: AlvaClient,
+  flags: Record<string, string>
+): Promise<{ id: string; patch: Schema<'DeliveryPatch'> }> {
   const command = 'automation delivery update';
-  const id = requirePositiveIntegerStringFlag(flags, 'id', command);
-  const alvaChannelIds =
+  const id = requireIdFlag(flags, 'id', command);
+  const channels =
     flags['alva-channel-ids'] === undefined
       ? undefined
       : (csvList(flags['alva-channel-ids']) ?? []);
-  const emailEnabled = boolFlag(flags['email-enabled']);
-  if (alvaChannelIds === undefined && emailEnabled === undefined) {
+  const email = boolFlag(flags['email-enabled']);
+  if (channels === undefined && email === undefined) {
     throw new CliUsageError(
       'automation delivery update requires --alva-channel-ids or --email-enabled/--no-email-enabled',
       'automation'
     );
   }
-  return {
-    id,
-    alvaChannelIds,
-    emailEnabled,
-  };
+  const agent = channels?.includes(AGENT_CHANNEL_ALIAS)
+    ? await client.schedules.agentChannelId()
+    : undefined;
+  const channelIds = channels && [
+    ...new Set(channels.map((c) => (c === AGENT_CHANNEL_ALIAS ? agent! : c))),
+  ];
+  return { id, patch: { channelIds, email } };
+}
+
+/**
+ * A plain decimal (`-?digits(.digits)?`) in the contract's Decimal form,
+ * rewritten as text, never through a float: no leading zeros (`007` is
+ * `7`), no trailing fractional zeros (`2500.50` is `2500.5`), and `-0` is
+ * `0`. Undefined for anything else: empty, hex, an exponent, Infinity.
+ */
+function canonicalDecimal(text: string): string | undefined {
+  const m = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(text);
+  if (m === null) return undefined;
+  const whole = m[2].replace(/^0+(?=[0-9])/, '');
+  const fraction = (m[3] ?? '').replace(/0+$/, '');
+  const magnitude = fraction === '' ? whole : `${whole}.${fraction}`;
+  const out = m[1] === '-' && magnitude !== '0' ? `-${magnitude}` : magnitude;
+  return DECIMAL_PATTERN.test(out) ? out : undefined;
+}
+
+/** The flag prefix of each risk rule: `--<prefix>-value`, `--<prefix>-enabled`. */
+const RISK_RULE_FLAGS = {
+  maxOrderValue: 'max-single-order',
+  maxDailyTurnover: 'max-daily-turnover',
+  maxDailyOrders: 'max-daily-orders',
+} as const;
+
+/**
+ * The rules `trading update-risk-rules` names. The gateway replaces a rule
+ * whole and refuses part of one, so a rule takes both of its flags; a rule
+ * not named is left as it is. Nothing is read to fill in a missing flag.
+ */
+function riskRulesPatch(
+  flags: Record<string, string>
+): Schema<'RiskRulesPatch'> {
+  const command = 'trading update-risk-rules';
+  const patch: Schema<'RiskRulesPatch'> = {};
+  for (const [rule, prefix] of Object.entries(RISK_RULE_FLAGS) as [
+    keyof typeof RISK_RULE_FLAGS,
+    string,
+  ][]) {
+    const value = `${prefix}-value`;
+    const enabled = `${prefix}-enabled`;
+    if (flags[value] === undefined && flags[enabled] === undefined) continue;
+    if (flags[value] === undefined || flags[enabled] === undefined) {
+      const [given, missing] =
+        flags[value] === undefined ? [enabled, value] : [value, enabled];
+      throw new CliUsageError(
+        `--${missing} is required with --${given} for '${command}': a rule is sent whole`,
+        'trading'
+      );
+    }
+    const on = boolFlag(flags[enabled]);
+    if (on === undefined) {
+      throw new CliUsageError(
+        `--${enabled} must be true or false for '${command}', got '${flags[enabled]}'`,
+        'trading'
+      );
+    }
+    const amount = canonicalDecimal(flags[value].trim());
+    if (amount === undefined) {
+      throw new CliUsageError(
+        `--${value} must be a plain decimal such as 2500.5 (no exponent) for '${command}', got '${flags[value]}'`,
+        'trading'
+      );
+    }
+    patch[rule] = { enabled: on, value: amount };
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new CliUsageError(
+      `'${command}' requires a rule: --<rule>-value with --<rule>-enabled, for max-single-order, max-daily-turnover or max-daily-orders`,
+      'trading'
+    );
+  }
+  return patch;
 }
 
 function trendingPlaybooksSort(
   val: string | undefined
 ): 'FOLLOWS' | 'RECENT' | undefined {
   if (val === undefined) return undefined;
-  const normalized = val.trim().toUpperCase();
-  if (normalized === 'FOLLOWS' || normalized === 'RECENT') return normalized;
-  throw new CliUsageError(
-    `--sort must be FOLLOWS or RECENT for 'playbooks trending', got '${val}'`,
-    'playbooks'
+  return enumFlag<'FOLLOWS' | 'RECENT'>(
+    val,
+    ['FOLLOWS', 'RECENT'],
+    'sort',
+    'playbooks trending'
   );
 }
 
-function playbookVisibility(val: string): PlaybookVisibility {
-  const normalized = val.trim().toLowerCase();
-  if ((PLAYBOOK_VISIBILITIES as readonly string[]).includes(normalized)) {
-    return normalized as PlaybookVisibility;
-  }
-  throw new CliUsageError(
-    `--visibility must be one of ${PLAYBOOK_VISIBILITIES.join(', ')} for 'playbooks set-visibility', got '${val}'`,
-    'playbooks'
+const PLAYBOOK_ORDER = { FOLLOWS: 'MOST_FOLLOWED', RECENT: 'NEWEST' } as const;
+
+function playbookVisibility(val: string): Schema<'Visibility'> {
+  return enumFlag(
+    val,
+    ['PUBLIC', 'PRIVATE', 'PAID'],
+    'visibility',
+    'playbooks set-visibility'
   );
 }
 
 function ownedPlaybookFilter(
   val: string | undefined
-): OwnedPlaybookFilter | undefined {
+): Schema<'PlaybookStatus'> | undefined {
   if (val === undefined || val === '') return undefined;
-  const normalized = val.trim().toLowerCase();
-  if ((OWNED_PLAYBOOK_FILTERS as readonly string[]).includes(normalized)) {
-    return normalized as OwnedPlaybookFilter;
+  return enumFlag<Schema<'PlaybookStatus'>>(
+    val,
+    ['DRAFT', 'RUNNING', 'PAUSED'],
+    'filter',
+    'playbooks mine'
+  );
+}
+
+function feedVisibility(val: string): Schema<'OutputVisibility'> {
+  return enumFlag(
+    val,
+    ['PUBLIC', 'PRIVATE'],
+    'visibility',
+    'feed set-visibility'
+  );
+}
+
+/** A flag value of a v2 enum, written in any case: `public` is PUBLIC. */
+function enumFlag<T extends string>(
+  value: string,
+  allowed: readonly T[],
+  flag: string,
+  command: string
+): T {
+  const upper = value.trim().toUpperCase();
+  if ((allowed as readonly string[]).includes(upper)) return upper as T;
+  throw new CliUsageError(
+    `--${flag} must be one of ${allowed.map((v) => v.toLowerCase()).join(', ')} for '${command}', got '${value}'`,
+    command.split(' ')[0]
+  );
+}
+
+function thesisVisibility(value: string): Schema<'Visibility'> {
+  return enumFlag(
+    value,
+    ['PUBLIC', 'PRIVATE', 'PAID'],
+    'visibility',
+    'thesis update'
+  );
+}
+
+function thesisCreateVisibility(value: string): 'PUBLIC' | 'PRIVATE' {
+  return enumFlag(value, ['PUBLIC', 'PRIVATE'], 'visibility', 'thesis create');
+}
+
+function thesisAccessVisibility(value: string): 'PUBLIC' | 'PRIVATE' {
+  return enumFlag(
+    value,
+    ['PUBLIC', 'PRIVATE'],
+    'visibility',
+    'thesis set-visibility'
+  );
+}
+
+/** --status ACTIVE (the default) or ARCHIVED of an author's Thesis list. */
+function thesisArchivedStatus(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  return (
+    enumFlag(value, ['ACTIVE', 'ARCHIVED'], 'status', 'thesis list') ===
+    'ARCHIVED'
+  );
+}
+
+/** --first and --cursor of a Thesis list, as its pageSize and pageToken. */
+function thesisPage(
+  flags: Record<string, string>,
+  command: string
+): { pageSize?: number; pageToken?: string } {
+  return {
+    pageSize:
+      flags.first === undefined
+        ? undefined
+        : positiveIntegerFlag(flags, 'first', command),
+    pageToken: flags.cursor || undefined,
+  };
+}
+
+function positiveIntegerFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): number {
+  const value = requireFlag(flags, name, command);
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new CliUsageError(
+      `--${name} must be a positive integer for '${command}', got '${value}'`,
+      command.split(' ')[0]
+    );
   }
-  throw new CliUsageError(
-    `--filter must be one of ${OWNED_PLAYBOOK_FILTERS.join(', ')} for 'playbooks mine', got '${val}'`,
-    'playbooks'
-  );
-}
-
-function feedVisibility(val: string): 'public' | 'private' {
-  const normalized = val.trim().toLowerCase();
-  if (normalized === 'public' || normalized === 'private') {
-    return normalized;
-  }
-  throw new CliUsageError(
-    `--visibility must be one of public, private for 'feed set-visibility', got '${val}'`,
-    'feed'
-  );
-}
-
-function thesisVisibility(value: string): ThesisVisibility {
-  if (value === 'public' || value === 'private' || value === 'paid')
-    return value;
-  throw new CliUsageError(
-    '--visibility must be public, private or paid for thesis, got ' + value,
-    'thesis'
-  );
-}
-
-function thesisCreateVisibility(value: string): 'public' | 'private' {
-  if (value === 'public' || value === 'private') return value;
-  throw new CliUsageError(
-    '--visibility must be public or private for thesis create, got ' + value,
-    'thesis'
-  );
-}
-
-function thesisAccessVisibility(value: string): 'public' | 'private' {
-  if (value === 'public' || value === 'private') return value;
-  throw new CliUsageError(
-    '--visibility must be public or private for thesis set-visibility, got ' +
-      value,
-    'thesis'
-  );
+  return Number(value);
 }
 
 function thesisBooleanFlag(
@@ -2494,13 +2750,12 @@ function thesisBooleanFlag(
   return parsed;
 }
 
-function thesisRewriteMode(value: string): ThesisRewriteMode {
-  if (value === 'reformat' || value === 'shorten' || value === 'enrich') {
-    return value;
-  }
-  throw new CliUsageError(
-    `--mode must be reformat, shorten, or enrich for 'thesis rewrite', got '${value}'`,
-    'thesis'
+function thesisRewriteMode(value: string): Schema<'RewriteMode'> {
+  return enumFlag(
+    value,
+    ['REFORMAT', 'SHORTEN', 'ENRICH'],
+    'mode',
+    'thesis rewrite'
   );
 }
 
@@ -2555,7 +2810,7 @@ function parseCreditsDurationMs(value: string): number {
 async function scheduleTarget(
   client: AlvaClient,
   flags: Record<string, string>
-): Promise<import('../resources/schedules.js').AgentScheduleTarget> {
+): Promise<{ channelId: string } | { inboxPath: string }> {
   if (flags['inbox-path'] !== undefined) {
     if (flags['channel-id'] !== undefined)
       throw new CliUsageError(
@@ -2571,13 +2826,16 @@ async function scheduleTarget(
   };
 }
 
+/** The ID of the schedule a `name` filter selected. */
+function scheduleIdOf(items: readonly { id: string }[], name: string): string {
+  const id = items[0]?.id;
+  if (!id) throw new AlvaError('NOT_FOUND', `schedule ${name} not found`, 404);
+  return id;
+}
+
 function scheduleRuleFromFlags(
   flags: Record<string, string>
-):
-  | { kind: 'after'; duration: string }
-  | { kind: 'at'; timestamp: string }
-  | { kind: 'every'; interval: string }
-  | { kind: 'cron'; expression: string; timezone: string } {
+): Schema<'ScheduleRuleInput'> {
   const selected = ['after', 'at', 'every', 'cron'].filter(
     (flag) => flags[flag] !== undefined
   );
@@ -2591,22 +2849,63 @@ function scheduleRuleFromFlags(
     throw new CliUsageError('--timezone is only valid with --cron', 'schedule');
   }
   switch (selected[0]) {
-    case 'after':
-      return { kind: 'after', duration: flags['after'] };
-    case 'at':
+    case 'after': {
+      // The first whole second at or after now + the duration.
+      const at = Date.now() + scheduleDurationSeconds(flags['after'], 1) * 1000;
       return {
-        kind: 'at',
-        timestamp: parseScheduleTimestamp(flags['at'], 'at'),
+        kind: 'AT',
+        fireAt: new Date(Math.ceil(at / 1000) * 1000).toISOString(),
       };
+    }
+    case 'at':
+      return { kind: 'AT', fireAt: parseScheduleTimestamp(flags['at'], 'at') };
     case 'every':
-      return { kind: 'every', interval: flags['every'] };
+      return {
+        kind: 'EVERY',
+        everySeconds: scheduleDurationSeconds(flags['every'], 60),
+      };
     default:
       return {
-        kind: 'cron',
-        expression: flags['cron'],
+        kind: 'CRON',
+        cron: flags['cron'],
         timezone: requireFlag(flags, 'timezone', 'schedule put'),
       };
   }
+}
+
+/** Whole seconds of an ISO 8601 day/time duration (PT1H, P1DT30M), at least `minimumSeconds`. */
+function scheduleDurationSeconds(
+  value: string,
+  minimumSeconds: number
+): number {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
+    value
+  );
+  if (
+    !match ||
+    match.slice(1, 5).every((part) => part === undefined) ||
+    (value.includes('T') &&
+      match.slice(2, 5).every((part) => part === undefined))
+  ) {
+    throw new CliUsageError(
+      'duration must be a positive ISO 8601 day/time duration such as PT1H',
+      'schedule'
+    );
+  }
+  const [days, hours, minutes, seconds] = match
+    .slice(1, 5)
+    .map((part) => BigInt(part ?? '0'));
+  const total = ((days * 24n + hours) * 60n + minutes) * 60n + seconds;
+  if (total < BigInt(minimumSeconds)) {
+    throw new CliUsageError(
+      `duration must be at least ${minimumSeconds} whole seconds`,
+      'schedule'
+    );
+  }
+  if (total * 1000n > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new CliUsageError('duration is out of range', 'schedule');
+  }
+  return Number(total);
 }
 
 function parseScheduleTimestamp(value: string, flag: string): string {
@@ -2647,24 +2946,19 @@ function parseScheduleTimestamp(value: string, flag: string): string {
       'schedule'
     );
   }
-  // Schedule semantic timestamps are canonical whole seconds end-to-end.
-  // Date#toISOString always appends `.000Z`, which the schedule resource
-  // correctly rejects as fractional-second syntax even when the value is zero.
-  return new Date(parsed).toISOString().replace('.000Z', 'Z');
+  return new Date(parsed).toISOString();
 }
 
-function scheduleBoundsFromFlags(flags: Record<string, string>):
-  | {
-      startsAt?: string;
-      until?: string;
-      maxOccurrences?: number;
-    }
+function scheduleBoundsFromFlags(
+  flags: Record<string, string>
+):
+  | Pick<Schema<'PutScheduleBody'>, 'startsAt' | 'endsAt' | 'maxOccurrences'>
   | undefined {
   const startsAt =
     flags['starts-at'] !== undefined
       ? parseScheduleTimestamp(flags['starts-at'], 'starts-at')
       : undefined;
-  const until =
+  const endsAt =
     flags['until'] !== undefined
       ? parseScheduleTimestamp(flags['until'], 'until')
       : undefined;
@@ -2673,19 +2967,15 @@ function scheduleBoundsFromFlags(flags: Record<string, string>):
       ? requirePositiveIntegerFlag(flags, 'max-occurrences', 'schedule put')
       : undefined;
   return startsAt !== undefined ||
-    until !== undefined ||
+    endsAt !== undefined ||
     maxOccurrences !== undefined
-    ? { startsAt, until, maxOccurrences }
+    ? { startsAt, endsAt, maxOccurrences }
     : undefined;
 }
 
-function parseCreditsItemsParams(flags: Record<string, string>): {
-  startAtMs: number;
-  endAtMs: number;
-  sessionId?: string;
-  first?: number;
-  after?: string;
-} {
+function parseCreditsItemsParams(
+  flags: Record<string, string>
+): V2Query<'/me/credit-entries', 'get'> {
   const command = 'credits items';
   const hasToday = boolFlag(flags['today']) === true;
   const hasLast = flags['last'] !== undefined;
@@ -2734,11 +3024,11 @@ function parseCreditsItemsParams(flags: Record<string, string>): {
   }
 
   return {
-    startAtMs,
-    endAtMs,
+    from: new Date(startAtMs).toISOString(),
+    to: new Date(endAtMs).toISOString(),
     sessionId: flags['session-id'],
-    first: optionalBoundedIntegerFlag(flags, 'first', command, 1, 500),
-    after: flags['after'],
+    pageSize: optionalBoundedIntegerFlag(flags, 'first', command, 1, 500),
+    pageToken: flags['after'],
   };
 }
 
@@ -2823,6 +3113,101 @@ function jsonSchemaStringFlag(
   return raw;
 }
 
+// The service account a function runs as: an Account ID, passed unchanged.
+// /api/v2 cannot clear it, so --clear-run-as is refused rather than ignored.
+/** The ID of the Playbook function --playbook-id and --function-name name. */
+async function functionIdByName(
+  client: AlvaClient,
+  flags: Record<string, string>,
+  command: string
+): Promise<string> {
+  const playbookId = requireFlag(flags, 'playbook-id', command);
+  const name = requireFlag(flags, 'function-name', command);
+  const page = await client.functions.list(playbookId, { name });
+  const fn = page.items.find((f) => f.name === name);
+  if (fn === undefined) {
+    throw new AlvaError(
+      'NOT_FOUND',
+      `Playbook ${playbookId} has no function named ${name}`,
+      404
+    );
+  }
+  return fn.id;
+}
+
+/** A JSON object flag, sent as the text it was given. */
+function jsonObjectTextFlag(
+  flags: Record<string, string>,
+  name: string,
+  command: string
+): string {
+  const value = jsonRequiredFlag(flags, name, command);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new CliUsageError(
+      `--${name} must be a JSON object for '${command}'`,
+      command.split(' ')[0]
+    );
+  }
+  return flags[name];
+}
+
+function functionRunAsFlag(
+  flags: Record<string, string>,
+  command: string
+): string | undefined {
+  if (boolFlag(flags['clear-run-as'])) {
+    throw new CliUsageError(
+      `--clear-run-as is not available for '${command}'; omit --run-as-service-account to keep the current identity`,
+      command.split(' ')[0]
+    );
+  }
+  return optionalServiceAccountIdFlag(flags, command);
+}
+
+// An optional /api/v2 enum flag of the trading commands, upper-cased.
+function tradingEnumFlag<T extends string>(
+  flags: Record<string, string>,
+  name: string,
+  values: readonly T[],
+  command: string
+): T | undefined {
+  const raw = flags[name];
+  if (raw === undefined) return undefined;
+  const value = raw.toUpperCase() as T;
+  if (!values.includes(value)) {
+    throw new CliUsageError(
+      `--${name} must be one of ${values.join(', ')} for '${command}', got '${raw}'`,
+      command.split(' ')[0]
+    );
+  }
+  return value;
+}
+
+// The accounts orders can be placed in: every mode but READ_ONLY (SnapTrade
+// and read-only trex accounts).
+const TRADING_MODES: Schema<'BrokerAccountMode'>[] = [
+  'PAPER_TRADING',
+  'LIVE_TRADING',
+  'BROKER_CONFIRMATION',
+];
+
+/** Refuses flags 1.0 removed, naming what replaces each. */
+function retiredFlags(
+  flags: Record<string, string>,
+  command: string,
+  replacements: Readonly<Record<string, string>>
+): void {
+  for (const [name, replacement] of Object.entries(replacements)) {
+    if (flags[name] !== undefined) {
+      throw new CliUsageError(
+        `--${name} is no longer a flag of '${command}'; use ${replacement}`,
+        command.split(' ')[0]
+      );
+    }
+  }
+}
+
+/** An optional RFC 3339 time flag; 1.0 refuses the Unix numbers 0.x took. */
 function localFileUnsupported(command: string, flag: string): CliUsageError {
   return new CliUsageError(
     `--${flag} reads or writes a local file, which is unavailable in jagent. ` +
@@ -2842,9 +3227,55 @@ function assertLocalFileAvailable(
 }
 
 /**
- * decodeRunResult turns the wire `result` (the JSON encoding of the script's
- * return value) back into that value, so printed output carries no escaped
- * JSON-in-a-string. A script that returned JSON.stringify(x) nests x in
+ * The stock Asset a --ticker names: its US listing, else its non-US one (the
+ * markets commands read company coverage, which only stocks have).
+ */
+async function stockAsset(
+  client: AlvaClient,
+  ticker: string
+): Promise<Schema<'Asset'>> {
+  const symbol = ticker.trim().toUpperCase();
+  try {
+    return await client.markets.assetBySymbol(symbol, {
+      assetClass: 'US_STOCK',
+    });
+  } catch (error) {
+    if (!(error instanceof AlvaError) || error.status !== 404) throw error;
+  }
+  return client.markets.assetBySymbol(symbol, { assetClass: 'NON_US_STOCK' });
+}
+
+/**
+ * The calendar period of an earnings event: the latest completed report, or
+ * the next one with a confirmed date. An event the calendar lacks is
+ * NOT_FOUND; another quarter is never read in its place.
+ */
+function earningsEventPeriod(
+  calendar: Schema<'EarningsCalendar'>,
+  event: 'latest-completed' | 'next-confirmed',
+  symbol: string
+): Schema<'EarningsPeriod'> {
+  const status = event === 'latest-completed' ? 'COMPLETED' : 'UPCOMING';
+  const dated = calendar.periods.filter(
+    (p): p is Schema<'EarningsPeriod'> & { reportsOn: string } =>
+      p.status === status && p.reportsOn !== null
+  );
+  dated.sort((a, b) => a.reportsOn.localeCompare(b.reportsOn));
+  const period = event === 'latest-completed' ? dated.at(-1) : dated[0];
+  if (period === undefined) {
+    throw new AlvaError(
+      'NOT_FOUND',
+      `No ${event} earnings event is available for ${symbol}`,
+      404
+    );
+  }
+  return period;
+}
+
+/**
+ * decodeRunResult turns a run's returnValue (the JSON encoding of the
+ * script's return value) back into that value, so printed output carries no
+ * escaped JSON-in-a-string. A script that returned JSON.stringify(x) nests x in
  * string layers; those are unwrapped only when they end in an object or
  * array, so text such as "42" or "hello" stays exactly as returned.
  */
@@ -2944,57 +3375,97 @@ function thesisTickers(flags: Record<string, string>): string[] | undefined {
   return tickers;
 }
 
+/** --medias: the Update's media, as `currentVersion.media` lists it. */
 function thesisMedias(
   flags: Record<string, string>
-): ThesisMedia[] | undefined {
+): Schema<'MediaInput'>[] | undefined {
   if (flags.medias === undefined) return undefined;
   try {
-    const value = JSON.parse(flags.medias);
-    if (Array.isArray(value)) return value;
+    const value: unknown = JSON.parse(flags.medias);
+    if (Array.isArray(value)) return value as Schema<'MediaInput'>[];
   } catch {
     // Report malformed media before sending the update.
   }
-  throw new CliUsageError('--medias must be a JSON array', 'thesis update');
-}
-
-function thesisImages(flags: Record<string, string>): string[] | undefined {
-  if (flags.images === undefined) return undefined;
-  try {
-    const value: unknown = JSON.parse(flags.images);
-    if (Array.isArray(value) && value.every((item) => typeof item === 'string'))
-      return value;
-  } catch {
-    // Malformed JSON and invalid shapes share the same usage error.
-  }
   throw new CliUsageError(
-    '--images must be a JSON array of uploaded HTTPS image URLs',
+    '--medias must be a JSON array of {type, coverUrl, url}',
     'thesis'
   );
 }
 
-function thesisSignalKindList(raw: string, flag: string): ThesisSignalKind[] {
+/** --images: at most 20 uploaded HTTPS URLs, without credentials. */
+function thesisImages(flags: Record<string, string>): string[] | undefined {
+  if (flags.images === undefined) return undefined;
+  const httpsURL = (item: unknown): boolean => {
+    if (typeof item !== 'string' || /\s/.test(item)) return false;
+    try {
+      const url = new URL(item);
+      return url.protocol === 'https:' && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    const value: unknown = JSON.parse(flags.images);
+    if (Array.isArray(value) && value.length <= 20 && value.every(httpsURL))
+      return value as string[];
+  } catch {
+    // Malformed JSON and invalid shapes share the same usage error.
+  }
+  throw new CliUsageError(
+    '--images must be a JSON array of at most 20 uploaded HTTPS image URLs',
+    'thesis'
+  );
+}
+
+const SIGNAL_KINDS: readonly Schema<'SignalKind'>[] = [
+  'FUNDAMENTALS',
+  'MACRO',
+  'TECHNICALS',
+  'COMMENTARY',
+];
+
+function thesisSignalKinds(
+  raw: string,
+  flag: string,
+  command: string
+): Schema<'SignalKind'>[] {
   const kinds = raw.split(',').map((kind) => kind.trim());
   if (kinds.some((kind) => kind === '')) {
-    throw new CliUsageError(`${flag} must not contain empty kinds`, 'thesis');
+    throw new CliUsageError(`--${flag} must not contain empty kinds`, 'thesis');
   }
-  return kinds as ThesisSignalKind[];
+  return kinds.map((kind) => enumFlag(kind, SIGNAL_KINDS, flag, command));
+}
+
+function thesisSignalMinImportance(
+  raw: string,
+  flag: string,
+  command: string
+): Schema<'SignalMinImportance'> {
+  return enumFlag(raw, ['ALL', 'NOTABLE', 'MAJOR'], flag, command);
 }
 
 // thesisCreateSignalPreferences reads the optional setting of a new Thesis:
 // without either flag the Thesis shows every Signal; with one, the other
-// keeps its default (every kind, or all importance).
+// keeps its default (every kind, or ALL).
 function thesisCreateSignalPreferences(
   flags: Record<string, string>
-): ThesisSignalPreferences | undefined {
+): Schema<'SignalPreferencesInput'> | undefined {
   const kinds = flags['signal-kinds'];
   const minImportance = flags['signal-min-importance'];
   if (kinds === undefined && minImportance === undefined) return undefined;
   return {
     kinds:
       kinds === undefined
-        ? [...THESIS_SIGNAL_KINDS]
-        : thesisSignalKindList(kinds, '--signal-kinds'),
-    min_importance: (minImportance ?? 'all') as ThesisSignalMinImportance,
+        ? [...SIGNAL_KINDS]
+        : thesisSignalKinds(kinds, 'signal-kinds', 'thesis create'),
+    minImportance:
+      minImportance === undefined
+        ? 'ALL'
+        : thesisSignalMinImportance(
+            minImportance,
+            'signal-min-importance',
+            'thesis create'
+          ),
   };
 }
 
@@ -3029,28 +3500,64 @@ function thesisUnarchive(
   );
 }
 
-function thesisEntityStances(flags: Record<string, string>):
-  | Array<{
-      entity_id: string;
-      stance: 'unknown' | 'bullish' | 'bearish' | 'none';
-      weight?: number;
-    }>
-  | undefined {
+/**
+ * The Thesis's assets: each --entity-ids asset with its --entity-stances
+ * direction and optional weight (`[{assetId, stance, weight}]`, stance
+ * UNKNOWN, BULLISH, BEARISH or NONE, weight a decimal string such as "0.4"),
+ * undefined when neither flag is given.
+ */
+function thesisAssets(
+  flags: Record<string, string>
+): Schema<'ThesisAssetInput'>[] | undefined {
   const raw = flags['entity-stances'];
-  if (raw === undefined) return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new CliUsageError('--entity-stances must be a JSON array', 'thesis');
+  if (flags['entity-ids'] === undefined && raw === undefined) return undefined;
+  const assetIds = thesisEntityIDs(flags);
+  const stances = new Map<
+    string,
+    Pick<Schema<'ThesisAssetInput'>, 'stance' | 'weight'>
+  >();
+  if (raw !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = undefined;
+    }
+    if (!Array.isArray(parsed)) {
+      throw new CliUsageError(
+        '--entity-stances must be a JSON array of {assetId, stance}',
+        'thesis'
+      );
+    }
+    for (const item of parsed as unknown[]) {
+      const { assetId, stance, weight } = (item ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (
+        typeof assetId !== 'string' ||
+        !assetIds.includes(assetId) ||
+        stances.has(assetId) ||
+        typeof stance !== 'string' ||
+        (weight !== undefined && typeof weight !== 'string')
+      ) {
+        throw new CliUsageError(
+          '--entity-stances items are {assetId, stance, weight?}, each naming one --entity-ids asset once; weight is a decimal string such as "0.4"',
+          'thesis'
+        );
+      }
+      stances.set(
+        assetId,
+        weight === undefined
+          ? { stance: stance as Schema<'Stance'> }
+          : { stance: stance as Schema<'Stance'>, weight }
+      );
+    }
   }
-  if (!Array.isArray(parsed))
-    throw new CliUsageError('--entity-stances must be a JSON array', 'thesis');
-  return parsed as Array<{
-    entity_id: string;
-    stance: 'unknown' | 'bullish' | 'bearish' | 'none';
-    weight?: number;
-  }>;
+  return assetIds.map((assetId) => {
+    const given = stances.get(assetId);
+    return given === undefined ? { assetId } : { assetId, ...given };
+  });
 }
 
 function strictThesisUTF8(
@@ -3095,69 +3602,6 @@ function readLocalFileBytes(
   return deps.localFiles.readBytes(path);
 }
 
-function sniffImageMime(bytes: Uint8Array): string {
-  const b = bytes;
-  if (
-    b.length >= 4 &&
-    b[0] === 0x89 &&
-    b[1] === 0x50 &&
-    b[2] === 0x4e &&
-    b[3] === 0x47
-  ) {
-    return 'image/png';
-  }
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
-    return 'image/jpeg';
-  }
-  if (
-    b.length >= 12 &&
-    b[0] === 0x52 &&
-    b[1] === 0x49 &&
-    b[2] === 0x46 &&
-    b[3] === 0x46 &&
-    b[8] === 0x57 &&
-    b[9] === 0x45 &&
-    b[10] === 0x42 &&
-    b[11] === 0x50
-  ) {
-    return 'image/webp';
-  }
-  return 'image/png';
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  const alphabet =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let encoded = '';
-  for (let index = 0; index < bytes.length; index += 3) {
-    const first = bytes[index]!;
-    const second = bytes[index + 1];
-    const third = bytes[index + 2];
-    encoded += alphabet[first >> 2];
-    encoded += alphabet[((first & 0x03) << 4) | ((second ?? 0) >> 4)];
-    encoded +=
-      second === undefined
-        ? '='
-        : alphabet[((second & 0x0f) << 2) | ((third ?? 0) >> 6)];
-    encoded += third === undefined ? '=' : alphabet[third & 0x3f];
-  }
-  return encoded;
-}
-
-function writeLocalFileBytes(
-  path: string,
-  data: Uint8Array,
-  command: string,
-  flag: string,
-  deps?: DispatchRuntimeDeps
-): void {
-  assertLocalFileAvailable(command, flag, deps);
-  if (!deps?.localFiles) {
-    throw new Error('Local file access requires a Node.js runtime adapter.');
-  }
-  deps.localFiles.writeBytes(path, data);
-}
-
 /**
  * Return true only when a valid stdin object is clearly a live order without
  * a caller-provided retry control. Invalid or ambiguous input is left for
@@ -3184,9 +3628,44 @@ function brokerStdinNeedsIntentId(stdin: string): boolean {
 }
 
 /**
+ * Takes `--account-id <id>` (or `--account-id=<id>`) out of a broker command
+ * line: the account is the invocation's accountId, the BrokerAccount ID
+ * `alva trading accounts` lists, never an argv `--account` (D31).
+ */
+function brokerAccountId(argv: readonly string[]): {
+  argv: string[];
+  accountId?: string;
+} {
+  const rest: string[] = [];
+  let accountId: string | undefined;
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    let value: string | undefined;
+    if (token === '--account-id') {
+      value = argv[i + 1];
+      i += 1;
+    } else if (token.startsWith('--account-id=')) {
+      value = token.slice('--account-id='.length);
+    } else {
+      rest.push(token);
+      continue;
+    }
+    if (!value || value.startsWith('--') || accountId !== undefined) {
+      throw new CliUsageError(
+        '--account-id takes one BrokerAccount ID (alva trading accounts)',
+        'broker'
+      );
+    }
+    accountId = value;
+  }
+  return { argv: rest, accountId };
+}
+
+/**
  * `alva broker` — a thin passthrough to trex's BrokerService.Invoke via the
  * gateway. argv goes through untouched (the command grammar IS the contract:
- * `alva broker describe`); the envelope comes back and is written to stdout
+ * `alva broker describe`) except `--account-id`, which becomes the
+ * invocation's accountId; the envelope comes back and is written to stdout
  * verbatim, the process exits with its exit code. No DTO, no per-command
  * knowledge — with ONE exception: a live `order place` gets a client-minted
  * `--intent-id` (printed to stderr BEFORE the request) so the idempotency
@@ -3195,9 +3674,10 @@ function brokerStdinNeedsIntentId(stdin: string): boolean {
  */
 export async function handleBroker(
   client: AlvaClient,
-  brokerArgv: readonly string[],
+  commandArgv: readonly string[],
   deps?: DispatchRuntimeDeps
 ): Promise<unknown> {
+  const { argv: brokerArgv, accountId } = brokerAccountId(commandArgv);
   let argv = [...brokerArgv];
   const isOrderPlace = brokerArgv[0] === 'order' && brokerArgv[1] === 'place';
   // Detect a retry handle in either form: `--intent-id x` or `--intent-id=x`
@@ -3242,11 +3722,13 @@ export async function handleBroker(
   let envelope: unknown;
   let exit = 2;
   try {
-    const resp = (await client._request('POST', '/api/v1/broker/invoke', {
-      body: { argv, stdin },
-    })) as { envelope: unknown; exit: number };
+    const resp = await client._v2Request<Schema<'BrokerInvocation'>>(
+      'POST',
+      '/broker/invocations',
+      { body: { accountId, argv, stdin } }
+    );
     envelope = resp.envelope;
-    exit = resp.exit ?? 2;
+    exit = resp.exitCode ?? 2;
   } catch (e) {
     // Transport failure: synthesize a contract-shaped error envelope so the
     // agent's stdout parse never breaks; exit 2 = unknown outcome.
@@ -3341,9 +3823,6 @@ export async function executeParsedCommand(
   // whoami: verify credentials and show user info
   if (group === 'whoami') {
     const user = await client.user.me();
-    const record = projectUserProfileForCLI(
-      user as unknown as Record<string, unknown>
-    );
     const version = meta?.cliVersion ?? CLI_VERSION;
     let arraysJwtStatus: unknown;
     try {
@@ -3359,12 +3838,12 @@ export async function executeParsedCommand(
       metaBlock.arrays_jwt = arraysJwtStatus;
     }
     const result: Record<string, unknown> = {
-      ...record,
+      ...user,
       _meta: metaBlock,
     };
-    const minVersion = record.toolkit_min_version;
+    const minVersion = user.toolkitMinVersion;
     if (
-      typeof minVersion === 'string' &&
+      minVersion &&
       version &&
       version !== 'dev' &&
       isVersionOlderThan(version, minVersion)
@@ -3380,45 +3859,47 @@ export async function executeParsedCommand(
     case 'user':
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for user', 'user');
-      if (subcommand === 'me') {
-        const user = await client.user.me();
-        return projectUserProfileForCLI(
-          user as unknown as Record<string, unknown>
-        );
-      }
+      if (subcommand === 'me') return client.user.me();
       throw new CliUsageError(`Unknown subcommand: user ${subcommand}`, 'user');
 
     case 'fs': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for fs', 'fs');
       switch (subcommand) {
-        case 'read':
-          return client.fs.read({
-            path: requireFlag(flags, 'path', 'fs read'),
-            offset: num(flags['offset']),
-            size: num(flags['size']),
-          });
-        case 'write':
+        case 'read': {
+          const path = requireFlag(flags, 'path', 'fs read');
+          const offset = num(flags['offset']);
+          const size = num(flags['size']);
+          // A public read without an API key keeps /api/v1.
+          if (!client.apiKey) return client.v1.fs.read({ path, offset, size });
+          const file = await client.fs.read(
+            { path },
+            { range: byteRange(offset, size) }
+          );
+          return utf8OrBytes(file.data);
+        }
+        case 'write': {
+          const query = {
+            path: requireFlag(flags, 'path', 'fs write'),
+            mode: boolFlag(flags['append']) ? 'APPEND' : undefined,
+            mkdirParents: boolFlag(flags['mkdir-parents']) ?? true,
+          } as const;
           if (flags['file']) {
-            const fileData = readLocalFileBytes(
+            // The Node adapter reads a Buffer.
+            const bytes = readLocalFileBytes(
               flags['file'],
               'fs write',
               'file',
               deps
-            );
-            return client.fs.rawWrite({
-              path: requireFlag(flags, 'path', 'fs write'),
-              body: fileData,
-              mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
-              append: boolFlag(flags['append']),
-            });
+            ) as BufferSource;
+            return client.fs.write(query, bytes);
           }
-          return client.fs.write({
-            path: requireFlag(flags, 'path', 'fs write'),
-            data: requireFlag(flags, 'data', 'fs write'),
-            mkdir_parents: boolFlag(flags['mkdir-parents']) ?? true,
-            append: boolFlag(flags['append']),
-          });
+          return client.fs.write(
+            query,
+            requireFlag(flags, 'data', 'fs write'),
+            { contentType: 'text/plain; charset=utf-8' }
+          );
+        }
         case 'stat':
           return client.fs.stat({
             path: requireFlag(flags, 'path', 'fs stat'),
@@ -3439,18 +3920,18 @@ export async function executeParsedCommand(
           });
         case 'rename':
           return client.fs.rename({
-            old_path: requireFlag(flags, 'old-path', 'fs rename'),
-            new_path: requireFlag(flags, 'new-path', 'fs rename'),
+            oldPath: requireFlag(flags, 'old-path', 'fs rename'),
+            newPath: requireFlag(flags, 'new-path', 'fs rename'),
           });
         case 'copy':
           return client.fs.copy({
-            src_path: requireFlag(flags, 'src-path', 'fs copy'),
-            dst_path: requireFlag(flags, 'dst-path', 'fs copy'),
+            srcPath: requireFlag(flags, 'src-path', 'fs copy'),
+            dstPath: requireFlag(flags, 'dst-path', 'fs copy'),
           });
         case 'symlink':
           return client.fs.symlink({
-            target_path: requireFlag(flags, 'target-path', 'fs symlink'),
-            link_path: requireFlag(flags, 'link-path', 'fs symlink'),
+            targetPath: requireFlag(flags, 'target-path', 'fs symlink'),
+            linkPath: requireFlag(flags, 'link-path', 'fs symlink'),
           });
         case 'readlink':
           return client.fs.readlink({
@@ -3497,20 +3978,20 @@ export async function executeParsedCommand(
           deps
         );
       }
-      const timeout_ms = runTimeoutMs(flags, deps);
-      configureRunFetchTimeout(timeout_ms, deps);
-      const params = {
+      const timeoutMs = runTimeoutMs(flags, deps);
+      configureRunFetchTimeout(timeoutMs, deps);
+      // /api/v2 refuses workingDir with entryPath; 0.x ignored it.
+      const request = {
         code,
-        entry_path: flags['entry-path'],
-        working_dir: flags['working-dir'],
-        max_heap_size_mb: optionalBoundedIntegerFlag(
+        entryPath: flags['entry-path'],
+        workingDir: code === undefined ? undefined : flags['working-dir'],
+        maxHeapSizeMb: optionalBoundedIntegerFlag(
           flags,
           'max-heap-size-mb',
           'run',
           1,
           2048
         ),
-        timeout_ms,
       };
       const argsFromStdin = boolFlag(flags['args-stdin']) === true;
       if (argsFromStdin && flags['args'] !== undefined) {
@@ -3536,125 +4017,121 @@ export async function executeParsedCommand(
           );
         }
       }
-      const response =
+      const run =
         serializedArgs === undefined
-          ? await client.run.execute(params)
-          : await client.run._executeSerializedArgs(params, serializedArgs);
-      return { ...response, result: decodeRunResult(response.result) };
+          ? await client.run.execute(request, { timeoutMs })
+          : await client.run._executeSerializedArgs(request, serializedArgs, {
+              timeoutMs,
+            });
+      return { ...run, returnValue: decodeRunResult(run.returnValue) };
     }
 
     case 'deploy': {
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for deploy', 'deploy');
       switch (subcommand) {
-        case 'create': {
-          const params = {
+        case 'create':
+          return client.deploy.create({
             name: requireFlag(flags, 'name', 'deploy create'),
-            path: requireFlag(flags, 'path', 'deploy create'),
-            cron_expression: requireFlag(flags, 'cron', 'deploy create'),
-            push_notify: boolFlag(flags['push-notify']),
-            max_heap_size_mb: optionalBoundedIntegerFlag(
+            entryPath: requireFlag(flags, 'path', 'deploy create'),
+            cronExpression: requireFlag(flags, 'cron', 'deploy create'),
+            argsJson: serializedJSONFlag(flags['args'], 'deploy create'),
+            pushNotify: boolFlag(flags['push-notify']),
+            maxHeapSizeMb: optionalBoundedIntegerFlag(
               flags,
               'max-heap-size-mb',
               'deploy create',
               1,
               2046
             ),
-            execution_timeout_seconds: optionalBoundedIntegerFlag(
+            executionTimeoutSeconds: optionalBoundedIntegerFlag(
               flags,
               'execution-timeout-seconds',
               'deploy create',
               1,
               3600
             ),
-            run_as_user_id: optionalServiceAccountIdFlag(
+            runAsAccountId: optionalServiceAccountIdFlag(
               flags,
               'deploy create'
             ),
-          };
-          const serializedArgs = serializedJSONFlag(
-            flags['args'],
-            'deploy create'
-          );
-          return serializedArgs === undefined
-            ? client.deploy.create(params)
-            : client.deploy._createSerializedArgs(params, serializedArgs);
-        }
+          });
         case 'list':
           return client.deploy.list({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'],
           });
         case 'get':
-          return client.deploy.get({
-            id: requireNumericFlag(flags, 'id', 'deploy get'),
-          });
-        case 'update': {
-          const params = {
-            id: requireNumericFlag(flags, 'id', 'deploy update'),
-            name: flags['name'],
-            cron_expression: flags['cron'],
-            push_notify: boolFlag(flags['push-notify']),
-            max_heap_size_mb: optionalBoundedIntegerFlag(
-              flags,
-              'max-heap-size-mb',
-              'deploy update',
-              1,
-              2046
-            ),
-            execution_timeout_seconds: optionalBoundedIntegerFlag(
-              flags,
-              'execution-timeout-seconds',
-              'deploy update',
-              1,
-              3600
-            ),
-            run_as_user_id: resolveRunAsFlag(flags, 'deploy update'),
-          };
-          const serializedArgs = serializedJSONFlag(
-            flags['args'],
-            'deploy update'
+          return client.deploy.get(requireIdFlag(flags, 'id', 'deploy get'));
+        case 'update':
+          return client.deploy.update(
+            requireIdFlag(flags, 'id', 'deploy update'),
+            {
+              name: flags['name'],
+              cronExpression: flags['cron'],
+              argsJson: serializedJSONFlag(flags['args'], 'deploy update'),
+              pushNotify: boolFlag(flags['push-notify']),
+              maxHeapSizeMb: optionalBoundedIntegerFlag(
+                flags,
+                'max-heap-size-mb',
+                'deploy update',
+                1,
+                2046
+              ),
+              executionTimeoutSeconds: optionalBoundedIntegerFlag(
+                flags,
+                'execution-timeout-seconds',
+                'deploy update',
+                1,
+                3600
+              ),
+              runAsAccountId: resolveRunAsFlag(flags, 'deploy update'),
+            }
           );
-          return serializedArgs === undefined
-            ? client.deploy.update(params)
-            : client.deploy._updateSerializedArgs(params, serializedArgs);
-        }
         case 'delete':
-          return client.deploy.delete({
-            id: requireNumericFlag(flags, 'id', 'deploy delete'),
-          });
+          return client.deploy.delete(
+            requireIdFlag(flags, 'id', 'deploy delete')
+          );
         case 'pause':
-          return client.deploy.pause({
-            id: requireNumericFlag(flags, 'id', 'deploy pause'),
-          });
+          return client.deploy.pause(
+            requireIdFlag(flags, 'id', 'deploy pause')
+          );
         case 'resume':
-          return client.deploy.resume({
-            id: requireNumericFlag(flags, 'id', 'deploy resume'),
-          });
+          return client.deploy.resume(
+            requireIdFlag(flags, 'id', 'deploy resume')
+          );
         case 'trigger':
-          return client.deploy.trigger({
-            id: requireNumericFlag(flags, 'id', 'deploy trigger'),
-          });
+          return client.deploy.trigger(
+            requireIdFlag(flags, 'id', 'deploy trigger')
+          );
         case 'runs':
-          return client.deploy.listRuns({
-            cronjob_id: requireNumericFlag(flags, 'id', 'deploy runs'),
-            first: num(flags['first']),
-            cursor: flags['cursor'],
-          });
-        case 'run-status':
-          return client.deploy.getRunStatus({
-            cronjob_id: requireNumericFlag(flags, 'id', 'deploy run-status'),
-            workflow_run_id: requireFlag(
-              flags,
-              'workflow-run-id',
-              'deploy run-status'
-            ),
-          });
+          return client.deploy.listRuns(
+            requireIdFlag(flags, 'id', 'deploy runs'),
+            { pageSize: num(flags['first']), pageToken: flags['cursor'] }
+          );
+        case 'run-stats':
+          return client.deploy.runStats(
+            requireIdFlag(flags, 'id', 'deploy run-stats')
+          );
+        case 'run-status': {
+          const command = 'deploy run-status';
+          const cronjobId = requireIdFlag(flags, 'id', command);
+          const dispatch = await client.deploy.getDispatch(
+            requireIdFlag(flags, 'workflow-run-id', command)
+          );
+          if (dispatch.cronjobId !== cronjobId) {
+            throw new AlvaError(
+              'NOT_FOUND',
+              `dispatch ${dispatch.id} is not a run of cronjob ${cronjobId}`,
+              404
+            );
+          }
+          return dispatch;
+        }
         case 'run-logs':
-          return client.deploy.getRunLogs({
-            cronjob_id: requireNumericFlag(flags, 'id', 'deploy run-logs'),
-            run_id: requireNumericFlag(flags, 'run-id', 'deploy run-logs'),
-          });
+          return client.deploy.getRunLogs(
+            requireIdFlag(flags, 'run-id', 'deploy run-logs')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: deploy ${subcommand}`,
@@ -3669,55 +4146,71 @@ export async function executeParsedCommand(
       }
       switch (subcommand) {
         case 'list': {
-          return client.schedules.list(await scheduleTarget(client, flags));
+          const target = await scheduleTarget(client, flags);
+          return 'inboxPath' in target
+            ? allPages((pageToken) =>
+                client.schedules.listSession({
+                  inboxPath: target.inboxPath,
+                  pageSize: 100,
+                  pageToken,
+                })
+              )
+            : allPages((pageToken) =>
+                client.schedules.list(target.channelId, {
+                  pageSize: 100,
+                  pageToken,
+                })
+              );
         }
         case 'put': {
           const rule = scheduleRuleFromFlags(flags);
           const bounds = scheduleBoundsFromFlags(flags);
-          if (
-            (rule.kind === 'at' || rule.kind === 'after') &&
-            bounds !== undefined
-          ) {
+          if (rule.kind === 'AT' && bounds !== undefined) {
             throw new CliUsageError(
-              `${rule.kind} does not accept recurring bounds`,
+              `${flags['after'] !== undefined ? 'after' : 'at'} does not accept recurring bounds`,
               'schedule'
             );
           }
-          const name = requireFlag(flags, 'name', 'schedule put');
-          const text = requireFlag(flags, 'message', 'schedule put');
-          const target = await scheduleTarget(client, flags);
-          return client.schedules.put({
-            ...target,
-            name,
-            text,
+          const body = {
+            name: requireFlag(flags, 'name', 'schedule put'),
+            message: requireFlag(flags, 'message', 'schedule put'),
             rule,
-            bounds,
-          });
-        }
-        case 'pause': {
-          const name = requireFlag(flags, 'name', 'schedule pause');
+            ...bounds,
+          };
           const target = await scheduleTarget(client, flags);
-          return client.schedules.pause({
-            ...target,
-            name,
-          });
+          return 'inboxPath' in target
+            ? client.schedules.putSession({
+                inboxPath: target.inboxPath,
+                ...body,
+              })
+            : client.schedules.put(target.channelId, body);
         }
-        case 'resume': {
-          const name = requireFlag(flags, 'name', 'schedule resume');
-          const target = await scheduleTarget(client, flags);
-          return client.schedules.resume({
-            ...target,
-            name,
-          });
-        }
+        case 'pause':
+        case 'resume':
         case 'delete': {
-          const name = requireFlag(flags, 'name', 'schedule delete');
+          const name = requireFlag(flags, 'name', `schedule ${subcommand}`);
           const target = await scheduleTarget(client, flags);
-          await client.schedules.delete({
-            ...target,
+          if ('inboxPath' in target) {
+            const { items } = await client.schedules.listSession({
+              inboxPath: target.inboxPath,
+              name,
+            });
+            const id = scheduleIdOf(items, name);
+            return subcommand === 'pause'
+              ? client.schedules.pauseSession(id)
+              : subcommand === 'resume'
+                ? client.schedules.resumeSession(id)
+                : client.schedules.deleteSession(id);
+          }
+          const { items } = await client.schedules.list(target.channelId, {
             name,
           });
-          return { deleted: true };
+          const id = scheduleIdOf(items, name);
+          return subcommand === 'pause'
+            ? client.schedules.pause(id)
+            : subcommand === 'resume'
+              ? client.schedules.resume(id)
+              : client.schedules.delete(id);
         }
         default:
           throw new CliUsageError(
@@ -3751,7 +4244,7 @@ export async function executeParsedCommand(
       };
       switch (subcommand) {
         case 'decide':
-          return client.steward.decide({
+          return client.v1.steward.decide({
             inboxPath,
             deliveryId: requireFlag(flags, 'delivery-id', 'steward decide'),
             decision: requireDecision(
@@ -3760,21 +4253,21 @@ export async function executeParsedCommand(
             reason: requireFlag(flags, 'reason', 'steward decide'),
           });
         case 'forward':
-          return client.steward.forward({
+          return client.v1.steward.forward({
             inboxPath,
             deliveryId: requireFlag(flags, 'delivery-id', 'steward forward'),
             requestId: flags['request-id'],
           });
         case 'send':
           if (flags['digest-run-id'] !== undefined) {
-            return client.steward.sendDigestRun({
+            return client.v1.steward.sendDigestRun({
               inboxPath,
               digestRunId: requireFlag(flags, 'digest-run-id', 'steward send'),
               deliveryIds: optionalIds('delivery-ids'),
               body: flags.body,
             });
           }
-          return client.steward.send({
+          return client.v1.steward.send({
             inboxPath,
             body: requireFlag(flags, 'body', 'steward send'),
             deliveryIds: optionalIds('delivery-ids'),
@@ -3782,7 +4275,7 @@ export async function executeParsedCommand(
           });
         case 'pending': {
           if (flags['digest-run-id'] !== undefined) {
-            return client.steward.digestRunPending({
+            return client.v1.steward.digestRunPending({
               inboxPath,
               digestRunId: requireFlag(
                 flags,
@@ -3791,21 +4284,13 @@ export async function executeParsedCommand(
               ),
             });
           }
-          const parseTime = (name: 'since' | 'until'): number | undefined => {
-            const value = flags[name];
-            if (value === undefined) return undefined;
-            try {
-              return parseRfc3339Milliseconds(value);
-            } catch {
-              throw new CliUsageError(
-                `--${name} must be an RFC3339 timestamp with a timezone`,
-                'steward'
-              );
-            }
-          };
+          const parseTime = (name: 'since' | 'until'): number | undefined =>
+            flags[name] === undefined
+              ? undefined
+              : rfc3339Flag(flags[name], name, 'steward pending');
           const first =
             flags.first === undefined ? undefined : Number(flags.first);
-          return client.steward.pending({
+          return client.v1.steward.pending({
             inboxPath,
             sinceMs: parseTime('since'),
             untilMs: parseTime('until'),
@@ -3813,13 +4298,13 @@ export async function executeParsedCommand(
           });
         }
         case 'briefed':
-          return client.steward.briefed({
+          return client.v1.steward.briefed({
             inboxPath,
             deliveryIds: ids('delivery-ids'),
             digestRunId: requireFlag(flags, 'digest-run-id', 'steward briefed'),
           });
         case 'status':
-          return client.steward.digestRun({
+          return client.v1.steward.digestRun({
             inboxPath,
             digestRunId: requireFlag(flags, 'digest-run-id', 'steward status'),
           });
@@ -3835,15 +4320,15 @@ export async function executeParsedCommand(
       if (subcommand !== 'create') {
         throw new CliUsageError('Expected company-news create', 'company-news');
       }
-      const params: CreateCompanyNewsParams = {
+      const config: Schema<'CompanyNewsFeedConfig'> = {
         name: requireFlag(flags, 'name', 'company-news create'),
         tickers: requireFlag(flags, 'tickers', 'company-news create')
           .split(',')
           .map((ticker) => ticker.trim()),
       };
       for (const [flag, field] of [
-        ['initial-lookback-hours', 'initial_lookback_hours'],
-        ['page-size', 'page_size'],
+        ['initial-lookback-hours', 'initialLookbackHours'],
+        ['page-size', 'batchSize'],
       ] as const) {
         const value = flags[flag];
         if (value === undefined) continue;
@@ -3853,19 +4338,9 @@ export async function executeParsedCommand(
             'company-news'
           );
         }
-        params[field] = Number(value);
+        config[field] = Number(value);
       }
-      try {
-        validateCompanyNewsCreateParams(params);
-      } catch (error) {
-        throw new CliUsageError(
-          error instanceof Error
-            ? error.message
-            : 'Invalid company news configuration',
-          'company-news'
-        );
-      }
-      return client.companyNews.create(params);
+      return client.companyNews.create(config);
     }
 
     case 'thesis': {
@@ -3873,30 +4348,44 @@ export async function executeParsedCommand(
         throw new CliUsageError('Missing subcommand for thesis', 'thesis');
       }
       switch (subcommand) {
-        case 'create':
-          return client.theses.create({
-            request_id: requireFlag(flags, 'request-id', 'thesis create'),
-            images: thesisImages(flags),
-            body: await thesisBodyFromFlags(flags, 'thesis create', deps),
-            title: flags.title ?? '',
-            entity_ids: thesisEntityIDs(flags),
-            entity_stances: thesisEntityStances(flags),
-            tickers: thesisTickers(flags),
-            visibility: thesisCreateVisibility(
-              requireFlag(flags, 'visibility', 'thesis create')
-            ),
-            track_return: thesisTrackReturn(flags, 'thesis create'),
-            signal_preferences: thesisCreateSignalPreferences(flags),
-          });
-        case 'asset-candidates':
-          return client.theses.assetCandidates(
-            requireFlag(flags, 'text', 'thesis asset-candidates'),
+        case 'create': {
+          const visibility = thesisCreateVisibility(
+            requireFlag(flags, 'visibility', 'thesis create')
+          );
+          const images = thesisImages(flags);
+          if (images?.length && visibility === 'PRIVATE') {
+            throw new CliUsageError(
+              '--images currently requires public visibility for thesis create',
+              'thesis'
+            );
+          }
+          return client.theses.create(
             {
-              entityIds: thesisEntityIDs(flags),
-              thesisId: flags['thesis-id'],
-              discover: boolFlag(flags['no-discovery']) !== true,
+              title: flags.title ?? '',
+              body: await thesisBodyFromFlags(flags, 'thesis create', deps),
+              visibility,
+              assets: thesisAssets(flags),
+              media: images?.map((url) => ({
+                type: 'IMAGE' as const,
+                coverUrl: url,
+                url,
+              })),
+              tickers: thesisTickers(flags),
+              trackReturn: thesisTrackReturn(flags, 'thesis create'),
+              signalPreferences: thesisCreateSignalPreferences(flags),
+            },
+            {
+              idempotencyKey: requireFlag(flags, 'request-id', 'thesis create'),
             }
           );
+        }
+        case 'asset-candidates':
+          return client.theses.assetCandidates({
+            text: requireFlag(flags, 'text', 'thesis asset-candidates'),
+            selectedAssetIds: thesisEntityIDs(flags),
+            thesisId: flags['thesis-id'],
+            discover: boolFlag(flags['no-discovery']) !== true,
+          });
         case 'return':
           return client.theses.thesisReturn(
             requireFlag(flags, 'id', 'thesis return'),
@@ -3912,58 +4401,48 @@ export async function executeParsedCommand(
             personName: flags['person-name'],
             user: flags.user,
             ticker: flags.ticker,
-            entityId: flags['entity-id'],
-            status: flags.status as ListThesesParams['status'],
-            first: flags.first === undefined ? undefined : Number(flags.first),
-            cursor: flags.cursor,
+            assetId: flags['entity-id'],
+            archived: thesisArchivedStatus(flags.status),
+            ...thesisPage(flags, 'thesis list'),
           };
-          try {
-            validateListThesesParams(params);
-          } catch (error) {
-            throw new CliUsageError((error as Error).message, 'thesis');
-          }
           return client.theses.list(params);
         }
-        case 'related': {
-          const params = {
-            first: flags.first === undefined ? undefined : Number(flags.first),
-            cursor: flags.cursor,
-          };
-          try {
-            validateThesisPageParams(params);
-          } catch (error) {
-            throw new CliUsageError((error as Error).message, 'thesis');
-          }
+        case 'related':
           return client.theses.related(
             requireFlag(flags, 'id', 'thesis related'),
-            params
+            thesisPage(flags, 'thesis related')
           );
-        }
         case 'get':
+          if (flags.number !== undefined) {
+            return client.theses.getByNumber(
+              positiveIntegerFlag(flags, 'number', 'thesis get')
+            );
+          }
           return client.theses.get(requireFlag(flags, 'id', 'thesis get'));
         case 'version':
           if (parsedCommand.path[2] === 'list') {
             return client.theses.listUpdates(
               requireFlag(flags, 'id', 'thesis version list'),
-              {
-                first:
-                  flags.first === undefined ? undefined : Number(flags.first),
-                cursor: flags.cursor,
-              }
+              thesisPage(flags, 'thesis version list')
             );
           }
-          return client.theses.getVersion(
-            requireFlag(flags, 'id', 'thesis version get'),
-            requireFlag(flags, 'author-version-id', 'thesis version get')
+          if (flags['author-version-id'] !== undefined) {
+            return client.theses.getVersion(flags['author-version-id']);
+          }
+          if (flags.number === undefined || flags.version === undefined) {
+            throw new CliUsageError(
+              "'thesis version get' requires --author-version-id, or --number and --version",
+              'thesis'
+            );
+          }
+          return client.theses.getVersionByNumber(
+            positiveIntegerFlag(flags, 'number', 'thesis version get'),
+            positiveIntegerFlag(flags, 'version', 'thesis version get')
           );
         case 'signals':
           return client.theses.signals(
             requireFlag(flags, 'id', 'thesis signals'),
-            {
-              first:
-                flags.first === undefined ? undefined : Number(flags.first),
-              cursor: flags.cursor,
-            }
+            thesisPage(flags, 'thesis signals')
           );
         case 'set-visibility':
           return client.theses.setVisibility(
@@ -3972,17 +4451,29 @@ export async function executeParsedCommand(
               visibility: thesisAccessVisibility(
                 requireFlag(flags, 'visibility', 'thesis set-visibility')
               ),
+              confirmEndPaidRenewals: boolFlag(
+                flags['confirm-end-paid-renewals']
+              ),
             }
           );
-        case 'archive':
-          return client.theses.setArchived(
-            requireFlag(flags, 'id', 'thesis archive'),
-            {
-              request_id: requireFlag(flags, 'request-id', 'thesis archive'),
-              archived: true,
-              note: flags.note,
-            }
+        case 'archive': {
+          const id = requireFlag(flags, 'id', 'thesis archive');
+          const idempotencyKey = requireFlag(
+            flags,
+            'request-id',
+            'thesis archive'
           );
+          // Without --expected-author-version-id the current Update is the
+          // one archived.
+          const expectedVersionId =
+            flags['expected-author-version-id'] ??
+            (await client.theses.get(id)).currentVersion.id;
+          return client.theses.archive(
+            id,
+            { expectedVersionId, note: flags.note },
+            { idempotencyKey }
+          );
+        }
         case 'star':
           return client.theses.setStarred(
             requireFlag(flags, 'id', 'thesis star'),
@@ -3995,9 +4486,12 @@ export async function executeParsedCommand(
           );
         case 'signal-preferences': {
           if (parsedCommand.path[2] === 'get') {
-            return client.theses.getSignalPreferences(flags.id);
+            return flags.id === undefined
+              ? client.theses.lastSignalPreferences()
+              : client.theses.signalPreferences(flags.id);
           }
-          const id = requireFlag(flags, 'id', 'thesis signal-preferences set');
+          const command = 'thesis signal-preferences set';
+          const id = requireFlag(flags, 'id', command);
           if (
             flags.kinds === undefined &&
             flags['min-importance'] === undefined
@@ -4007,17 +4501,20 @@ export async function executeParsedCommand(
               'thesis'
             );
           }
-          // Change only what is given: the rest of the setting stays.
-          const current = await client.theses.getSignalPreferences(id);
-          return client.theses.setSignalPreferences(id, {
+          // A merge patch: what is not given stays.
+          return client.theses.updateSignalPreferences(id, {
             kinds:
               flags.kinds === undefined
-                ? current.preferences.kinds
-                : thesisSignalKindList(flags.kinds, '--kinds'),
-            min_importance:
+                ? undefined
+                : thesisSignalKinds(flags.kinds, 'kinds', command),
+            minImportance:
               flags['min-importance'] === undefined
-                ? current.preferences.min_importance
-                : (flags['min-importance'] as ThesisSignalMinImportance),
+                ? undefined
+                : thesisSignalMinImportance(
+                    flags['min-importance'],
+                    'min-importance',
+                    command
+                  ),
           });
         }
         case 'set-signal-enabled':
@@ -4025,42 +4522,39 @@ export async function executeParsedCommand(
             requireFlag(flags, 'id', 'thesis set-signal-enabled'),
             thesisBooleanFlag(flags.enabled, 'thesis set-signal-enabled')
           );
-        case 'update': {
-          const id = requireFlag(flags, 'id', 'thesis update');
-          const params = {
-            request_id: requireFlag(flags, 'request-id', 'thesis update'),
-            expected_author_version_id: requireFlag(
-              flags,
-              'expected-author-version-id',
-              'thesis update'
-            ),
-            body: await thesisBodyFromFlags(flags, 'thesis update', deps),
-            title: flags.title ?? '',
-            entity_ids: thesisEntityIDs(flags),
-            entity_stances: thesisEntityStances(flags),
-            medias: thesisMedias(flags),
-            visibility: thesisVisibility(
-              requireFlag(flags, 'visibility', 'thesis update')
-            ),
-            track_return: thesisTrackReturn(flags, 'thesis update'),
-            archived: thesisUnarchive(flags, 'thesis update'),
-          };
-          const response = await client.theses.update(id, params);
-          // An Update identical to the current one writes nothing and returns
-          // that Update; say so rather than look saved (alva-backend#3809).
-          return {
-            ...response,
-            unchanged:
-              response.thesis.author_version_id ===
-              params.expected_author_version_id,
-          };
-        }
+        case 'update':
+          return client.theses.update(
+            requireFlag(flags, 'id', 'thesis update'),
+            {
+              expectedVersionId: requireFlag(
+                flags,
+                'expected-author-version-id',
+                'thesis update'
+              ),
+              body: await thesisBodyFromFlags(flags, 'thesis update', deps),
+              title: flags.title,
+              assets: thesisAssets(flags),
+              media: thesisMedias(flags),
+              visibility:
+                flags.visibility === undefined
+                  ? undefined
+                  : thesisVisibility(flags.visibility),
+              confirmEndPaidRenewals: boolFlag(
+                flags['confirm-end-paid-renewals']
+              ),
+              trackReturn: thesisTrackReturn(flags, 'thesis update'),
+              archived: thesisUnarchive(flags, 'thesis update'),
+            },
+            {
+              idempotencyKey: requireFlag(flags, 'request-id', 'thesis update'),
+            }
+          );
         case 'rewrite':
           return client.theses.rewrite({
             body: await thesisBodyFromFlags(flags, 'thesis rewrite', deps),
             mode:
               flags.mode === undefined
-                ? 'reformat'
+                ? undefined
                 : thesisRewriteMode(flags.mode),
           });
         default:
@@ -4080,34 +4574,33 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'create':
           return client.serviceAccount.create({
-            display_name: requireFlag(flags, 'name', 'service-account create'),
+            displayName: requireFlag(flags, 'name', 'service-account create'),
           });
         case 'list':
-          return client.serviceAccount.list();
+          return allPages((pageToken) =>
+            client.serviceAccount.list({ pageSize: 200, pageToken })
+          );
         case 'delete':
-          return client.serviceAccount.delete({
-            id: requireServiceAccountIdFlag(flags, 'service-account delete'),
-          });
+          return client.serviceAccount.delete(
+            requireIdFlag(flags, 'id', 'service-account delete')
+          );
         case 'grant':
-          return client.serviceAccount.grant({
-            id: requireServiceAccountIdFlag(flags, 'service-account grant'),
-            path: requireFlag(flags, 'path', 'service-account grant'),
-            permission: requireFlag(
-              flags,
-              'permission',
-              'service-account grant'
-            ),
-          });
+          return client.serviceAccount.grant(
+            requireIdFlag(flags, 'id', 'service-account grant'),
+            {
+              path: requireFlag(flags, 'path', 'service-account grant'),
+              permission: requireFlag(
+                flags,
+                'permission',
+                'service-account grant'
+              ).toUpperCase() as Schema<'GrantPermission'>,
+            }
+          );
         case 'revoke':
-          return client.serviceAccount.revoke({
-            id: requireServiceAccountIdFlag(flags, 'service-account revoke'),
-            path: requireFlag(flags, 'path', 'service-account revoke'),
-            permission: requireFlag(
-              flags,
-              'permission',
-              'service-account revoke'
-            ),
-          });
+          return client.serviceAccount.revoke(
+            requireIdFlag(flags, 'id', 'service-account revoke'),
+            requireIdFlag(flags, 'grant-id', 'service-account revoke')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: service-account ${subcommand}`,
@@ -4121,30 +4614,20 @@ export async function executeParsedCommand(
         throw new CliUsageError('Missing subcommand for feed', 'feed');
       switch (subcommand) {
         case 'list':
-          return client.feed.list({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
-            status: flags['status'] as 'active' | 'paused' | 'all' | undefined,
-          });
+          return client.feed.list(automationListQuery(flags, 'feed list'));
         case 'stop':
-          return client.feed.stop({
-            id: requireFeedIDFlag(flags, 'feed stop'),
-          });
+          return client.feed.stop(requireFeedIDFlag(flags, 'feed stop'));
         case 'resume':
-          return client.feed.resume({
-            id: requireFeedIDFlag(flags, 'feed resume'),
-          });
+          return client.feed.resume(requireFeedIDFlag(flags, 'feed resume'));
         case 'delete':
-          return client.feed.delete({
-            id: requireFeedIDFlag(flags, 'feed delete'),
-          });
+          return client.feed.delete(requireFeedIDFlag(flags, 'feed delete'));
         case 'set-visibility':
-          return client.feed.setVisibility({
-            id: requireFeedIDFlag(flags, 'feed set-visibility'),
-            visibility: feedVisibility(
+          return client.feed.setVisibility(
+            requireFeedIDFlag(flags, 'feed set-visibility'),
+            feedVisibility(
               requireFlag(flags, 'visibility', 'feed set-visibility')
-            ),
-          });
+            )
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: feed ${subcommand}`,
@@ -4161,19 +4644,17 @@ export async function executeParsedCommand(
         );
       switch (subcommand) {
         case 'list': {
-          const result = await client.automation.list({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
-            status: flags['status'] as 'active' | 'paused' | 'all' | undefined,
-          });
+          const result = await client.automation.list(
+            automationListQuery(flags, 'automation list')
+          );
           return boolFlag(flags['json'])
             ? result
             : formatAutomationList(result);
         }
         case 'inspect': {
-          const result = await client.automation.inspect({
-            id: requireNumericFlag(flags, 'id', 'automation inspect'),
-          });
+          const result = await client.automation.inspect(
+            requireIdFlag(flags, 'id', 'automation inspect')
+          );
           return boolFlag(flags['json'])
             ? result
             : formatAutomationDetail(result);
@@ -4182,8 +4663,10 @@ export async function executeParsedCommand(
           return client.automation.publish(
             feedReleaseParams(flags, 'automation publish')
           );
-        case 'update':
-          return client.automation.update(automationUpdateParams(flags));
+        case 'update': {
+          const { id, body } = automationUpdateParams(flags);
+          return client.automation.update(id, body);
+        }
         case 'delivery': {
           const leaf = parsedCommand.path[2];
           if (!leaf || leaf === '--help' || leaf === '-h') {
@@ -4191,17 +4674,16 @@ export async function executeParsedCommand(
           }
           switch (leaf) {
             case 'get':
-              return client.automation.delivery.get({
-                id: requirePositiveIntegerStringFlag(
-                  flags,
-                  'id',
-                  'automation delivery get'
-                ),
-              });
-            case 'update':
-              return client.automation.delivery.update(
-                automationDeliveryUpdateParams(flags)
+              return client.automation.delivery.get(
+                requireIdFlag(flags, 'id', 'automation delivery get')
               );
+            case 'update': {
+              const { id, patch } = await automationDeliveryUpdateParams(
+                client,
+                flags
+              );
+              return client.automation.delivery.update(id, patch);
+            }
             default:
               throw new CliUsageError(
                 `Unknown subcommand: automation delivery ${leaf}`,
@@ -4210,17 +4692,17 @@ export async function executeParsedCommand(
           }
         }
         case 'stop':
-          return client.automation.stop({
-            id: requireNumericFlag(flags, 'id', 'automation stop'),
-          });
+          return client.automation.stop(
+            requireFlag(flags, 'id', 'automation stop')
+          );
         case 'resume':
-          return client.automation.resume({
-            id: requireNumericFlag(flags, 'id', 'automation resume'),
-          });
+          return client.automation.resume(
+            requireFlag(flags, 'id', 'automation resume')
+          );
         case 'delete':
-          return client.automation.delete({
-            id: requireNumericFlag(flags, 'id', 'automation delete'),
-          });
+          return client.automation.delete(
+            requireFlag(flags, 'id', 'automation delete')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: automation ${subcommand}`,
@@ -4237,48 +4719,30 @@ export async function executeParsedCommand(
           'x'
         );
       }
-      const params = {
-        first: optionalBoundedIntegerFlag(
+      return client.x[subcommand]({
+        pageSize: optionalBoundedIntegerFlag(
           flags,
           'limit',
           `x ${subcommand}`,
-          5,
+          1,
           100
         ),
-        after: flags.cursor,
-      };
-      try {
-        validateXReadParams(params);
-      } catch (error) {
-        throw new CliUsageError(
-          error instanceof Error ? error.message : String(error),
-          'x'
-        );
-      }
-      return client.x[subcommand](params);
+        pageToken: optionalCursorFlag(flags.cursor),
+      });
     }
 
     case 'for-you': {
       if (subcommand === 'theses') {
-        const params = {
-          first: optionalBoundedIntegerFlag(
+        return client.forYou.theses({
+          pageSize: optionalBoundedIntegerFlag(
             flags,
             'limit',
             'for-you theses',
             1,
             10
           ),
-          after: flags.cursor,
-        };
-        try {
-          validateForYouThesesParams(params);
-        } catch (error) {
-          throw new CliUsageError(
-            error instanceof Error ? error.message : String(error),
-            'for-you'
-          );
-        }
-        return client.forYou.theses(params);
+          pageToken: flags.cursor || undefined,
+        });
       }
       if (subcommand !== 'list') {
         throw new CliUsageError(
@@ -4286,27 +4750,23 @@ export async function executeParsedCommand(
           'for-you'
         );
       }
-      const params = {
-        first: optionalBoundedIntegerFlag(
+      if (flags['newer-than'] !== undefined) {
+        throw new CliUsageError(
+          '--newer-than was removed in 1.0: read the first page again',
+          'for-you'
+        );
+      }
+      return client.forYou.list({
+        pageSize: optionalBoundedIntegerFlag(
           flags,
           'limit',
           'for-you list',
           1,
           50
         ),
-        after: flags.cursor,
-        newerThan: flags['newer-than'],
-        feedId: flags['feed-id'],
-      };
-      try {
-        validateForYouListParams(params);
-      } catch (error) {
-        throw new CliUsageError(
-          error instanceof Error ? error.message : String(error),
-          'for-you'
-        );
-      }
-      return client.forYou.list(params);
+        pageToken: flags.cursor || undefined,
+        automationId: flags['feed-id'],
+      });
     }
 
     case 'credits': {
@@ -4316,7 +4776,7 @@ export async function executeParsedCommand(
         case 'wallet':
           return client.credits.wallet();
         case 'items':
-          return client.credits.items(parseCreditsItemsParams(flags));
+          return client.credits.entries(parseCreditsItemsParams(flags));
         default:
           throw new CliUsageError(
             `Unknown subcommand: credits ${subcommand}`,
@@ -4333,38 +4793,73 @@ export async function executeParsedCommand(
         );
       const asJson = boolFlag(flags['json']) ?? false;
       const webOrigin = webOriginFromApiBase(client.baseUrl);
+      // /api/v2 reads need an API key; without one, discovery reads /api/v1.
+      const keyless = !client.apiKey && subcommand !== 'mine';
       switch (subcommand) {
         case 'trending': {
+          const sort = trendingPlaybooksSort(flags['sort']);
+          const tags = csvList(flags['tags'] ?? flags['tag']);
+          if (keyless) {
+            const result = await client.v1.playbooks.trending({
+              keyword: flags['keyword'],
+              tags,
+              sort,
+              limit: num(flags['limit']),
+              cursor: flags['cursor'],
+              current: flags['current'],
+            });
+            return asJson ? result : formatV1TrendingPlaybooks(result);
+          }
           const result = await client.playbooks.trending({
-            keyword: flags['keyword'],
-            tags: csvList(flags['tags'] ?? flags['tag']),
-            sort: trendingPlaybooksSort(flags['sort']),
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
-            current: flags['current'],
+            query: flags['keyword'] || undefined,
+            tags: tags?.length ? tags : undefined,
+            orderBy: sort && PLAYBOOK_ORDER[sort],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'] || flags['current'] || undefined,
           });
-          return asJson ? result : formatTrendingPlaybooks(result);
+          return asJson
+            ? result
+            : formatPlaybookList(result.items, webOrigin, {
+                hasNext: result.nextPageToken !== null,
+              });
         }
-        case 'set-visibility':
-          return client.playbooks.setVisibility({
-            name: requireFlag(flags, 'name', 'playbooks set-visibility'),
-            visibility: playbookVisibility(
-              requireFlag(flags, 'visibility', 'playbooks set-visibility')
+        case 'set-visibility': {
+          const name = requireFlag(flags, 'name', 'playbooks set-visibility');
+          const visibility = playbookVisibility(
+            requireFlag(flags, 'visibility', 'playbooks set-visibility')
+          );
+          const playbook = await client.playbooks.getBySlug(
+            await client.user._username(),
+            name
+          );
+          return client.playbooks.update(playbook.id, {
+            visibility,
+            // 0.x always confirmed the exposure of bundled feeds.
+            confirmBundledFeedExposure: true,
+            confirmEndPaidRenewals: boolFlag(
+              flags['confirm-end-paid-renewals']
             ),
           });
+        }
         case 'get': {
           const ids = csvList(flags['ids']);
           if (ids && ids.length > 0) {
-            const result = await client.playbooks.getByIds(ids);
-            return asJson
-              ? result
-              : formatPlaybookList(result.items, webOrigin);
+            if (keyless) {
+              const result = await client.v1.playbooks.getByIds(ids);
+              return asJson
+                ? result
+                : formatV1PlaybookList(result.items, webOrigin);
+            }
+            const items = await client.playbooks.getByIds(ids);
+            return asJson ? items : formatPlaybookList(items, webOrigin);
           }
           if (flags['id'] || flags['ref']) {
-            const result = await client.playbooks.get({
-              id: flags['id'],
-              ref: flags['ref'],
-            });
+            const params = { id: flags['id'], ref: flags['ref'] };
+            if (keyless) {
+              const result = await client.v1.playbooks.get(params);
+              return asJson ? result : formatV1Playbook(result, webOrigin);
+            }
+            const result = await client.playbooks.get(params);
             return asJson ? result : formatPlaybook(result, webOrigin);
           }
           throw new CliUsageError(
@@ -4375,8 +4870,9 @@ export async function executeParsedCommand(
         case 'list': {
           const owner = requireFlag(flags, 'owner', 'playbooks list');
           const limit = num(flags['limit']);
-          if (boolFlag(flags['all']) ?? false) {
-            const first = await client.playbooks.listByOwner({
+          const all = boolFlag(flags['all']) ?? false;
+          if (keyless) {
+            const first = await client.v1.playbooks.listByOwner({
               owner,
               limit,
               cursor: flags['cursor'],
@@ -4384,8 +4880,8 @@ export async function executeParsedCommand(
             const items = first.items;
             let hasNext = first.has_next;
             let cursor = first.next_cursor;
-            while (hasNext && cursor) {
-              const page = await client.playbooks.listByOwner({
+            while (all && hasNext && cursor) {
+              const page = await client.v1.playbooks.listByOwner({
                 owner,
                 limit,
                 cursor,
@@ -4394,62 +4890,40 @@ export async function executeParsedCommand(
               hasNext = page.has_next;
               cursor = page.next_cursor;
             }
+            const result = all ? { items, has_next: false } : first;
             return asJson
-              ? { items, has_next: false }
-              : formatPlaybookList(items, webOrigin);
+              ? result
+              : formatV1PlaybookList(items, webOrigin, {
+                  hasNext: result.has_next,
+                });
           }
-          const result = await client.playbooks.listByOwner({
-            owner,
-            limit,
-            cursor: flags['cursor'],
-          });
+          const read = (pageToken: string | undefined) =>
+            client.playbooks.listByOwner(owner, { pageSize: limit, pageToken });
+          const result = all
+            ? await allPages(read, flags['cursor'])
+            : await read(flags['cursor'] || undefined);
           return asJson
             ? result
             : formatPlaybookList(result.items, webOrigin, {
-                hasNext: result.has_next,
+                hasNext: result.nextPageToken !== null,
               });
         }
         case 'mine': {
-          // Owner-scoped list (GET /api/v1/playbook) — includes YOUR drafts,
-          // unlike `list --owner me` (public discovery, drafts hidden).
-          const filter = ownedPlaybookFilter(flags['filter']);
-          const limit = num(flags['limit']);
-          if (boolFlag(flags['all']) ?? false) {
-            const first = await client.playbooks.listOwn({
-              filter,
-              limit,
-              cursor: flags['cursor'],
-            });
-            const items = first.playbooks;
-            let hasNext = first.has_next;
-            let cursor = items.length
-              ? items[items.length - 1].cursor
-              : undefined;
-            while (hasNext && cursor) {
-              const page = await client.playbooks.listOwn({
-                filter,
-                limit,
-                cursor,
-              });
-              items.push(...page.playbooks);
-              hasNext = page.has_next;
-              cursor = page.playbooks.length
-                ? page.playbooks[page.playbooks.length - 1].cursor
-                : undefined;
-            }
-            return asJson
-              ? { playbooks: items, has_next: false }
-              : formatOwnedPlaybookList(items, { all: true });
-          }
-          const result = await client.playbooks.listOwn({
-            filter,
-            limit,
-            cursor: flags['cursor'],
-          });
+          // Owner-scoped list (GET /api/v2/me/playbooks) — includes YOUR
+          // drafts, unlike `list --owner me` (public discovery, drafts hidden).
+          const status = ownedPlaybookFilter(flags['filter']);
+          const pageSize = num(flags['limit']);
+          const all = boolFlag(flags['all']) ?? false;
+          const read = (pageToken: string | undefined) =>
+            client.playbooks.listOwn({ status, pageSize, pageToken });
+          const result = all
+            ? await allPages(read, flags['cursor'])
+            : await read(flags['cursor'] || undefined);
           return asJson
             ? result
-            : formatOwnedPlaybookList(result.playbooks, {
-                hasNext: result.has_next,
+            : formatOwnedPlaybookList(result.items, {
+                hasNext: result.nextPageToken !== null,
+                all,
               });
         }
         default:
@@ -4474,36 +4948,35 @@ export async function executeParsedCommand(
           }
           switch (leaf) {
             case 'get':
-              return client.functions.getAllowance({
-                playbook_id: requireNumericFlag(
-                  flags,
-                  'playbook-id',
-                  'functions allowance get'
-                ),
-              });
+              return client.functions.getAllowance(
+                requireFlag(flags, 'playbook-id', 'functions allowance get')
+              );
             case 'list':
               return client.functions.listAllowances();
             case 'create':
               return client.functions.createAllowance({
-                playbook_id: requireNumericFlag(
+                playbookId: requireFlag(
                   flags,
                   'playbook-id',
                   'functions allowance create'
                 ),
-                amount: requirePositiveIntegerFlag(
-                  flags,
-                  'amount',
-                  'functions allowance create'
+                credits: String(
+                  requirePositiveIntegerFlag(
+                    flags,
+                    'amount',
+                    'functions allowance create'
+                  )
                 ),
               });
-            case 'revoke':
-              return client.functions.revokeAllowance({
-                playbook_id: requireNumericFlag(
-                  flags,
-                  'playbook-id',
-                  'functions allowance revoke'
-                ),
-              });
+            case 'revoke': {
+              const allowance = await client.functions.getAllowance(
+                requireFlag(flags, 'playbook-id', 'functions allowance revoke')
+              );
+              if (allowance !== null) {
+                await client.functions.revokeAllowance(allowance.id);
+              }
+              return undefined;
+            }
             default:
               throw new CliUsageError(
                 `Unknown subcommand: functions allowance ${leaf}`,
@@ -4512,68 +4985,44 @@ export async function executeParsedCommand(
           }
         }
         case 'register':
-          return client.functions.register({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions register'
-            ),
-            function_name: requireFlag(
-              flags,
-              'function-name',
-              'functions register'
-            ),
-            entry_script_path: requireFlag(
-              flags,
-              'entry-script-path',
-              'functions register'
-            ),
-            params_schema: jsonSchemaStringFlag(
-              flags,
-              'functions register',
-              deps
-            ),
-            allow_charges: boolFlag(flags['allow-charges']),
-            run_as_user_id: resolveRunAsFlag(flags, 'functions register'),
-          });
+          return client.functions.register(
+            requireFlag(flags, 'playbook-id', 'functions register'),
+            {
+              name: requireFlag(flags, 'function-name', 'functions register'),
+              entryScriptPath: requireFlag(
+                flags,
+                'entry-script-path',
+                'functions register'
+              ),
+              paramsSchema: jsonSchemaStringFlag(
+                flags,
+                'functions register',
+                deps
+              ),
+              allowCharges: boolFlag(flags['allow-charges']),
+              runAsAccountId: functionRunAsFlag(flags, 'functions register'),
+            }
+          );
         case 'list':
-          return client.functions.list({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions list'
-            ),
-          });
+          return client.functions.list(
+            requireFlag(flags, 'playbook-id', 'functions list'),
+            { pageSize: 100 }
+          );
         case 'delete':
-          return client.functions.delete({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions delete'
-            ),
-            function_name: requireFlag(
-              flags,
-              'function-name',
-              'functions delete'
-            ),
-          });
-        case 'invoke':
-          return client.functions.invoke({
-            playbook_id: requireNumericFlag(
-              flags,
-              'playbook-id',
-              'functions invoke'
-            ),
-            function_name: requireFlag(
-              flags,
-              'function-name',
-              'functions invoke'
-            ),
-            parameters:
-              flags['params'] === undefined
-                ? undefined
-                : jsonRequiredFlag(flags, 'params', 'functions invoke'),
-          });
+          await client.functions.delete(
+            await functionIdByName(client, flags, 'functions delete')
+          );
+          return undefined;
+        case 'invoke': {
+          const params =
+            flags['params'] === undefined
+              ? undefined
+              : jsonObjectTextFlag(flags, 'params', 'functions invoke');
+          return client.functions.invoke(
+            await functionIdByName(client, flags, 'functions invoke'),
+            { parametersJson: params }
+          );
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: functions ${subcommand}`,
@@ -4588,35 +5037,37 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'feed':
           return client.release.feed(feedReleaseParams(flags, 'release feed'));
-        case 'playbook-draft':
+        case 'playbook-draft': {
+          const command = 'release playbook-draft';
+          const slug = requireFlag(flags, 'name', command);
+          const title = requireFlag(flags, 'display-name', command);
+          const automations = automationPins(flags, command);
+          // A "<owner>/<name>" skill is resolved to its Skill ID.
+          const skill = flags['skill-id'];
+          const skillId =
+            skill === undefined || !skill.includes('/')
+              ? skill
+              : (await client.playbookSkills.get(skill)).id;
           return client.release.playbookDraft({
-            name: requireFlag(flags, 'name', 'release playbook-draft'),
-            display_name: requireFlag(
-              flags,
-              'display-name',
-              'release playbook-draft'
-            ),
+            slug,
+            title,
             description: flags['description'],
-            feeds: jsonParse(
-              requireFlag(flags, 'feeds', 'release playbook-draft')
-            ) as Array<{
-              feed_id: number;
-              feed_major?: number;
-            }>,
-            trading_symbols: flags['trading-symbols']
+            automations,
+            tradingSymbols: flags['trading-symbols']
               ? (jsonParse(flags['trading-symbols']) as string[])
               : undefined,
-            skill_id: flags['skill-id'],
+            skillId,
             tags: flags['tags']
               ? (jsonParse(flags['tags']) as string[])
               : undefined,
           });
+        }
         case 'playbook': {
           // Validate all required flags up front so usage errors surface
           // before any network/lint work runs.
           const name = requireFlag(flags, 'name', 'release playbook');
           const version = requireFlag(flags, 'version', 'release playbook');
-          const feedsRaw = requireFlag(flags, 'feeds', 'release playbook');
+          const automations = automationPins(flags, 'release playbook');
           const changelog = requireFlag(flags, 'changelog', 'release playbook');
           const readmeUrl = requireFlag(
             flags,
@@ -4637,16 +5088,16 @@ export async function executeParsedCommand(
                 '\n'
             );
           }
-          return client.release.playbook({
-            name,
+          const playbook = await client.playbooks.getBySlug(
+            await client.user._username(),
+            name
+          );
+          return client.release.playbook(playbook.id, {
             version,
-            feeds: jsonParse(feedsRaw) as Array<{
-              feed_id: number;
-              feed_major?: number;
-            }>,
+            automations,
             changelog,
-            readme_url: readmeUrl,
-            confirm_bundled_feed_exposure: boolFlag(
+            readmePath: readmeUrl,
+            confirmBundledFeedExposure: boolFlag(
               flags['confirm-bundled-feed-exposure']
             ),
           });
@@ -4702,9 +5153,11 @@ export async function executeParsedCommand(
             value: requireFlag(flags, 'value', 'secrets create'),
           });
         case 'list':
-          return client.secrets.list();
+          return allPages((pageToken) =>
+            client.secrets.list({ pageSize: 200, pageToken })
+          );
         case 'get':
-          return client.secrets.get({
+          return client.v1.secrets.get({
             name: requireFlag(flags, 'name', 'secrets get'),
           });
         case 'update':
@@ -4712,10 +5165,21 @@ export async function executeParsedCommand(
             name: requireFlag(flags, 'name', 'secrets update'),
             value: requireFlag(flags, 'value', 'secrets update'),
           });
-        case 'delete':
-          return client.secrets.delete({
-            name: requireFlag(flags, 'name', 'secrets delete'),
-          });
+        case 'delete': {
+          const name = requireFlag(flags, 'name', 'secrets delete');
+          const { items } = await allPages((pageToken) =>
+            client.secrets.list({ pageSize: 200, pageToken })
+          );
+          const secret = items.find((s) => s.name === name);
+          if (!secret) {
+            throw new AlvaError(
+              'NOT_FOUND',
+              `secret ${JSON.stringify(name)} not found`,
+              404
+            );
+          }
+          return client.secrets.delete(secret.id);
+        }
         default:
           throw new CliUsageError(
             `Unknown subcommand: secrets ${subcommand}`,
@@ -4729,15 +5193,15 @@ export async function executeParsedCommand(
         throw new CliUsageError('Missing subcommand for sdk', 'sdk');
       switch (subcommand) {
         case 'doc':
-          return client.sdk.doc({
-            name: requireFlag(flags, 'name', 'sdk doc'),
-          });
+          return client.sdk.doc(requireFlag(flags, 'name', 'sdk doc'));
         case 'partitions':
-          return client.sdk.partitions();
+          return allPages((pageToken) =>
+            client.sdk.partitions({ pageSize: 100, pageToken })
+          );
         case 'partition-summary':
-          return client.sdk.partitionSummary({
-            partition: requireFlag(flags, 'partition', 'sdk partition-summary'),
-          });
+          return client.sdk.partitionSummary(
+            requireFlag(flags, 'partition', 'sdk partition-summary')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: sdk ${subcommand}`,
@@ -4781,28 +5245,53 @@ export async function executeParsedCommand(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for skillhub', 'skillhub');
       const asJson = boolFlag(flags['json']) ?? false;
+      // /api/v2 reads need an API key; without one, Skillhub reads /api/v1.
+      const v1 = client.apiKey ? undefined : client.v1.playbookSkills;
       switch (subcommand) {
         case 'list': {
-          const result = await client.playbookSkills.list({
-            tag: flags['tag'],
-            username: flags['username'],
-          });
-          return asJson ? result : formatPlaybookSkillsList(result);
+          if (v1) {
+            const result = await v1.list({
+              tag: flags['tag'],
+              username: flags['username'],
+            });
+            return asJson ? result : formatV1PlaybookSkillsList(result);
+          }
+          const result = await allPages((pageToken) =>
+            client.playbookSkills.list({
+              tag: flags['tag'] || undefined,
+              owner: flags['username'] || undefined,
+              pageSize: 100,
+              pageToken,
+            })
+          );
+          return asJson ? result : formatPlaybookSkillsList(result.items);
         }
         case 'tags': {
-          const result = await client.playbookSkills.tags();
-          return asJson ? result : formatPlaybookSkillsTags(result);
+          if (v1) {
+            const result = await v1.tags();
+            return asJson ? result : formatPlaybookSkillsTags(result.tags);
+          }
+          const result = await allPages((pageToken) =>
+            client.playbookSkills.tags({ pageSize: 100, pageToken })
+          );
+          return asJson ? result : formatPlaybookSkillsTags(result.items);
         }
         case 'get': {
           const id = positionals[0]!;
+          if (v1) {
+            const result = await v1.get(id);
+            return asJson ? result : formatV1PlaybookSkillGet(result);
+          }
           const result = await client.playbookSkills.get(id);
           return asJson ? result : formatPlaybookSkillGet(result);
         }
         case 'file': {
           const id = positionals[0]!;
           const path = positionals[1]!;
-          const result = await client.playbookSkills.file(id, path);
-          return asJson ? result : formatPlaybookSkillFile(result);
+          const result = v1
+            ? await v1.file(id, path)
+            : await client.playbookSkills.file(id, path);
+          return asJson ? result : result.content;
         }
         default:
           throw new CliUsageError(
@@ -4816,25 +5305,24 @@ export async function executeParsedCommand(
       if (!subcommand)
         throw new CliUsageError('Missing subcommand for comments', 'comments');
       switch (subcommand) {
-        case 'create':
-          return client.comments.create({
-            username: requireFlag(flags, 'username', 'comments create'),
-            name: requireFlag(flags, 'name', 'comments create'),
-            content: requireFlag(flags, 'content', 'comments create'),
-            parent_id: num(flags['parent-id']),
+        case 'create': {
+          const username = requireFlag(flags, 'username', 'comments create');
+          const name = requireFlag(flags, 'name', 'comments create');
+          const body = requireFlag(flags, 'content', 'comments create');
+          const playbook = await client.playbooks.getBySlug(username, name);
+          return client.comments.create(playbook.id, {
+            body,
+            parentId: flags['parent-id'] || undefined,
           });
+        }
         case 'pin':
-          return client.comments.pin({
-            comment_id: requireNumericFlag(flags, 'comment-id', 'comments pin'),
-          });
+          return client.comments.pin(
+            requireFlag(flags, 'comment-id', 'comments pin')
+          );
         case 'unpin':
-          return client.comments.unpin({
-            comment_id: requireNumericFlag(
-              flags,
-              'comment-id',
-              'comments unpin'
-            ),
-          });
+          return client.comments.unpin(
+            requireFlag(flags, 'comment-id', 'comments unpin')
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: comments ${subcommand}`,
@@ -4861,13 +5349,17 @@ export async function executeParsedCommand(
           `notification-history ${subcommand}`
         ),
         status: flags['status'],
-        since_time: num(flags['since']),
+        since_time: unixSecondsFlag(
+          flags,
+          'since',
+          `notification-history ${subcommand}`
+        ),
         first: num(flags['first']),
         cursor: flags['cursor'],
       };
       switch (subcommand) {
         case 'list-feed': {
-          const response = await client.notifications.listFeed(params);
+          const response = await client.v1.notifications.listFeed(params);
           return projectNotificationHistoryForCLI(response);
         }
         default:
@@ -4886,16 +5378,14 @@ export async function executeParsedCommand(
         );
       switch (subcommand) {
         case 'list':
-          return client.notificationPreferences.list();
+          return client.notificationPreferences.get();
         case 'enable-session-completed':
           return client.notificationPreferences.update({
-            key: 'session_completed',
-            enabled: true,
+            sessionCompleted: true,
           });
         case 'disable-session-completed':
           return client.notificationPreferences.update({
-            key: 'session_completed',
-            enabled: false,
+            sessionCompleted: false,
           });
         default:
           throw new CliUsageError(
@@ -4917,9 +5407,13 @@ export async function executeParsedCommand(
             );
           }
           return client.feedback.submit({
-            source: flags['source'],
-            category: flags['category'],
-            severity: flags['severity'],
+            source: upperFlag(flags['source']) as Schema<'FeedbackSource'>,
+            category: upperFlag(
+              flags['category']
+            ) as Schema<'FeedbackCategory'>,
+            severity: upperFlag(
+              flags['severity']
+            ) as Schema<'FeedbackSeverity'>,
             summary: requireFlag(flags, 'summary', 'feedback submit'),
             details: flags['details'],
             evidence: jsonObjectFlag(flags, 'evidence-json', 'feedback submit'),
@@ -4939,89 +5433,57 @@ export async function executeParsedCommand(
           'Missing subcommand for subscriptions',
           'subscriptions'
         );
+      const command = `subscriptions ${subcommand}`;
       switch (subcommand) {
         case 'follow-playbook':
-          return client.subscriptions.followPlaybook({
-            username: requireFlag(
-              flags,
-              'username',
-              `subscriptions ${subcommand}`
-            ),
-            name: requireFlag(flags, 'name', `subscriptions ${subcommand}`),
-          });
+          return client.subscriptions.followPlaybook(
+            await playbookIdBySlug(client, flags, command)
+          );
         case 'unfollow-playbook':
-          return client.subscriptions.unfollowPlaybook({
-            username: requireFlag(
-              flags,
-              'username',
-              `subscriptions ${subcommand}`
-            ),
-            name: requireFlag(flags, 'name', `subscriptions ${subcommand}`),
-          });
+          return client.subscriptions.unfollowPlaybook(
+            await playbookIdBySlug(client, flags, command)
+          );
         case 'subscribe-feed':
-          return client.subscriptions.subscribeFeed({
-            username: requireFlag(
-              flags,
-              'username',
-              'subscriptions subscribe-feed'
-            ),
-            name: requireFlag(flags, 'name', 'subscriptions subscribe-feed'),
+          return client.v1.subscriptions.subscribeFeed({
+            username: requireFlag(flags, 'username', command),
+            name: requireFlag(flags, 'name', command),
           });
         case 'unsubscribe-feed':
-          return client.subscriptions.unsubscribeFeed({
-            username: requireFlag(
-              flags,
-              'username',
-              'subscriptions unsubscribe-feed'
-            ),
-            name: requireFlag(flags, 'name', 'subscriptions unsubscribe-feed'),
+          return client.v1.subscriptions.unsubscribeFeed({
+            username: requireFlag(flags, 'username', command),
+            name: requireFlag(flags, 'name', command),
           });
         case 'list':
           return client.subscriptions.list({
-            first: num(flags['first']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['first']),
+            pageToken: flags['cursor'],
           });
         case 'follows':
           return client.subscriptions.follows({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'],
           });
-        case 'subscribe': {
+        case 'subscribe':
           if (flags['playbook-ids'] !== undefined) {
             throw new CliUsageError(
               'Playbook alert targets are unsupported; use --feed-ids',
               'subscriptions'
             );
-          }
-          const feedIds = csvList(flags['feed-ids']) ?? [];
-          if (feedIds.length === 0) {
-            throw new CliUsageError('--feed-ids is required', 'subscriptions');
           }
           return client.subscriptions.subscribeBatch({
-            feedIds,
-            channelId:
-              flags['channel-id'] === undefined
-                ? undefined
-                : requirePositiveIntegerStringFlag(
-                    flags,
-                    'channel-id',
-                    'subscriptions subscribe'
-                  ),
+            automationIds: requireAutomationIds(flags, 'feed-ids', command),
+            channelId: alertChannelFlag(flags, command),
           });
-        }
-        case 'unsubscribe': {
+        case 'unsubscribe':
           if (flags['playbook-ids'] !== undefined) {
             throw new CliUsageError(
               'Playbook alert targets are unsupported; use --feed-ids',
               'subscriptions'
             );
           }
-          const feedIds = csvList(flags['feed-ids']) ?? [];
-          if (feedIds.length === 0) {
-            throw new CliUsageError('--feed-ids is required', 'subscriptions');
-          }
-          return client.subscriptions.unsubscribeBatch({ feedIds });
-        }
+          return client.subscriptions.unsubscribeBatch(
+            requireAutomationIds(flags, 'feed-ids', command)
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: subscriptions ${subcommand}`,
@@ -5036,15 +5498,15 @@ export async function executeParsedCommand(
       switch (subcommand) {
         case 'list': {
           const result = await client.alerts.list({
-            first: num(flags['first']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['first']),
+            pageToken: flags['cursor'],
           });
           return boolFlag(flags['json']) ? result : formatAlertList(result);
         }
         case 'follows':
           return client.alerts.follows({
-            limit: num(flags['limit']),
-            cursor: flags['cursor'],
+            pageSize: num(flags['limit']),
+            pageToken: flags['cursor'],
           });
         case 'enable': {
           rejectPlaybookAlertTarget(flags, 'alert enable');
@@ -5057,15 +5519,8 @@ export async function executeParsedCommand(
               );
             }
             return client.alerts.enableBatch({
-              feedIds: automationIds,
-              channelId:
-                flags['channel-id'] === undefined
-                  ? undefined
-                  : requirePositiveIntegerStringFlag(
-                      flags,
-                      'channel-id',
-                      'alert enable'
-                    ),
+              automationIds,
+              channelId: alertChannelFlag(flags, 'alert enable'),
             });
           }
           const target = requireAutomationAlertTarget(flags, 'alert enable');
@@ -5077,7 +5532,7 @@ export async function executeParsedCommand(
                   'channel-id',
                   'alert enable'
                 );
-          return client.alerts.enableAutomation(
+          return client.v1.subscriptions.subscribeFeed(
             channelId === undefined ? target : { ...target, channelId }
           );
         }
@@ -5091,9 +5546,9 @@ export async function executeParsedCommand(
                 'alert'
               );
             }
-            return client.alerts.disableBatch({ feedIds: automationIds });
+            return client.alerts.disableBatch(automationIds);
           }
-          return client.alerts.disableAutomation(
+          return client.v1.subscriptions.unsubscribeFeed(
             requireAutomationAlertTarget(flags, 'alert disable')
           );
         }
@@ -5112,7 +5567,7 @@ export async function executeParsedCommand(
           const sessionID = requireCurrentGroupAlertSessionID(client, command);
           switch (leaf) {
             case 'list': {
-              const result = await client.channelGroupSubscriptions.list({
+              const result = await client.v1.channelGroupSubscriptions.list({
                 session_id: sessionID,
               });
               return boolFlag(flags['json'])
@@ -5120,13 +5575,13 @@ export async function executeParsedCommand(
                 : formatGroupAlertList(result);
             }
             case 'enable':
-              return client.channelGroupSubscriptions.subscribe({
+              return client.v1.channelGroupSubscriptions.subscribe({
                 session_id: sessionID,
                 target_type: 'feed',
                 target_id: requireSingleGroupAlertFeedID(flags, command),
               });
             case 'disable':
-              return client.channelGroupSubscriptions.unsubscribe({
+              return client.v1.channelGroupSubscriptions.unsubscribe({
                 session_id: sessionID,
                 target_type: 'feed',
                 target_id: requireSingleGroupAlertFeedID(flags, command),
@@ -5139,32 +5594,45 @@ export async function executeParsedCommand(
           }
         }
         case 'history': {
-          rejectPlaybookAlertTarget(flags, 'alert history');
-          const target = requireAutomationAlertTarget(flags, 'alert history');
-          const params = {
+          const command = 'alert history';
+          rejectPlaybookAlertTarget(flags, command);
+          const deliveryProvider = deliveryProviderFilter(flags, command);
+          if (flags['automation-id'] !== undefined) {
+            if (flags['automation'] !== undefined) {
+              throw new CliUsageError(
+                "Provide either --automation or --automation-id for 'alert history'",
+                'alert'
+              );
+            }
+            return client.alerts.history({
+              automationId: requireIdFlag(flags, 'automation-id', command),
+              deliveryProvider,
+              status: upperFlag(
+                flags['status']
+              ) as Schema<'NotificationDeliveryStatus'>,
+              since: optionalRfc3339Flag(flags, 'since', command),
+              pageSize: num(flags['first']),
+              pageToken: flags['cursor'],
+            });
+          }
+          const target = requireAutomationAlertTarget(flags, command);
+          const response = await client.v1.notifications.listFeed({
             username: target.username,
             name: target.name,
-            channel: deliveryProviderFilter(flags, 'alert history'),
+            channel: deliveryProvider,
             status: flags['status'],
-            since_time: num(flags['since']),
+            since_time: unixSecondsFlag(flags, 'since', command),
             first: num(flags['first']),
             cursor: flags['cursor'],
-          };
-          const response = await client.alerts.historyAutomation(params);
+          });
           return projectNotificationHistoryForCLI(response);
         }
         case 'preferences':
           return client.alerts.preferences();
         case 'enable-session-completed':
-          return client.alerts.updatePreference({
-            key: 'session_completed',
-            enabled: true,
-          });
+          return client.alerts.updatePreferences({ sessionCompleted: true });
         case 'disable-session-completed':
-          return client.alerts.updatePreference({
-            key: 'session_completed',
-            enabled: false,
-          });
+          return client.alerts.updatePreferences({ sessionCompleted: false });
         default:
           throw new CliUsageError(
             `Unknown subcommand: alert ${subcommand}`,
@@ -5173,17 +5641,36 @@ export async function executeParsedCommand(
       }
     }
 
-    case 'remix':
-      return client.remix.save({
-        child: {
-          username: requireFlag(flags, 'child-username', 'remix'),
-          name: requireFlag(flags, 'child-name', 'remix'),
-        },
-        parents: jsonParse(requireFlag(flags, 'parents', 'remix')) as Array<{
-          username: string;
-          name: string;
-        }>,
-      });
+    case 'remix': {
+      const childUsername = requireFlag(flags, 'child-username', 'remix');
+      const childName = requireFlag(flags, 'child-name', 'remix');
+      const parents = jsonParse(requireFlag(flags, 'parents', 'remix'));
+      if (
+        !Array.isArray(parents) ||
+        !parents.every(
+          (p: unknown) =>
+            typeof p === 'object' &&
+            p !== null &&
+            typeof (p as Record<string, unknown>).username === 'string' &&
+            typeof (p as Record<string, unknown>).name === 'string'
+        )
+      ) {
+        throw new CliUsageError(
+          '--parents must be a JSON array of {username, name}',
+          'remix'
+        );
+      }
+      const [child, ...sources] = await Promise.all(
+        [
+          { username: childUsername, name: childName },
+          ...(parents as { username: string; name: string }[]),
+        ].map((p) => client.playbooks.getBySlug(p.username, p.name))
+      );
+      return client.remix.save(
+        child.id,
+        sources.map((p) => p.id)
+      );
+    }
 
     case 'arrays': {
       if (!subcommand || subcommand === '--help' || subcommand === '-h') {
@@ -5210,98 +5697,6 @@ export async function executeParsedCommand(
       );
     }
 
-    case 'screenshot': {
-      const hasOut = flags['out'] !== undefined;
-      const wantBase64 = boolFlag(flags['base64']) === true;
-      if (hasOut && wantBase64) {
-        throw new CliUsageError(
-          'screenshot accepts only one of --out (local file) or --base64 (stdout); both were provided.',
-          'screenshot'
-        );
-      }
-      if (!hasOut && !wantBase64) {
-        throw new CliUsageError(
-          'one of --out/--base64 is required for screenshot',
-          'screenshot'
-        );
-      }
-
-      const url = requireFlag(flags, 'url', 'screenshot');
-      const selector = flags['selector'];
-      const xpath = flags['xpath'];
-
-      if (wantBase64) {
-        // base64 mode: no local FS — safe in jagent.
-        const full = boolFlag(flags['full']) === true;
-        const explicitQuality = flags['compress-quality'];
-        const explicitMaxWidth = flags['compress-max-width'];
-        // Disable compression when --full, or when the caller explicitly opts
-        // out via --no-compress / --compress=false (mirrors the --out path,
-        // which honors boolFlag(flags['compress'])). Otherwise compress by
-        // default to bound the base64 payload size.
-        const noCompress = full || boolFlag(flags['compress']) === false;
-        let compress: boolean;
-        let compressQuality: number | undefined;
-        let compressMaxWidth: number | undefined;
-        if (noCompress) {
-          compress = false;
-          compressQuality = undefined;
-          compressMaxWidth = undefined;
-        } else {
-          compress = true;
-          compressQuality =
-            explicitQuality !== undefined ? Number(explicitQuality) : 70;
-          compressMaxWidth =
-            explicitMaxWidth !== undefined ? Number(explicitMaxWidth) : 1280;
-        }
-        const result = await client.screenshot.capture({
-          url,
-          selector,
-          xpath,
-          compress,
-          compressQuality,
-          compressMaxWidth,
-        });
-        const bytes = new Uint8Array(result as ArrayBuffer);
-        if (bytes.length === 0) {
-          throw new CliUsageError(
-            'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
-            'screenshot'
-          );
-        }
-        return {
-          _image: true,
-          mimeType: sniffImageMime(bytes),
-          data: encodeBase64(bytes),
-          bytes: bytes.length,
-        };
-      }
-
-      const outFile = requireFlag(flags, 'out', 'screenshot');
-      assertLocalFileAvailable('screenshot', 'out', deps);
-      const compressQuality = flags['compress-quality'];
-      const compressMaxWidth = flags['compress-max-width'];
-      const result = await client.screenshot.capture({
-        url,
-        selector,
-        xpath,
-        compress: boolFlag(flags['compress']),
-        compressQuality:
-          compressQuality !== undefined ? Number(compressQuality) : undefined,
-        compressMaxWidth:
-          compressMaxWidth !== undefined ? Number(compressMaxWidth) : undefined,
-      });
-      const bytes = new Uint8Array(result as ArrayBuffer);
-      if (bytes.length === 0) {
-        throw new CliUsageError(
-          'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
-          'screenshot'
-        );
-      }
-      writeLocalFileBytes(outFile, bytes, 'screenshot', 'out', deps);
-      return { written: outFile, bytes: bytes.length };
-    }
-
     case 'portfolio': {
       if (!subcommand)
         throw new CliUsageError(
@@ -5312,15 +5707,14 @@ export async function executeParsedCommand(
         case 'accounts':
           return client.portfolio.accounts();
         case 'summary':
-          return client.portfolio.summary(
+          return client.portfolio.snapshot(
             requireFlag(flags, 'account-id', 'portfolio summary')
           );
         case 'activities':
-          return client.portfolio.activities({
-            accountId: requireFlag(flags, 'account-id', 'portfolio activities'),
-            limit: num(flags['limit']),
-            pageToken: flags['page-token'],
-          });
+          return client.portfolio.activities(
+            requireFlag(flags, 'account-id', 'portfolio activities'),
+            { pageSize: num(flags['limit']), pageToken: flags['page-token'] }
+          );
         default:
           throw new CliUsageError(
             `Unknown subcommand: portfolio ${subcommand}`,
@@ -5338,7 +5732,9 @@ export async function executeParsedCommand(
       const ticker = requireFlag(flags, 'ticker', `markets ${subcommand}`);
       switch (subcommand) {
         case 'narrative':
-          return client.markets.narrative(ticker);
+          return client.markets.narrative(
+            (await stockAsset(client, ticker)).id
+          );
         case 'earnings': {
           const event = flags['event'];
           const fiscalYear = optionalBoundedIntegerFlag(
@@ -5382,16 +5778,21 @@ export async function executeParsedCommand(
               'markets'
             );
           }
+          const asset = await stockAsset(client, ticker);
           if (fiscalYear !== undefined && fiscalQuarter !== undefined) {
-            return client.markets.earnings({
-              ticker,
+            return client.markets.earnings(asset.id, {
               fiscalYear,
-              fiscalQuarter: fiscalQuarter as 'Q1' | 'Q2' | 'Q3' | 'Q4',
+              fiscalQuarter: fiscalQuarter as Schema<'FiscalQuarter'>,
             });
           }
-          return client.markets.earnings({
-            ticker,
-            event: event as 'latest-completed' | 'next-confirmed' | undefined,
+          const period = earningsEventPeriod(
+            await client.markets.earningsCalendar(asset.id),
+            event ?? 'latest-completed',
+            asset.symbol
+          );
+          return client.markets.earnings(asset.id, {
+            fiscalYear: period.fiscalYear,
+            fiscalQuarter: period.fiscalQuarter,
           });
         }
         default:
@@ -5426,12 +5827,13 @@ export async function executeParsedCommand(
                   'limit',
                   'trading-pairs search'
                 );
+          const symbol = requireFlag(flags, 'symbol', 'trading-pairs search');
           const result = await client.tradingPairs.search({
-            symbol: requireFlag(flags, 'symbol', 'trading-pairs search'),
+            symbol,
             ...filters,
             limit,
           });
-          return asJson ? result : formatTradingPairSearch(result);
+          return asJson ? result : formatTradingPairSearch(symbol, result);
         }
         case 'resolve': {
           const pair = flags['pair'];
@@ -5471,106 +5873,137 @@ export async function executeParsedCommand(
         throw new CliUsageError('Missing subcommand for trading', 'trading');
       switch (subcommand) {
         case 'accounts':
-          return client.trading.accounts();
+          return client.portfolio.accounts({ modes: TRADING_MODES });
         case 'portfolio':
-          return client.trading.portfolio(
+          return client.portfolio.snapshot(
             requireFlag(flags, 'account-id', 'trading portfolio')
           );
         case 'orders':
-          return client.trading.orders({
-            accountId: requireFlag(flags, 'account-id', 'trading orders'),
-            source: flags['source'],
-            since: num(flags['since']),
-            limit: num(flags['limit']),
+          retiredFlags(flags, 'trading orders', {
+            source: '--origin',
           });
+          return client.trading.orders(
+            requireFlag(flags, 'account-id', 'trading orders'),
+            {
+              origin: tradingEnumFlag(
+                flags,
+                'origin',
+                ['EXTERNAL', 'ALVA_DIRECT', 'ALVA_INSTRUCTION', 'UNKNOWN'],
+                'trading orders'
+              ),
+              from: optionalRfc3339Flag(flags, 'since', 'trading orders'),
+              pageSize: num(flags['limit']),
+            }
+          );
         case 'subscriptions':
           return client.trading.subscriptions(
             requireFlag(flags, 'account-id', 'trading subscriptions')
           );
         case 'equity-history':
-          return client.trading.equityHistory({
-            accountId: requireFlag(
-              flags,
-              'account-id',
-              'trading equity-history'
-            ),
-            timeframe: flags['timeframe'],
-            sinceMs: num(flags['since-ms']),
-            untilMs: num(flags['until-ms']),
+          retiredFlags(flags, 'trading equity-history', {
+            timeframe: '--range',
+            'since-ms': '--range',
+            'until-ms': '--range',
           });
+          return client.trading.equity(
+            requireFlag(flags, 'account-id', 'trading equity-history'),
+            {
+              range: tradingEnumFlag(
+                flags,
+                'range',
+                [
+                  'ONE_DAY',
+                  'ONE_WEEK',
+                  'ONE_MONTH',
+                  'THREE_MONTHS',
+                  'YEAR_TO_DATE',
+                  'ONE_YEAR',
+                  'ALL',
+                ],
+                'trading equity-history'
+              ),
+            }
+          );
         case 'risk-rules':
           return client.trading.riskRules();
-        case 'subscribe':
-          return client.trading.subscribe({
-            accountId: requireFlag(flags, 'account-id', 'trading subscribe'),
-            sourceUsername: requireFlag(
-              flags,
-              'source-username',
-              'trading subscribe'
-            ),
-            sourceFeed: requireFlag(flags, 'source-feed', 'trading subscribe'),
-            playbookId: requireFlag(flags, 'playbook-id', 'trading subscribe'),
-            playbookVersion: requireFlag(
-              flags,
-              'playbook-version',
-              'trading subscribe'
-            ),
-            executeLatest: boolFlag(flags['execute-latest']),
+        case 'subscribe': {
+          const accountId = requireFlag(
+            flags,
+            'account-id',
+            'trading subscribe'
+          );
+          const playbookId = requireFlag(
+            flags,
+            'playbook-id',
+            'trading subscribe'
+          );
+          if (boolFlag(flags['execute-latest'])) {
+            // /api/v2 does not execute the latest signal yet (client.v1).
+            return client.v1.trading.subscribe({
+              accountId,
+              sourceUsername: requireFlag(
+                flags,
+                'source-username',
+                'trading subscribe --execute-latest'
+              ),
+              sourceFeed: requireFlag(
+                flags,
+                'source-feed',
+                'trading subscribe --execute-latest'
+              ),
+              playbookId,
+              playbookVersion: requireFlag(
+                flags,
+                'playbook-version',
+                'trading subscribe --execute-latest'
+              ),
+            });
+          }
+          if (flags['signal-source-id'] === undefined) {
+            throw new CliUsageError(
+              "--signal-source-id (the feed's Automation ID) is required for 'trading subscribe'; a feed is no longer found by --source-username and --source-feed",
+              'trading'
+            );
+          }
+          return client.trading.subscribe(accountId, {
+            playbookId,
+            signalSourceId: flags['signal-source-id'],
+            playbookVersion: flags['playbook-version'],
+            initialOrders: 'NONE',
           });
+        }
         case 'unsubscribe':
           return client.trading.unsubscribe(
             requireFlag(flags, 'subscription-id', 'trading unsubscribe')
           );
-        case 'execute':
-          return client.trading.execute({
-            accountId: requireFlag(flags, 'account-id', 'trading execute'),
-            signalJson: requireFlag(flags, 'signal', 'trading execute'),
-            dryRun: boolFlag(flags['dry-run']) ?? false,
-            sourceUsername: flags['source-username'],
-            sourceFeed: flags['source-feed'],
+        case 'execute': {
+          retiredFlags(flags, 'trading execute', {
+            signal: '--instruction (an /api/v2 OrderInstruction)',
+            'source-username': '--instruction reason',
+            'source-feed': '--instruction reason',
           });
+          const instruction = jsonObjectFlag(
+            flags,
+            'instruction',
+            'trading execute'
+          );
+          if (instruction === undefined) {
+            throw new CliUsageError(
+              "--instruction is required for 'trading execute'",
+              'trading'
+            );
+          }
+          return client.trading.placeOrders(
+            requireFlag(flags, 'account-id', 'trading execute'),
+            {
+              ...(instruction as Schema<'OrderInstruction'>),
+              ...(boolFlag(flags['dry-run']) ? { dryRun: true } : {}),
+            },
+            { idempotencyKey: flags['idempotency-key'] }
+          );
+        }
         case 'update-risk-rules':
-          return client.trading.updateRiskRules({
-            maxSingleOrder: {
-              value: requireNumericFlag(
-                flags,
-                'max-single-order-value',
-                'trading update-risk-rules'
-              ),
-              enabled:
-                requireFlag(
-                  flags,
-                  'max-single-order-enabled',
-                  'trading update-risk-rules'
-                ) === 'true',
-            },
-            maxDailyTurnover: {
-              value: requireNumericFlag(
-                flags,
-                'max-daily-turnover-value',
-                'trading update-risk-rules'
-              ),
-              enabled:
-                requireFlag(
-                  flags,
-                  'max-daily-turnover-enabled',
-                  'trading update-risk-rules'
-                ) === 'true',
-            },
-            maxDailyOrders: {
-              value: requireNumericFlag(
-                flags,
-                'max-daily-orders-value',
-                'trading update-risk-rules'
-              ),
-              enabled:
-                requireFlag(
-                  flags,
-                  'max-daily-orders-enabled',
-                  'trading update-risk-rules'
-                ) === 'true',
-            },
-          });
+          return client.trading.updateRiskRules(riskRulesPatch(flags));
         default:
           throw new CliUsageError(
             `Unknown subcommand: trading ${subcommand}`,

@@ -1,341 +1,151 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
-import { webOriginFromApiBase } from './webOrigin.js';
+import {
+  collectAll,
+  orNull,
+  v2Path,
+  type Schema,
+  type V2Query,
+} from '../platformApi.js';
 
-/** Playbook visibility states understood by the gateway. */
-export type PlaybookVisibility = 'public' | 'private' | 'paid';
+/** The catalog query of `trending`: tags, search, order and page. */
+export type PlaybookCatalogQuery = Omit<
+  V2Query<'/playbooks', 'get'>,
+  'ids' | 'owner'
+>;
 
-export const PLAYBOOK_VISIBILITIES: readonly PlaybookVisibility[] = [
-  'public',
-  'private',
-  'paid',
-];
+/** pageSize and pageToken of `listByOwner`. */
+export type PlaybookPageQuery = Pick<
+  V2Query<'/playbooks', 'get'>,
+  'pageSize' | 'pageToken'
+>;
 
-export interface SetVisibilityParams {
-  /** URL-safe playbook name. The owner is derived server-side from auth. */
-  name: string;
-  /** Target visibility: public, private, or paid. */
-  visibility: PlaybookVisibility;
-}
+export type OwnPlaybooksQuery = V2Query<'/me/playbooks', 'get'>;
 
-export interface SetVisibilityResponse {
-  /** ALFS-style "<owner>/<name>" path echoed back by the gateway. */
-  playbook_path: string;
-}
-
-export type TrendingPlaybooksSort = 'FOLLOWS' | 'RECENT';
-export type TrendingPlaybooksDir = 'FORWARD' | 'BACKWARD';
-
-export interface TrendingPlaybooksParams {
-  /** Opaque cursor returned on a previous item. Alias of `current`. */
-  cursor?: string;
-  /** GraphQL-compatible cursor field name. Alias of `cursor`. */
-  current?: string;
-  /** Page size, default 50, max 100 server-side. */
-  limit?: number;
-  /** Only FORWARD is supported by the gateway today. */
-  dir?: TrendingPlaybooksDir;
-  /** FOLLOWS = most followed, RECENT = newest first. */
-  sort?: TrendingPlaybooksSort;
-  /** Optional AND-filter tags. */
-  tags?: string[];
-  /** Optional weighted search across playbook and creator fields. */
-  keyword?: string;
-}
-
-export interface TrendingPlaybookItem {
-  /** Numeric playbook id encoded as a string. */
-  id: string;
-  /** Stable "owner/name" handle, useful for follow-up tool calls. */
-  ref: string;
-  /** Owner username. */
-  username: string;
-  /** URL-safe playbook name. */
-  name: string;
-  display_name: string;
-  description: string;
-  tags: string[];
-  follow_count: number;
-  /** Relative web path for opening or citing the playbook, e.g. `/u/alice/playbooks/btc`. */
-  url_path: string;
-  /** Absolute, clickable web URL, e.g. `https://alva.ai/u/alice/playbooks/btc`. */
-  url: string;
-  /** README ALFS path when available. */
-  readme?: string;
-  /** Cursor to pass as `cursor` / `current` for pagination. */
-  cursor: string;
-}
-
-export interface TrendingPlaybooksResponse {
-  playbooks: TrendingPlaybookItem[];
-  has_next: boolean;
-}
-
-interface RawTrendingPlaybooksResponse {
-  playbooks?: RawTrendingPlaybook[];
-  has_next?: boolean;
-}
-
-interface RawTrendingPlaybook {
-  id?: string | number;
-  name?: string;
-  display_name?: string;
-  description?: string;
-  creator?: { name?: string };
-  tags?: string[];
-  follow_count?: number;
-  readme?: string;
-  cursor?: string;
+export interface PlaybookWriteOptions {
+  /** The write's Idempotency-Key; omitted, each call gets a new one. */
+  idempotencyKey?: string;
 }
 
 /**
- * Public playbook discovery. Backed by alva-gateway REST and mirrors the
- * GraphQL `trendingPlaybooks(cursor, sort, tags, keyword)` query.
+ * Playbooks on /api/v2. Every read needs an API key; keyless discovery is
+ * `client.v1.playbooks`.
  */
-/** Compact discovery record returned by getByIds / listByOwner / get. */
-export interface PlaybookDiscoveryItem {
-  /** Numeric playbook id encoded as a string. */
-  id: string;
-  /** Owner username (empty when not resolvable). */
-  owner_username: string;
-  /** URL-safe playbook name. */
-  name: string;
-  display_name: string;
-  visibility: string;
-  /** Stable "owner/name" handle for name-addressed operations. */
-  ref?: string;
-  /** Present on listByOwner rows. */
-  cursor?: string;
-}
-
-export interface DiscoveryByIDsResponse {
-  items: PlaybookDiscoveryItem[];
-}
-
-export interface ListByOwnerParams {
-  owner: string;
-  /** Page size, default 50, max 100 server-side. */
-  limit?: number;
-  cursor?: string;
-}
-
-export interface ListByOwnerResponse {
-  items: PlaybookDiscoveryItem[];
-  has_next: boolean;
-  next_cursor?: string;
-}
-
-/** Lifecycle filters for the owner-scoped list (GET /api/v1/playbook). */
-export const OWNED_PLAYBOOK_FILTERS = ['draft', 'running', 'paused'] as const;
-
-export type OwnedPlaybookFilter = (typeof OWNED_PLAYBOOK_FILTERS)[number];
-
-export interface ListOwnParams {
-  /** draft | running | paused. Omit to list all your published playbooks. */
-  filter?: OwnedPlaybookFilter;
-  /** Page size, default 50, max 100 server-side. */
-  limit?: number;
-  cursor?: string;
-}
-
-/** One row from the owner-scoped list (GET /api/v1/playbook). */
-export interface OwnedPlaybookItem {
-  /** Numeric playbook id encoded as a string. */
-  id: string;
-  /** URL-safe playbook name. */
-  name: string;
-  display_name?: string;
-  visibility?: string;
-  created_at?: string;
-  updated_at?: string;
-  /** Cursor to pass as `cursor` for the next page. */
-  cursor?: string;
-}
-
-export interface ListOwnResponse {
-  playbooks: OwnedPlaybookItem[];
-  has_next: boolean;
-}
-
 export class PlaybooksResource {
   constructor(private client: AlvaClient) {}
 
   /**
-   * Resolve playbook ids to named, addressable records (mono-meta#584 A2).
-   * Visibility-gated server-side; ids the caller cannot see — and DELETED
-   * playbook ids — return no row. Treat a missing id as "deleted or not
-   * visible" (the subscriptions list's `target_status` distinguishes ghosts).
-   * Ids are strings (snowflake-safe). Max 100 per call.
-   *
-   * Auth is optional (like `trending`): with an API key, private/paid
-   * visibility is evaluated for the caller; without one, only public
-   * playbooks resolve. The server decides — no client-side gate.
+   * Playbooks by ID, in the order asked (at most 100). IDs the caller cannot
+   * read, and deleted ones, are left out. An empty list is read without a
+   * request.
    */
-  async getByIds(ids: string[]): Promise<DiscoveryByIDsResponse> {
-    return (await this.client._request('GET', '/api/v1/playbooks', {
-      query: { ids: ids.join(',') },
-    })) as DiscoveryByIDsResponse;
+  async getByIds(ids: string[]): Promise<Schema<'Playbook'>[]> {
+    if (ids.length === 0) return [];
+    return collectAll(
+      this.client._v2Pages<Schema<'Playbook'>>('/playbooks', {
+        query: { ids },
+        pageSize: 100,
+      })
+    );
   }
 
   /**
-   * List a user's playbooks by owner username (mono-meta#584 C10).
-   * Visibility-gated: another user's private playbooks are omitted.
-   * Auth is optional (like `trending`); without credentials only public
-   * playbooks are listed.
+   * One page of a user's released Playbooks that the caller can read,
+   * newest first. Drafts are not listed: `listOwn` lists the caller's own.
    */
-  async listByOwner(params: ListByOwnerParams): Promise<ListByOwnerResponse> {
-    const query: Record<string, string> = { owner: params.owner };
-    if (params.limit !== undefined && params.limit > 0) {
-      query.limit = String(params.limit);
-    }
-    if (params.cursor) query.cursor = params.cursor;
-    return (await this.client._request('GET', '/api/v1/playbooks', {
-      query,
-    })) as ListByOwnerResponse;
+  async listByOwner(
+    owner: string,
+    query: PlaybookPageQuery = {}
+  ): Promise<Schema<'PlaybookList'>> {
+    return this.client._v2Request('GET', '/playbooks', {
+      query: { ...query, owner },
+    });
+  }
+
+  /** One page of the caller's own Playbooks, drafts included. */
+  async listOwn(
+    query: OwnPlaybooksQuery = {}
+  ): Promise<Schema<'PlaybookList'>> {
+    return this.client._v2Request('GET', '/me/playbooks', { query });
   }
 
   /**
-   * List the authenticated user's OWN playbooks via GET /api/v1/playbook —
-   * the owner-scoped surface that INCLUDES drafts. Unlike `listByOwner` (the
-   * public discovery view, which requires at least one release and therefore
-   * hides drafts), this shows work-in-progress playbooks you created but
-   * never released. Requires an API key: the owner is derived from auth, not
-   * a username argument. Optional `filter` narrows to draft | running |
-   * paused.
-   */
-  async listOwn(params: ListOwnParams = {}): Promise<ListOwnResponse> {
-    const query: Record<string, string> = {};
-    if (params.filter) query.filter = params.filter;
-    if (params.limit !== undefined && params.limit > 0) {
-      query.limit = String(params.limit);
-    }
-    if (params.cursor) query.cursor = params.cursor;
-    return (await this.client._request('GET', '/api/v1/playbook', {
-      query,
-    })) as ListOwnResponse;
-  }
-
-  /**
-   * Get one playbook by numeric id or by "owner/name" ref. Returns null when
-   * not found / not visible / deleted.
+   * One Playbook by ID, or by its "owner/slug" ref; null when there is none
+   * (404). A Playbook the caller may not read (403) is thrown.
    */
   async get(params: {
     id?: string;
     ref?: string;
-  }): Promise<PlaybookDiscoveryItem | null> {
+  }): Promise<Schema<'Playbook'> | null> {
     if (params.id) {
-      const resp = await this.getByIds([params.id]);
-      return resp.items[0] ?? null;
+      return orNull(
+        this.client._v2Request<Schema<'Playbook'>>(
+          'GET',
+          v2Path`/playbooks/${params.id}`
+        )
+      );
     }
     if (params.ref) {
-      const slash = params.ref.indexOf('/');
-      if (slash <= 0 || slash === params.ref.length - 1) {
-        throw new AlvaError(
-          'INVALID_ARGUMENT',
-          `Invalid ref "${params.ref}". Expected "owner/name".`,
-          400
-        );
-      }
-      const owner = params.ref.slice(0, slash);
-      const name = params.ref.slice(slash + 1);
-      let cursor: string | undefined;
-      // Paginate the owner's playbooks until the name matches (bounded by
-      // the server-side page cap; owner catalogs are small).
-      for (;;) {
-        const page = await this.listByOwner({ owner, cursor, limit: 100 });
-        const hit = page.items.find((item) => item.name === name);
-        if (hit) return hit;
-        if (!page.has_next || !page.next_cursor) return null;
-        cursor = page.next_cursor;
-      }
+      const { owner, slug } = parsePlaybookRef(params.ref);
+      return orNull(this.getBySlug(owner, slug));
     }
     throw new AlvaError('INVALID_ARGUMENT', 'id or ref is required', 400);
   }
 
-  /**
-   * List trending / searchable playbooks. Auth is optional: when the client
-   * has an API key it is forwarded, otherwise this uses the public surface.
-   *
-   * The gateway returns a frontend-oriented preview payload; this SDK projects
-   * it into a smaller, agent-friendly shape.
-   */
-  async trending(
-    params: TrendingPlaybooksParams = {}
-  ): Promise<TrendingPlaybooksResponse> {
-    const query: Record<string, string | number> = {};
-    if (params.cursor) query.cursor = params.cursor;
-    if (params.current) query.current = params.current;
-    if (params.limit !== undefined) query.limit = params.limit;
-    if (params.dir) query.dir = params.dir;
-    if (params.sort) query.sort = params.sort;
-    if (params.keyword) query.keyword = params.keyword;
-    if (params.tags && params.tags.length > 0) {
-      query.tags = params.tags.join(',');
-    }
-
-    const raw = (await this.client._request(
+  /** One Playbook by its owner's username and its slug. */
+  async getBySlug(owner: string, slug: string): Promise<Schema<'Playbook'>> {
+    return this.client._v2Request(
       'GET',
-      '/api/v1/playbooks/trending',
-      { query }
-    )) as RawTrendingPlaybooksResponse;
+      v2Path`/playbooks/by-slug/${owner}/${slug}`
+    );
+  }
 
-    const webOrigin = webOriginFromApiBase(this.client.baseUrl);
-    return {
-      playbooks: (raw.playbooks ?? []).map((p) =>
-        toAgentPlaybook(p, webOrigin)
-      ),
-      has_next: raw.has_next ?? false,
-    };
+  /** One page of the discoverable catalog: most followed or newest, by tags or search. */
+  async trending(
+    query: PlaybookCatalogQuery = {}
+  ): Promise<Schema<'PlaybookList'>> {
+    return this.client._v2Request('GET', '/playbooks', { query });
   }
 
   /**
-   * Set a playbook's visibility. Requires authentication; the owner is
-   * resolved server-side from the authenticated user, so only the playbook
-   * `name` is needed.
-   *
-   * Note: `private` and `paid` are paid-tier capabilities. A free-tier user
-   * receives a `PERMISSION_DENIED` error from the gateway, which is surfaced
-   * here unchanged.
+   * Changes a Playbook (JSON Merge Patch): its visibility and the Playbooks
+   * it was remixed from. `private` and `paid` are paid-tier capabilities
+   * (PERMISSION_DENIED otherwise). Widening a Playbook with bundled feeds
+   * needs `confirmBundledFeedExposure`; leaving PAID needs
+   * `confirmEndPaidRenewals` (reason PAID_RENEWALS_END_CONFIRMATION_REQUIRED).
    */
-  async setVisibility(
-    params: SetVisibilityParams
-  ): Promise<SetVisibilityResponse> {
-    if (!PLAYBOOK_VISIBILITIES.includes(params.visibility)) {
-      throw new AlvaError(
-        'INVALID_ARGUMENT',
-        `Invalid visibility "${params.visibility}". Expected one of: ${PLAYBOOK_VISIBILITIES.join(', ')}.`,
-        400
-      );
-    }
-    this.client._requireAuth();
-    return (await this.client._request(
-      'POST',
-      `/api/v1/playbook/${encodeURIComponent(params.name)}/visibility`,
-      { body: { visibility: params.visibility } }
-    )) as SetVisibilityResponse;
+  async update(
+    id: string,
+    patch: Schema<'PlaybookPatch'>,
+    options: PlaybookWriteOptions = {}
+  ): Promise<Schema<'Playbook'>> {
+    return this.client._v2Request('PATCH', v2Path`/playbooks/${id}`, {
+      body: patch,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 }
 
-function toAgentPlaybook(
-  raw: RawTrendingPlaybook,
+/** Splits an "owner/slug" Playbook ref. */
+export function parsePlaybookRef(ref: string): { owner: string; slug: string } {
+  const slash = ref.indexOf('/');
+  if (slash <= 0 || slash === ref.length - 1) {
+    throw new AlvaError(
+      'INVALID_ARGUMENT',
+      `Invalid ref "${ref}". Expected "owner/name".`,
+      400
+    );
+  }
+  return { owner: ref.slice(0, slash), slug: ref.slice(slash + 1) };
+}
+
+/** A Playbook's web URL, `<origin>/u/<owner>/playbooks/<slug>`; empty without an owner. */
+export function playbookUrl(
+  playbook: Schema<'Playbook'>,
   webOrigin: string
-): TrendingPlaybookItem {
-  const username = raw.creator?.name ?? '';
-  const name = raw.name ?? '';
-  const ref = username && name ? `${username}/${name}` : name;
-  const urlPath = username && name ? `/u/${username}/playbooks/${name}` : '';
-  return {
-    id: raw.id === undefined ? '' : String(raw.id),
-    ref,
-    username,
-    name,
-    display_name: raw.display_name ?? '',
-    description: raw.description ?? '',
-    tags: raw.tags ?? [],
-    follow_count: raw.follow_count ?? 0,
-    url_path: urlPath,
-    url: urlPath ? `${webOrigin}${urlPath}` : '',
-    ...(raw.readme ? { readme: raw.readme } : {}),
-    cursor: raw.cursor ?? '',
-  };
+): string {
+  const owner = playbook.owner?.handle;
+  return owner && playbook.slug
+    ? `${webOrigin}/u/${owner}/playbooks/${playbook.slug}`
+    : '';
 }

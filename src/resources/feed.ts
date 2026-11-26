@@ -1,122 +1,60 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  FeedDeleteRequest,
-  FeedDeleteResponse,
-  FeedListParams,
-  FeedListResponse,
-  FeedSetVisibilityRequest,
-  FeedSetVisibilityResponse,
-  FeedStatusUpdateRequest,
-  FeedStatusUpdateResponse,
-} from '../types.js';
+import { AlvaError } from '../error.js';
+import { v2Path, type Schema, type V2Query } from '../platformApi.js';
 
-/**
- * Feed lifecycle management. Backed by alva-gateway REST (mirrors the
- * GraphQL surface in `pkg/schema/feed.graphql`).
- */
+export type FeedListQuery = V2Query<'/me/automations', 'get'>;
+
+/** Feed lifecycle on the /api/v2 automation routes (a feed is an automation). */
 export class FeedResource {
   constructor(private client: AlvaClient) {}
 
-  /**
-   * List feeds owned by the caller. Backed by GET /api/v1/feed.
-   */
-  async list(params: FeedListParams = {}): Promise<FeedListResponse> {
-    this.client._requireAuth();
-    return this.client._request('GET', '/api/v1/feed', {
-      query: {
-        limit: params.limit,
-        cursor: params.cursor,
-        status: params.status,
-      },
-    }) as Promise<FeedListResponse>;
+  /** One page of the caller's feeds; `status` ACTIVE or PAUSED, both when omitted. */
+  async list(
+    query: FeedListQuery = {}
+  ): Promise<Schema<'AutomationSummaryList'>> {
+    return this.client._v2Request('GET', '/me/automations', { query });
+  }
+
+  /** Pauses the feed's future scheduled runs; the feed and its data stay. */
+  async stop(id: string): Promise<Schema<'Automation'>> {
+    return this.client._v2Request('POST', v2Path`/automations/${id}/pause`);
+  }
+
+  /** Resumes a paused feed's scheduled runs. */
+  async resume(id: string): Promise<Schema<'Automation'>> {
+    return this.client._v2Request('POST', v2Path`/automations/${id}/resume`);
   }
 
   /**
-   * Stop a feed's producer cronjob. This pauses future scheduled runs while
-   * preserving the feed and its existing data.
-   *
-   * Auth: caller must own the feed (uid match), enforced by the backend.
+   * Soft-deletes a feed and its active majors; its producer cronjobs are
+   * removed best-effort (the scavenger reconciles leftovers).
    */
-  async stop(
-    params: FeedStatusUpdateRequest
-  ): Promise<FeedStatusUpdateResponse> {
-    this.client._requireAuth();
-    const id = requireFeedID(params.id);
-    return this.client._request(
-      'POST',
-      `/api/v1/feed/${encodeURIComponent(String(id))}/stop`
-    ) as Promise<FeedStatusUpdateResponse>;
+  async delete(id: string): Promise<Record<string, never>> {
+    return this.client._v2Request('DELETE', v2Path`/automations/${id}`);
   }
 
   /**
-   * Resume a stopped feed's producer cronjob.
-   *
-   * Auth: caller must own the feed (uid match), enforced by the backend.
-   */
-  async resume(
-    params: FeedStatusUpdateRequest
-  ): Promise<FeedStatusUpdateResponse> {
-    this.client._requireAuth();
-    const id = requireFeedID(params.id);
-    return this.client._request(
-      'POST',
-      `/api/v1/feed/${encodeURIComponent(String(id))}/resume`
-    ) as Promise<FeedStatusUpdateResponse>;
-  }
-
-  /**
-   * Soft-delete a feed and all its active majors. Cascades:
-   *   - all active feed_majors are soft-deleted in the same transaction
-   *   - associated producer cronjobs are removed best-effort (the cronjob
-   *     scavenger reconciles any leftover rows on its next sweep)
-   *
-   * Auth: caller must own the feed (uid match), enforced by the backend.
-   */
-  async delete(params: FeedDeleteRequest): Promise<FeedDeleteResponse> {
-    this.client._requireAuth();
-    const id = requireFeedID(params.id);
-    return this.client._request(
-      'DELETE',
-      `/api/v1/feed/${encodeURIComponent(String(id))}`
-    ) as Promise<FeedDeleteResponse>;
-  }
-
-  /**
-   * Publish or unpublish a feed. Backed by POST /api/v1/feed/:id/visibility.
-   *
-   * Setting visibility to 'public' publishes the feed (the backend sets
-   * feeds.is_public and projects the ALFS public read grant in the same
-   * transaction); 'private' unpublishes it. Prefer this over granting the
-   * ALFS public read subject directly (e.g. `alva fs grant`), which bypasses
-   * the is_public flag and causes drift.
-   *
-   * Auth: caller must own the feed (uid match), enforced by the backend.
+   * Publishes (PUBLIC) or unpublishes (PRIVATE) a feed, with its ALFS public
+   * read grant in the same transaction. Prefer this over granting the public
+   * read subject directly (`alva fs grant`), which leaves the flag behind.
    */
   async setVisibility(
-    params: FeedSetVisibilityRequest
-  ): Promise<FeedSetVisibilityResponse> {
-    this.client._requireAuth();
-    const id = requireFeedID(params.id);
-    if (params.visibility !== 'public' && params.visibility !== 'private') {
-      throw new Error("visibility must be 'public' or 'private'");
+    id: string,
+    visibility: Schema<'OutputVisibility'>
+  ): Promise<Schema<'AutomationVisibility'>> {
+    // Any other value would select unpublish.
+    if (visibility !== 'PUBLIC' && visibility !== 'PRIVATE') {
+      throw new AlvaError(
+        'INVALID_ARGUMENT',
+        'visibility must be PUBLIC or PRIVATE',
+        400
+      );
     }
-    return this.client._request(
+    return this.client._v2Request(
       'POST',
-      `/api/v1/feed/${encodeURIComponent(String(id))}/visibility`,
-      { body: { visibility: params.visibility } }
-    ) as Promise<FeedSetVisibilityResponse>;
+      visibility === 'PUBLIC'
+        ? v2Path`/automations/${id}/publish`
+        : v2Path`/automations/${id}/unpublish`
+    );
   }
-}
-
-function requireFeedID(id: number | string): number | string {
-  if (typeof id === 'string') {
-    if (!/^[1-9]\d*$/.test(id)) {
-      throw new Error('feed id must be a positive integer');
-    }
-    return id;
-  }
-  if (!Number.isSafeInteger(id) || id <= 0) {
-    throw new Error('feed id must be a positive integer');
-  }
-  return id;
 }

@@ -13,25 +13,25 @@ function clientWithSteward(attached = false) {
     apiKey: 'alva_test',
     ...(attached ? { originInboxPath: inboxPath } : {}),
   });
-  client.steward.decide = vi.fn().mockResolvedValue({ state: 'consumed' });
-  client.steward.forward = vi
+  client.v1.steward.decide = vi.fn().mockResolvedValue({ state: 'consumed' });
+  client.v1.steward.forward = vi
     .fn()
     .mockResolvedValue({ channelMessageId: '77', state: 'sent' });
-  client.steward.send = vi
+  client.v1.steward.send = vi
     .fn()
     .mockResolvedValue({ channelMessageId: '78', requestId: 'r' });
-  client.steward.pending = vi.fn().mockResolvedValue({
+  client.v1.steward.pending = vi.fn().mockResolvedValue({
     items: [],
     nextCursor: null,
     windowSinceMs: 1,
     windowUntilMs: 2,
   });
-  client.steward.briefed = vi.fn().mockResolvedValue({ ok: true });
-  client.steward.digestRun = vi
+  client.v1.steward.briefed = vi.fn().mockResolvedValue({ ok: true });
+  client.v1.steward.digestRun = vi
     .fn()
     .mockResolvedValue({ digestRunId, state: 'RUNNING' });
-  client.steward.digestRunPending = vi.fn().mockResolvedValue([]);
-  client.steward.sendDigestRun = vi
+  client.v1.steward.digestRunPending = vi.fn().mockResolvedValue([]);
+  client.v1.steward.sendDigestRun = vi
     .fn()
     .mockResolvedValue({ digestRunId, state: 'SENT' });
   return client;
@@ -104,7 +104,7 @@ describe('steward CLI', () => {
       '--until',
       '2026-09-16T16:33:59.456+08:00',
     ]);
-    expect(client.steward.pending).toHaveBeenCalledWith(
+    expect(client.v1.steward.pending).toHaveBeenCalledWith(
       expect.objectContaining({
         sinceMs: Date.parse('2026-09-16T07:33:59.123Z'),
         untilMs: Date.parse('2026-09-16T16:33:59.456+08:00'),
@@ -132,7 +132,7 @@ describe('steward CLI', () => {
       '--reason',
       'guidance cut',
     ]);
-    expect(client.steward.decide).toHaveBeenCalledWith({
+    expect(client.v1.steward.decide).toHaveBeenCalledWith({
       inboxPath,
       deliveryId: '123',
       decision: 'immediate',
@@ -145,7 +145,7 @@ describe('steward CLI', () => {
       '--delivery-id',
       '123',
     ]);
-    expect(client.steward.forward).toHaveBeenCalledWith({
+    expect(client.v1.steward.forward).toHaveBeenCalledWith({
       inboxPath,
       deliveryId: '123',
       requestId: undefined,
@@ -159,7 +159,7 @@ describe('steward CLI', () => {
       '--body',
       'Two related moves',
     ]);
-    expect(client.steward.send).toHaveBeenCalledWith({
+    expect(client.v1.steward.send).toHaveBeenCalledWith({
       inboxPath,
       body: 'Two related moves',
       deliveryIds: ['124', '125'],
@@ -172,7 +172,7 @@ describe('steward CLI', () => {
       '--body',
       'For You only',
     ]);
-    expect(client.steward.send).toHaveBeenLastCalledWith({
+    expect(client.v1.steward.send).toHaveBeenLastCalledWith({
       inboxPath,
       body: 'For You only',
       deliveryIds: [],
@@ -185,7 +185,7 @@ describe('steward CLI', () => {
       '--until',
       '2026-09-15T13:00:00Z',
     ]);
-    expect(client.steward.pending).toHaveBeenCalledWith({
+    expect(client.v1.steward.pending).toHaveBeenCalledWith({
       inboxPath,
       sinceMs: undefined,
       untilMs: Date.parse('2026-09-15T13:00:00Z'),
@@ -200,7 +200,7 @@ describe('steward CLI', () => {
       '--delivery-ids',
       '124,125',
     ]);
-    expect(client.steward.briefed).toHaveBeenCalledWith({
+    expect(client.v1.steward.briefed).toHaveBeenCalledWith({
       inboxPath,
       deliveryIds: ['124', '125'],
       digestRunId: 'digest-555-42',
@@ -215,7 +215,7 @@ describe('steward CLI', () => {
       '--digest-run-id',
       digestRunId,
     ]);
-    expect(client.steward.digestRun).toHaveBeenCalledWith({
+    expect(client.v1.steward.digestRun).toHaveBeenCalledWith({
       inboxPath,
       digestRunId,
     });
@@ -226,7 +226,7 @@ describe('steward CLI', () => {
       '--digest-run-id',
       digestRunId,
     ]);
-    expect(client.steward.digestRunPending).toHaveBeenCalledWith({
+    expect(client.v1.steward.digestRunPending).toHaveBeenCalledWith({
       inboxPath,
       digestRunId,
     });
@@ -241,7 +241,7 @@ describe('steward CLI', () => {
       '--body',
       'Brief',
     ]);
-    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
+    expect(client.v1.steward.sendDigestRun).toHaveBeenCalledWith({
       inboxPath,
       digestRunId,
       deliveryIds: ['1', '2'],
@@ -254,7 +254,7 @@ describe('steward CLI', () => {
       '--digest-run-id',
       digestRunId,
     ]);
-    expect(client.steward.sendDigestRun).toHaveBeenLastCalledWith({
+    expect(client.v1.steward.sendDigestRun).toHaveBeenLastCalledWith({
       inboxPath,
       digestRunId,
       deliveryIds: [],
@@ -276,7 +276,7 @@ describe('steward CLI', () => {
         inboxPath,
       ])
     ).rejects.toThrow(CliUsageError);
-    expect(attached.steward.pending).not.toHaveBeenCalled();
+    expect(attached.v1.steward.pending).not.toHaveBeenCalled();
   });
 
   it('embedded retries preserve the caller request ID for forward and send', async () => {
@@ -302,14 +302,14 @@ describe('steward CLI', () => {
         requestId,
       ]);
     }
-    expect(client.steward.forward).toHaveBeenCalledTimes(2);
-    expect(client.steward.forward).toHaveBeenNthCalledWith(2, {
+    expect(client.v1.steward.forward).toHaveBeenCalledTimes(2);
+    expect(client.v1.steward.forward).toHaveBeenNthCalledWith(2, {
       inboxPath,
       deliveryId: '123',
       requestId,
     });
-    expect(client.steward.send).toHaveBeenCalledTimes(2);
-    expect(client.steward.send).toHaveBeenNthCalledWith(2, {
+    expect(client.v1.steward.send).toHaveBeenCalledTimes(2);
+    expect(client.v1.steward.send).toHaveBeenNthCalledWith(2, {
       inboxPath,
       deliveryIds: ['124', '125'],
       body: 'Two moves',
@@ -332,7 +332,7 @@ describe('steward CLI', () => {
       '--request-id',
       '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
     ]);
-    expect(client.steward.forward).toHaveBeenCalledWith({
+    expect(client.v1.steward.forward).toHaveBeenCalledWith({
       inboxPath,
       deliveryId: '1',
       requestId: '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
@@ -365,7 +365,7 @@ describe('steward CLI details', () => {
       '--request-id',
       '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
     ]);
-    expect(client.steward.forward).toHaveBeenCalledWith({
+    expect(client.v1.steward.forward).toHaveBeenCalledWith({
       inboxPath,
       deliveryId: '5',
       requestId: '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a77',
@@ -380,7 +380,7 @@ describe('steward CLI details', () => {
       '--request-id',
       '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a78',
     ]);
-    expect(client.steward.send).toHaveBeenCalledWith(
+    expect(client.v1.steward.send).toHaveBeenCalledWith(
       expect.objectContaining({
         requestId: '4d3a1a7e-6d1a-4e2c-9a3b-2f1e0c9b8a78',
       })
@@ -396,9 +396,9 @@ describe('steward CLI details', () => {
     ]) {
       await expect(
         dispatchEmbedded(client, ['steward', 'pending', '--until', value])
-      ).rejects.toThrow(/RFC3339/);
+      ).rejects.toThrow(/RFC 3339/);
     }
-    expect(client.steward.pending).not.toHaveBeenCalled();
+    expect(client.v1.steward.pending).not.toHaveBeenCalled();
   });
 
   it('does not expose continuation cursors in the model-facing pending command', async () => {
@@ -406,7 +406,7 @@ describe('steward CLI details', () => {
     await expect(
       dispatchEmbedded(client, ['steward', 'pending', '--after', 'cursor-1'])
     ).rejects.toThrow(/--after is not supported/);
-    expect(client.steward.pending).not.toHaveBeenCalled();
+    expect(client.v1.steward.pending).not.toHaveBeenCalled();
   });
 
   it('passes reviewed coverage through durable send mode', async () => {
@@ -421,7 +421,7 @@ describe('steward CLI details', () => {
       '--body',
       'brief',
     ]);
-    expect(client.steward.sendDigestRun).toHaveBeenCalledWith({
+    expect(client.v1.steward.sendDigestRun).toHaveBeenCalledWith({
       inboxPath,
       digestRunId,
       deliveryIds: ['5'],

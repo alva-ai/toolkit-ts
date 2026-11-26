@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AlvaClient } from '../src/client.js';
 import { AlvaError } from '../src/error.js';
+import { V1Resources } from '../src/v1/index.js';
 
 // Helper to create a mock fetch
 function mockFetch(response: {
@@ -218,7 +219,7 @@ describe('AlvaClient', () => {
       globalThis.fetch = fetch;
       const client = new AlvaClient({});
 
-      const result = await client._request('GET', '/api/v1/screenshot');
+      const result = await client._request('GET', '/api/v1/fs/read');
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
@@ -233,7 +234,7 @@ describe('AlvaClient', () => {
       });
       const client = new AlvaClient({});
 
-      const result = await client.fs.read({ path: '~/hello.txt' });
+      const result = await client.v1.fs.read({ path: '~/hello.txt' });
 
       expect(result).toBe(text);
     });
@@ -248,7 +249,7 @@ describe('AlvaClient', () => {
       });
       const client = new AlvaClient({});
 
-      const result = await client.fs.read({ path: '~/image.bin' });
+      const result = await client.v1.fs.read({ path: '~/image.bin' });
 
       expect(result).toBe(bytes);
     });
@@ -260,7 +261,7 @@ describe('AlvaClient', () => {
       globalThis.fetch = fetch;
       const client = new AlvaClient({});
 
-      const result = await client._request('GET', '/api/v1/screenshot');
+      const result = await client._request('GET', '/api/v1/fs/read');
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
@@ -615,6 +616,15 @@ describe('AlvaClient', () => {
     it('does not throw when apiKey is present', () => {
       const client = new AlvaClient({ apiKey: 'key' });
       expect(() => client._requireAuth()).not.toThrow();
+    });
+  });
+
+  describe('v1', () => {
+    it('is one V1Resources per client', () => {
+      const client = new AlvaClient({ apiKey: 'key' });
+      expect(client.v1).toBeInstanceOf(V1Resources);
+      expect(client.v1).toBe(client.v1);
+      expect(new AlvaClient({}).v1).not.toBe(client.v1);
     });
   });
 

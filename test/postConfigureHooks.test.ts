@@ -101,10 +101,9 @@ describe('ensureArraysJwtHook', () => {
 
   it('writes "provisioned" line on renewed=true success', async () => {
     const client = makeClient();
-    const expiresAt = 1735689600;
     client.arraysJwt.ensure = vi.fn().mockResolvedValue({
-      expires_at: expiresAt,
-      tier: 'SUBSCRIPTION_TIER_PRO',
+      expiresAt: '2025-01-01T00:00:00.000Z',
+      tier: 'PRO',
       renewed: true,
     });
     const writes: string[] = [];
@@ -119,7 +118,7 @@ describe('ensureArraysJwtHook', () => {
 
     expect(writeSpy).toHaveBeenCalled();
     const joined = writes.join('');
-    const expectedDate = new Date(expiresAt * 1000).toISOString().slice(0, 10);
+    const expectedDate = '2025-01-01';
     expect(joined).toContain('Arrays JWT provisioned');
     expect(joined).toContain(`expires ${expectedDate}`);
     expect(joined).toContain('tier: pro');
@@ -127,10 +126,9 @@ describe('ensureArraysJwtHook', () => {
 
   it('writes "already current" line on renewed=false success', async () => {
     const client = makeClient();
-    const expiresAt = 1735689600;
     client.arraysJwt.ensure = vi.fn().mockResolvedValue({
-      expires_at: expiresAt,
-      tier: 'SUBSCRIPTION_TIER_FREE',
+      expiresAt: '2025-01-01T00:00:00.000Z',
+      tier: 'FREE',
       renewed: false,
     });
     const writes: string[] = [];
@@ -142,17 +140,17 @@ describe('ensureArraysJwtHook', () => {
     await ensureArraysJwtHook.run(client);
 
     const joined = writes.join('');
-    const expectedDate = new Date(expiresAt * 1000).toISOString().slice(0, 10);
+    const expectedDate = '2025-01-01';
     expect(joined).toContain('Arrays JWT already current');
     expect(joined).toContain(`expires ${expectedDate}`);
     expect(joined).toContain('tier: free');
   });
 
-  it('formats tier for UNSPECIFIED', async () => {
+  it('writes unknown for a token without an expiry or a tier', async () => {
     const client = makeClient();
     client.arraysJwt.ensure = vi.fn().mockResolvedValue({
-      expires_at: 1735689600,
-      tier: 'SUBSCRIPTION_TIER_UNSPECIFIED',
+      expiresAt: null,
+      tier: null,
       renewed: true,
     });
     const writes: string[] = [];
@@ -163,26 +161,7 @@ describe('ensureArraysJwtHook', () => {
 
     await ensureArraysJwtHook.run(client);
 
-    expect(writes.join('')).toContain('tier: unspecified');
-  });
-
-  it('formats tier for unknown/garbage string', async () => {
-    const client = makeClient();
-    client.arraysJwt.ensure = vi.fn().mockResolvedValue({
-      expires_at: 1735689600,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tier: 'garbage' as any,
-      renewed: false,
-    });
-    const writes: string[] = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
-      writes.push(String(chunk));
-      return true;
-    });
-
-    await ensureArraysJwtHook.run(client);
-
-    expect(writes.join('')).toContain('tier: garbage');
+    expect(writes.join('')).toContain('(expires unknown, tier: unknown)');
   });
 
   it('rethrows AlvaError from ensure() so registry can log it', async () => {

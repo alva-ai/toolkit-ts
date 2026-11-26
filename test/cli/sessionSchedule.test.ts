@@ -2,32 +2,44 @@ import { describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { dispatchCli as dispatchSystem } from '../../src/cli/dispatch.js';
 import { dispatch as dispatchEmbedded } from '../../src/cli/embeddedDispatch.js';
+import { aSchedule, aSessionSchedule } from '../automationV2.js';
 
 const inboxPath = '/alva/home/alice/original.inbox.jsonl';
+const page = (items: unknown[]) => ({ items, nextPageToken: null });
 
 function clientWithSchedules(attached = false) {
   const client = new AlvaClient({
     apiKey: 'alva_test',
     ...(attached ? { originInboxPath: inboxPath } : {}),
   });
-  client.schedules.list = vi.fn().mockResolvedValue([]);
-  client.schedules.put = vi.fn().mockResolvedValue({ name: 'later' });
-  client.schedules.pause = vi.fn().mockResolvedValue({ name: 'later' });
-  client.schedules.resume = vi.fn().mockResolvedValue({ name: 'later' });
-  client.schedules.delete = vi.fn().mockResolvedValue(undefined);
-  client.schedules.agentChannelId = vi.fn().mockResolvedValue('91');
+  const session = aSessionSchedule({ name: 'later' });
+  client.schedules.list = vi.fn().mockResolvedValue(page([aSchedule()]));
+  client.schedules.listSession = vi.fn().mockResolvedValue(page([session]));
+  client.schedules.putSession = vi.fn().mockResolvedValue(session);
+  client.schedules.pauseSession = vi.fn().mockResolvedValue(session);
+  client.schedules.resumeSession = vi.fn().mockResolvedValue(session);
+  client.schedules.deleteSession = vi.fn().mockResolvedValue({});
+  client.schedules.agentChannelId = vi.fn().mockResolvedValue('channel_0ch');
   return client;
 }
+
+const SESSION_CALLS = {
+  pause: 'pauseSession',
+  resume: 'resumeSession',
+  delete: 'deleteSession',
+} as const;
 
 describe('Session schedule CLI targets', () => {
   it('supports explicit Inbox targets for all five terminal commands', async () => {
     const client = clientWithSchedules();
-    await dispatchSystem(client, [
-      'schedule',
-      'list',
-      '--inbox-path',
-      inboxPath,
-    ]);
+    expect(
+      await dispatchSystem(client, [
+        'schedule',
+        'list',
+        '--inbox-path',
+        inboxPath,
+      ])
+    ).toEqual(page([aSessionSchedule({ name: 'later' })]));
     await dispatchSystem(client, [
       'schedule',
       'put',
@@ -35,7 +47,7 @@ describe('Session schedule CLI targets', () => {
       inboxPath,
       '--name',
       'later',
-      '--after',
+      '--every',
       'PT1M',
       '--message',
       'Check.',
@@ -49,32 +61,42 @@ describe('Session schedule CLI targets', () => {
         '--name',
         'later',
       ]);
-      expect(client.schedules[command]).toHaveBeenCalledWith({
-        inboxPath,
-        name: 'later',
-      });
+      expect(client.schedules[SESSION_CALLS[command]]).toHaveBeenCalledWith(
+        'session_schedule_0s'
+      );
     }
-    expect(client.schedules.list).toHaveBeenCalledWith({ inboxPath });
-    expect(client.schedules.put).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inboxPath,
-        rule: { kind: 'after', duration: 'PT1M' },
-      })
-    );
+    expect(client.schedules.listSession).toHaveBeenCalledWith({
+      inboxPath,
+      pageSize: 100,
+      pageToken: undefined,
+    });
+    expect(client.schedules.listSession).toHaveBeenCalledWith({
+      inboxPath,
+      name: 'later',
+    });
+    expect(client.schedules.putSession).toHaveBeenCalledWith({
+      inboxPath,
+      name: 'later',
+      message: 'Check.',
+      rule: { kind: 'EVERY', everySeconds: 60 },
+    });
     expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
   });
 
   it('keeps the terminal default Channel and rejects mixed targets', async () => {
     const client = clientWithSchedules(true);
     await dispatchSystem(client, ['schedule', 'list']);
-    expect(client.schedules.list).toHaveBeenCalledWith({ channelId: '91' });
+    expect(client.schedules.list).toHaveBeenCalledWith('channel_0ch', {
+      pageSize: 100,
+      pageToken: undefined,
+    });
     vi.mocked(client.schedules.list).mockClear();
     await expect(
       dispatchSystem(client, [
         'schedule',
         'list',
         '--channel-id',
-        '91',
+        'channel_0ch',
         '--inbox-path',
         inboxPath,
       ])
@@ -97,15 +119,17 @@ describe('Session schedule CLI targets', () => {
     ]);
     for (const command of ['pause', 'resume', 'delete'] as const) {
       await dispatchEmbedded(client, ['schedule', command, '--name', 'later']);
-      expect(client.schedules[command]).toHaveBeenCalledWith({
-        inboxPath,
-        name: 'later',
-      });
+      expect(client.schedules[SESSION_CALLS[command]]).toHaveBeenCalledWith(
+        'session_schedule_0s'
+      );
     }
-    expect(client.schedules.list).toHaveBeenCalledWith({ inboxPath });
-    expect(client.schedules.put).toHaveBeenCalledWith(
+    expect(client.schedules.listSession).toHaveBeenCalledWith(
       expect.objectContaining({ inboxPath })
     );
+    expect(client.schedules.putSession).toHaveBeenCalledWith(
+      expect.objectContaining({ inboxPath })
+    );
+    expect(client.schedules.list).not.toHaveBeenCalled();
     expect(client.schedules.agentChannelId).not.toHaveBeenCalled();
   });
 
@@ -123,12 +147,28 @@ describe('Session schedule CLI targets', () => {
         dispatchEmbedded(client, ['schedule', 'list', `--${flag}`, 'override'])
       ).rejects.toThrow(/not supported/);
     }
-    expect(client.schedules.list).not.toHaveBeenCalled();
+    expect(client.schedules.listSession).not.toHaveBeenCalled();
     const unattached = clientWithSchedules();
     await expect(
       dispatchEmbedded(unattached, ['schedule', 'list'])
     ).rejects.toThrow(/attached.*Inbox/);
     expect(unattached.schedules.agentChannelId).not.toHaveBeenCalled();
-    expect(unattached.schedules.list).not.toHaveBeenCalled();
+    expect(unattached.schedules.listSession).not.toHaveBeenCalled();
+  });
+
+  it('a name that selects no schedule is NOT_FOUND without a write', async () => {
+    const client = clientWithSchedules();
+    client.schedules.listSession = vi.fn().mockResolvedValue(page([]));
+    await expect(
+      dispatchSystem(client, [
+        'schedule',
+        'pause',
+        '--inbox-path',
+        inboxPath,
+        '--name',
+        'missing',
+      ])
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(client.schedules.pauseSession).not.toHaveBeenCalled();
   });
 });

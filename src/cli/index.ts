@@ -6,7 +6,7 @@ import { Agent, setGlobalDispatcher } from 'undici';
 
 import { AlvaClient } from '../client.js';
 import { isArrayBuffer } from '../arrayBuffer.js';
-import { AlvaError, CliUsageError } from '../error.js';
+import { AlvaError, alvaErrorOutput, CliUsageError } from '../error.js';
 import { handleAuthLogin, handleAuthLoginNoBrowser } from './auth.js';
 import { loadConfig, writeConfig } from './config.js';
 import {
@@ -76,7 +76,6 @@ const nodeRuntimeDeps: DispatchRuntimeDeps = {
   localFiles: {
     readText: (path) => fs.readFileSync(path, 'utf-8'),
     readBytes: (path) => fs.readFileSync(path) as unknown as BodyInit,
-    writeBytes: (path, data) => fs.writeFileSync(path, data),
   },
   readStdin: readAllStdin,
   readStdinBytes: readAllStdinBytes,
@@ -245,15 +244,6 @@ async function main(): Promise<void> {
       process.exitCode = (result as { _exitCode: number })._exitCode;
       return;
     }
-    if (
-      result &&
-      typeof result === 'object' &&
-      (result as Record<string, unknown>)._image === true &&
-      typeof (result as Record<string, unknown>).data === 'string'
-    ) {
-      process.stdout.write((result as { data: string }).data + '\n');
-      return;
-    }
     if (isArrayBuffer(result)) {
       process.stdout.write(Buffer.from(result));
     } else if (typeof result === 'string') {
@@ -272,20 +262,7 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     } else if (error instanceof AlvaError) {
       process.stderr.write(
-        `${JSON.stringify(
-          {
-            error: {
-              code: error.code,
-              message: error.message,
-              status: error.status,
-              ...(error.details !== undefined
-                ? { details: error.details }
-                : {}),
-            },
-          },
-          null,
-          2
-        )}\n`
+        `${JSON.stringify(alvaErrorOutput(error), null, 2)}\n`
       );
       process.exitCode = 1;
     } else {

@@ -1,44 +1,29 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
-import { FeedbackResource } from '../../src/resources/feedback.js';
+import { aFeedback, REQUEST_ID } from '../accountV2.js';
+import { fakeV2 } from '../fakeV2.js';
 
-function makeClient(): AlvaClient & { _request: ReturnType<typeof vi.fn> } {
-  const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-    _request: ReturnType<typeof vi.fn>;
-  };
-  client._request = vi.fn().mockResolvedValue({
-    feedback_id: 123,
-    notion_page_id: 'page-123',
-    notion_url: 'https://notion.so/page-123',
-  });
-  return client;
-}
+let restore: (() => void) | undefined;
+afterEach(() => restore?.());
 
 describe('FeedbackResource', () => {
-  it('submit sends POST /api/v1/feedback', async () => {
-    const client = makeClient();
-    const feedback = new FeedbackResource(client);
-    const result = await feedback.submit({
+  it('submit() posts the SubmitFeedbackRequest and returns the Feedback', async () => {
+    const fake = fakeV2({ 'POST /feedback': () => aFeedback() });
+    restore = fake.restore;
+    const client = new AlvaClient({
+      apiKey: 'key',
+      baseUrl: 'https://api.test',
+    });
+    const body = {
       summary: 'runtime failed',
-      category: 'runtime',
-      severity: 'high',
+      category: 'DATA_QUALITY' as const,
+      severity: 'HIGH' as const,
       evidence: { command: 'alva run foo.js' },
-      context: { session_id: 's1' },
-    });
-
-    expect(client._request).toHaveBeenCalledWith('POST', '/api/v1/feedback', {
-      body: {
-        summary: 'runtime failed',
-        category: 'runtime',
-        severity: 'high',
-        evidence: { command: 'alva run foo.js' },
-        context: { session_id: 's1' },
-      },
-    });
-    expect(result).toEqual({
-      feedback_id: 123,
-      notion_page_id: 'page-123',
-      notion_url: 'https://notion.so/page-123',
-    });
+    };
+    expect(
+      await client.feedback.submit(body, { idempotencyKey: REQUEST_ID })
+    ).toEqual(aFeedback());
+    expect(fake.calls[0].body).toEqual(body);
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
   });
 });

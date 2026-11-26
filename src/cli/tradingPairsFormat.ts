@@ -1,46 +1,25 @@
-import type {
-  TradingPairCandidate,
-  TradingPairSearchResponse,
-} from '../resources/tradingPairs.js';
+import type { Schema } from '../platformApi.js';
 
-function candidateLine(candidate: TradingPairCandidate): string {
-  const metadata = [
-    `market=${candidate.market}`,
-    `instrument=${candidate.instrumentType}`,
-    candidate.underlyingType === undefined
-      ? undefined
-      : `underlying=${candidate.underlyingType}`,
-    `quote=${candidate.quote}`,
-  ].filter((value): value is string => value !== undefined);
-  return `${candidate.tradingPair} (${metadata.join(' ')})`;
+type TradingPair = Schema<'TradingPair'>;
+
+function pairLine(pair: TradingPair): string {
+  return `${pair.symbol} (exchange=${pair.exchange} type=${pair.type} quote=${pair.quote})`;
 }
 
 export function formatTradingPairSearch(
-  result: TradingPairSearchResponse
+  query: string,
+  pairs: readonly TradingPair[]
 ): string {
-  if (result.candidates.length === 0) {
-    return `No trading pairs found for "${result.query}".`;
-  }
-  const lines = result.candidates.map(candidateLine);
-  if (result.truncated === true) {
-    lines.push(
-      `... results truncated at ${result.candidates.length} candidates`
-    );
-  }
-  return lines.join('\n');
+  if (pairs.length === 0) return `No trading pairs found for "${query}".`;
+  return pairs.map(pairLine).join('\n');
 }
 
-export function formatTradingPairResolved(
-  result: TradingPairCandidate
-): string {
+export function formatTradingPairResolved(pair: TradingPair): string {
   return [
-    result.tradingPair,
-    `symbol=${result.symbol}`,
-    `market=${result.market}`,
-    `instrument=${result.instrumentType}`,
-    ...(result.underlyingType === undefined
-      ? []
-      : [`underlying=${result.underlyingType}`]),
-    `quote=${result.quote}`,
+    pair.symbol,
+    `base=${pair.base}`,
+    `exchange=${pair.exchange}`,
+    `type=${pair.type}`,
+    `quote=${pair.quote}`,
   ].join('\n');
 }

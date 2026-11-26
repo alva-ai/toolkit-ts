@@ -1,38 +1,22 @@
 import type { AlvaClient } from '../client.js';
-import type {
-  NotificationPreferencesResponse,
-  NotificationPreferenceUpdateParams,
-  NotificationPreferenceUpdateResponse,
-} from '../types.js';
+import type { Schema } from '../platformApi.js';
 
+/** The caller's notification preferences; null is the server default. */
 export class NotificationPreferencesResource {
   constructor(private client: AlvaClient) {}
 
-  /**
-   * List the caller's notification preference settings. Server defaults
-   * are included even when the caller has not explicitly stored a setting.
-   */
-  async list(): Promise<NotificationPreferencesResponse> {
+  async get(): Promise<Schema<'NotificationPreferences'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'GET',
-      '/api/v1/me/notifications/preferences'
-    ) as Promise<NotificationPreferencesResponse>;
+    return this.client._v2Request('GET', '/me/notification-preferences');
   }
 
-  /**
-   * Enable or disable one notification preference.
-   */
+  /** A merge patch: members absent from `patch` keep their value. */
   async update(
-    params: NotificationPreferenceUpdateParams
-  ): Promise<NotificationPreferenceUpdateResponse> {
+    patch: Schema<'NotificationPreferencesPatch'>
+  ): Promise<Schema<'NotificationPreferences'>> {
     this.client._requireAuth();
-    return this.client._request(
-      'PATCH',
-      `/api/v1/me/notifications/preferences/${encodeURIComponent(params.key)}`,
-      {
-        body: { enabled: params.enabled },
-      }
-    ) as Promise<NotificationPreferenceUpdateResponse>;
+    return this.client._v2Request('PATCH', '/me/notification-preferences', {
+      body: patch,
+    });
   }
 }

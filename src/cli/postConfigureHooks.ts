@@ -1,5 +1,4 @@
 import type { AlvaClient } from '../client.js';
-import type { SubscriptionTier } from '../types.js';
 
 export interface PostConfigureHook {
   name: string;
@@ -15,24 +14,12 @@ function defaultStderr(s: string): void {
   process.stderr.write(s);
 }
 
-function formatTier(t: SubscriptionTier | string): string {
-  const stripped =
-    typeof t === 'string' && t.startsWith('SUBSCRIPTION_TIER_')
-      ? t.slice('SUBSCRIPTION_TIER_'.length)
-      : String(t);
-  return stripped.toLowerCase();
-}
-
-function formatExpiry(expiresAt: number): string {
-  return new Date(expiresAt * 1000).toISOString().slice(0, 10);
-}
-
 export const ensureArraysJwtHook: PostConfigureHook = {
   name: 'ensureArraysJwt',
   async run(client: AlvaClient): Promise<void> {
     const res = await client.arraysJwt.ensure();
-    const date = formatExpiry(res.expires_at);
-    const tier = formatTier(res.tier);
+    const date = res.expiresAt?.slice(0, 10) ?? 'unknown';
+    const tier = res.tier?.toLowerCase() ?? 'unknown';
     const verb = res.renewed
       ? 'Arrays JWT provisioned'
       : 'Arrays JWT already current';

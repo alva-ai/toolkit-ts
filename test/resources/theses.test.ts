@@ -1,1077 +1,542 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
 import { AlvaError } from '../../src/error.js';
+import { thesisUrl } from '../../src/resources/theses.js';
+import { webOriginFromApiBase } from '../../src/resources/webOrigin.js';
+import { fakeV2, problem } from '../fakeV2.js';
+import { v2 } from '../v2Schema.js';
+import {
+  ASSET,
+  ASSET_2,
+  PROFILE,
+  REQUEST_ID,
+  THESIS,
+  VERSION,
+  aPage,
+  aProfile,
+  aThesis,
+  aVersion,
+} from '../contentV2.js';
 
-const REQUEST_ID = '123e4567-e89b-72d3-c456-426614174000';
-const MAX_ID = '9223372036854775807';
+// ThesesResource on /api/v2: the routes' JSON is the result, unmapped.
 
-function thesis(visibility: 'public' | 'private' = 'public') {
-  return {
-    thesis: {
-      id: MAX_ID,
-      author_version_id: '9223372036854775806',
-      material_version_id: '9223372036854775805',
-      title: 'Thesis',
-      body: 'line one\r\nline two',
-      entity_ids: ['9223372036854775804'],
-      visibility,
-      closed: false,
-      archived: false,
-      closing_note: '',
-      author_kind: 'user',
-      author_ref: 'alice',
-    },
-  };
+let fake: ReturnType<typeof fakeV2> | undefined;
+afterEach(() => fake?.restore());
+
+function client() {
+  return new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
 }
 
-function thesisGet() {
-  return {
-    ...thesis(),
-    author: {
-      id: '42',
-      kind: 'user',
-      display_name: 'Alice',
-      avatar_url: 'https://example.com/alice.png',
-      username: 'alice',
-    },
-    entities: [
-      {
-        id: '9223372036854775804',
-        ticker: 'NVDA',
-        name: 'NVIDIA Corporation',
-        icon_url: 'https://example.com/nvda.svg',
-        kind: 'STOCK',
-      },
-    ],
-  };
-}
+const UUID =
+  /^"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"$/;
 
-function thesisSignals() {
-  return {
-    research: { state: 'partial', pending_work: 2, read_complete: false },
-    entries: [
-      {
-        feed_entry_id: '77',
-        cursor: 'cursor-77',
-        signal: {
-          id: '88',
-          thesis_id: MAX_ID,
-          author_version_id: '9223372036854775806',
-          statement_snapshot: 'NVDA compounds',
-          stance: 'supports',
-          explanation: 'evidence',
-          information_kind: 'fact',
-          evidence_excerpt: {
-            text: 'exact passage',
-            omitted_before: false,
-            omitted_after: true,
-          },
+describe('ThesesResource reads', () => {
+  it('returns a Thesis by ID and by number as the route answers', async () => {
+    const thesis = aThesis({ visibility: 'PAID', author: null });
+    fake = fakeV2({
+      [`GET /theses/${THESIS}`]: () => thesis,
+      'GET /theses/by-number/42': () => thesis,
+    });
+
+    await expect(client().theses.get(THESIS)).resolves.toEqual(thesis);
+    await expect(client().theses.getByNumber(42)).resolves.toEqual(thesis);
+  });
+
+  it('returns an Update by ID and by the Thesis and Update numbers', async () => {
+    const version = aVersion({ number: 3, note: 'why' });
+    fake = fakeV2({
+      [`GET /thesis-versions/${VERSION}`]: () => version,
+      'GET /theses/by-number/42/versions/3': () => version,
+    });
+
+    await expect(client().theses.getVersion(VERSION)).resolves.toEqual(version);
+    await expect(client().theses.getVersionByNumber(42, 3)).resolves.toEqual(
+      version
+    );
+    expect(fake.calls.map((c) => c.path)).toEqual([
+      `/thesis-versions/${VERSION}`,
+      '/theses/by-number/42/versions/3',
+    ]);
+  });
+
+  it('passes page queries through and returns the pages as they are', async () => {
+    const updates = aPage([aVersion()], 'next');
+    const signals = aPage(
+      [
+        v2('Signal', {
+          id: 'signal_0a',
+          thesisId: THESIS,
+          versionId: VERSION,
+          statement: 'Demand holds',
+          stance: 'SUPPORTS',
+          explanation: 'Orders grew',
+          informationKind: 'NEWS',
+          evidence: null,
+          publishedAt: '2026-11-02T10:00:00Z',
           source: {
-            title: 'Source',
-            url: 'https://example.test/a',
-            published_at_ms: 1725811000000,
+            title: 'Orders',
+            type: 'NEWS',
+            url: null,
+            publishedAt: null,
           },
-        },
-      },
-    ],
-    next_cursor: 'cursor-77',
-  };
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: () => 'application/json' },
-    json: () => Promise.resolve(body),
-    text: () => Promise.resolve(JSON.stringify(body)),
-    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-  };
-}
-
-describe('ThesesResource', () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  it('returns the created Thesis web url on the environment of the API', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
-    const client = new AlvaClient({
-      apiKey: 'key',
-      baseUrl: 'https://api-llm.stg.alva.ai',
-    });
-
-    const created = await client.theses.create({
-      request_id: REQUEST_ID,
-      body: 'draft',
-      visibility: 'private',
-    });
-    expect(created.url).toBe(`https://stg.alva.ai/thesis/${MAX_ID}`);
-  });
-
-  it('uses one real HTTP boundary call and preserves CRLF and decimal IDs', async () => {
-    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
-    globalThis.fetch = fetch;
-    const client = new AlvaClient({
-      apiKey: 'key',
-      baseUrl: 'https://api.test',
+        }),
+      ],
+      null
+    );
+    fake = fakeV2({
+      [`GET /theses/${THESIS}/updates`]: () => updates,
+      [`GET /theses/${THESIS}/signals`]: () => signals,
     });
 
     await expect(
-      client.theses.create({
-        request_id: REQUEST_ID,
-        body: 'line one\r\nline two',
-        title: 'Thesis',
-        entity_ids: [MAX_ID],
-        tickers: ['NVDA', 'AAPL'],
-      })
-    ).resolves.toEqual({
-      ...thesis(),
-      url: `https://alva.ai/thesis/${MAX_ID}`,
+      client().theses.listUpdates(THESIS, { pageSize: 1, pageToken: 'p1' })
+    ).resolves.toEqual(updates);
+    await expect(client().theses.signals(THESIS)).resolves.toEqual(signals);
+    expect(Object.fromEntries(fake.calls[0].query)).toEqual({
+      pageSize: '1',
+      pageToken: 'p1',
     });
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.test/api/v1/theses');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body as string)).toEqual({
-      request_id: REQUEST_ID,
-      body: 'line one\r\nline two',
-      title: 'Thesis',
-      entity_ids: [MAX_ID],
-      tickers: ['NVDA', 'AAPL'],
-      visibility: 'public',
-    });
+    expect([...fake.calls[1].query]).toEqual([]);
   });
 
-  it('omits the optional tickers field when the caller does not supply it', async () => {
-    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
-    globalThis.fetch = fetch;
-    const client = new AlvaClient({
-      apiKey: 'key',
-      baseUrl: 'https://api.test',
-    });
-
-    await client.theses.create({ request_id: REQUEST_ID, body: 'view' });
-
-    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).not.toHaveProperty('tickers');
-  });
-
-  it('extracts asset candidates and sends the confirmed stance on creation', async () => {
-    const response = {
-      data: {
-        viewer: {
-          thesisAssetCandidates: {
-            mentions: [
-              {
-                quote: '英伟达',
-                ticker: 'NVDA',
-                resolution: 'RESOLVED',
-                stance: 'BEARISH',
-                candidates: [
-                  {
-                    entityId: '745337',
-                    ticker: 'NVDA',
-                    name: 'NVIDIA',
-                    kind: 'STOCK',
-                  },
-                ],
-              },
-            ],
-            returnPreview: null,
-          },
-        },
-      },
-    };
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(response))
-      .mockResolvedValueOnce(jsonResponse(thesis()));
-    globalThis.fetch = fetch;
-    const client = new AlvaClient({
-      apiKey: 'key',
-      baseUrl: 'https://api.test',
-    });
-    const candidates = await client.theses.assetCandidates('看跌英伟达');
-    expect(candidates.mentions[0]?.stance).toBe('BEARISH');
-    expect(candidates.mentions[0]?.candidates[0]?.entityId).toBe('745337');
-    const [queryUrl, queryInit] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(queryUrl).toBe('https://api.test/query');
-    expect(JSON.parse(queryInit.body as string).variables).toEqual({
-      input: { text: '看跌英伟达', selectedEntityIds: [] },
-    });
-
-    await client.theses.create({
-      request_id: REQUEST_ID,
-      body: '看跌英伟达',
-      entity_ids: ['745337'],
-      entity_stances: [{ entity_id: '745337', stance: 'bearish' }],
-    });
-    const [, createInit] = fetch.mock.calls[1] as [string, RequestInit];
-    expect(JSON.parse(createInit.body as string).entity_stances).toEqual([
-      { entity_id: '745337', stance: 'bearish' },
+  it('throws RELATED_THESES_GENERATING once, without retrying or a mapped state', async () => {
+    const related = aPage([
+      v2('RelatedThesis', {
+        id: THESIS,
+        itemId: 'item-1',
+        score: '0.82',
+        thesis: aThesis(),
+      }),
     ]);
+    fake = fakeV2({
+      [`GET /theses/${THESIS}/related`]: [
+        () => related,
+        () =>
+          problem(503, 'UNAVAILABLE', { reason: 'RELATED_THESES_GENERATING' }),
+      ],
+    });
+
+    await expect(client().theses.related(THESIS)).resolves.toEqual(related);
+    const err = await client()
+      .theses.related(THESIS, { pageSize: 5 })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AlvaError);
+    expect(err).toMatchObject({
+      status: 503,
+      code: 'UNAVAILABLE',
+      reason: 'RELATED_THESES_GENERATING',
+    });
+    expect(fake.calls).toHaveLength(2);
   });
 
-  it('rejects a direction that is not tied to a supplied entity', async () => {
-    const client = new AlvaClient({ apiKey: 'key' });
-    await expect(
-      client.theses.create({
-        request_id: REQUEST_ID,
-        body: '看跌英伟达',
-        tickers: ['NVDA'],
-        entity_stances: [{ entity_id: '745337', stance: 'bearish' }],
-      })
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-  });
-
-  it('rejects extracted entity IDs outside signed int64', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue({
-      data: {
-        viewer: {
-          thesisAssetCandidates: {
-            mentions: [
+  it('reads the return with its detail flag and the watchpoints', async () => {
+    // The detail return: each position's target share and the allocation.
+    const info = v2('ThesisReturnInfo', {
+      tracking: 'ON',
+      return: {
+        live: true,
+        value: '0.03',
+        firstFillAt: '2026-11-01T14:30:00Z',
+        pricedAt: '2026-11-24T21:00:00Z',
+        stale: false,
+        computedAt: '2026-11-24T21:00:00Z',
+        updates: [
+          {
+            versionId: VERSION,
+            publishedAt: '2026-11-01T10:00:00Z',
+            startValue: '0',
+            updateReturn: '0.03',
+            positions: [
               {
-                quote: 'NVDA',
-                ticker: 'NVDA',
-                resolution: 'RESOLVED',
-                stance: 'BEARISH',
-                candidates: [
-                  {
-                    entityId: '9223372036854775808',
-                    ticker: 'NVDA',
-                    name: 'NVIDIA',
-                    kind: 'STOCK',
-                  },
-                ],
+                assetId: ASSET,
+                symbol: 'NVDA',
+                direction: 'BULLISH',
+                startPrice: '100',
+                startAt: '2026-11-01T14:30:00Z',
+                endPrice: '107.5',
+                endAt: '2026-11-24T21:00:00Z',
+                end: 'LATEST',
+                positionReturn: '0.075',
+                currency: 'USD',
+                weight: '0.4',
               },
             ],
           },
-        },
-      },
-    });
-    await expect(client.theses.assetCandidates('NVDA')).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it('lists enriched Signal history through the Thesis REST resource', async () => {
-    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesisSignals()));
-    globalThis.fetch = fetch;
-    const client = new AlvaClient({
-      apiKey: 'key',
-      baseUrl: 'https://api.test',
-    });
-
-    await expect(
-      client.theses.signals(MAX_ID, { first: 1, cursor: 'after' })
-    ).resolves.toEqual(thesisSignals());
-    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      'https://api.test/api/v1/theses/9223372036854775807/signals?first=1&cursor=after'
-    );
-    expect(init.method).toBe('GET');
-  });
-
-  it('gets one exact author version without falling back to the current version', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue(thesis());
-
-    await expect(
-      client.theses.getVersion(MAX_ID, '9223372036854775806')
-    ).resolves.toEqual(thesis());
-    expect(client._request).toHaveBeenCalledWith(
-      'GET',
-      `/api/v1/theses/${MAX_ID}/versions/9223372036854775806`
-    );
-  });
-
-  it('accepts 100 entity IDs in a request and a response', async () => {
-    const ids = Array.from({ length: 100 }, (_, index) => String(index + 1));
-    const response = thesis();
-    response.thesis.entity_ids = ids;
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue(response);
-
-    await expect(
-      client.theses.create({
-        request_id: REQUEST_ID,
-        body: 'draft',
-        entity_ids: ids,
-        entity_stances: ids.map((entity_id) => ({
-          entity_id,
-          stance: 'bearish' as const,
-        })),
-      })
-    ).resolves.toEqual({
-      ...response,
-      url: `https://alva.ai/thesis/${MAX_ID}`,
-    });
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/theses',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          entity_stances: expect.arrayContaining([
-            { entity_id: '100', stance: 'bearish' },
-          ]),
-        }),
-      })
-    );
-  });
-
-  it('rejects a response with more than 100 entity IDs', async () => {
-    const response = thesis();
-    response.thesis.entity_ids = Array.from({ length: 101 }, (_, index) =>
-      String(index + 1)
-    );
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue(response);
-
-    await expect(
-      client.theses.getVersion(MAX_ID, '9223372036854775806')
-    ).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it('rejects an exact-version response that does not match the requested version', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue(thesis());
-
-    await expect(client.theses.getVersion(MAX_ID, '42')).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it.each([0, 51, 1.5])(
-    'rejects invalid Signal page size %s before HTTP',
-    async (first) => {
-      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-        _request: ReturnType<typeof vi.fn>;
-      };
-      client._request = vi.fn();
-      await expect(
-        client.theses.signals(MAX_ID, { first })
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-      expect(client._request).not.toHaveBeenCalled();
-    }
-  );
-
-  it('rejects a Signal response for another Thesis', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    const response = thesisSignals();
-    response.entries[0].signal.thesis_id = '42';
-    client._request = vi.fn().mockResolvedValue(response);
-    await expect(client.theses.signals(MAX_ID)).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it('uses the agreed CRUD, close, delete, and explicit rewrite routes', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi
-      .fn()
-      .mockResolvedValueOnce(thesisGet())
-      .mockResolvedValueOnce(thesis('private'))
-      .mockResolvedValueOnce(thesis())
-      .mockResolvedValueOnce({ body: 'rewritten' });
-
-    await client.theses.get(MAX_ID);
-    await client.theses.setVisibility(MAX_ID, { visibility: 'private' });
-    await client.theses.update(MAX_ID, {
-      request_id: REQUEST_ID,
-      expected_author_version_id: '9223372036854775806',
-      body: 'updated',
-      visibility: 'private',
-    });
-    await client.theses.rewrite({ body: 'draft' });
-
-    expect(client._request.mock.calls).toEqual([
-      ['GET', `/api/v1/theses/${MAX_ID}`],
-      [
-        'POST',
-        `/api/v1/theses/${MAX_ID}/visibility`,
-        { body: { visibility: 'private' } },
-      ],
-      [
-        'PUT',
-        `/api/v1/theses/${MAX_ID}`,
-        {
-          body: {
-            request_id: REQUEST_ID,
-            expected_author_version_id: '9223372036854775806',
-            body: 'updated',
-            title: '',
-            entity_ids: [],
-            visibility: 'private',
-          },
-        },
-      ],
-      [
-        'POST',
-        '/api/v1/theses/rewrite',
-        { body: { body: 'draft', mode: 'reformat' } },
-      ],
-    ]);
-  });
-
-  it('archives the current version with its fields and expected version', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    const current = thesisGet();
-    current.thesis.archived = false;
-    current.thesis.entity_stances = [
-      { entity_id: '9223372036854775804', stance: 'bullish' },
-    ];
-    const archived = thesis();
-    archived.thesis.archived = true;
-    archived.thesis.entity_stances = current.thesis.entity_stances;
-    client._request = vi
-      .fn()
-      .mockResolvedValueOnce(current)
-      .mockResolvedValueOnce(archived);
-
-    await expect(
-      client.theses.setArchived(MAX_ID, {
-        request_id: REQUEST_ID,
-        archived: true,
-        note: 'review later',
-      })
-    ).resolves.toEqual(archived);
-    expect(client._request).toHaveBeenNthCalledWith(
-      2,
-      'PUT',
-      `/api/v1/theses/${MAX_ID}`,
-      {
-        body: {
-          request_id: REQUEST_ID,
-          expected_author_version_id: current.thesis.author_version_id,
-          body: current.thesis.body,
-          title: current.thesis.title,
-          entity_ids: current.thesis.entity_ids,
-          entity_stances: current.thesis.entity_stances,
-          visibility: current.thesis.visibility,
-          archived: true,
-          note: 'review later',
-        },
-      }
-    );
-  });
-
-  it('keeps an idempotent archive no-op without requiring directions', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    const current = thesisGet();
-    current.thesis.archived = false;
-    client._request = vi.fn().mockResolvedValue(current);
-
-    await expect(
-      client.theses.setArchived(MAX_ID, {
-        request_id: REQUEST_ID,
-        archived: false,
-      })
-    ).resolves.toEqual({ thesis: current.thesis });
-    expect(client._request).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects an archive update when directions do not cover every entity', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    const current = thesisGet();
-    current.thesis.archived = false;
-    current.thesis.entity_ids = ['1', '2'];
-    current.thesis.entity_stances = [{ entity_id: '1', stance: 'bullish' }];
-    client._request = vi.fn().mockResolvedValue(current);
-
-    await expect(
-      client.theses.setArchived(MAX_ID, {
-        request_id: REQUEST_ID,
-        archived: true,
-      })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-    expect(client._request).toHaveBeenCalledTimes(1);
-  });
-
-  it('allows an archive update for a Thesis with no entities and no directions', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    const current = thesisGet();
-    current.thesis.archived = false;
-    current.thesis.entity_ids = [];
-    current.entities = [];
-    delete current.thesis.entity_stances;
-    const archived = thesis();
-    archived.thesis.archived = true;
-    archived.thesis.entity_ids = [];
-    client._request = vi
-      .fn()
-      .mockResolvedValueOnce(current)
-      .mockResolvedValueOnce(archived);
-
-    await expect(
-      client.theses.setArchived(MAX_ID, {
-        request_id: REQUEST_ID,
-        archived: true,
-      })
-    ).resolves.toEqual(archived);
-    expect(client._request).toHaveBeenCalledTimes(2);
-  });
-
-  it('maps bookmark and Signal research mutations with authoritative state', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: {
-          setThesisStarred: {
-            thesisId: MAX_ID,
-            stats: { starCount: 17 },
-            viewerState: { isStarred: true },
-          },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          setThesisSignalEnabled: {
-            publication: {
-              playbookId: MAX_ID,
-              authorVersionId: '9223372036854775804',
-              archived: false,
-              researchPaused: false,
-            },
-          },
-        },
-      });
-
-    await expect(client.theses.setStarred(MAX_ID, true)).resolves.toEqual({
-      thesis_id: MAX_ID,
-      star_count: 17,
-      is_starred: true,
-    });
-    await expect(client.theses.setSignalEnabled(MAX_ID, true)).resolves.toEqual(
-      {
-        thesis_id: MAX_ID,
-        author_version_id: '9223372036854775804',
-        archived: false,
-        research_paused: false,
-        enabled: true,
-      }
-    );
-    expect(client._request).toHaveBeenNthCalledWith(
-      1,
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: { input: { thesisId: MAX_ID, isStarred: true } },
-        }),
-      })
-    );
-    expect(client._request).toHaveBeenNthCalledWith(
-      2,
-      'POST',
-      '/query',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          variables: { input: { thesisId: MAX_ID, enabled: true } },
-        }),
-      })
-    );
-  });
-
-  it('normalizes noncanonical GraphQL mutation errors', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi
-      .fn()
-      .mockResolvedValueOnce({
-        errors: [{ message: 'internal', extensions: { code: 'INTERNAL' } }],
-      })
-      .mockResolvedValueOnce({
-        errors: [
-          { message: 'missing', extensions: { code: 'NOT_FOUND' } },
-          { message: 'internal', extensions: { code: 'INTERNAL' } },
         ],
-      });
-
-    await expect(client.theses.setStarred(MAX_ID, true)).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-      status: 400,
-    });
-    await expect(
-      client.theses.setSignalEnabled(MAX_ID, true)
-    ).rejects.toMatchObject({
-      code: 'GRAPHQL_ERROR',
-      status: 400,
-    });
-  });
-
-  it('rejects invalid visibility requests and mismatched responses', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn();
-
-    await expect(
-      client.theses.setVisibility('0', { visibility: 'private' })
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    await expect(
-      client.theses.setVisibility(MAX_ID, { visibility: 'paid' as never })
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    await expect(
-      client.theses.setVisibility(MAX_ID, undefined as never)
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    expect(client._request).not.toHaveBeenCalled();
-
-    client._request.mockResolvedValueOnce(thesis());
-    await expect(
-      client.theses.setVisibility(MAX_ID, { visibility: 'private' })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-
-    const wrongID = thesis('private') as { thesis: Record<string, unknown> };
-    wrongID.thesis.id = '1';
-    client._request.mockResolvedValueOnce(wrongID);
-    await expect(
-      client.theses.setVisibility(MAX_ID, { visibility: 'private' })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-  });
-
-  it('rejects any numeric response ID instead of losing int64 precision', async () => {
-    const response = thesis() as { thesis: Record<string, unknown> };
-    response.thesis.id = 9_007_199_254_740_992;
-    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(response));
-
-    await expect(
-      new AlvaClient({ apiKey: 'key' }).theses.get(MAX_ID)
-    ).rejects.toMatchObject({
-      name: 'AlvaError',
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it.each([
-    ['blank body', { body: ' \r\n\t' }],
-    ['oversize body', { body: 'a'.repeat(65_537) }],
-    ['NUL body', { body: 'draft\0body' }],
-    ['oversize title', { title: 'a'.repeat(501) }],
-    ['NUL title', { title: 'thesis\0title' }],
-    ['NUL closing note', { closing_note: 'done\0unsafe' }],
-  ])('rejects %s in a CRUD thesis response', async (_name, patch) => {
-    const response = thesis() as { thesis: Record<string, unknown> };
-    Object.assign(response.thesis, patch);
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue(response);
-
-    await expect(client.theses.get(MAX_ID)).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it('does not retry a stable request ID after a backend HTTP error', async () => {
-    const fetch = vi.fn().mockResolvedValue(
-      jsonResponse(
-        {
-          error: { code: 'UNAVAILABLE', message: 'backend down' },
+        allocation: {
+          holdings: [
+            {
+              assetId: ASSET,
+              symbol: 'NVDA',
+              direction: 'BULLISH',
+              weight: '0.4',
+            },
+          ],
+          cash: '0.6',
         },
-        503
-      )
-    );
-    globalThis.fetch = fetch;
+      },
+    });
+    const watchpoints = v2('ThesisWatchpoints', {
+      versionId: VERSION,
+      watchpoints: [{ label: 'W1', text: 'Margins', origin: 'STATED' }],
+    });
+    fake = fakeV2({
+      [`GET /theses/${THESIS}/return`]: () => info,
+      [`GET /theses/${THESIS}/watchpoints`]: () => watchpoints,
+    });
 
     await expect(
-      new AlvaClient({ apiKey: 'key' }).theses.create({
-        request_id: REQUEST_ID,
-        body: 'draft',
-      })
-    ).rejects.toBeInstanceOf(AlvaError);
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ['zero ID', { request_id: REQUEST_ID, body: 'draft', entity_ids: ['0'] }],
-    [
-      'negative ID',
-      { request_id: REQUEST_ID, body: 'draft', entity_ids: ['-1'] },
-    ],
-    [
-      'overflow ID',
-      {
-        request_id: REQUEST_ID,
-        body: 'draft',
-        entity_ids: ['9223372036854775808'],
-      },
-    ],
-    [
-      'more than 100 entity IDs',
-      {
-        request_id: REQUEST_ID,
-        body: 'draft',
-        entity_ids: Array.from({ length: 101 }, (_, index) =>
-          String(index + 1)
-        ),
-      },
-    ],
-    ['blank body', { request_id: REQUEST_ID, body: ' \r\n\t' }],
-    ['blank ticker', { request_id: REQUEST_ID, body: 'draft', tickers: [' '] }],
-    [
-      'ticker NUL',
-      { request_id: REQUEST_ID, body: 'draft', tickers: ['A\0B'] },
-    ],
-    ['body NUL', { request_id: REQUEST_ID, body: 'draft\0body' }],
-    ['title NUL', { request_id: REQUEST_ID, body: 'draft', title: 'a\0b' }],
-    [
-      'body over 65536 bytes',
-      { request_id: REQUEST_ID, body: 'a'.repeat(65_537) },
-    ],
-    [
-      'title over 500 bytes',
-      { request_id: REQUEST_ID, body: 'draft', title: 'a'.repeat(501) },
-    ],
-    [
-      'unsupported visibility',
-      { request_id: REQUEST_ID, body: 'draft', visibility: 'paid' as never },
-    ],
-  ])('rejects %s before the HTTP boundary', async (_name, params) => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn();
-
-    await expect(client.theses.create(params)).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-    expect(client._request).not.toHaveBeenCalled();
-  });
-
-  it.each(['', ' \r\n', 'a'.repeat(65_537)])(
-    'rejects invalid rewrite output at the SDK boundary',
-    async (body) => {
-      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-        _request: ReturnType<typeof vi.fn>;
-      };
-      client._request = vi.fn().mockResolvedValue({ body });
-
-      await expect(
-        client.theses.rewrite({ body: 'draft' })
-      ).rejects.toMatchObject({
-        code: 'INVALID_RESPONSE',
-      });
-    }
-  );
-
-  it.each(['reformat', 'shorten', 'enrich'] as const)(
-    'sends canonical rewrite mode %s exactly once',
-    async (mode) => {
-      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-        _request: ReturnType<typeof vi.fn>;
-      };
-      client._request = vi.fn().mockResolvedValue({ body: 'candidate' });
-
-      await expect(
-        client.theses.rewrite({ body: 'draft', mode })
-      ).resolves.toEqual({
-        body: 'candidate',
-      });
-      expect(client._request).toHaveBeenCalledTimes(1);
-      expect(client._request).toHaveBeenCalledWith(
-        'POST',
-        '/api/v1/theses/rewrite',
-        { body: { body: 'draft', mode } }
-      );
-    }
-  );
-
-  it('sends reformat when rewrite mode is omitted', async () => {
-    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-      _request: ReturnType<typeof vi.fn>;
-    };
-    client._request = vi.fn().mockResolvedValue({ body: 'candidate' });
-
-    await client.theses.rewrite({ body: 'draft' });
-
-    expect(client._request).toHaveBeenCalledWith(
-      'POST',
-      '/api/v1/theses/rewrite',
-      { body: { body: 'draft', mode: 'reformat' } }
+      client().theses.thesisReturn(THESIS, { detail: true })
+    ).resolves.toEqual(info);
+    await expect(client().theses.watchpoints(THESIS)).resolves.toEqual(
+      watchpoints
     );
+    expect(fake.calls[0].query.get('detail')).toBe('true');
   });
-
-  it.each(['', ' ', 'rewrite', null])(
-    'rejects invalid rewrite mode %j without an HTTP request',
-    async (mode) => {
-      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
-        _request: ReturnType<typeof vi.fn>;
-      };
-      client._request = vi.fn();
-
-      await expect(
-        client.theses.rewrite({ body: 'draft', mode: mode as never })
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-      expect(client._request).not.toHaveBeenCalled();
-    }
-  );
 });
 
-describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-preview)', () => {
-  const client = () =>
-    new AlvaClient({ apiKey: 'key', baseUrl: 'https://api.test' });
+describe('ThesesResource.list', () => {
+  it('lists an exact username with the archived filter', async () => {
+    const page = aPage([aThesis()], 'next');
+    fake = fakeV2({
+      'GET /profiles': () =>
+        aPage([aProfile({ id: 'profile_0b', handle: 'alicex' }), aProfile()]),
+      [`GET /profiles/${PROFILE}/theses`]: () => page,
+    });
 
-  it('asks for directions of known tickers without discovery and parses the preview', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(
-      jsonResponse({
-        data: {
-          viewer: {
-            thesisAssetCandidates: {
-              mentions: [],
-              returnPreview: {
-                tracking: 'ON',
-                askSwitch: false,
-                directions: [{ entityId: '745337', direction: 'BULLISH' }],
-                keptEntityIds: ['745337'],
-                lastLegRemoved: false,
-              },
-            },
-          },
-        },
-      })
-    );
-    globalThis.fetch = fetch;
-    const got = await client().theses.assetCandidates('平仓英伟达', {
-      entityIds: ['745337'],
-      thesisId: '9451',
-      discover: false,
-    });
-    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string).variables).toEqual({
-      input: {
-        text: '平仓英伟达',
-        selectedEntityIds: ['745337'],
-        thesisId: '9451',
-        discover: false,
-      },
-    });
-    expect(got.returnPreview).toEqual({
-      tracking: 'ON',
-      askSwitch: false,
-      directions: [{ entityId: '745337', direction: 'BULLISH' }],
-      keptEntityIds: ['745337'],
-      lastLegRemoved: false,
-    });
-  });
-
-  it('rejects an invalid preview', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValueOnce(
-      jsonResponse({
-        data: {
-          viewer: {
-            thesisAssetCandidates: {
-              mentions: [],
-              returnPreview: { tracking: 'MAYBE' },
-            },
-          },
-        },
-      })
-    );
     await expect(
-      client().theses.assetCandidates('x', { discover: false })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+      client().theses.list({
+        user: 'Alice',
+        archived: true,
+        pageSize: 5,
+        pageToken: 'p1',
+      })
+    ).resolves.toEqual(page);
+    expect(Object.fromEntries(fake.calls[0].query)).toEqual({
+      query: 'Alice',
+      kind: 'USER',
+      pageSize: '50',
+    });
+    expect(Object.fromEntries(fake.calls[1].query)).toEqual({
+      archived: 'true',
+      pageSize: '5',
+      pageToken: 'p1',
+    });
   });
 
-  it('sends track_return and none only when given', async () => {
-    const fetch = vi.fn().mockResolvedValue(jsonResponse(thesis()));
-    globalThis.fetch = fetch;
-    await client().theses.create({
-      request_id: REQUEST_ID,
-      body: 'statement',
-      entity_ids: ['745337'],
-      entity_stances: [{ entity_id: '745337', stance: 'none' }],
-      track_return: false,
+  it('resolves a person name only to a unique match', async () => {
+    const ada = aProfile({ kind: 'PERSON', handle: 'ada', displayName: 'Ada' });
+    fake = fakeV2({
+      'GET /profiles': [
+        () => aPage([ada]),
+        () =>
+          aPage([
+            ada,
+            aProfile({ id: 'profile_0b', kind: 'PERSON', handle: 'ada2' }),
+          ]),
+        () => aPage([]),
+      ],
+      [`GET /profiles/${PROFILE}/theses`]: () => aPage([]),
     });
-    const [, createInit] = fetch.mock.calls[0] as [string, RequestInit];
-    const created = JSON.parse(createInit.body as string);
-    expect(created.track_return).toBe(false);
-    expect(created.entity_stances).toEqual([
-      { entity_id: '745337', stance: 'none' },
-    ]);
-    await client().theses.create({ request_id: REQUEST_ID, body: 'statement' });
-    const [, plainInit] = fetch.mock.calls[1] as [string, RequestInit];
-    expect(JSON.parse(plainInit.body as string)).not.toHaveProperty(
-      'track_return'
+
+    await expect(client().theses.list({ personName: 'Ada' })).resolves.toEqual(
+      aPage([])
     );
-  });
+    expect(fake.calls[0].query.get('kind')).toBe('PERSON');
 
-  it('keeps the typed reason of a REST rejection', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          error: { code: 'FAILED_PRECONDITION', message: 'must keep a ticker' },
-          details: {
-            domain: 'alva.ai/thesis',
-            reason: 'THESIS_RETURN_LAST_LEG',
-          },
-        }),
-        { status: 412, headers: { 'content-type': 'application/json' } }
-      )
-    );
-    await expect(
-      client().theses.create({ request_id: REQUEST_ID, body: 'statement' })
-    ).rejects.toMatchObject({
-      code: 'FAILED_PRECONDITION',
-      status: 412,
-      details: { domain: 'alva.ai/thesis', reason: 'THESIS_RETURN_LAST_LEG' },
-    });
-  });
-
-  const returnResponse = (update: Record<string, unknown> = {}) =>
-    jsonResponse({
-      data: {
-        node: {
-          latestRelease: {
-            thesisPublication: {
-              returnTracking: 'ON',
-              thesisReturn: {
-                live: true,
-                value: 0.25,
-                firstFillAtMs: 1,
-                pricedAtMs: 2,
-                stale: false,
-                computedAtMs: 3,
-                updates: [
-                  {
-                    authorVersionId: '15691',
-                    publishedAtMs: 1,
-                    startValue: 0,
-                    updateReturn: 0.25,
-                    positions: [
-                      {
-                        entityId: '745337',
-                        symbol: 'NVDA',
-                        direction: 'BEARISH',
-                        startPrice: 216.38,
-                        startAtMs: 1,
-                        endPrice: 161.01,
-                        endAtMs: 2,
-                        end: 'LATEST',
-                        positionReturn: 0.25,
-                        currency: 'USD',
-                        weight: 1,
-                      },
-                    ],
-                    ...update,
-                  },
-                ],
-                allocation: null,
-              },
-            },
-          },
-        },
-      },
-    });
-
-  it('reads the Thesis return of the current publication', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(returnResponse());
-    globalThis.fetch = fetch;
-    const got = await client().theses.thesisReturn('9451', { detail: true });
-    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string).variables).toEqual({
-      id: 'Playbook:9451',
-      detail: true,
-    });
-    expect(got.returnTracking).toBe('ON');
-    expect(got.thesisReturn?.updates[0]?.positions[0]?.symbol).toBe('NVDA');
-    await expect(client().theses.thesisReturn('x')).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-  });
-
-  const watchpointsResponse = (publication: unknown) =>
-    jsonResponse({
-      data: { node: { latestRelease: { thesisPublication: publication } } },
-    });
-
-  it('reads the current watchpoints of a Thesis', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(
-      watchpointsResponse({
-        watchpoints: [
-          { label: 'W1', text: 'AI capex peaks', origin: 'stated' },
-          { label: 'W4', text: 'Export rules tighten', origin: 'inferred' },
+    const ambiguous = await client()
+      .theses.list({ personName: 'Ada' })
+      .catch((e: unknown) => e);
+    expect(ambiguous).toMatchObject({
+      code: 'AMBIGUOUS_IDENTITY',
+      details: {
+        candidates: [
+          { id: PROFILE, handle: 'ada', displayName: 'Ada' },
+          { id: 'profile_0b', handle: 'ada2', displayName: 'Alice' },
         ],
-      })
+        more: false,
+      },
+    });
+    expect((ambiguous as Error).message).toContain('"handle":"ada2"');
+
+    await expect(
+      client().theses.list({ personName: 'Nobody' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    // Only the first name was listed.
+    expect(fake.calls.map((c) => c.path)).toEqual([
+      '/profiles',
+      `/profiles/${PROFILE}/theses`,
+      '/profiles',
+      '/profiles',
+    ]);
+  });
+
+  it('lists an asset by symbol or by ID', async () => {
+    const asset = v2('Asset', {
+      id: ASSET,
+      symbol: 'NVDA',
+      name: 'NVIDIA Corporation',
+      kind: 'STOCK',
+      assetClass: null,
+      categories: ['US_STOCK'],
+      logo: null,
+      quote: null,
+      venue: null,
+    });
+    const page = aPage([aThesis()]);
+    fake = fakeV2({
+      'GET /assets/by-symbol/BRK.B': () => asset,
+      [`GET /assets/${ASSET}/theses`]: () => page,
+      [`GET /assets/${ASSET_2}/theses`]: () => page,
+    });
+
+    await expect(
+      client().theses.list({ ticker: 'BRK.B', pageSize: 3 })
+    ).resolves.toEqual(page);
+    await expect(client().theses.list({ assetId: ASSET_2 })).resolves.toEqual(
+      page
     );
-    globalThis.fetch = fetch;
-    const got = await client().theses.watchpoints('9451');
-    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string);
-    expect(body.variables).toEqual({ id: 'Playbook:9451' });
-    expect(body.query).toContain('watchpoints { label text origin }');
-    expect(got).toEqual({
-      playbookId: '9451',
-      watchpoints: [
-        { label: 'W1', text: 'AI capex peaks', origin: 'stated' },
-        { label: 'W4', text: 'Export rules tighten', origin: 'inferred' },
+    expect(fake.calls.map((c) => `${c.path}?${c.query}`)).toEqual([
+      '/assets/by-symbol/BRK.B?',
+      `/assets/${ASSET}/theses?pageSize=3`,
+      `/assets/${ASSET_2}/theses?`,
+    ]);
+  });
+
+  it.each([
+    {},
+    { user: 'ada', person: 'ada' },
+    { ticker: 'NVDA', archived: true },
+  ])('refuses %j before any request', async (params) => {
+    fake = fakeV2({});
+    await expect(client().theses.list(params)).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      status: 400,
+    });
+    expect(fake.calls).toHaveLength(0);
+  });
+});
+
+describe('ThesesResource writes', () => {
+  it('creates a Thesis with the request ID as its Idempotency-Key', async () => {
+    const created = aThesis();
+    fake = fakeV2({ 'POST /theses': () => created });
+    const body = {
+      title: '',
+      body: 'line one\r\nline two',
+      assets: [{ assetId: ASSET, stance: 'BEARISH' as const }],
+      tickers: ['AMD'],
+      trackReturn: false,
+    };
+
+    await expect(
+      client().theses.create(body, { idempotencyKey: REQUEST_ID })
+    ).resolves.toEqual(created);
+    expect(fake.calls[0].body).toEqual(body);
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
+  });
+
+  it("links a created Thesis by its number on the API's environment", () => {
+    const created = aThesis({ number: 7 });
+
+    expect(
+      thesisUrl(created, webOriginFromApiBase('https://api-llm.stg.alva.ai'))
+    ).toBe('https://stg.alva.ai/thesis/7');
+    expect(
+      thesisUrl(created, webOriginFromApiBase('https://api-llm.prd.alva.ai'))
+    ).toBe('https://alva.ai/thesis/7');
+  });
+
+  it('publishes an Update, its visibility and its unarchive in one write', async () => {
+    const published = aThesis(
+      { visibility: 'PRIVATE' },
+      { id: 'thesis_version_0b', number: 3 }
+    );
+    fake = fakeV2({ [`POST /theses/${THESIS}/updates`]: () => published });
+    const update = {
+      expectedVersionId: VERSION,
+      body: 'Back in play',
+      visibility: 'PRIVATE' as const,
+      archived: false,
+    };
+
+    await expect(
+      client().theses.update(THESIS, update, { idempotencyKey: REQUEST_ID })
+    ).resolves.toEqual(published);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0].body).toEqual(update);
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
+  });
+
+  it('archives and unarchives the Update it names', async () => {
+    fake = fakeV2({
+      [`POST /theses/${THESIS}/archive`]: () => aThesis({ archived: true }),
+      [`POST /theses/${THESIS}/unarchive`]: () => aThesis(),
+    });
+
+    await client().theses.archive(
+      THESIS,
+      { expectedVersionId: VERSION, note: 'later' },
+      { idempotencyKey: REQUEST_ID }
+    );
+    await client().theses.unarchive(THESIS, { expectedVersionId: VERSION });
+    expect(fake.calls.map((c) => [c.path, c.body])).toEqual([
+      [
+        `/theses/${THESIS}/archive`,
+        { expectedVersionId: VERSION, note: 'later' },
+      ],
+      [`/theses/${THESIS}/unarchive`, { expectedVersionId: VERSION }],
+    ]);
+    expect(fake.calls[0].headers['Idempotency-Key']).toBe(`"${REQUEST_ID}"`);
+    expect(fake.calls[1].headers['Idempotency-Key']).toMatch(UUID);
+  });
+
+  it('changes the visibility with a merge patch and surfaces the renewal reason', async () => {
+    fake = fakeV2({
+      [`PATCH /theses/${THESIS}`]: [
+        () =>
+          problem(409, 'CONFLICT', {
+            reason: 'PAID_RENEWALS_END_CONFIRMATION_REQUIRED',
+          }),
+        () => aThesis(),
       ],
     });
-    await expect(client().theses.watchpoints('x')).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-  });
 
-  it('returns no watchpoints without a readable publication and fails closed on a malformed entry', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValueOnce(watchpointsResponse(null));
-    expect(await client().theses.watchpoints('9451')).toEqual({
-      playbookId: '9451',
-      watchpoints: [],
+    await expect(
+      client().theses.setVisibility(THESIS, { visibility: 'PUBLIC' })
+    ).rejects.toMatchObject({
+      status: 409,
+      reason: 'PAID_RENEWALS_END_CONFIRMATION_REQUIRED',
     });
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ data: { node: null } }));
-    await expect(client().theses.watchpoints('9451')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
+    await client().theses.setVisibility(THESIS, {
+      visibility: 'PUBLIC',
+      confirmEndPaidRenewals: true,
     });
-    globalThis.fetch = vi.fn().mockResolvedValueOnce(
-      watchpointsResponse({
-        watchpoints: [{ label: 'W1', text: 'x', origin: 'guessed' }],
-      })
+    expect(fake.calls[1].body).toEqual({
+      visibility: 'PUBLIC',
+      confirmEndPaidRenewals: true,
+    });
+    expect(fake.calls[1].headers['Content-Type']).toBe(
+      'application/merge-patch+json'
     );
-    await expect(client().theses.watchpoints('9451')).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
-    });
   });
 
-  it('rejects a Thesis return Update without its publication time', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValueOnce(returnResponse({ publishedAtMs: null }));
-    await expect(client().theses.thesisReturn('9451')).rejects.toMatchObject({
-      code: 'GRAPHQL_INVALID_RESPONSE',
+  it('stars and unstars through the followed-Theses collection', async () => {
+    const follow = (following: boolean) =>
+      v2('ThesisFollow', { thesisId: THESIS, following, followerCount: 4 });
+    fake = fakeV2({
+      'POST /me/followed-theses': () => follow(true),
+      [`DELETE /me/followed-theses/${THESIS}`]: () => follow(false),
     });
+
+    await expect(client().theses.setStarred(THESIS, true)).resolves.toEqual(
+      follow(true)
+    );
+    await expect(client().theses.setStarred(THESIS, false)).resolves.toEqual(
+      follow(false)
+    );
+    expect(fake.calls[0].body).toEqual({ thesisId: THESIS });
+    expect(fake.calls[1].body).toBeUndefined();
+  });
+
+  it('reads and patches the Signal setting', async () => {
+    const setting = v2('SignalPreferences', {
+      kinds: ['MACRO'],
+      minImportance: 'MAJOR',
+    });
+    fake = fakeV2({
+      [`GET /theses/${THESIS}/signal-preferences`]: () => setting,
+      'GET /me/thesis-signal-preferences': () => setting,
+      [`PATCH /theses/${THESIS}/signal-preferences`]: () => setting,
+    });
+
+    await expect(client().theses.signalPreferences(THESIS)).resolves.toEqual(
+      setting
+    );
+    await expect(client().theses.lastSignalPreferences()).resolves.toEqual(
+      setting
+    );
+    await expect(
+      client().theses.updateSignalPreferences(THESIS, {
+        minImportance: 'MAJOR',
+      })
+    ).resolves.toEqual(setting);
+    expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      `GET /theses/${THESIS}/signal-preferences`,
+      'GET /me/thesis-signal-preferences',
+      `PATCH /theses/${THESIS}/signal-preferences`,
+    ]);
+    expect(fake.calls[2].body).toEqual({ minImportance: 'MAJOR' });
+  });
+
+  it('pauses and resumes Signal research', async () => {
+    fake = fakeV2({
+      [`POST /theses/${THESIS}/research/pause`]: () => aThesis(),
+      [`POST /theses/${THESIS}/research/resume`]: () => aThesis(),
+    });
+
+    await client().theses.setSignalEnabled(THESIS, false);
+    await client().theses.setSignalEnabled(THESIS, true);
+    expect(fake.calls.map((c) => c.path)).toEqual([
+      `/theses/${THESIS}/research/pause`,
+      `/theses/${THESIS}/research/resume`,
+    ]);
+  });
+
+  it('sends asset suggestions and rewrites as given, each with a key', async () => {
+    const suggestions = v2('AssetSuggestions', {
+      mentions: [
+        {
+          quote: 'NVIDIA',
+          ticker: 'NVDA',
+          kind: 'STOCK',
+          resolution: 'RESOLVED',
+          stance: 'NONE',
+          candidates: [
+            {
+              assetId: ASSET,
+              symbol: 'NVDA',
+              name: 'NVIDIA',
+              kind: 'STOCK',
+              assetClass: null,
+              exchange: null,
+              logoUrl: null,
+            },
+          ],
+        },
+      ],
+      selected: [{ assetId: ASSET, stance: 'NONE' }],
+      returnPreview: {
+        tracking: 'UNSET',
+        askSwitch: true,
+        stances: [{ assetId: ASSET, stance: 'NONE' }],
+        keptAssetIds: [],
+        lastLegRemoved: false,
+      },
+    });
+    fake = fakeV2({
+      'POST /thesis-asset-suggestions': () => suggestions,
+      'POST /thesis-rewrites': () => v2('Rewrite', { body: 'shorter' }),
+    });
+    const input = {
+      text: 'NVIDIA',
+      selectedAssetIds: [ASSET],
+      thesisId: THESIS,
+      discover: false,
+    };
+
+    await expect(client().theses.assetCandidates(input)).resolves.toEqual(
+      suggestions
+    );
+    await expect(
+      client().theses.rewrite({ body: 'long', mode: 'SHORTEN' })
+    ).resolves.toEqual({ body: 'shorter' });
+    expect(fake.calls.map((c) => c.body)).toEqual([
+      input,
+      { body: 'long', mode: 'SHORTEN' },
+    ]);
+    for (const call of fake.calls) {
+      expect(call.headers['Idempotency-Key']).toMatch(UUID);
+    }
   });
 });

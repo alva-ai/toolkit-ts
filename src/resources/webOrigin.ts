@@ -1,7 +1,7 @@
 /**
  * Derive the user-facing web origin (where playbooks and theses are browsable) from the
  * API base URL. Playbooks live at `<web-origin>/u/<owner>/playbooks/<name>`, theses at
- * `<web-origin>/thesis/<id>`.
+ * `<web-origin>/thesis/<number>`.
  * Mirrors the env family: `api-llm.prd.alva.ai` → `https://alva.ai`,
  * `api-llm.stg.alva.ai` → `https://stg.alva.ai`. Falls back to
  * `https://alva.ai` for unrecognized hosts (custom base URLs, local-dev).

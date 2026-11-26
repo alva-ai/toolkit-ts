@@ -5,81 +5,109 @@ export const VERSION: string =
   typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
 
 export { AlvaClient } from './client.js';
-export { AlvaError, CliUsageError } from './error.js';
+export {
+  AlvaError,
+  CliUsageError,
+  type InvalidParam,
+  type ProblemFields,
+  type ProblemReason,
+} from './error.js';
+export type { Page, Schema, V2Query } from './platformApi.js';
+export type { components, paths } from './generated/platform-v2.js';
+export { V1Resources } from './v1/index.js';
+export type {
+  FsChangeOptions,
+  FsReadOptions,
+  FsReadResult,
+  FsWriteOptions,
+} from './resources/fs.js';
+export type { SecretWriteOptions } from './resources/secrets.js';
+export type { ServiceAccountWriteOptions } from './resources/serviceAccount.js';
+export { V1FsResource } from './v1/fs.js';
+export { V1NotificationsResource } from './v1/notifications.js';
+export { V1SecretsResource } from './v1/secrets.js';
 export * from './playbookRuntime.js';
 export {
   AutomationAlertDeliveryResource,
   AutomationResource,
+  type AutomationWriteOptions,
 } from './resources/automation.js';
 export { AlertsResource } from './resources/alerts.js';
-export {
-  CompanyNewsResource,
-  type CreateCompanyNewsParams,
-  type CreateCompanyNewsResponse,
-} from './resources/companyNews.js';
+export { CompanyNewsResource } from './resources/companyNews.js';
 export {
   ThesesResource,
-  type Thesis,
-  type ThesisID,
-  type ThesisRewriteMode,
-  type ThesisVisibility,
-  type ThesisAssetStance,
-  type ThesisEntityStance,
-  type ThesisMedia,
-  type ThesisAssetCandidate,
-  type ThesisAssetMention,
-  type ThesisAssetCandidatesResponse,
-  type ThesisResponse,
-  type ThesisCreateResponse,
-  type ThesisGetResponse,
-  type ThesisResearchStatus,
-  type ThesisSignalEvidenceExcerpt,
-  type ThesisSignalSource,
-  type ThesisSignal,
-  type ThesisSignalEntry,
-  type ListThesisSignalsParams,
-  type ThesisSignalsResponse,
-  type ThesisAuthor,
-  type ThesisEntity,
-  type CreateThesisParams,
-  type UpdateThesisParams,
-  type SetThesisArchivedParams,
-  type ThesisStarredResponse,
-  type ThesisSignalEnabledResponse,
-  type SetThesisVisibilityParams,
-  type RewriteThesisParams,
-  type RewriteThesisResponse,
+  thesisUrl,
+  type ListThesesParams,
+  type ThesisPageQuery,
+  type ThesisWriteOptions,
 } from './resources/theses.js';
 export {
   ForYouResource,
-  type ForYouListParams,
-  type ForYouEntry,
-  type ForYouConnection,
-  type ForYouThesesParams,
-  type ThesisRecommendation,
-  type ThesisRecommendationPage,
-  type ThesisPublicationSummary,
-  type ThesisPublisher,
-  type ThesisSourceReference,
+  type ForYouListQuery,
+  type ForYouThesesQuery,
 } from './resources/forYou.js';
+export { FeedResource, type FeedListQuery } from './resources/feed.js';
+export {
+  PlaybooksResource,
+  parsePlaybookRef,
+  playbookUrl,
+  type OwnPlaybooksQuery,
+  type PlaybookCatalogQuery,
+  type PlaybookPageQuery,
+  type PlaybookWriteOptions,
+} from './resources/playbooks.js';
+export { webOriginFromApiBase } from './resources/webOrigin.js';
+export {
+  PlaybookSkillsResource,
+  parsePlaybookSkillId,
+  type PlaybookSkillsQuery,
+  type PlaybookSkillTagsQuery,
+} from './resources/playbookSkills.js';
+export {
+  CommentsResource,
+  type CommentWriteOptions,
+} from './resources/comments.js';
+export { RemixResource } from './resources/remix.js';
+export {
+  ReleaseResource,
+  type ReleaseWriteOptions,
+} from './resources/release.js';
+export { SdkDocsResource } from './resources/sdkDocs.js';
+export {
+  V1PlaybooksResource,
+  type DiscoveryByIDsResponse,
+  type ListByOwnerParams,
+  type ListByOwnerResponse,
+  type PlaybookDiscoveryItem,
+  type TrendingPlaybookItem,
+  type TrendingPlaybooksDir,
+  type TrendingPlaybooksParams,
+  type TrendingPlaybooksResponse,
+  type TrendingPlaybooksSort,
+} from './v1/playbooks.js';
+export {
+  V1PlaybookSkillsResource,
+  type PlaybookSkillFile,
+  type PlaybookSkillFileMeta,
+  type PlaybookSkillMeta,
+  type PlaybookSkillSummary,
+  type PlaybookSkillTagEntry,
+} from './v1/playbookSkills.js';
 export { MarketsResource } from './resources/markets.js';
 export {
   TradingPairsResource,
-  type TradingPairCandidate,
+  type TradingPairFilters,
+  type TradingPairResolveParams,
   type TradingPairSearchParams,
-  type TradingPairSearchResponse,
 } from './resources/tradingPairs.js';
 export {
   SchedulesResource,
-  type AgentSchedule,
-  type AgentScheduleBounds,
-  type AgentScheduleFailureCode,
-  type AgentScheduleRule,
-  type AgentScheduleStatus,
-  type AgentScheduleTarget,
-  type ManageAgentScheduleParams,
-  type PutAgentScheduleParams,
+  type ScheduleWriteOptions,
 } from './resources/schedules.js';
+export {
+  DeployResource,
+  type CronjobWriteOptions,
+} from './resources/deploy.js';
 export {
   StewardResource,
   type StewardBriefedParams,
@@ -98,13 +126,24 @@ export {
   type StewardSendParams,
   type StewardSendDigestRunParams,
   type StewardTarget,
-} from './resources/steward.js';
+} from './v1/steward.js';
 export type {
+  AlvaId,
   AlvaClientConfig,
+  FeedNotificationListResponse,
+  NotificationEvent,
+  NotificationListParams,
+  PushSubscription,
+  PushSubscriptionFeedParams,
+  Secret,
+  SubscribeFeedParams,
+  SubscribeFeedResponse,
+  UnsubscribeResponse,
   FsReadParams,
   FsWriteParams,
   FsRawWriteParams,
   FsWriteResponse,
+  FsMeta,
   FsStat,
   FsReaddirParams,
   FsEntry,
@@ -128,43 +167,6 @@ export type {
   ChannelGroupSubscriptionContextResponse,
   ChannelGroupSubscriptionListResponse,
   ChannelGroupSubscriptionMutationResponse,
-  ChannelGroupHistoryParams,
-  ChannelGroupHistoryResponse,
-  GroupChatMessage,
-  NotificationPreferenceKey,
-  NotificationPreference,
-  NotificationPreferencesResponse,
-  NotificationPreferenceUpdateParams,
-  NotificationPreferenceUpdateResponse,
-  SubmitFeedbackRequest,
-  SubmitFeedbackResponse,
-  FeedListStatus,
-  FeedListParams,
-  FeedListItem,
-  FeedListResponse,
-  AutomationEmailDelivery,
-  AutomationAlertDelivery,
-  AutomationAlertDeliveryGetRequest,
-  AutomationAlertDeliveryUpdateRequest,
-  AutomationAlertDeliveryUpdateResponse,
-  FeedDeleteRequest,
-  FeedDeleteResponse,
-  FeedStatusUpdateRequest,
-  FeedStatusUpdateResponse,
-  CreditWallet,
-  CreditWalletItemsParams,
-  CreditWalletItem,
-  CreditWalletPageInfo,
-  CreditWalletItemEdge,
-  CreditWalletItemConnection,
-  CreditWalletItemsResponse,
-  FollowPlaybookResponse,
-  PlaybookFollowParams,
-  SubscribeBatchParams,
-  SubscribeBatchResponse,
-  UnsubscribeBatchParams,
-  UnsubscribeBatchResponse,
-  UnfollowPlaybookResponse,
 } from './types.js';
 export type {
   SkillDoc,
@@ -173,99 +175,25 @@ export type {
   SkillMetadata,
   SkillSummary,
 } from './resources/dataSkills.js';
-export type {
-  TrendingPlaybookItem,
-  TrendingPlaybooksDir,
-  TrendingPlaybooksParams,
-  TrendingPlaybooksResponse,
-  TrendingPlaybooksSort,
-} from './resources/playbooks.js';
-export type {
-  PlaybookSkillFile,
-  PlaybookSkillFileMeta,
-  PlaybookSkillMeta,
-  PlaybookSkillSummary,
-  PlaybookSkillTagEntry,
-} from './resources/playbookSkills.js';
-export type {
-  CreateAllowanceParams,
-  CreateAllowanceResponse,
-  CreditAllowance,
-  DeleteFunctionParams,
-  GetAllowanceParams,
-  InvokeFunctionParams,
-  InvokeFunctionResponse,
-  ListAllowancesResponse,
-  ListFunctionsParams,
-  ListFunctionsResponse,
-  PlaybookFunction,
-  RegisterFunctionParams,
-  RegisterFunctionResponse,
-  RevokeAllowanceParams,
-  RevokeAllowanceResponse,
-} from './resources/functions.js';
-export type {
-  CompanyEarningsCatalog,
-  CompanyEarningsContentStatus,
-  CompanyEarningsContext,
-  CompanyEarningsEvent,
-  CompanyEarningsParams,
-  CompanyEarningsPeriod,
-  CompanyEarningsRelease,
-  CompanyEarningsSession,
-  CompanyEarningsStatus,
-  CompanyEarningsTranscript,
-  CompanyEarningsTranscriptEntry,
-  CompanyEarningsTranscriptSection,
-  CompanyFiscalQuarter,
-  CompanyNarrative,
-  CompanyNarrativeChangeLogEntry,
-  CompanyNarrativeContext,
-  CompanyNarrativeHistory,
-  CompanyNarrativeSnapshot,
-  CompanyPostEarningsSummary,
-  CompanyPreEarningsAnalysis,
-} from './resources/markets.js';
+export type { InvokeFunctionOptions } from './resources/functions.js';
+export type { RunOptions } from './resources/run.js';
 
-export type {
-  ListThesesParams,
-  ThesisPageParams,
-  ThesisReadScope,
-  ThesisListPage,
-  RelatedThesesPage,
-} from './resources/thesisReads.js';
+export { XResource } from './resources/x.js';
 
+export type { TradeOptions } from './resources/trading.js';
 export {
-  XResource,
-  type XReadParams,
-  type XConnectionStatus,
-  type XAccount,
-  type XPost,
-  type XReadPage,
-} from './resources/x.js';
+  V1TradingResource,
+  type SubscribeExecutingLatestParams,
+  type TradingSubscription,
+} from './v1/trading.js';
 
 export {
   FollowsResource,
-  type WatchlistTickerKind,
-  type FollowProfileKind,
-  type WatchlistTickerSpec,
-  type WatchlistTickersParams,
-  type ResolvedTicker,
-  type UnresolvedTicker,
-  type AddToWatchlistResult,
-  type RemoveFromWatchlistResult,
-  type FollowPageParams,
-  type FollowPageInfo,
-  type WatchlistTicker,
-  type WatchlistPage,
-  type FollowProfile,
-  type SearchProfilesParams,
-  type ProfileRefParams,
-  type FollowedProfilesParams,
-  type ProfilesPage,
-  type ProfileFollowResult,
-  type FollowingThesesParams,
-  type FollowingThesisAuthor,
-  type FollowingThesisItem,
-  type FollowingThesesPage,
+  type FollowWriteOptions,
 } from './resources/follows.js';
+export {
+  SubscriptionsResource,
+  type SubscriptionWriteOptions,
+} from './resources/subscriptions.js';
+export { V1ChannelGroupSubscriptionsResource } from './v1/channelGroupSubscriptions.js';
+export { V1SubscriptionsResource } from './v1/subscriptions.js';
