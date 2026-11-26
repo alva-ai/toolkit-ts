@@ -68,3 +68,23 @@
 - 2026-11-26: the human approved retiring the endpoint and removing the
   command, the resource, its tests and the README section; no release in this
   change.
+
+## 7. Outcome and Evidence
+
+- B1-B3 done as designed (D1); no deviations.
+- `npm run typecheck`, `npm run lint`, `npm run format:check`: clean.
+- `npm test`: 64 files, 1486 tests pass, including
+  `rejects the removed screenshot command`, the 138-leaf inventory and the
+  Agent removed-command list.
+- `npx tsup`: builds.
+- CI (build on Node 18, 20, 22): pass.
+- The same removal lands on the Toolkit 1.0 branch (#215, commit `7cacfc5`),
+  recorded in `docs/changelogs/2026-11-20-toolkit-1.0-v2-resources.md` there.
+
+## 8. Remaining Work
+
+- Release: version bump and npm publish (repository release process).
+- sdk-monorepo: Toolkit submodule bump and Dispatch release, after which ALPI
+  drops its `playbooks screenshot` Slim smoke probe.
+- When #215 merges `main`, resolve the delete/modify conflicts in the
+  screenshot files as deletions.
