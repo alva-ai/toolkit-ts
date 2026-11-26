@@ -19,8 +19,7 @@ export type EmbeddedCommandAction =
   | 'automation-runs-status'
   | 'automation-runs-logs'
   | 'notification-set-preference'
-  | 'signal-execute'
-  | 'screenshot';
+  | 'signal-execute';
 
 export interface EmbeddedCommandDefinition extends CommandDefinition {
   readonly targetPath?: readonly string[];
@@ -483,20 +482,6 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
       values: ['format'],
       positionals: ['file argument'],
     }),
-    action(
-      'playbooks screenshot',
-      {
-        values: [
-          'url',
-          'selector',
-          'xpath',
-          'compress-quality',
-          'compress-max-width',
-        ],
-        booleans: ['full', 'compress'],
-      },
-      'screenshot'
-    ),
     route('playbooks remix', 'remix', {
       values: ['child-username', 'child-name', 'parents'],
     }),

@@ -2,8 +2,8 @@ import type { Schema } from '../src/platformApi.js';
 import { v2 } from './v2Schema.js';
 
 // /api/v2 fixtures of the account resources (user, secrets, service
-// accounts, feedback, notifications, screenshots), each checked against its
-// schema in the contract.
+// accounts, feedback, notifications), each checked against its schema in the
+// contract.
 
 export const REQUEST_ID = '123e4567-e89b-42d3-a456-426614174000';
 
@@ -87,8 +87,4 @@ export function aDelivery(
     actions: [],
     ...overrides,
   });
-}
-
-export function aScreenshot(contentBase64: string): Schema<'Screenshot'> {
-  return v2('Screenshot', { contentType: 'image/png', contentBase64 });
 }

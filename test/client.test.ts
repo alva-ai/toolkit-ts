@@ -219,7 +219,7 @@ describe('AlvaClient', () => {
       globalThis.fetch = fetch;
       const client = new AlvaClient({});
 
-      const result = await client._request('GET', '/api/v1/screenshot');
+      const result = await client._request('GET', '/api/v1/fs/read');
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
@@ -261,7 +261,7 @@ describe('AlvaClient', () => {
       globalThis.fetch = fetch;
       const client = new AlvaClient({});
 
-      const result = await client._request('GET', '/api/v1/screenshot');
+      const result = await client._request('GET', '/api/v1/fs/read');
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 

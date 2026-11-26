@@ -10,7 +10,6 @@ import {
 } from '../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../src/cli/embeddedDispatch.js';
 import { AlvaClient } from '../src/client.js';
-import { encodeBase64 } from '../src/base64.js';
 import { CliUsageError } from '../src/error.js';
 import { allowance } from './billingV2.js';
 import { FUNCTION, functionInvocation, playbookFunction } from './runtimeV2.js';
@@ -54,13 +53,7 @@ const COMMENT = v2('Comment', {
   createdAt: null,
   updatedAt: null,
 });
-import {
-  aDelivery,
-  aFeedback,
-  aMe,
-  aScreenshot,
-  aSecret,
-} from './accountV2.js';
+import { aDelivery, aFeedback, aMe, aSecret } from './accountV2.js';
 import {
   aCronjob,
   aDelivery as anAutomationDelivery,
@@ -405,9 +398,6 @@ function makeClient(
     .fn()
     .mockResolvedValue({ ok: true, subscriptions: [] });
   client.remix.save = vi.fn().mockResolvedValue(aPlaybook());
-  client.screenshot.capture = vi
-    .fn()
-    .mockResolvedValue(aScreenshot(encodeBase64(new Uint8Array(8))));
   client.functions.register = vi.fn().mockResolvedValue(playbookFunction());
   client.functions.list = vi.fn().mockResolvedValue({
     items: [playbookFunction({ name: 'analyze' })],
@@ -1613,16 +1603,6 @@ describe('CLI dispatch', () => {
           './schema.json',
         ],
       },
-      {
-        argv: [
-          'playbooks',
-          'screenshot',
-          '--url',
-          '/playbook/alice/p',
-          '--out',
-          'p.png',
-        ],
-      },
     ];
 
     for (const { argv } of cases) {
@@ -1634,182 +1614,6 @@ describe('CLI dispatch', () => {
           err.message.includes('is not supported')
       );
     }
-  });
-
-  it('rejects screenshot --out in jagent mode before capturing', async () => {
-    const client = makeClient();
-
-    await expect(
-      dispatchEmbedded(
-        client,
-        [
-          'playbooks',
-          'screenshot',
-          '--url',
-          '/playbook/alice/p',
-          '--out',
-          'p.png',
-        ],
-        undefined,
-        { runtime: 'jagent' }
-      )
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError &&
-        err.message.includes('--out is not supported')
-    );
-    expect(client.screenshot.capture).not.toHaveBeenCalled();
-  });
-
-  it('returns a tagged _image result for screenshot --base64', async () => {
-    const client = makeClient();
-    const jpeg = encodeBase64(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]));
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue({ contentType: 'image/jpeg', contentBase64: jpeg });
-    const result = await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-    ]);
-    expect(result).toEqual({
-      _image: true,
-      mimeType: 'image/jpeg',
-      data: jpeg,
-      bytes: 4,
-    });
-  });
-
-  it('applies default compression for screenshot --base64', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(
-        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
-      );
-    await dispatch(client, ['screenshot', '--url', 'u', '--base64']);
-    expect(client.screenshot.capture).toHaveBeenCalledWith(
-      expect.objectContaining({
-        compress: true,
-        compressMaxWidth: 1280,
-        compressQuality: 70,
-      })
-    );
-  });
-
-  it('honors explicit compress overrides for screenshot --base64', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(
-        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
-      );
-    await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-      '--compress-quality',
-      '90',
-      '--compress-max-width',
-      '1920',
-    ]);
-    expect(client.screenshot.capture).toHaveBeenCalledWith(
-      expect.objectContaining({
-        compress: true,
-        compressQuality: 90,
-        compressMaxWidth: 1920,
-      })
-    );
-  });
-
-  it('opts out of compression with screenshot --base64 --full', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(
-        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
-      );
-    await dispatch(client, ['screenshot', '--url', 'u', '--base64', '--full']);
-    expect(client.screenshot.capture).toHaveBeenCalledWith(
-      expect.objectContaining({ compress: false })
-    );
-  });
-
-  it('honors explicit --no-compress in screenshot --base64', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(
-        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
-      );
-    await dispatch(client, [
-      'screenshot',
-      '--url',
-      'u',
-      '--base64',
-      '--no-compress',
-    ]);
-    expect(client.screenshot.capture).toHaveBeenCalledWith(
-      expect.objectContaining({ compress: false })
-    );
-  });
-
-  it('throws CliUsageError when screenshot has both --out and --base64', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, ['screenshot', '--url', 'u', '--out', 'f', '--base64'])
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'screenshot'
-    );
-  });
-
-  it('throws CliUsageError when screenshot has neither --out nor --base64', async () => {
-    const client = makeClient();
-    await expect(
-      dispatch(client, ['screenshot', '--url', 'u'])
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'screenshot'
-    );
-  });
-
-  it('writes file and returns {written,bytes} for screenshot --out', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(
-        aScreenshot(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47])))
-      );
-    const writeSpy = vi
-      .spyOn(fs, 'writeFileSync')
-      .mockImplementation(() => undefined);
-    try {
-      const result = await dispatch(client, [
-        'screenshot',
-        '--url',
-        'u',
-        '--out',
-        'f.png',
-      ]);
-      expect(result).toEqual({ written: 'f.png', bytes: 4 });
-      expect(writeSpy).toHaveBeenCalled();
-    } finally {
-      writeSpy.mockRestore();
-    }
-  });
-
-  it('throws CliUsageError for screenshot --base64 with empty bytes', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi.fn().mockResolvedValue(aScreenshot(''));
-    await expect(
-      dispatch(client, ['screenshot', '--url', 'u', '--base64'])
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof CliUsageError && err.command === 'screenshot'
-    );
   });
 
   it('dispatches feed delete', async () => {
@@ -2974,6 +2778,18 @@ components: {}
     expect(client.v1.channelGroupSubscriptions.list).not.toHaveBeenCalled();
   });
 
+  it('rejects the removed screenshot command', async () => {
+    const client = makeClient();
+    for (const argv of [
+      ['screenshot', '--help'],
+      ['screenshot', '--url', '/playbook/alice/p', '--base64'],
+    ]) {
+      await expect(dispatch(client, argv)).rejects.toThrow(
+        "Unknown command: 'screenshot'"
+      );
+    }
+  });
+
   it('dispatches remix', async () => {
     const client = makeClient();
     await dispatch(client, [
@@ -3740,17 +3556,6 @@ describe('help text', () => {
     expect(result.text).toContain('--parents');
   });
 
-  it('returns per-command help for screenshot --help', async () => {
-    const client = makeClient();
-    const result = (await dispatch(client, ['screenshot', '--help'])) as {
-      _help: boolean;
-      text: string;
-    };
-    expect(result._help).toBe(true);
-    expect(result.text).toContain('--url');
-    expect(result.text).toContain('--out');
-  });
-
   it('returns per-command help for configure --help', async () => {
     const client = makeClient();
     const result = (await dispatch(client, ['configure', '--help'])) as {
@@ -4065,8 +3870,8 @@ describe('help text', () => {
 
 describe('help-text drift guard', () => {
   // Groups with subcommand dispatch. Flag-only top-level commands (run,
-  // remix, screenshot, whoami, configure) are excluded — they have no
-  // subcommand enumeration.
+  // remix, whoami, configure) are excluded — they have no subcommand
+  // enumeration.
   const DISPATCHABLE_SUBCOMMANDS: Record<string, string[]> = {
     user: ['me'],
     fs: [
@@ -5719,32 +5524,6 @@ describe('CLI dispatch — Slim Agent profile', () => {
     expect(client.notificationPreferences.update).toHaveBeenCalledWith({
       sessionCompleted: false,
     });
-  });
-
-  it('returns Agent screenshots as image content without an encoding flag', async () => {
-    const client = makeClient();
-    client.screenshot.capture = vi
-      .fn()
-      .mockResolvedValue(
-        aScreenshot(encodeBase64(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])))
-      );
-
-    const result = await dispatchEmbedded(
-      client,
-      ['playbooks', 'screenshot', '--url', '/playbook/alice/pulse'],
-      undefined,
-      agentDeps
-    );
-
-    expect(result).toEqual(
-      expect.objectContaining({ _image: true, mimeType: 'image/png' })
-    );
-    expect(client.screenshot.capture).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: '/playbook/alice/pulse',
-        compress: true,
-      })
-    );
   });
 
   it('creates and registers an automation in one command', async () => {

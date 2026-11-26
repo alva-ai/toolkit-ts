@@ -121,8 +121,8 @@ shapes as they are. CLIs and SDKs still on 0.x keep working against
   `notifications.list({ automationId })` take Automation IDs. By owner and
   name, use `client.v1.subscriptions` and `client.v1.notifications`.
 - **Account.** `user.me()` returns `Me`; secrets, service accounts,
-  feedback, screenshots and notification preferences return their
-  `/api/v2` schemas (a secret's value: `client.v1.secrets.get`).
+  feedback and notification preferences return their `/api/v2` schemas (a
+  secret's value: `client.v1.secrets.get`).
 - **Errors.** `AlvaError` has `code`, `reason` (such as
   `IDEMPOTENCY_KEY_REUSED` or `INSUFFICIENT_CREDITS`), `type`, `status`,
   `message`, `requiredPermission`, `invalidParams` and `retryAfter`, read
@@ -319,10 +319,10 @@ old Agent paths are rejected rather than aliased. Run the embedded `--help` for
 the live tree. The independent system CLI continues to expose feedback.
 
 The embedded surface is aligned with ALFS-native tools: local-file flags such as
-`--local-file`, `--file`, `--params-schema-file`, and screenshot `--out` are
-absent. Thesis commands likewise accept literal `--body` only: local files and
+`--local-file`, `--file` and `--params-schema-file` are absent. Thesis commands
+likewise accept literal `--body` only: local files and
 stdin have no verified embedded adapter. Use inline data or prepare content in ALFS before dispatching the
-command; Agent screenshots return image content directly. `dispatch()` throws
+command. `dispatch()` throws
 `CliUsageError` for command-line usage errors and `AlvaError` for API errors.
 Managed commands reject unknown flags before invoking an API. `trading broker`
 is the explicit exception because argv after that nested prefix is forwarded
@@ -476,7 +476,6 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 | `client.sdk`                       | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                                                                                                                                                           |
 | `client.comments`                  | `create()`, `pin()`, `unpin()`                                                                                                                                                                                                                                                                          |
 | `client.remix`                     | `save()`                                                                                                                                                                                                                                                                                                |
-| `client.screenshot`                | `capture()`                                                                                                                                                                                                                                                                                             |
 | `client.v1`                        | `steward`, `secrets.get()`, `notifications.listFeed()`, `subscriptions.subscribeFeed()`, `subscriptions.unsubscribeFeed()`, `channelGroupSubscriptions`, `fs`, `trading.subscribe()`, `playbooks`, `playbookSkills` (0.x shapes; CHANGELOG, "Moved to `client.v1`")                                     |
 
 ### Error Handling
@@ -587,7 +586,6 @@ alva data-skills <list|summary|endpoint> [<skill>] [<file>] [--json]
 alva comments <create|pin|unpin>
 alva notification-preferences <list|enable-session-completed|disable-session-completed>
 alva remix --child-username <u> --child-name <n> --parents <json>
-alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
 alva markets narrative --ticker <symbol>
 alva markets earnings --ticker <symbol> [--event <latest-completed|next-confirmed> | --fiscal-year <year> --fiscal-quarter <Q1|Q2|Q3|Q4>]
 alva trading-pairs search --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]

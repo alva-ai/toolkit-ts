@@ -569,17 +569,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('arrays token'),
   command('arrays token ensure'),
   command('arrays token status'),
-  command('screenshot', {
-    values: [
-      'url',
-      'out',
-      'selector',
-      'xpath',
-      'compress-quality',
-      'compress-max-width',
-    ],
-    booleans: ['base64', 'full', 'compress'],
-  }),
 
   command('portfolio accounts'),
   command('portfolio summary', { values: ['account-id'] }),

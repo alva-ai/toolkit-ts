@@ -94,6 +94,8 @@ under `client.v1`, and move back when their route exists:
   `followAssets` and `unfollowAssets` with Asset IDs), and the methods moved
   to `client.v1` (above). The 0.x request and response types are gone: use
   the generated `Schema<'…'>` and `V2Query<…>` types.
+- Removed with the retired screenshot endpoint: `screenshot.capture`, CLI
+  `alva screenshot` and embedded `playbooks screenshot`.
 - New: `markets.assetBySymbol`, `tradingPairs.list`,
   `theses.getByNumber` and `getVersionByNumber`, `playbooks.getBySlug`,
   `deploy.runStats`, the `schedules` Session Inbox methods
@@ -356,8 +358,6 @@ resource:
   `ServiceAccountGrant` and `{}`.
 - `feedback.submit(SubmitFeedbackRequest)` returns `Feedback`
   (`notionPageId`, `notionUrl` may be null); enums are upper case.
-- `screenshot.capture(ScreenshotRequest)` returns the `Screenshot`
-  (`contentType`, `contentBase64`), not bytes.
 
 #### Notifications and alerts
 

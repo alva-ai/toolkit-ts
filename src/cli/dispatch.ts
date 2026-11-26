@@ -1,6 +1,5 @@
 import type { ListThesesParams } from '../resources/theses.js';
 import { AlvaClient } from '../client.js';
-import { decodeBase64 } from '../base64.js';
 import { requireDecision } from '../v1/steward.js';
 import { AlvaError, CliUsageError } from '../error.js';
 import { DECIMAL_PATTERN, type Schema, type V2Query } from '../platformApi.js';
@@ -140,7 +139,6 @@ Commands:
   trading     Trading operations (accounts, portfolio, orders, subscriptions, equity-history, risk-rules, subscribe, unsubscribe, execute, update-risk-rules)
   broker      Agentic order execution — venue-native passthrough to trex (quote, order, balance, positions, ...; --account-id names the account; run 'alva broker describe')
   auth        Authentication (login)
-  screenshot  Capture a web screenshot as PNG
   arrays      Arrays backend operations (token ensure, token status)
 
 Global options:
@@ -1408,31 +1406,6 @@ Required:
 Examples:
   alva remix --child-username bob --child-name my-btc --parents '[{"username":"alice","name":"btc-signals"}]'`,
 
-  screenshot: `Usage: alva screenshot --url <url> (--base64 | --out <file>) [--selector <css>] [--xpath <xpath>] [--full] [--compress] [--compress-quality <n>] [--compress-max-width <px>]
-
-Capture a screenshot of an Alva page. Choose exactly one output mode.
-
-Required:
-  --url <url>                URL or path to capture (e.g. /playbook/alice/dashboard)
-
-Output (choose one):
-  --base64                   Emit the image as base64 to stdout. Compresses by
-                             default (max-width 1280, quality 70) unless --full.
-  --out <file>               Write the image to a local file.
-
-Optional:
-  --selector <css>           Capture a specific element by CSS selector
-  --xpath <xpath>            Capture a specific element by XPath
-  --full                     (--base64) Return the raw image, no default compression
-  --compress                 Re-encode the image to reduce file size
-  --compress-quality <n>     Compression quality 1-100
-  --compress-max-width <px>  Downscale to at most this width in pixels
-
-Examples:
-  alva screenshot --url /playbook/alice/dashboard --base64
-  alva screenshot --url /playbook/alice/dashboard --out dashboard.png
-  alva screenshot --url /playbook/alice/dashboard --out chart.png --selector ".chart-container"`,
-
   portfolio: `Usage: alva portfolio <subcommand> [options]
 
 Read-only view of connected accounts across TREX and SnapTrade, in the
@@ -1841,7 +1814,6 @@ export type DispatchRuntime = 'nodejs' | 'jagent';
 export interface DispatchLocalFiles {
   readText(path: string): string;
   readBytes(path: string): BodyInit;
-  writeBytes(path: string, data: Uint8Array): void;
 }
 
 export interface DispatchRuntimeDeps {
@@ -2225,18 +2197,6 @@ function unixSecondsFlag(
   return value === undefined
     ? undefined
     : Math.floor(rfc3339Flag(value, flag, command) / 1000);
-}
-
-/** The bytes of a screenshot; an empty image is a retryable service failure. */
-function screenshotBytes(contentBase64: string): Uint8Array {
-  const bytes = new Uint8Array(decodeBase64(contentBase64));
-  if (bytes.length === 0) {
-    throw new CliUsageError(
-      'Screenshot service returned empty response (0 bytes). The service may be overloaded — retry in a few seconds.',
-      'screenshot'
-    );
-  }
-  return bytes;
 }
 
 function num(val: string | undefined): number | undefined {
@@ -3640,20 +3600,6 @@ function readLocalFileBytes(
     throw new Error('Local file access requires a Node.js runtime adapter.');
   }
   return deps.localFiles.readBytes(path);
-}
-
-function writeLocalFileBytes(
-  path: string,
-  data: Uint8Array,
-  command: string,
-  flag: string,
-  deps?: DispatchRuntimeDeps
-): void {
-  assertLocalFileAvailable(command, flag, deps);
-  if (!deps?.localFiles) {
-    throw new Error('Local file access requires a Node.js runtime adapter.');
-  }
-  deps.localFiles.writeBytes(path, data);
 }
 
 /**
@@ -5749,86 +5695,6 @@ export async function executeParsedCommand(
       throw new Error(
         `Unknown subcommand 'arrays ${subcommand}'. Use 'alva arrays --help' for usage.`
       );
-    }
-
-    case 'screenshot': {
-      const hasOut = flags['out'] !== undefined;
-      const wantBase64 = boolFlag(flags['base64']) === true;
-      if (hasOut && wantBase64) {
-        throw new CliUsageError(
-          'screenshot accepts only one of --out (local file) or --base64 (stdout); both were provided.',
-          'screenshot'
-        );
-      }
-      if (!hasOut && !wantBase64) {
-        throw new CliUsageError(
-          'one of --out/--base64 is required for screenshot',
-          'screenshot'
-        );
-      }
-
-      const url = requireFlag(flags, 'url', 'screenshot');
-      const selector = flags['selector'];
-      const xpath = flags['xpath'];
-
-      if (wantBase64) {
-        // base64 mode: no local FS — safe in jagent.
-        const full = boolFlag(flags['full']) === true;
-        const explicitQuality = flags['compress-quality'];
-        const explicitMaxWidth = flags['compress-max-width'];
-        // Disable compression when --full, or when the caller explicitly opts
-        // out via --no-compress / --compress=false (mirrors the --out path,
-        // which honors boolFlag(flags['compress'])). Otherwise compress by
-        // default to bound the base64 payload size.
-        const noCompress = full || boolFlag(flags['compress']) === false;
-        let compress: boolean;
-        let compressQuality: number | undefined;
-        let compressMaxWidth: number | undefined;
-        if (noCompress) {
-          compress = false;
-          compressQuality = undefined;
-          compressMaxWidth = undefined;
-        } else {
-          compress = true;
-          compressQuality =
-            explicitQuality !== undefined ? Number(explicitQuality) : 70;
-          compressMaxWidth =
-            explicitMaxWidth !== undefined ? Number(explicitMaxWidth) : 1280;
-        }
-        const shot = await client.screenshot.capture({
-          url,
-          selector,
-          xpath,
-          compress,
-          compressQuality,
-          compressMaxWidth,
-        });
-        const bytes = screenshotBytes(shot.contentBase64);
-        return {
-          _image: true,
-          mimeType: shot.contentType,
-          data: shot.contentBase64,
-          bytes: bytes.length,
-        };
-      }
-
-      const outFile = requireFlag(flags, 'out', 'screenshot');
-      assertLocalFileAvailable('screenshot', 'out', deps);
-      const compressQuality = flags['compress-quality'];
-      const compressMaxWidth = flags['compress-max-width'];
-      const shot = await client.screenshot.capture({
-        url,
-        selector,
-        xpath,
-        compress: boolFlag(flags['compress']),
-        compressQuality:
-          compressQuality !== undefined ? Number(compressQuality) : undefined,
-        compressMaxWidth:
-          compressMaxWidth !== undefined ? Number(compressMaxWidth) : undefined,
-      });
-      const bytes = screenshotBytes(shot.contentBase64);
-      writeLocalFileBytes(outFile, bytes, 'screenshot', 'out', deps);
-      return { written: outFile, bytes: bytes.length };
     }
 
     case 'portfolio': {

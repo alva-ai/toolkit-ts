@@ -751,7 +751,6 @@ describe('terminal thesis body transports', () => {
         readText: () => 'unused',
         readBytes: () =>
           new Uint8Array([0xef, 0xbb, 0xbf, 0x64, 0x72, 0x61, 0x66, 0x74]),
-        writeBytes: () => undefined,
       },
     });
     await create(['--body-stdin'], {
@@ -771,7 +770,6 @@ describe('terminal thesis body transports', () => {
         localFiles: {
           readText: () => 'unused',
           readBytes: () => invalid,
-          writeBytes: () => undefined,
         },
       })
     ).rejects.toThrow(/--body-file must contain valid UTF-8/);

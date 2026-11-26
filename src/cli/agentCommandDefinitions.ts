@@ -76,14 +76,6 @@ export function embeddedCommandArgv(parsed: ParsedCommand): string[] {
       ...(live ? [] : ['--dry-run']),
     ];
   }
-  if (definition.action === 'screenshot') {
-    return [
-      'screenshot',
-      ...serializedFlags(parsed),
-      ...parsed.positionals,
-      '--base64',
-    ];
-  }
   if (definition.action !== undefined) {
     throw new Error(
       `Embedded CLI route '${parsed.path.join(' ')}' requires direct dispatch`
