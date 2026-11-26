@@ -166,6 +166,10 @@ give one to every bullish or bearish entity or to none; without weights the
 shares follow the default rules and what the body says, and get shows weight
 only on an Update published with weights. --track-return false turns the Thesis return
 off for good; it is accepted only while the switch is UNSET.
+create/update --summary <text> is optional: the one-line name shown on the
+Thesis card next to the author, at most 1000 UTF-8 bytes. Omit it and Alva
+generates one after publication; on update, omission keeps the current summary.
+--title is a legacy field.
 create --signal-kinds <kind,kind> --signal-min-importance all|notable|major
 limits which Signals the new Thesis shows (omit both: every Signal). Kinds:
 fundamentals, macro, technicals, commentary.

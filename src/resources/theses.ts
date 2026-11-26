@@ -89,7 +89,13 @@ export interface Thesis {
   id: ThesisID;
   author_version_id: ThesisID;
   material_version_id: ThesisID;
+  /** Legacy title, being retired; "" when absent. Prefer `summary`. */
   title: string;
+  /**
+   * The one-line name shown on the Thesis card; "" until Alva generates one
+   * after publication.
+   */
+  summary: string;
   body: string;
   entity_ids: ThesisID[];
   entity_stances?: ThesisEntityStance[];
@@ -191,7 +197,13 @@ export interface CreateThesisParams {
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
   body: string;
+  /** Legacy title, being retired; omitted sends none. */
   title?: string;
+  /**
+   * The card's one-line name: a single line of at most 1000 UTF-8 bytes.
+   * Omitted: Alva generates one after publication.
+   */
+  summary?: string;
   entity_ids?: ThesisID[];
   /** Author direction keyed by an entity ID also supplied in entity_ids. */
   entity_stances?: ThesisEntityStance[];
@@ -246,7 +258,10 @@ export interface UpdateThesisParams {
   request_id: string;
   expected_author_version_id: ThesisID;
   body: string;
+  /** Legacy title; omitted sends none. */
   title?: string;
+  /** The card's one-line name, as on create; omitted keeps the current one. */
+  summary?: string;
   entity_ids?: ThesisID[];
   /** Full replacement: resubmit existing directions when only editing the body. */
   entity_stances?: ThesisEntityStance[];
@@ -799,10 +814,10 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
   const body: Record<string, unknown> = {
     request_id: requireRequestID(params.request_id),
     body: requireBody(params.body),
-    title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requirePublicVisibility(params.visibility ?? 'public'),
   };
+  writeTitleAndSummary(body, params);
   if (params.images !== undefined) {
     if (!Array.isArray(params.images) || params.images.length > 20)
       throw invalidArgument('images must contain at most 20 URLs');
@@ -1020,6 +1035,19 @@ function requireKeptWeights(
   }
 }
 
+/**
+ * Sends title and summary only when given: an omitted summary is generated on
+ * create and kept on update.
+ */
+function writeTitleAndSummary(
+  body: Record<string, unknown>,
+  params: { title?: string; summary?: string }
+): void {
+  if (params.title !== undefined) body.title = requireTitle(params.title);
+  if (params.summary !== undefined)
+    body.summary = requireThesisSummary(params.summary);
+}
+
 function updateBody(params: UpdateThesisParams): Record<string, unknown> {
   const body: Record<string, unknown> = {
     request_id: requireRequestID(params.request_id),
@@ -1028,10 +1056,10 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
       'expected_author_version_id'
     ),
     body: requireBody(params.body),
-    title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requireVisibility(params.visibility),
   };
+  writeTitleAndSummary(body, params);
   if (params.medias !== undefined) {
     if (!Array.isArray(params.medias) || params.medias.length > 20)
       throw invalidArgument('medias must be an array of at most 20 items');
@@ -1077,7 +1105,8 @@ function thesisResponse(response: unknown): ThesisResponse {
       thesis.material_version_id,
       'thesis.material_version_id'
     ),
-    title: responseTitle(thesis.title),
+    title: lenientResponseText(thesis.title),
+    summary: lenientResponseText(thesis.summary),
     body: responseBody(thesis.body),
     entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
     visibility: responseVisibility(thesis.visibility),
@@ -1371,6 +1400,21 @@ function requireTitle(value: string): string {
   return title;
 }
 
+/**
+ * A Thesis summary is one line (no CR, LF, U+2028 or U+2029) of valid UTF-8
+ * text, at most 1000 bytes and without NUL, as Gateway requires.
+ */
+function requireThesisSummary(value: unknown): string {
+  const summary = requireText(value, 'summary');
+  if (summary.includes('\0'))
+    throw invalidArgument('summary must not contain NUL');
+  if (/[\r\n\u2028\u2029]/.test(summary))
+    throw invalidArgument('summary must be a single line');
+  if (encoder.encode(summary).byteLength > 1000)
+    throw invalidArgument('summary must be at most 1000 UTF-8 bytes');
+  return summary;
+}
+
 function requireVisibility(value: string): ThesisVisibility {
   const visibility = requireText(value, 'visibility');
   if (
@@ -1477,14 +1521,9 @@ function responseBody(value: unknown): string {
   }
 }
 
-function responseTitle(value: unknown): string {
-  try {
-    return requireTitle(value as string);
-  } catch {
-    throw invalidResponse(
-      'response title must be valid text at most 500 UTF-8 bytes'
-    );
-  }
+/** Title and summary are display text: missing or not a string reads as "". */
+function lenientResponseText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

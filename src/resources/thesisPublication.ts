@@ -47,7 +47,10 @@ export interface ThesisPublicationSummary {
   authorVersionId: string;
   materialVersionId: string;
   itemKey: string;
+  /** Legacy title, being retired; "" when absent. Prefer `summary`. */
   title: string;
+  /** The one-line name shown on the Thesis card; "" until Alva generates one. */
+  summary: string;
   body: string;
   publishedAtMs: number;
   changeKind: string;
@@ -78,7 +81,7 @@ export interface ThesisPublicationSummary {
 /** Immutable publication projection selected by every Thesis publication read. */
 export const THESIS_PUBLICATION_FIELDS = `
             thesisId playbookId authorVersionId materialVersionId itemKey
-            title body publishedAtMs changeKind visibility
+            title summary body publishedAtMs changeKind visibility
             closed archived note closingNote researchPaused
             entityIds categoryIds
             entityStances { entityId stance }
@@ -203,12 +206,17 @@ function publisher(value: unknown): boolean {
 /**
  * Checks every field the query selects, not a sample: the return is cast to
  * `ThesisPublicationSummary`, so anything left unchecked is a field the public
- * type promises and a caller can still read as `undefined`.
+ * type promises and a caller can still read as `undefined`. Title and summary
+ * are display text: a missing or non-string value is normalized to "" in
+ * place rather than rejecting the publication.
  */
 export function isThesisPublication(
   value: unknown
 ): value is ThesisPublicationSummary {
   if (!record(value)) return false;
+  for (const field of ['title', 'summary'] as const) {
+    if (typeof value[field] !== 'string') value[field] = '';
+  }
   for (const field of [
     'thesisId',
     'playbookId',
@@ -220,7 +228,6 @@ export function isThesisPublication(
   if (
     typeof value.itemKey !== 'string' ||
     !value.itemKey.trim() ||
-    typeof value.title !== 'string' ||
     typeof value.body !== 'string' ||
     typeof value.publishedAtMs !== 'number' ||
     !Number.isFinite(value.publishedAtMs) ||

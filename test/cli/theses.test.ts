@@ -11,6 +11,7 @@ const THESIS = {
     author_version_id: '9223372036854775806',
     material_version_id: '9223372036854775805',
     title: '',
+    summary: '',
     body: 'draft',
     entity_ids: [],
     visibility: 'public' as const,
@@ -186,7 +187,6 @@ describe('thesis terminal dispatch', () => {
     expect(calls.create).toHaveBeenCalledWith({
       request_id: REQUEST_ID,
       body: 'first\r\nsecond',
-      title: '',
       entity_ids: ['9223372036854775807', '42'],
       entity_stances: undefined,
       tickers: ['AAPL', 'NVDA'],
@@ -226,7 +226,6 @@ describe('thesis terminal dispatch', () => {
       request_id: REQUEST_ID,
       expected_author_version_id: THESIS.thesis.author_version_id,
       body: 'file\r\nbody',
-      title: '',
       entity_ids: [],
       entity_stances: undefined,
       visibility: 'private',
@@ -261,7 +260,6 @@ describe('thesis terminal dispatch', () => {
       request_id: REQUEST_ID,
       expected_author_version_id: THESIS.thesis.author_version_id,
       body: 'Back in play',
-      title: '',
       entity_ids: [],
       entity_stances: undefined,
       visibility: 'public',
@@ -661,6 +659,97 @@ describe('thesis terminal dispatch', () => {
   );
 });
 
+describe('thesis --summary', () => {
+  const create = [
+    'thesis',
+    'create',
+    '--request-id',
+    REQUEST_ID,
+    '--body',
+    'draft',
+    '--visibility',
+    'public',
+  ];
+  const update = [
+    'thesis',
+    'update',
+    '--id',
+    THESIS.thesis.id,
+    '--request-id',
+    REQUEST_ID,
+    '--expected-author-version-id',
+    THESIS.thesis.author_version_id,
+    '--body',
+    'draft',
+    '--visibility',
+    'public',
+  ];
+
+  it.each([
+    ['terminal', dispatchTerminal],
+    ['embedded', dispatchEmbedded],
+  ] as const)(
+    'passes --summary and --title through %s create and update only when given',
+    async (_name, dispatch) => {
+      const value = client();
+      const calls = mockLifecycle(value);
+
+      await dispatch(value, create);
+      await dispatch(value, update);
+      expect(calls.create.mock.calls[0][0].summary).toBeUndefined();
+      expect(calls.create.mock.calls[0][0].title).toBeUndefined();
+      expect(calls.update.mock.calls[0][1].summary).toBeUndefined();
+      expect(calls.update.mock.calls[0][1].title).toBeUndefined();
+
+      await dispatch(value, [...create, '--summary', '英伟达穿越周期']);
+      await dispatch(value, [
+        ...update,
+        '--summary',
+        'NVDA compounds',
+        '--title',
+        'Legacy',
+      ]);
+      expect(calls.create.mock.calls[1][0]).toMatchObject({
+        summary: '英伟达穿越周期',
+      });
+      expect(calls.update.mock.calls[1][1]).toMatchObject({
+        summary: 'NVDA compounds',
+        title: 'Legacy',
+      });
+    }
+  );
+
+  it('rejects an invalid --summary before the HTTP request', async () => {
+    const value = client() as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    value._request = vi.fn();
+
+    await expect(
+      dispatchTerminal(value, [...create, '--summary', 'one\ntwo'])
+    ).rejects.toThrow(/summary must be a single line/);
+    await expect(
+      dispatchTerminal(value, [...update, '--summary', 'a'.repeat(1001)])
+    ).rejects.toThrow(/summary must be at most 1000 UTF-8 bytes/);
+    expect(value._request).not.toHaveBeenCalled();
+  });
+
+  it('documents --summary in terminal and agent help', async () => {
+    const terminal = (await dispatchTerminal(client(), [
+      'thesis',
+      '--help',
+    ])) as { text: string };
+    expect(terminal.text).toContain('[--summary <text>]');
+    expect(terminal.text).toContain('Alva generates one after publication');
+    expect(terminal.text).toContain('Omitting --summary keeps');
+    const embedded = (await dispatchEmbedded(client(), [
+      'thesis',
+      '--help',
+    ])) as { text: string };
+    expect(embedded.text).toContain('--summary <text>');
+  });
+});
+
 describe('thesis embedded dispatch', () => {
   it('passes extracted entity direction through the AI command path', async () => {
     const value = client();
@@ -764,7 +853,6 @@ describe('thesis embedded dispatch', () => {
     expect(calls.create).toHaveBeenCalledWith({
       request_id: REQUEST_ID,
       body: 'embedded\r\nbody',
-      title: '',
       entity_ids: [],
       entity_stances: undefined,
       tickers: ['AAPL', 'NVDA'],

@@ -8,6 +8,7 @@ const thesis = {
   author_version_id: '41',
   material_version_id: '41',
   title: '',
+  summary: 'Previous view in one line',
   body: 'Previous view',
   entity_ids: [],
   visibility: 'private',
