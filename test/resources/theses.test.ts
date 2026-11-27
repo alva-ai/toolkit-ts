@@ -11,7 +11,6 @@ function thesis(visibility: 'public' | 'private' = 'public') {
       id: MAX_ID,
       author_version_id: '9223372036854775806',
       material_version_id: '9223372036854775805',
-      title: 'Thesis',
       summary: 'NVDA compounds through the cycle',
       body: 'line one\r\nline two',
       entity_ids: ['9223372036854775804'],
@@ -124,7 +123,6 @@ describe('ThesesResource', () => {
       client.theses.create({
         request_id: REQUEST_ID,
         body: 'line one\r\nline two',
-        title: 'Thesis',
         entity_ids: [MAX_ID],
         tickers: ['NVDA', 'AAPL'],
       })
@@ -140,7 +138,6 @@ describe('ThesesResource', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       request_id: REQUEST_ID,
       body: 'line one\r\nline two',
-      title: 'Thesis',
       entity_ids: [MAX_ID],
       tickers: ['NVDA', 'AAPL'],
       visibility: 'public',
@@ -467,7 +464,6 @@ describe('ThesesResource', () => {
           request_id: REQUEST_ID,
           expected_author_version_id: current.thesis.author_version_id,
           body: current.thesis.body,
-          title: current.thesis.title,
           entity_ids: current.thesis.entity_ids,
           entity_stances: current.thesis.entity_stances,
           visibility: current.thesis.visibility,
@@ -698,16 +694,11 @@ describe('ThesesResource', () => {
     ['null', null],
     ['non-string', 42],
   ])(
-    'reads a %s title or summary in a CRUD thesis response as empty',
+    'reads a %s summary in a CRUD thesis response as empty',
     async (_name, value) => {
       const response = thesis() as { thesis: Record<string, unknown> };
-      if (value === undefined) {
-        delete response.thesis.title;
-        delete response.thesis.summary;
-      } else {
-        response.thesis.title = value;
-        response.thesis.summary = value;
-      }
+      if (value === undefined) delete response.thesis.summary;
+      else response.thesis.summary = value;
       const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
         _request: ReturnType<typeof vi.fn>;
       };
@@ -717,22 +708,24 @@ describe('ThesesResource', () => {
         MAX_ID,
         '9223372036854775806'
       );
-      expect(read.thesis.title).toBe('');
       expect(read.thesis.summary).toBe('');
     }
   );
 
-  it('parses the summary from a CRUD thesis response', async () => {
+  it('parses the summary and drops a title from a CRUD thesis response', async () => {
+    const response = thesis() as { thesis: Record<string, unknown> };
+    response.thesis.title = 'Legacy';
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;
     };
-    client._request = vi.fn().mockResolvedValue(thesis());
+    client._request = vi.fn().mockResolvedValue(response);
 
     const read = await client.theses.getVersion(MAX_ID, '9223372036854775806');
     expect(read.thesis.summary).toBe('NVDA compounds through the cycle');
+    expect(read.thesis).not.toHaveProperty('title');
   });
 
-  it('sends title and summary on create and update only when given', async () => {
+  it('never sends a title, and sends the summary only when given', async () => {
     const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
       _request: ReturnType<typeof vi.fn>;
     };
@@ -761,7 +754,6 @@ describe('ThesesResource', () => {
       request_id: REQUEST_ID,
       expected_author_version_id: '9223372036854775806',
       body: 'updated',
-      title: 'Legacy',
       summary: 'NVDA compounds',
       visibility: 'public',
     });
@@ -769,11 +761,9 @@ describe('ThesesResource', () => {
       (call) => (call[2] as { body: Record<string, unknown> }).body
     );
     expect(create).toMatchObject({ summary: '英伟达穿越周期' });
+    expect(update).toMatchObject({ summary: 'NVDA compounds' });
     expect(create).not.toHaveProperty('title');
-    expect(update).toMatchObject({
-      title: 'Legacy',
-      summary: 'NVDA compounds',
-    });
+    expect(update).not.toHaveProperty('title');
   });
 
   it.each([
@@ -876,14 +866,9 @@ describe('ThesesResource', () => {
       { request_id: REQUEST_ID, body: 'draft', tickers: ['A\0B'] },
     ],
     ['body NUL', { request_id: REQUEST_ID, body: 'draft\0body' }],
-    ['title NUL', { request_id: REQUEST_ID, body: 'draft', title: 'a\0b' }],
     [
       'body over 65536 bytes',
       { request_id: REQUEST_ID, body: 'a'.repeat(65_537) },
-    ],
-    [
-      'title over 500 bytes',
-      { request_id: REQUEST_ID, body: 'draft', title: 'a'.repeat(501) },
     ],
     [
       'unsupported visibility',

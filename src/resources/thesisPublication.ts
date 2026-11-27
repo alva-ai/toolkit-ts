@@ -47,8 +47,6 @@ export interface ThesisPublicationSummary {
   authorVersionId: string;
   materialVersionId: string;
   itemKey: string;
-  /** Legacy title, being retired; "" when absent. Prefer `summary`. */
-  title: string;
   /** The one-line name shown on the Thesis card; "" until Alva generates one. */
   summary: string;
   body: string;
@@ -81,7 +79,7 @@ export interface ThesisPublicationSummary {
 /** Immutable publication projection selected by every Thesis publication read. */
 export const THESIS_PUBLICATION_FIELDS = `
             thesisId playbookId authorVersionId materialVersionId itemKey
-            title summary body publishedAtMs changeKind visibility
+            summary body publishedAtMs changeKind visibility
             closed archived note closingNote researchPaused
             entityIds categoryIds
             entityStances { entityId stance }
@@ -214,9 +212,7 @@ export function isThesisPublication(
   value: unknown
 ): value is ThesisPublicationSummary {
   if (!record(value)) return false;
-  for (const field of ['title', 'summary'] as const) {
-    if (typeof value[field] !== 'string') value[field] = '';
-  }
+  if (typeof value.summary !== 'string') value.summary = '';
   for (const field of [
     'thesisId',
     'playbookId',

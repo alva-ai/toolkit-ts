@@ -311,7 +311,7 @@ function publication() {
     authorVersionId: '7100000000000000003',
     materialVersionId,
     itemKey: `thesis:${thesisId}:${materialVersionId}`,
-    title: 'Compute capex is under-modelled',
+    summary: 'Compute capex is under-modelled',
     body: 'Full **thesis** body',
     publishedAtMs: 1788710100000,
     changeKind: 'UPDATE',

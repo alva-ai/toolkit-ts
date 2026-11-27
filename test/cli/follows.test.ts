@@ -20,7 +20,6 @@ function restThesis(versionID: string, changeKind: string) {
     id: '7',
     author_version_id: versionID,
     material_version_id: versionID,
-    title: 'Power caps neocloud growth',
     body: 'Power caps neocloud growth into 2027.',
     entity_ids: ['3'],
     visibility: 'public',

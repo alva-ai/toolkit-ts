@@ -14,7 +14,6 @@ function thesisWith(stances: Array<Record<string, unknown>>, archived = false) {
       id: MAX_ID,
       author_version_id: '9223372036854775806',
       material_version_id: '9223372036854775805',
-      title: 'Thesis',
       body: 'body',
       entity_ids: [NVDA, AMD],
       entity_stances: stances,

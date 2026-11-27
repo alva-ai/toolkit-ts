@@ -10,7 +10,6 @@ const THESIS = {
     id: '9223372036854775807',
     author_version_id: '9223372036854775806',
     material_version_id: '9223372036854775805',
-    title: '',
     summary: '',
     body: 'draft',
     entity_ids: [],
@@ -689,7 +688,7 @@ describe('thesis --summary', () => {
     ['terminal', dispatchTerminal],
     ['embedded', dispatchEmbedded],
   ] as const)(
-    'passes --summary and --title through %s create and update only when given',
+    'passes --summary through %s create and update only when given',
     async (_name, dispatch) => {
       const value = client();
       const calls = mockLifecycle(value);
@@ -697,25 +696,36 @@ describe('thesis --summary', () => {
       await dispatch(value, create);
       await dispatch(value, update);
       expect(calls.create.mock.calls[0][0].summary).toBeUndefined();
-      expect(calls.create.mock.calls[0][0].title).toBeUndefined();
       expect(calls.update.mock.calls[0][1].summary).toBeUndefined();
-      expect(calls.update.mock.calls[0][1].title).toBeUndefined();
 
       await dispatch(value, [...create, '--summary', '英伟达穿越周期']);
-      await dispatch(value, [
-        ...update,
-        '--summary',
-        'NVDA compounds',
-        '--title',
-        'Legacy',
-      ]);
+      await dispatch(value, [...update, '--summary', 'NVDA compounds']);
       expect(calls.create.mock.calls[1][0]).toMatchObject({
         summary: '英伟达穿越周期',
       });
       expect(calls.update.mock.calls[1][1]).toMatchObject({
         summary: 'NVDA compounds',
-        title: 'Legacy',
       });
+    }
+  );
+
+  it.each([
+    ['terminal', dispatchTerminal],
+    ['embedded', dispatchEmbedded],
+  ] as const)(
+    'rejects --title on %s create and update',
+    async (_name, dispatch) => {
+      const value = client();
+      const calls = mockLifecycle(value);
+
+      await expect(
+        dispatch(value, [...create, '--title', 'Legacy'])
+      ).rejects.toThrow(/--title/);
+      await expect(
+        dispatch(value, [...update, '--title', 'Legacy'])
+      ).rejects.toThrow(/--title/);
+      expect(calls.create).not.toHaveBeenCalled();
+      expect(calls.update).not.toHaveBeenCalled();
     }
   );
 

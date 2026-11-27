@@ -1635,7 +1635,7 @@ Subcommands:
   unstar    Remove the Thesis from your bookmarks
   set-signal-enabled  Enable or disable managed Signal research
   signal-preferences get|set  Read or change which Signals your Thesis shows
-  update   Publish a new Update replacing body, title, entities, visibility (all sent in full);
+  update   Publish a new Update replacing body, entities, visibility (all sent in full);
            with --archived false it also unarchives the Thesis
   rewrite  Explicitly request a candidate body rewrite; never called by another command
 
@@ -1652,7 +1652,7 @@ explicitly so neither can publish by accident. Create returns the Thesis's web
 url.
 
 Other flags:
-  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--summary <text>] [--title <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] --visibility public|private [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
+  create  --request-id <uuid> --body ... [--images <json-array-of-https-urls>] [--summary <text>] [--tickers <ticker,ticker>] [--entity-ids <id,id>] [--entity-stances <json>] --visibility public|private [--track-return true|false] [--signal-kinds <kind,kind>] [--signal-min-importance all|notable|major]
   Summary: optional. The one-line name shown on the Thesis card, next to the
        author. Omit it and Alva generates one after publication. One line,
        at most 1000 UTF-8 bytes.
@@ -1710,8 +1710,8 @@ Other flags:
 
 Maintenance behavior:
   archive reads the current Thesis first, preserves its body, summary,
-  title, entities, directions, and visibility, then archives it against the
-  current author version. It requires a caller-supplied request UUID. A repeated
+  entities, directions, and visibility, then archives it against the current
+  author version. It requires a caller-supplied request UUID. A repeated
   request in the requested state is an idempotent read; a version conflict or
   incomplete directions fails without sending a stale update. --note is the
   archive note shown while the Thesis is archived.
@@ -1724,7 +1724,7 @@ Maintenance behavior:
   set-signal-enabled changes managed Signal research without deleting history.
   The command returns enabled, research_paused, archived, and author version
   state; GraphQL errors and noncanonical error codes fail closed.
-  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--summary <text>] [--title <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false]
+  update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--summary <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false]
        For text edits, pass current medias unchanged; omission clears media.
        Omitting --summary keeps the current summary.
 
@@ -1744,8 +1744,8 @@ length or errors.
 IDs are decimal strings, never JavaScript numbers; provide at most 100 entity
 IDs. Body text must be nonblank,
 valid Unicode, and at most 65536 UTF-8 bytes; summary is optional, one line
-and at most 1000 UTF-8 bytes; title is a legacy field, optional and at most
-500 UTF-8 bytes. Text is passed without trimming or newline conversion.
+and at most 1000 UTF-8 bytes. Text is passed without trimming or newline
+conversion.
 
 Examples:
   alva thesis create --request-id 123e4567-e89b-42d3-a456-426614174000 --body $'line one\\r\\nline two' --visibility private
@@ -3883,7 +3883,6 @@ export async function executeParsedCommand(
             request_id: requireFlag(flags, 'request-id', 'thesis create'),
             images: thesisImages(flags),
             body: await thesisBodyFromFlags(flags, 'thesis create', deps),
-            title: flags.title,
             summary: flags.summary,
             entity_ids: thesisEntityIDs(flags),
             entity_stances: thesisEntityStances(flags),
@@ -4041,7 +4040,6 @@ export async function executeParsedCommand(
               'thesis update'
             ),
             body: await thesisBodyFromFlags(flags, 'thesis update', deps),
-            title: flags.title,
             summary: flags.summary,
             entity_ids: thesisEntityIDs(flags),
             entity_stances: thesisEntityStances(flags),

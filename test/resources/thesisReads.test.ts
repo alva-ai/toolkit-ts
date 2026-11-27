@@ -34,7 +34,6 @@ function publication(body = 'Original\r\n**view**') {
     authorVersionId: '32',
     materialVersionId: '33',
     itemKey: `thesis:${id}:33`,
-    title: 'View',
     summary: 'NVDA compounds',
     body,
     publishedAtMs: 1790000000000,
@@ -406,27 +405,20 @@ describe('Thesis read contracts', () => {
     const { client, request } = setup(authorData());
     const [edge] = (await client.theses.list({ person: 'ada' })).edges;
     expect(edge.node.publication?.summary).toBe('NVDA compounds');
-    expect(body(request).query).toContain('title summary body');
+    // The publication selects summary and no title (source refs keep theirs).
+    expect(body(request).query).toMatch(/itemKey\s+summary body/);
   });
   it.each([
     ['absent', undefined],
     ['null', null],
-  ])(
-    'reads an %s publication title or summary as empty',
-    async (_name, value) => {
-      const pub: Record<string, unknown> = publication();
-      if (value === undefined) {
-        delete pub.title;
-        delete pub.summary;
-      } else {
-        pub.title = value;
-        pub.summary = value;
-      }
-      const { client } = setup(authorData(person, pub));
-      const [edge] = (await client.theses.list({ person: 'ada' })).edges;
-      expect(edge.node.publication).toMatchObject({ title: '', summary: '' });
-    }
-  );
+  ])('reads an %s publication summary as empty', async (_name, value) => {
+    const pub: Record<string, unknown> = publication();
+    if (value === undefined) delete pub.summary;
+    else pub.summary = value;
+    const { client } = setup(authorData(person, pub));
+    const [edge] = (await client.theses.list({ person: 'ada' })).edges;
+    expect(edge.node.publication).toMatchObject({ summary: '' });
+  });
   it('rejects a publisher without an author kind', async () => {
     const pub = publication();
     const publisher: Record<string, unknown> = { ...pub.publisher };

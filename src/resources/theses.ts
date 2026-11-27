@@ -89,8 +89,6 @@ export interface Thesis {
   id: ThesisID;
   author_version_id: ThesisID;
   material_version_id: ThesisID;
-  /** Legacy title, being retired; "" when absent. Prefer `summary`. */
-  title: string;
   /**
    * The one-line name shown on the Thesis card; "" until Alva generates one
    * after publication.
@@ -197,8 +195,6 @@ export interface CreateThesisParams {
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
   body: string;
-  /** Legacy title, being retired; omitted sends none. */
-  title?: string;
   /**
    * The card's one-line name: a single line of at most 1000 UTF-8 bytes.
    * Omitted: Alva generates one after publication.
@@ -258,8 +254,6 @@ export interface UpdateThesisParams {
   request_id: string;
   expected_author_version_id: ThesisID;
   body: string;
-  /** Legacy title; omitted sends none. */
-  title?: string;
   /** The card's one-line name, as on create; omitted keeps the current one. */
   summary?: string;
   entity_ids?: ThesisID[];
@@ -601,7 +595,6 @@ export class ThesesResource {
       request_id: requestID,
       expected_author_version_id: current.thesis.author_version_id,
       body: current.thesis.body,
-      title: current.thesis.title,
       entity_ids: current.thesis.entity_ids,
       // Directions only: archiving keeps the current Update and unarchiving
       // keeps its shares without restating them.
@@ -817,7 +810,7 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requirePublicVisibility(params.visibility ?? 'public'),
   };
-  writeTitleAndSummary(body, params);
+  writeSummary(body, params);
   if (params.images !== undefined) {
     if (!Array.isArray(params.images) || params.images.length > 20)
       throw invalidArgument('images must contain at most 20 URLs');
@@ -1036,14 +1029,13 @@ function requireKeptWeights(
 }
 
 /**
- * Sends title and summary only when given: an omitted summary is generated on
- * create and kept on update.
+ * Sends the summary only when given: an omitted summary is generated on create
+ * and kept on update.
  */
-function writeTitleAndSummary(
+function writeSummary(
   body: Record<string, unknown>,
-  params: { title?: string; summary?: string }
+  params: { summary?: string }
 ): void {
-  if (params.title !== undefined) body.title = requireTitle(params.title);
   if (params.summary !== undefined)
     body.summary = requireThesisSummary(params.summary);
 }
@@ -1059,7 +1051,7 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requireVisibility(params.visibility),
   };
-  writeTitleAndSummary(body, params);
+  writeSummary(body, params);
   if (params.medias !== undefined) {
     if (!Array.isArray(params.medias) || params.medias.length > 20)
       throw invalidArgument('medias must be an array of at most 20 items');
@@ -1105,8 +1097,7 @@ function thesisResponse(response: unknown): ThesisResponse {
       thesis.material_version_id,
       'thesis.material_version_id'
     ),
-    title: lenientResponseText(thesis.title),
-    summary: lenientResponseText(thesis.summary),
+    summary: responseSummary(thesis.summary),
     body: responseBody(thesis.body),
     entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
     visibility: responseVisibility(thesis.visibility),
@@ -1392,14 +1383,6 @@ function requireBody(value: string): string {
   return body;
 }
 
-function requireTitle(value: string): string {
-  const title = requireText(value, 'title');
-  if (encoder.encode(title).byteLength > 500) {
-    throw invalidArgument('title must be at most 500 UTF-8 bytes');
-  }
-  return title;
-}
-
 /**
  * A Thesis summary is one line (no CR, LF, U+2028 or U+2029) of valid UTF-8
  * text, at most 1000 bytes and without NUL, as Gateway requires.
@@ -1449,10 +1432,7 @@ function requireText(value: unknown, field: string): string {
   if (UNPAIRED_SURROGATE.test(value)) {
     throw invalidArgument(`${field} contains invalid Unicode`);
   }
-  if (
-    (field === 'body' || field === 'title' || field === 'note') &&
-    value.includes('\0')
-  ) {
+  if ((field === 'body' || field === 'note') && value.includes('\0')) {
     throw invalidArgument(`${field} must not contain NUL`);
   }
   return value;
@@ -1521,8 +1501,8 @@ function responseBody(value: unknown): string {
   }
 }
 
-/** Title and summary are display text: missing or not a string reads as "". */
-function lenientResponseText(value: unknown): string {
+/** The summary is display text: missing or not a string reads as "". */
+function responseSummary(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
