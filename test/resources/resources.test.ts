@@ -10,7 +10,6 @@ import { SubscriptionsResource } from '../../src/resources/subscriptions.js';
 import { SdkDocsResource } from '../../src/resources/sdkDocs.js';
 import { CommentsResource } from '../../src/resources/comments.js';
 import { RemixResource } from '../../src/resources/remix.js';
-import { ScreenshotResource } from '../../src/resources/screenshot.js';
 import { ChannelGroupSubscriptionsResource } from '../../src/resources/channelGroupSubscriptions.js';
 import { NotificationsResource } from '../../src/resources/notifications.js';
 import { NotificationPreferencesResource } from '../../src/resources/notificationPreferences.js';
@@ -1332,45 +1331,6 @@ describe('RemixResource', () => {
       body: {
         child: { username: 'alice', name: 'my-playbook' },
         parents: [{ username: 'bob', name: 'src-playbook' }],
-      },
-    });
-  });
-});
-
-describe('ScreenshotResource', () => {
-  it('capture() sends GET /api/v1/screenshot with params', async () => {
-    const client = makeClient();
-    const screenshot = new ScreenshotResource(client);
-    await screenshot.capture({ url: '/playbook/alice/btc-dashboard' });
-    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/screenshot', {
-      query: {
-        url: '/playbook/alice/btc-dashboard',
-        selector: undefined,
-        xpath: undefined,
-        compress: undefined,
-        compress_quality: undefined,
-        compress_max_width: undefined,
-      },
-    });
-  });
-
-  it('capture() forwards compress params using gateway snake_case keys', async () => {
-    const client = makeClient();
-    const screenshot = new ScreenshotResource(client);
-    await screenshot.capture({
-      url: '/playbook/alice/btc-dashboard',
-      compress: true,
-      compressQuality: 70,
-      compressMaxWidth: 1280,
-    });
-    expect(client._request).toHaveBeenCalledWith('GET', '/api/v1/screenshot', {
-      query: {
-        url: '/playbook/alice/btc-dashboard',
-        selector: undefined,
-        xpath: undefined,
-        compress: true,
-        compress_quality: 70,
-        compress_max_width: 1280,
       },
     });
   });

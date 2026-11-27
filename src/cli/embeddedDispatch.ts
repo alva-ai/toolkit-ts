@@ -507,12 +507,6 @@ async function dispatchEmbeddedTarget(
       path: ['trading', 'execute'],
       flags: live === 'true' ? flags : { ...flags, 'dry-run': 'true' },
     };
-  } else if (definition.action === 'screenshot') {
-    target = {
-      ...parsed,
-      path: ['screenshot'],
-      flags: { ...parsed.flags, base64: 'true' },
-    };
   } else if (definition.targetPath !== undefined) {
     target = { ...parsed, path: definition.targetPath };
   } else {

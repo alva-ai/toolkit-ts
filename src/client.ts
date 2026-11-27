@@ -16,7 +16,6 @@ import { DataSkillsResource } from './resources/dataSkills.js';
 import { PlaybookSkillsResource } from './resources/playbookSkills.js';
 import { CommentsResource } from './resources/comments.js';
 import { RemixResource } from './resources/remix.js';
-import { ScreenshotResource } from './resources/screenshot.js';
 import { UserResource } from './resources/user.js';
 import { TradingResource } from './resources/trading.js';
 import { PortfolioResource } from './resources/portfolio.js';
@@ -172,7 +171,6 @@ export class AlvaClient {
   private _playbookSkills?: PlaybookSkillsResource;
   private _comments?: CommentsResource;
   private _remix?: RemixResource;
-  private _screenshot?: ScreenshotResource;
   private _user?: UserResource;
   private _trading?: TradingResource;
   private _portfolio?: PortfolioResource;
@@ -249,9 +247,6 @@ export class AlvaClient {
   }
   get remix(): RemixResource {
     return (this._remix ??= new RemixResource(this));
-  }
-  get screenshot(): ScreenshotResource {
-    return (this._screenshot ??= new ScreenshotResource(this));
   }
   get user(): UserResource {
     return (this._user ??= new UserResource(this));
