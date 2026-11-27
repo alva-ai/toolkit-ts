@@ -1698,7 +1698,9 @@ Other flags:
        every rebalance without asking. Author only.
   trade-mode set --id <id> --mode manual|auto|yolo
        Applies to proposals decided after it. auto and yolo publish Updates on
-       your Thesis without asking; undo is a new Update or setting it back.
+       your Thesis without asking. Setting manual again stops that for later
+       proposals but reverts nothing; only a new Update with the positions
+       you want restores a published one.
   proposals list --id <id> [--first <1-100>] [--cursor <next_cursor>]
        {proposals: [{id, state, condition, changes, reasoning, importance,
        confident, mode, created_at_ms, delivered_at_ms, expires_at_ms,
