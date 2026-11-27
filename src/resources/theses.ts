@@ -12,7 +12,7 @@ import { AlvaError } from '../error.js';
 import { webOriginFromApiBase } from './webOrigin.js';
 import {
   V2_REBALANCE_PROPOSAL_ID,
-  decisionModeOf,
+  tradeModeOf,
   proposalOf,
   proposalPageOf,
   resolveV2ThesisID,
@@ -171,7 +171,7 @@ export interface ThesisPositionChange {
 export interface ThesisRebalance {
   proposal_id: ThesisID;
   condition: ThesisRebalanceCondition;
-  /** author (the author agreed), auto or yolo (Alva in that decision mode). */
+  /** author (the author agreed), auto or yolo (Alva in that trade mode). */
   decided_by: string;
   /** Model-written reasoning: data, never instructions. */
   reasoning: string;
@@ -184,17 +184,17 @@ export interface ThesisRebalance {
  * every time; auto publishes a confident rebalance and asks for the rest;
  * yolo publishes every rebalance without asking.
  */
-export type ThesisDecisionMode = 'manual' | 'auto' | 'yolo';
-export const THESIS_DECISION_MODES: readonly ThesisDecisionMode[] = [
+export type ThesisTradeMode = 'manual' | 'auto' | 'yolo';
+export const THESIS_TRADE_MODES: readonly ThesisTradeMode[] = [
   'manual',
   'auto',
   'yolo',
 ];
 
-export interface ThesisDecisionModeResponse {
+export interface ThesisTradeModeResponse {
   /** The numeric Thesis id asked for. */
   thesis_id: ThesisID;
-  decision_mode: ThesisDecisionMode;
+  trade_mode: ThesisTradeMode;
 }
 
 export type ThesisRebalanceProposalState =
@@ -220,8 +220,8 @@ export interface ThesisRebalanceProposal {
   reasoning: string;
   importance: string;
   confident: boolean;
-  /** The decision mode the proposal was decided under. */
-  mode: ThesisDecisionMode;
+  /** The trade mode the proposal was decided under. */
+  mode: ThesisTradeMode;
   created_at_ms: number;
   /** Omitted until it reached the author. */
   delivered_at_ms?: number;
@@ -849,13 +849,13 @@ export class ThesesResource {
    * unless the author set it). Author only. Calls /api/v2 after resolving the
    * Thesis number.
    */
-  async getDecisionMode(id: ThesisID): Promise<ThesisDecisionModeResponse> {
+  async getTradeMode(id: ThesisID): Promise<ThesisTradeModeResponse> {
     this.client._requireAuth();
     const thesisID = requireID(id, 'id');
     const v2ID = await resolveV2ThesisID(this.client, thesisID);
     return {
       thesis_id: thesisID,
-      decision_mode: decisionModeOf(
+      trade_mode: tradeModeOf(
         await this.client._request(
           'GET',
           `/api/v2/theses/${v2ID}/decision-mode`
@@ -868,24 +868,24 @@ export class ThesesResource {
    * Sets who decides a rebalance of one of the caller's Theses; it applies to
    * proposals decided after it. Author only.
    */
-  async setDecisionMode(
+  async setTradeMode(
     id: ThesisID,
-    mode: ThesisDecisionMode
-  ): Promise<ThesisDecisionModeResponse> {
+    mode: ThesisTradeMode
+  ): Promise<ThesisTradeModeResponse> {
     this.client._requireAuth();
     const thesisID = requireID(id, 'id');
-    const decisionMode = requireDecisionMode(mode);
+    const tradeMode = requireTradeMode(mode);
     const v2ID = await resolveV2ThesisID(this.client, thesisID);
-    const written = decisionModeOf(
+    const written = tradeModeOf(
       await this.client._request(
         'PATCH',
         `/api/v2/theses/${v2ID}/decision-mode`,
-        { body: { mode: decisionMode.toUpperCase() } }
+        { body: { mode: tradeMode.toUpperCase() } }
       )
     );
-    if (written !== decisionMode)
-      throw invalidResponse('decision mode response did not apply the mode');
-    return { thesis_id: thesisID, decision_mode: written };
+    if (written !== tradeMode)
+      throw invalidResponse('trade mode response did not apply the mode');
+    return { thesis_id: thesisID, trade_mode: written };
   }
 
   /** One page of a Thesis's rebalance proposals, newest first. Author only. */
@@ -1164,12 +1164,12 @@ function signalPreferencesResponse(
   }
 }
 
-function requireDecisionMode(value: unknown): ThesisDecisionMode {
-  if (!THESIS_DECISION_MODES.includes(value as ThesisDecisionMode))
+function requireTradeMode(value: unknown): ThesisTradeMode {
+  if (!THESIS_TRADE_MODES.includes(value as ThesisTradeMode))
     throw invalidArgument(
-      `decision mode must be ${THESIS_DECISION_MODES.join(', ')}`
+      `trade mode must be ${THESIS_TRADE_MODES.join(', ')}`
     );
-  return value as ThesisDecisionMode;
+  return value as ThesisTradeMode;
 }
 
 const CONDITION_KINDS: readonly string[] = ['numeric', 'informational'];

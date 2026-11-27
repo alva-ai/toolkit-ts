@@ -1,5 +1,5 @@
 /**
- * The /api/v2 wire of the decision mode and rebalance proposals
+ * The /api/v2 wire of the trade mode and rebalance proposals
  * (alva-gateway `pkg/v2/api/theses/rebalance.go`), hand-written for these
  * five operations and converted into the toolkit's snake_case output types.
  * Re-express it on the generated OpenAPI types when Toolkit 1.0
@@ -13,7 +13,7 @@
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 import type {
-  ThesisDecisionMode,
+  ThesisTradeMode,
   ThesisPositionChange,
   ThesisPositionDirection,
   ThesisRebalanceCondition,
@@ -134,10 +134,10 @@ export async function resolveV2ThesisID(
   return thesis.id;
 }
 
-export function decisionModeOf(value: unknown): ThesisDecisionMode {
+export function tradeModeOf(value: unknown): ThesisTradeMode {
   if (!isRecord(value) || !DECISION_MODES.includes(value.mode as string))
-    throw invalid('response contains an unknown decision mode');
-  return (value.mode as string).toLowerCase() as ThesisDecisionMode;
+    throw invalid('response contains an unknown trade mode');
+  return (value.mode as string).toLowerCase() as ThesisTradeMode;
 }
 
 export function proposalPageOf(
@@ -189,7 +189,7 @@ export function proposalOf(
     reasoning: value.reasoning,
     importance: value.importance.toLowerCase(),
     confident: value.confident,
-    mode: (value.mode as string).toLowerCase() as ThesisDecisionMode,
+    mode: (value.mode as string).toLowerCase() as ThesisTradeMode,
     created_at_ms: requiredTime(value.createdAt, `${field}.createdAt`),
   };
   const delivered = time(value.deliveredAt, `${field}.deliveredAt`);

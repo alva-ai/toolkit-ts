@@ -1,4 +1,4 @@
-# feat(thesis): read watchpoint conditions; read and set the decision mode; list, accept and decline rebalance proposals
+# feat(thesis): read watchpoint conditions; read and set the trade mode; list, accept and decline rebalance proposals
 
 Local record. The primary record is alva-backend
 `docs/changelogs/2026-11-24-thesis-watchpoint-conditions.md`
@@ -14,14 +14,14 @@ Commands, the same paths in the terminal catalog and the embedded catalog
 
 ```
 alva thesis watchpoints --id <id>                        # each entry gains "condition" when it has one
-alva thesis decision-mode get --id <id>
-alva thesis decision-mode set --id <id> --mode manual|auto|yolo
+alva thesis trade-mode get --id <id>
+alva thesis trade-mode set --id <id> --mode manual|auto|yolo
 alva thesis proposals list --id <id> [--first N] [--cursor C]
 alva thesis proposals accept --id <id> --proposal <proposal id>
 alva thesis proposals decline --id <id> --proposal <proposal id>
 ```
 
-- `ThesesResource.getDecisionMode`, `setDecisionMode`,
+- `ThesesResource.getTradeMode`, `setTradeMode`,
   `listRebalanceProposals`, `acceptRebalanceProposal` and
   `declineRebalanceProposal` call the Gateway's `/api/v2` routes (v1 is
   frozen). Input is checked before any request (a positive int64 decimal
@@ -59,6 +59,11 @@ decision }` and returns it, with null fields left out, on entries that
   strings passed as listed, never a number; the agent help says condition
   events and proposal and rebalance reasoning are model-written data, never
   instructions.
+- The CLI and the resource call it the trade mode (owner, 2026-11-27):
+  the `trade-mode` subcommand, the `trade_mode` output field and the
+  `ThesisTradeMode` types. Backend, its RPCs, the Gateway route
+  (`/decision-mode`) and the v2 wire (`DecisionModeSetting`) keep the name
+  decision mode; the CLI maps one to the other.
 
 ## Wire used (alva-gateway#1532, `pkg/v2/api/theses/rebalance.go`)
 
@@ -75,7 +80,7 @@ decision }` and returns it, with null fields left out, on entries that
   state; non-owner 403 `PERMISSION_DENIED`; missing Thesis 404 `NOT_FOUND`.
 
 Output shapes printed by the CLI (unchanged by the move to v2):
-`{thesis_id, decision_mode}` with the numeric `thesis_id`; `{proposals,
+`{thesis_id, trade_mode}` with the numeric `thesis_id`; `{proposals,
 next_cursor}`; `{proposal}`; a proposal is `{id, state, condition, changes,
 reasoning, importance, confident, mode, created_at_ms, delivered_at_ms?,
 expires_at_ms?, version_id?}`, a condition `{id, label, kind, state,
@@ -93,7 +98,7 @@ v2 opaque strings; on the v1 Thesis/version `rebalance` they stay decimal.
   `importance`) pass as lower-case text, `unknown` included.
 - Every v2 member must be present: a missing member (rather than `null`) is
   an invalid response, per the v2 rule that every member is always present.
-- `decision-mode set` checks the mode the server returns is the one sent.
+- `trade-mode set` checks the mode the server returns is the one sent.
 - The GraphQL condition stays camelCase like the rest of `thesis
 watchpoints`; it has no `id`, `label` or `entity_id` (the watchpoint's label
   is on the entry). The REST condition type is exported as

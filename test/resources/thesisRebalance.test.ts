@@ -144,22 +144,22 @@ const PROPOSAL_OUT = {
   expires_at_ms: Date.parse('2026-11-26T14:22:00.000Z'),
 };
 
-describe('Thesis decision mode over /api/v2', () => {
+describe('Thesis trade mode over /api/v2', () => {
   it('resolves the Thesis number, then reads and patches the mode', async () => {
     const client = stubbed(BY_NUMBER, { mode: 'MANUAL' }, BY_NUMBER, {
       mode: 'YOLO',
     });
-    await expect(client.theses.getDecisionMode(ID)).resolves.toEqual({
+    await expect(client.theses.getTradeMode(ID)).resolves.toEqual({
       thesis_id: ID,
-      decision_mode: 'manual',
+      trade_mode: 'manual',
     });
     expect(client._request.mock.calls).toEqual([
       ['GET', `/api/v2/theses/by-number/${ID}`],
       ['GET', `/api/v2/theses/${V2_THESIS}/decision-mode`],
     ]);
-    await expect(client.theses.setDecisionMode(ID, 'yolo')).resolves.toEqual({
+    await expect(client.theses.setTradeMode(ID, 'yolo')).resolves.toEqual({
       thesis_id: ID,
-      decision_mode: 'yolo',
+      trade_mode: 'yolo',
     });
     expect(client._request).toHaveBeenLastCalledWith(
       'PATCH',
@@ -178,22 +178,22 @@ describe('Thesis decision mode over /api/v2', () => {
       { mode: 'MANUAL' }
     );
     await expect(
-      client.theses.setDecisionMode(ID, 'reckless' as never)
+      client.theses.setTradeMode(ID, 'reckless' as never)
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    await expect(client.theses.getDecisionMode('x')).rejects.toMatchObject({
+    await expect(client.theses.getTradeMode('x')).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
     expect(client._request).not.toHaveBeenCalled();
     // An unknown mode, a by-number answer without a Thesis id, another
     // Thesis, and a mode that was not applied.
     for (let i = 0; i < 3; i++) {
-      await expect(client.theses.getDecisionMode(ID)).rejects.toMatchObject({
+      await expect(client.theses.getTradeMode(ID)).rejects.toMatchObject({
         code: 'INVALID_RESPONSE',
       });
     }
-    await expect(
-      client.theses.setDecisionMode(ID, 'auto')
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    await expect(client.theses.setTradeMode(ID, 'auto')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
   });
 
   it("passes the gateway's problem through", async () => {
@@ -201,12 +201,12 @@ describe('Thesis decision mode over /api/v2', () => {
       BY_NUMBER,
       new AlvaError('PERMISSION_DENIED', 'only the author', 403)
     );
-    await expect(client.theses.getDecisionMode(ID)).rejects.toMatchObject({
+    await expect(client.theses.getTradeMode(ID)).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       status: 403,
     });
     const missing = stubbed(new AlvaError('NOT_FOUND', 'no Thesis', 404));
-    await expect(missing.theses.getDecisionMode(ID)).rejects.toMatchObject({
+    await expect(missing.theses.getTradeMode(ID)).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
   });

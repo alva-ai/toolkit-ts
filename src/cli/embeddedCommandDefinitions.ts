@@ -203,10 +203,10 @@ export const EMBEDDED_COMMAND_DEFINITIONS: readonly EmbeddedCommandDefinition[] 
     route('thesis signal-preferences set', 'thesis signal-preferences set', {
       values: ['id', 'kinds', 'min-importance'],
     }),
-    route('thesis decision-mode get', 'thesis decision-mode get', {
+    route('thesis trade-mode get', 'thesis trade-mode get', {
       values: ['id'],
     }),
-    route('thesis decision-mode set', 'thesis decision-mode set', {
+    route('thesis trade-mode set', 'thesis trade-mode set', {
       values: ['id', 'mode'],
     }),
     route('thesis proposals list', 'thesis proposals list', {

@@ -453,8 +453,8 @@ alva thesis list --person <slug>       # or --person-name <name> / --user <usern
 alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextCursor>
 alva thesis related --id <playbook-id>
 alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoints: [{label, text, origin, condition?}]
-alva thesis decision-mode get --id <thesis-id>  # who decides a rebalance: manual (default), auto or yolo; author only
-alva thesis decision-mode set --id <thesis-id> --mode manual|auto|yolo
+alva thesis trade-mode get --id <thesis-id>  # who decides a rebalance: manual (default), auto or yolo; author only
+alva thesis trade-mode set --id <thesis-id> --mode manual|auto|yolo
 alva thesis proposals list --id <thesis-id> [--first <1-100>] [--cursor <next_cursor>]  # rebalance proposals, newest first; author only
 alva thesis proposals accept --id <thesis-id> --proposal <proposal-id>   # the opaque id proposals list prints; publishes the rebalance Update now
 alva thesis proposals decline --id <thesis-id> --proposal <proposal-id>  # changes nothing

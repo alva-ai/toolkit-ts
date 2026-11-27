@@ -245,8 +245,8 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('thesis signal-preferences set', {
     values: ['id', 'kinds', 'min-importance'],
   }),
-  command('thesis decision-mode get', { values: ['id'] }),
-  command('thesis decision-mode set', { values: ['id', 'mode'] }),
+  command('thesis trade-mode get', { values: ['id'] }),
+  command('thesis trade-mode set', { values: ['id', 'mode'] }),
   command('thesis proposals list', { values: ['id', 'first', 'cursor'] }),
   command('thesis proposals accept', { values: ['id', 'proposal'] }),
   command('thesis proposals decline', { values: ['id', 'proposal'] }),

@@ -135,7 +135,7 @@ Examples:
   alva for-you theses --cursor '<nextCursor>'`,
   thesis: `Usage: alva thesis <subcommand> [options]
 
-Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, return, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, decision-mode get|set, proposals list|accept|decline, update, rewrite.
+Subcommands: list, related, asset-candidates, create, get, version get, signals, watchpoints, return, set-visibility, archive, star, unstar, set-signal-enabled, signal-preferences get|set, trade-mode get|set, proposals list|accept|decline, update, rewrite.
 
 list --person <slug> | --person-name <name> | --user <username>
      | --ticker <ticker> | --entity-id <id>
@@ -197,10 +197,10 @@ order, unpaged: {playbookId, watchpoints: [{label, text, origin, condition?}]}.
 An empty list means none is stored yet. Inferred and agent entries become the
 author's only through an Update the author asks for.
 A triggered condition makes Alva propose a rebalance: the Thesis's whole
-position after the change. decision-mode get --id <id> reads who decides it:
+position after the change. trade-mode get --id <id> reads who decides it:
 manual (default) asks the author every time, auto publishes one Alva is
 confident in and asks for the rest, yolo publishes every one without asking.
-decision-mode set --id <id> --mode manual|auto|yolo changes it for proposals
+trade-mode set --id <id> --mode manual|auto|yolo changes it for proposals
 decided after it. proposals list --id <id> [--first <1-100>] [--cursor
 <next_cursor>] reads them newest first: {proposals: [{id, state, condition,
 changes: [{entity_id, ticker, from_direction, from_weight, direction,

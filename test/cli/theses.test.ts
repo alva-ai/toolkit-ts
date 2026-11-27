@@ -1136,7 +1136,7 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
   }
 });
 
-describe('thesis watchpoint conditions: decision mode and proposals', () => {
+describe('thesis watchpoint conditions: trade mode and proposals', () => {
   const PROPOSAL = {
     id: 'thesis_rebalance_proposal_09x2k',
     state: 'waiting' as const,
@@ -1158,21 +1158,21 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
     ['terminal', dispatchTerminal],
     ['embedded', dispatchEmbedded],
   ] as const) {
-    it(`${name}: decision-mode get and set call the REST resource`, async () => {
+    it(`${name}: trade-mode get and set call the REST resource`, async () => {
       const value = client();
       const get = vi
-        .spyOn(value.theses, 'getDecisionMode')
-        .mockResolvedValue({ thesis_id: '9451', decision_mode: 'manual' });
+        .spyOn(value.theses, 'getTradeMode')
+        .mockResolvedValue({ thesis_id: '9451', trade_mode: 'manual' });
       const set = vi
-        .spyOn(value.theses, 'setDecisionMode')
-        .mockResolvedValue({ thesis_id: '9451', decision_mode: 'auto' });
+        .spyOn(value.theses, 'setTradeMode')
+        .mockResolvedValue({ thesis_id: '9451', trade_mode: 'auto' });
       await expect(
-        run(value, ['thesis', 'decision-mode', 'get', '--id', '9451'])
-      ).resolves.toEqual({ thesis_id: '9451', decision_mode: 'manual' });
+        run(value, ['thesis', 'trade-mode', 'get', '--id', '9451'])
+      ).resolves.toEqual({ thesis_id: '9451', trade_mode: 'manual' });
       expect(get).toHaveBeenLastCalledWith('9451');
       await run(value, [
         'thesis',
-        'decision-mode',
+        'trade-mode',
         'set',
         '--id',
         '9451',
@@ -1181,21 +1181,21 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
       ]);
       expect(set).toHaveBeenLastCalledWith('9451', 'auto');
       await expect(
-        run(value, ['thesis', 'decision-mode', 'get'])
+        run(value, ['thesis', 'trade-mode', 'get'])
       ).rejects.toBeInstanceOf(CliUsageError);
       await expect(
-        run(value, ['thesis', 'decision-mode', 'set', '--id', '9451'])
+        run(value, ['thesis', 'trade-mode', 'set', '--id', '9451'])
       ).rejects.toBeInstanceOf(CliUsageError);
       expect(set).toHaveBeenCalledTimes(1);
     });
 
-    it(`${name}: decision-mode set refuses an unknown mode before any request`, async () => {
+    it(`${name}: trade-mode set refuses an unknown mode before any request`, async () => {
       const value = client();
       const request = vi.spyOn(value, '_request');
       await expect(
         run(value, [
           'thesis',
-          'decision-mode',
+          'trade-mode',
           'set',
           '--id',
           '9451',
@@ -1326,7 +1326,7 @@ describe('thesis watchpoint conditions: decision mode and proposals', () => {
       const result = (await run(client(), ['thesis', '--help'])) as {
         text: string;
       };
-      expect(result.text).toContain('decision-mode get');
+      expect(result.text).toContain('trade-mode get');
       expect(result.text).toContain('--mode manual|auto|yolo');
       expect(result.text).toContain('proposals accept --id <id> --proposal');
       expect(result.text).toContain('thesis_rebalance_proposal_0');
