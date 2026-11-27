@@ -719,40 +719,54 @@ async function graphql(
   document: string,
   variables: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const response = await client._request('POST', '/query', {
-    body: { query: document, variables },
-  });
+  let response: unknown;
+  try {
+    response = await client._request('POST', '/query', {
+      body: { query: document, variables },
+    });
+  } catch (error) {
+    // gqlgen refuses a query that fails validation with HTTP 422 and the
+    // GraphQL errors as its body: report it like an errors response.
+    if (
+      error instanceof AlvaError &&
+      record(error.details) &&
+      Array.isArray(error.details.errors) &&
+      error.details.errors.length
+    )
+      throw graphqlError(error.details.errors, error.status);
+    throw error;
+  }
   if (!record(response)) throw invalid();
   if (response.errors !== undefined) {
     if (!Array.isArray(response.errors)) throw invalid();
-    if (response.errors.length) {
-      const messages = response.errors.flatMap((error) =>
-        record(error) && typeof error.message === 'string'
-          ? [error.message]
-          : []
-      );
-      const codes = new Set(
-        response.errors.map((error) =>
-          record(error) && record(error.extensions)
-            ? error.extensions.code
-            : undefined
-        )
-      );
-      const [code] = codes;
-      const status =
-        codes.size === 1 && typeof code === 'string'
-          ? CANONICAL_STATUS.get(code)
-          : undefined;
-      throw new AlvaError(
-        status === undefined ? 'GRAPHQL_ERROR' : String(code),
-        messages.join('; ') || 'GraphQL request failed',
-        status ?? 400,
-        { errors: response.errors }
-      );
-    }
+    if (response.errors.length) throw graphqlError(response.errors, 400);
   }
   if (!record(response.data)) throw invalid();
   return response.data;
+}
+
+function graphqlError(errors: unknown[], fallbackStatus: number): AlvaError {
+  const messages = errors.flatMap((error) =>
+    record(error) && typeof error.message === 'string' ? [error.message] : []
+  );
+  const codes = new Set(
+    errors.map((error) =>
+      record(error) && record(error.extensions)
+        ? error.extensions.code
+        : undefined
+    )
+  );
+  const [code] = codes;
+  const status =
+    codes.size === 1 && typeof code === 'string'
+      ? CANONICAL_STATUS.get(code)
+      : undefined;
+  return new AlvaError(
+    status === undefined ? 'GRAPHQL_ERROR' : String(code),
+    messages.join('; ') || 'GraphQL request failed',
+    status ?? fallbackStatus,
+    { errors }
+  );
 }
 
 const CANONICAL_STATUS = new Map([

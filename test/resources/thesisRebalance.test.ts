@@ -593,6 +593,67 @@ describe('watchpoint conditions', () => {
     expect(retry.body.query).not.toContain('condition');
   });
 
+  it('retries when an older Gateway refuses the field with HTTP 422', async () => {
+    // gqlgen's POST transport answers a validation error with 422 and the
+    // GraphQL errors as its JSON body.
+    const refused = (message: string) =>
+      new Response(
+        JSON.stringify({
+          errors: [
+            {
+              message,
+              extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+            },
+          ],
+          data: null,
+        }),
+        { status: 422, headers: { 'content-type': 'application/json' } }
+      );
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        refused('Cannot query field "condition" on type "ThesisWatchpoint".')
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify(
+            watchpoints([
+              { label: 'W1', text: 'AI capex peaks', origin: 'stated' },
+            ])
+          ),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(
+        refused('Cannot query field "watchpoints" on type "ThesisPublication".')
+      );
+    const original = globalThis.fetch;
+    globalThis.fetch = fetch;
+    try {
+      const client = new AlvaClient({ apiKey: 'key' });
+      await expect(client.theses.watchpoints(ID)).resolves.toEqual({
+        playbookId: ID,
+        watchpoints: [
+          { label: 'W1', text: 'AI capex peaks', origin: 'stated' },
+        ],
+      });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const retry = JSON.parse(
+        (fetch.mock.calls[1] as [string, RequestInit])[1].body as string
+      );
+      expect(retry.query).not.toContain('condition');
+      await expect(client.theses.watchpoints(ID)).rejects.toMatchObject({
+        code: 'GRAPHQL_ERROR',
+        status: 422,
+        message:
+          'Cannot query field "watchpoints" on type "ThesisPublication".',
+      });
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it('does not retry other GraphQL errors and fails closed on a bad condition', async () => {
     const other = stubbed({
       errors: [

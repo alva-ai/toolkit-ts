@@ -104,7 +104,11 @@ watchpoints`; it has no `id`, `label` or `entity_id` (the watchpoint's label
   is on the entry). The REST condition type is exported as
   `ThesisRebalanceCondition`, the GraphQL one as `ThesisWatchpointCondition`.
 - The old-Gateway fallback matches the message `Cannot query field
-"condition"` only, so an unrelated validation error is not retried.
+"condition"` only, so an unrelated validation error is not retried. The
+  Gateway's gqlgen POST transport answers a validation error with HTTP 422
+  and the GraphQL `{errors}` body, so `_request` keeps a non-2xx body's
+  `errors` as the error's `details`, and the GraphQL read reports them as
+  `GRAPHQL_ERROR` (status 422) the same way as errors in a 200 response.
 - `accept` and `decline` check that the returned proposal is the one asked
   for. A refused answer surfaces as `CONFLICT` with the server's detail; the
   CLI never retries it.

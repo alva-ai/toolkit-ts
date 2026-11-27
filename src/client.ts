@@ -490,6 +490,7 @@ export class AlvaClient {
             code?: unknown;
             detail?: unknown;
             title?: unknown;
+            errors?: unknown;
           };
           if (data.error) {
             // details carries the typed reason (domain, reason, metadata) of
@@ -511,6 +512,17 @@ export class AlvaClient {
                   ? data.title
                   : `HTTP ${response.status}`;
             throw new AlvaError(data.code, detail, response.status, data);
+          }
+          // A GraphQL request the Gateway refused at the HTTP level (gqlgen
+          // answers a validation error with 422): keep its errors so GraphQL
+          // callers can tell what was refused.
+          if (Array.isArray(data.errors)) {
+            throw new AlvaError(
+              'UNKNOWN',
+              `HTTP ${response.status}: ${bodyText.slice(0, 200)}`,
+              response.status,
+              { errors: data.errors }
+            );
           }
         } catch (e) {
           if (e instanceof AlvaError) throw e;
