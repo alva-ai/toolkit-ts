@@ -1031,7 +1031,7 @@ describe('Thesis return preview and switch (2026-11-16-thesis-agent-return-previ
     const [, init] = fetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body.variables).toEqual({ id: 'Playbook:9451' });
-    expect(body.query).toContain('watchpoints { label text origin }');
+    expect(body.query).toContain('watchpoints { label text origin condition {');
     expect(got).toEqual({
       playbookId: '9451',
       watchpoints: [

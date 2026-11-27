@@ -400,6 +400,43 @@ describe('AlvaClient', () => {
       }
     });
 
+    it('reads an /api/v2 problem as its code and detail', async () => {
+      const problem = {
+        type: 'https://alva.ai/problems/conflict',
+        title: 'Conflict',
+        status: 409,
+        detail: 'the proposal is expired',
+        code: 'CONFLICT',
+        reason: null,
+        requiredPermission: null,
+        invalidParams: null,
+        retryAfter: null,
+      };
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        headers: {
+          get: (key: string) =>
+            key.toLowerCase() === 'content-type'
+              ? 'application/problem+json'
+              : null,
+        },
+        text: () => Promise.resolve(JSON.stringify(problem)),
+        json: () => Promise.resolve(problem),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      });
+      const client = new AlvaClient({ apiKey: 'key' });
+
+      await expect(
+        client._request('POST', '/api/v2/theses/x/accept')
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: 'the proposal is expired',
+        status: 409,
+        details: problem,
+      });
+    });
+
     it('handles non-JSON error response', async () => {
       const fetch = vi.fn().mockResolvedValue({
         ok: false,
