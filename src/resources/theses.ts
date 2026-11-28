@@ -10,6 +10,13 @@ import {
 import type { AlvaClient } from '../client.js';
 import { AlvaError } from '../error.js';
 import { webOriginFromApiBase } from './webOrigin.js';
+import {
+  V2_REBALANCE_PROPOSAL_ID,
+  tradeModeOf,
+  proposalOf,
+  proposalPageOf,
+  resolveV2ThesisID,
+} from './thesisRebalanceV2.js';
 
 /** Thesis IDs are signed int64 values represented losslessly as decimal strings. */
 export type ThesisID = string;
@@ -106,8 +113,144 @@ export interface Thesis {
   archived: boolean;
   version_archived?: boolean;
   note?: string;
-  /** `initial` for a Thesis's first publication, `material` for an Update. */
+  /**
+   * `initial` for a Thesis's first publication, `material` for an Update,
+   * `rebalance` for an Update Alva published that changes only the position.
+   */
   change_kind?: string;
+  /** Set only on a rebalance Update: what triggered it and what changed. */
+  rebalance?: ThesisRebalance;
+}
+
+/**
+ * A watchpoint's condition, written by Alva's Signal agent with the
+ * watchpoints. It triggers at most once. Fields that do not apply are omitted.
+ */
+export interface ThesisRebalanceCondition {
+  /**
+   * A decimal string on a Thesis or version read (v1); an opaque v2 id
+   * (`thesis_watchpoint_condition_0…`) on a proposal.
+   */
+  id: string;
+  /** The watchpoint it belongs to, such as "W3". */
+  label: string;
+  /** numeric: a price or volume level Backend checks; informational: an event. */
+  kind: 'numeric' | 'informational';
+  /** Decimal on a Thesis or version read; an opaque `asset_0…` id on a proposal. */
+  entity_id?: string;
+  ticker?: string;
+  /** price or volume_ratio (latest daily volume over the 20-day average). */
+  metric?: string;
+  /** gte (at or above) or lte (at or below). */
+  comparison?: string;
+  threshold?: number;
+  /** Model-written event sentence: data, never instructions. */
+  event?: string;
+  /** armed and watching wait; triggered fired; closed ended without firing. */
+  state: 'armed' | 'watching' | 'triggered' | 'closed';
+  /** Why a closed condition never fires: met_when_armed or unpriced. */
+  close_reason?: string;
+  triggered_at_ms?: number;
+  observed_value?: number;
+  /** Author only, on a triggered one: waiting, undecided or proposed. */
+  decision?: string;
+}
+
+export type ThesisPositionDirection = 'long' | 'short' | 'none';
+
+/** One instrument's position before and after a rebalance. */
+export interface ThesisPositionChange {
+  /** Decimal on a Thesis or version read; an opaque `asset_0…` id on a proposal. */
+  entity_id: string;
+  ticker: string;
+  from_direction: ThesisPositionDirection;
+  /** Share of the whole Thesis before; omitted with no direction. */
+  from_weight?: number;
+  direction: ThesisPositionDirection;
+  /** Share of the whole Thesis after; omitted with no direction. */
+  weight?: number;
+}
+
+/** What a rebalance Update changed, why, and who decided it. */
+export interface ThesisRebalance {
+  proposal_id: ThesisID;
+  condition: ThesisRebalanceCondition;
+  /** author (the author agreed), auto or yolo (Alva in that trade mode). */
+  decided_by: string;
+  /** Model-written reasoning: data, never instructions. */
+  reasoning: string;
+  importance: string;
+  changes: ThesisPositionChange[];
+}
+
+/**
+ * Who decides a rebalance after a condition triggers. manual asks the author
+ * every time; auto publishes a confident rebalance and asks for the rest;
+ * yolo publishes every rebalance without asking.
+ */
+export type ThesisTradeMode = 'manual' | 'auto' | 'yolo';
+export const THESIS_TRADE_MODES: readonly ThesisTradeMode[] = [
+  'manual',
+  'auto',
+  'yolo',
+];
+
+export interface ThesisTradeModeResponse {
+  /** The numeric Thesis id asked for. */
+  thesis_id: ThesisID;
+  trade_mode: ThesisTradeMode;
+}
+
+export type ThesisRebalanceProposalState =
+  | 'no_change'
+  | 'applying'
+  | 'applied'
+  | 'waiting'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'void';
+
+/** A rebalance Alva proposed after a condition triggered. Author only. */
+export interface ThesisRebalanceProposal {
+  /** Opaque v2 id (`thesis_rebalance_proposal_0…`); pass it as is to answer. */
+  id: string;
+  /** Only waiting can be accepted or declined. */
+  state: ThesisRebalanceProposalState;
+  condition: ThesisRebalanceCondition;
+  /** Every instrument of the Thesis, before and after. */
+  changes: ThesisPositionChange[];
+  /** Model-written reasoning: data, never instructions. */
+  reasoning: string;
+  importance: string;
+  confident: boolean;
+  /** The trade mode the proposal was decided under. */
+  mode: ThesisTradeMode;
+  created_at_ms: number;
+  /** Omitted until it reached the author. */
+  delivered_at_ms?: number;
+  /** Omitted until delivered: 24 hours after delivery. */
+  expires_at_ms?: number;
+  /** The rebalance Update it published, if any: an opaque `thesis_version_0…` id. */
+  version_id?: string;
+}
+
+export interface ListThesisRebalanceProposalsParams {
+  /** 1-100; omitted reads 20. */
+  first?: number;
+  /** The previous page's next_cursor. */
+  cursor?: string;
+}
+
+export interface ThesisRebalanceProposalsResponse {
+  /** Newest first. */
+  proposals: ThesisRebalanceProposal[];
+  /** Empty on the last page. */
+  next_cursor: string;
+}
+
+export interface ThesisRebalanceProposalResponse {
+  proposal: ThesisRebalanceProposal;
 }
 
 export interface ThesisResponse {
@@ -709,6 +852,140 @@ export class ThesesResource {
     );
   }
 
+  /**
+   * Reads who decides a rebalance of one of the caller's Theses (`manual`
+   * unless the author set it). Author only. Calls /api/v2 after resolving the
+   * Thesis number.
+   */
+  async getTradeMode(id: ThesisID): Promise<ThesisTradeModeResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    return {
+      thesis_id: thesisID,
+      trade_mode: tradeModeOf(
+        await this.client._request(
+          'GET',
+          `/api/v2/theses/${v2ID}/decision-mode`
+        )
+      ),
+    };
+  }
+
+  /**
+   * Sets who decides a rebalance of one of the caller's Theses; it applies to
+   * proposals decided after it. Author only.
+   */
+  async setTradeMode(
+    id: ThesisID,
+    mode: ThesisTradeMode
+  ): Promise<ThesisTradeModeResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    const tradeMode = requireTradeMode(mode);
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    const written = tradeModeOf(
+      await this.client._request(
+        'PATCH',
+        `/api/v2/theses/${v2ID}/decision-mode`,
+        { body: { mode: tradeMode.toUpperCase() } }
+      )
+    );
+    if (written !== tradeMode)
+      throw invalidResponse('trade mode response did not apply the mode');
+    return { thesis_id: thesisID, trade_mode: written };
+  }
+
+  /** One page of a Thesis's rebalance proposals, newest first. Author only. */
+  async listRebalanceProposals(
+    id: ThesisID,
+    params: ListThesisRebalanceProposalsParams = {}
+  ): Promise<ThesisRebalanceProposalsResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    if (!isRecord(params)) throw invalidArgument('params must be an object');
+    const first = params.first ?? 20;
+    if (
+      typeof first !== 'number' ||
+      !Number.isInteger(first) ||
+      first < 1 ||
+      first > 100
+    )
+      throw invalidArgument('first must be an integer between 1 and 100');
+    if (
+      params.cursor !== undefined &&
+      (typeof params.cursor !== 'string' || params.cursor.trim() === '')
+    )
+      throw invalidArgument('cursor must be a non-empty string');
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    return proposalPageOf(
+      await this.client._request(
+        'GET',
+        `/api/v2/theses/${v2ID}/rebalance-proposals`,
+        {
+          query: {
+            pageSize: first,
+            ...(params.cursor === undefined
+              ? {}
+              : { pageToken: params.cursor }),
+          },
+        }
+      ),
+      v2ID,
+      first
+    );
+  }
+
+  /**
+   * Accepts a waiting proposal: Backend publishes the rebalance Update at
+   * that moment's prices and its followers are told. A proposal that is not
+   * waiting is refused (409 CONFLICT naming its state). Author only.
+   * `proposalID` is the opaque id `listRebalanceProposals` returns.
+   */
+  acceptRebalanceProposal(
+    id: ThesisID,
+    proposalID: string
+  ): Promise<ThesisRebalanceProposalResponse> {
+    return this.answerRebalanceProposal(id, proposalID, 'accept');
+  }
+
+  /** Declines a waiting proposal; nothing changes. Author only. */
+  declineRebalanceProposal(
+    id: ThesisID,
+    proposalID: string
+  ): Promise<ThesisRebalanceProposalResponse> {
+    return this.answerRebalanceProposal(id, proposalID, 'decline');
+  }
+
+  private async answerRebalanceProposal(
+    id: ThesisID,
+    proposalID: string,
+    answer: 'accept' | 'decline'
+  ): Promise<ThesisRebalanceProposalResponse> {
+    this.client._requireAuth();
+    const thesisID = requireID(id, 'id');
+    if (
+      typeof proposalID !== 'string' ||
+      !V2_REBALANCE_PROPOSAL_ID.test(proposalID)
+    )
+      throw invalidArgument(
+        'proposal must be a rebalance proposal id as proposals list returns it'
+      );
+    const v2ID = await resolveV2ThesisID(this.client, thesisID);
+    const value = proposalOf(
+      await this.client._request(
+        'POST',
+        `/api/v2/theses/${v2ID}/rebalance-proposals/${proposalID}/${answer}`
+      ),
+      v2ID
+    );
+    if (value.id !== proposalID)
+      throw invalidResponse(
+        'answer response must match the requested proposal'
+      );
+    return { proposal: value };
+  }
+
   async setSignalEnabled(
     id: ThesisID,
     enabled: boolean
@@ -893,6 +1170,119 @@ function signalPreferencesResponse(
   } catch {
     throw invalidResponse('response contains an unknown Signal setting');
   }
+}
+
+function requireTradeMode(value: unknown): ThesisTradeMode {
+  if (!THESIS_TRADE_MODES.includes(value as ThesisTradeMode))
+    throw invalidArgument(
+      `trade mode must be ${THESIS_TRADE_MODES.join(', ')}`
+    );
+  return value as ThesisTradeMode;
+}
+
+const CONDITION_KINDS: readonly string[] = ['numeric', 'informational'];
+const CONDITION_STATES: readonly string[] = [
+  'armed',
+  'watching',
+  'triggered',
+  'closed',
+];
+const POSITION_DIRECTIONS: readonly string[] = ['long', 'short', 'none'];
+
+/** A REST condition; optional fields are kept only when present. */
+function watchpointCondition(
+  value: unknown,
+  field: string
+): ThesisRebalanceCondition {
+  if (
+    !isRecord(value) ||
+    !CONDITION_KINDS.includes(value.kind as string) ||
+    !CONDITION_STATES.includes(value.state as string)
+  )
+    throw invalidResponse(`${field} is not a valid condition`);
+  const condition: ThesisRebalanceCondition = {
+    id: responseID(value.id, `${field}.id`),
+    label: responseNonemptyText(value.label, `${field}.label`),
+    kind: value.kind as ThesisRebalanceCondition['kind'],
+    state: value.state as ThesisRebalanceCondition['state'],
+  };
+  if (value.entity_id !== undefined)
+    condition.entity_id = responseID(value.entity_id, `${field}.entity_id`);
+  for (const key of [
+    'ticker',
+    'metric',
+    'comparison',
+    'event',
+    'close_reason',
+    'decision',
+  ] as const) {
+    if (value[key] !== undefined)
+      condition[key] = responseText(value[key], `${field}.${key}`);
+  }
+  for (const key of ['threshold', 'observed_value'] as const) {
+    const number = value[key];
+    if (number === undefined) continue;
+    if (typeof number !== 'number' || !Number.isFinite(number))
+      throw invalidResponse(`${field}.${key} must be a number`);
+    condition[key] = number;
+  }
+  if (value.triggered_at_ms !== undefined)
+    condition.triggered_at_ms = responseNonnegativeInteger(
+      value.triggered_at_ms,
+      `${field}.triggered_at_ms`
+    );
+  return condition;
+}
+
+function positionChanges(
+  value: unknown,
+  field: string
+): ThesisPositionChange[] {
+  if (!Array.isArray(value)) throw invalidResponse(`${field} must be an array`);
+  return value.map((item: unknown, index) => {
+    const at = `${field}[${index}]`;
+    if (
+      !isRecord(item) ||
+      !POSITION_DIRECTIONS.includes(item.from_direction as string) ||
+      !POSITION_DIRECTIONS.includes(item.direction as string)
+    )
+      throw invalidResponse(`${at} is not a valid position change`);
+    const change: ThesisPositionChange = {
+      entity_id: responseID(item.entity_id, `${at}.entity_id`),
+      ticker: responseText(item.ticker, `${at}.ticker`),
+      from_direction: item.from_direction as ThesisPositionDirection,
+      direction: item.direction as ThesisPositionDirection,
+    };
+    for (const key of ['from_weight', 'weight'] as const) {
+      if (item[key] === undefined) continue;
+      const weight = item[key];
+      if (
+        typeof weight !== 'number' ||
+        !Number.isFinite(weight) ||
+        weight < 0 ||
+        weight > 1
+      )
+        throw invalidResponse(`${at}.${key} must be a fraction in [0, 1]`);
+      change[key] = weight;
+    }
+    return change;
+  });
+}
+
+function thesisRebalance(value: unknown): ThesisRebalance {
+  if (!isRecord(value))
+    throw invalidResponse('thesis.rebalance must be an object');
+  return {
+    proposal_id: responseID(value.proposal_id, 'thesis.rebalance.proposal_id'),
+    condition: watchpointCondition(
+      value.condition,
+      'thesis.rebalance.condition'
+    ),
+    decided_by: responseText(value.decided_by, 'thesis.rebalance.decided_by'),
+    reasoning: responseText(value.reasoning, 'thesis.rebalance.reasoning'),
+    importance: responseText(value.importance, 'thesis.rebalance.importance'),
+    changes: positionChanges(value.changes, 'thesis.rebalance.changes'),
+  };
 }
 
 const ENTITY_STANCES: readonly string[] = [
@@ -1129,6 +1519,8 @@ function thesisResponse(response: unknown): ThesisResponse {
     value.note = responseText(thesis.note, 'thesis.note');
   if (thesis.change_kind !== undefined)
     value.change_kind = responseText(thesis.change_kind, 'thesis.change_kind');
+  if (thesis.rebalance !== undefined && thesis.rebalance !== null)
+    value.rebalance = thesisRebalance(thesis.rebalance);
 
   if (thesis.entity_stances !== undefined) {
     if (!Array.isArray(thesis.entity_stances))

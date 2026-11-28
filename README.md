@@ -228,10 +228,10 @@ old Agent paths are rejected rather than aliased. Run the embedded `--help` for
 the live tree. The independent system CLI continues to expose feedback.
 
 The embedded surface is aligned with ALFS-native tools: local-file flags such as
-`--local-file`, `--file`, `--params-schema-file`, and screenshot `--out` are
-absent. Thesis commands likewise accept literal `--body` only: local files and
+`--local-file`, `--file` and `--params-schema-file` are absent. Thesis commands
+likewise accept literal `--body` only: local files and
 stdin have no verified embedded adapter. Use inline data or prepare content in ALFS before dispatching the
-command; Agent screenshots return image content directly. `dispatch()` throws
+command. `dispatch()` throws
 `CliUsageError` for command-line usage errors and `AlvaError` for API errors.
 Managed commands reject unknown flags before invoking an API. `trading broker`
 is the explicit exception because argv after that nested prefix is forwarded
@@ -346,21 +346,20 @@ const response = await udf.call('analyze', { ticker: 'AAPL' });
 
 ### Resources
 
-| Resource            | Methods                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `client.user`       | `me()`                                                                                                                                                             |
-| `client.fs`         | `read()`, `write()`, `rawWrite()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()` |
-| `client.run`        | `execute()`                                                                                                                                                        |
-| `client.deploy`     | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
-| `client.release`    | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
-| `client.playbooks`  | `trending()`                                                                                                                                                       |
-| `client.theses`     | `create()`, `get()`, `update()`, `close()`, `delete()`, `rewrite()`                                                                                                |
-| `client.functions`  | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
-| `client.secrets`    | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
-| `client.sdk`        | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
-| `client.comments`   | `create()`, `pin()`, `unpin()`                                                                                                                                     |
-| `client.remix`      | `save()`                                                                                                                                                           |
-| `client.screenshot` | `capture()`                                                                                                                                                        |
+| Resource           | Methods                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `client.user`      | `me()`                                                                                                                                                             |
+| `client.fs`        | `read()`, `write()`, `rawWrite()`, `stat()`, `readdir()`, `mkdir()`, `remove()`, `rename()`, `copy()`, `symlink()`, `readlink()`, `chmod()`, `grant()`, `revoke()` |
+| `client.run`       | `execute()`                                                                                                                                                        |
+| `client.deploy`    | `create()`, `list()`, `get()`, `update()`, `delete()`, `pause()`, `resume()`                                                                                       |
+| `client.release`   | `feed()`, `playbookDraft()`, `playbook()`                                                                                                                          |
+| `client.playbooks` | `trending()`                                                                                                                                                       |
+| `client.theses`    | `create()`, `get()`, `update()`, `close()`, `delete()`, `rewrite()`                                                                                                |
+| `client.functions` | `register()`, `list()`, `delete()`, `invoke()`, `getAllowance()`, `listAllowances()`, `createAllowance()`, `revokeAllowance()`                                     |
+| `client.secrets`   | `create()`, `list()`, `get()`, `update()`, `delete()`                                                                                                              |
+| `client.sdk`       | `doc()`, `partitions()`, `partitionSummary()`                                                                                                                      |
+| `client.comments`  | `create()`, `pin()`, `unpin()`                                                                                                                                     |
+| `client.remix`     | `save()`                                                                                                                                                           |
 
 ### Error Handling
 
@@ -452,7 +451,12 @@ alva thesis version get --id <thesis-id> --author-version-id <version-id>
 alva thesis list --person <slug>       # or --person-name <name> / --user <username>
 alva thesis list --ticker NVDA         # or --entity-id <id>; --cursor <nextCursor>
 alva thesis related --id <playbook-id>
-alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoints: [{label, text, origin}]
+alva thesis watchpoints --id <thesis-id>  # list the Thesis's current watchpoints: [{label, text, origin, condition?}]
+alva thesis trade-mode get --id <thesis-id>  # who decides a rebalance: manual (default), auto or yolo; author only
+alva thesis trade-mode set --id <thesis-id> --mode manual|auto|yolo
+alva thesis proposals list --id <thesis-id> [--first <1-100>] [--cursor <next_cursor>]  # rebalance proposals, newest first; author only
+alva thesis proposals accept --id <thesis-id> --proposal <proposal-id>   # the opaque id proposals list prints; publishes the rebalance Update now
+alva thesis proposals decline --id <thesis-id> --proposal <proposal-id>  # changes nothing
 alva functions <register|list|delete|invoke|allowance>
 alva secrets <create|list|get|update|delete>
 alva sdk <doc|partitions|partition-summary>
@@ -461,7 +465,6 @@ alva data-skills <list|summary|endpoint> [<skill>] [<file>] [--json]
 alva comments <create|pin|unpin>
 alva notification-preferences <list|enable-session-completed|disable-session-completed>
 alva remix --child-username <u> --child-name <n> --parents <json>
-alva screenshot --url <url> [--selector <s>] [--xpath <x>] --out <file>
 alva markets narrative --ticker <symbol>
 alva markets earnings --ticker <symbol> [--event <latest-completed|next-confirmed> | --fiscal-year <year> --fiscal-quarter <Q1|Q2|Q3|Q4>]
 alva trading-pairs search --symbol <ticker> [--market <market>] [--instrument-type <type>] [--underlying-type <type>] [--quote <quote>] [--json]

@@ -16,7 +16,6 @@ import { DataSkillsResource } from './resources/dataSkills.js';
 import { PlaybookSkillsResource } from './resources/playbookSkills.js';
 import { CommentsResource } from './resources/comments.js';
 import { RemixResource } from './resources/remix.js';
-import { ScreenshotResource } from './resources/screenshot.js';
 import { UserResource } from './resources/user.js';
 import { TradingResource } from './resources/trading.js';
 import { PortfolioResource } from './resources/portfolio.js';
@@ -172,7 +171,6 @@ export class AlvaClient {
   private _playbookSkills?: PlaybookSkillsResource;
   private _comments?: CommentsResource;
   private _remix?: RemixResource;
-  private _screenshot?: ScreenshotResource;
   private _user?: UserResource;
   private _trading?: TradingResource;
   private _portfolio?: PortfolioResource;
@@ -249,9 +247,6 @@ export class AlvaClient {
   }
   get remix(): RemixResource {
     return (this._remix ??= new RemixResource(this));
-  }
-  get screenshot(): ScreenshotResource {
-    return (this._screenshot ??= new ScreenshotResource(this));
   }
   get user(): UserResource {
     return (this._user ??= new UserResource(this));
@@ -483,11 +478,19 @@ export class AlvaClient {
         bodyText = '';
       }
       const contentType = response.headers.get('content-type') ?? '';
-      if (contentType.includes('application/json') && bodyText) {
+      if (
+        (contentType.includes('application/json') ||
+          contentType.includes('application/problem+json')) &&
+        bodyText
+      ) {
         try {
           const data = JSON.parse(bodyText) as {
             error?: { code?: string; message?: string };
             details?: unknown;
+            code?: unknown;
+            detail?: unknown;
+            title?: unknown;
+            errors?: unknown;
           };
           if (data.error) {
             // details carries the typed reason (domain, reason, metadata) of
@@ -497,6 +500,28 @@ export class AlvaClient {
               data.error.message ?? `HTTP ${response.status}`,
               response.status,
               data.details
+            );
+          }
+          // An /api/v2 RFC 9457 problem: its code and detail, the whole
+          // problem (invalidParams, reason, ...) as details.
+          if (typeof data.code === 'string') {
+            const detail =
+              typeof data.detail === 'string' && data.detail
+                ? data.detail
+                : typeof data.title === 'string' && data.title
+                  ? data.title
+                  : `HTTP ${response.status}`;
+            throw new AlvaError(data.code, detail, response.status, data);
+          }
+          // A GraphQL request the Gateway refused at the HTTP level (gqlgen
+          // answers a validation error with 422): keep its errors so GraphQL
+          // callers can tell what was refused.
+          if (Array.isArray(data.errors)) {
+            throw new AlvaError(
+              'UNKNOWN',
+              `HTTP ${response.status}: ${bodyText.slice(0, 200)}`,
+              response.status,
+              { errors: data.errors }
             );
           }
         } catch (e) {

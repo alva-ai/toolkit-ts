@@ -245,6 +245,11 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('thesis signal-preferences set', {
     values: ['id', 'kinds', 'min-importance'],
   }),
+  command('thesis trade-mode get', { values: ['id'] }),
+  command('thesis trade-mode set', { values: ['id', 'mode'] }),
+  command('thesis proposals list', { values: ['id', 'first', 'cursor'] }),
+  command('thesis proposals accept', { values: ['id', 'proposal'] }),
+  command('thesis proposals decline', { values: ['id', 'proposal'] }),
   command('thesis update', {
     values: [
       'id',
@@ -562,17 +567,6 @@ export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   command('arrays token'),
   command('arrays token ensure'),
   command('arrays token status'),
-  command('screenshot', {
-    values: [
-      'url',
-      'out',
-      'selector',
-      'xpath',
-      'compress-quality',
-      'compress-max-width',
-    ],
-    booleans: ['base64', 'full', 'compress'],
-  }),
 
   command('portfolio accounts'),
   command('portfolio summary', { values: ['account-id'] }),

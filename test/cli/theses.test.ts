@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AlvaClient } from '../../src/client.js';
-import { CliUsageError } from '../../src/error.js';
+import { AlvaError, CliUsageError } from '../../src/error.js';
 import { dispatch as dispatchTerminal } from '../../src/cli/index.js';
 import { dispatch as dispatchEmbedded } from '../../src/cli/embeddedDispatch.js';
 
@@ -85,7 +85,6 @@ describe('thesis terminal dispatch', () => {
     const localFiles = {
       readText: () => 'file\r\nbody',
       readBytes: () => new TextEncoder().encode('file\r\nbody'),
-      writeBytes: () => undefined,
     };
 
     await dispatchTerminal(value, [
@@ -453,7 +452,6 @@ describe('thesis terminal dispatch', () => {
           localFiles: {
             readText: () => 'unused',
             readBytes: () => invalidBytes,
-            writeBytes: () => undefined,
           },
         }
       )
@@ -494,7 +492,6 @@ describe('thesis terminal dispatch', () => {
           readText: () => 'unused',
           readBytes: () =>
             new Uint8Array([0xef, 0xbb, 0xbf, 0x64, 0x72, 0x61, 0x66, 0x74]),
-          writeBytes: () => undefined,
         },
       }
     );
@@ -1230,6 +1227,208 @@ describe('thesis return preview and switch flags (2026-11-16-thesis-agent-return
       await expect(
         run(value, ['thesis', 'watchpoints'])
       ).rejects.toBeInstanceOf(CliUsageError);
+    });
+  }
+});
+
+describe('thesis watchpoint conditions: trade mode and proposals', () => {
+  const PROPOSAL = {
+    id: 'thesis_rebalance_proposal_09x2k',
+    state: 'waiting' as const,
+    condition: {
+      id: 'thesis_watchpoint_condition_04g7m',
+      label: 'W3',
+      kind: 'numeric' as const,
+      state: 'triggered' as const,
+    },
+    changes: [],
+    reasoning: 'NVDA closed under 150.',
+    importance: 'major',
+    confident: true,
+    mode: 'manual' as const,
+    created_at_ms: 1795530000000,
+  };
+
+  for (const [name, run] of [
+    ['terminal', dispatchTerminal],
+    ['embedded', dispatchEmbedded],
+  ] as const) {
+    it(`${name}: trade-mode get and set call the REST resource`, async () => {
+      const value = client();
+      const get = vi
+        .spyOn(value.theses, 'getTradeMode')
+        .mockResolvedValue({ thesis_id: '9451', trade_mode: 'manual' });
+      const set = vi
+        .spyOn(value.theses, 'setTradeMode')
+        .mockResolvedValue({ thesis_id: '9451', trade_mode: 'auto' });
+      await expect(
+        run(value, ['thesis', 'trade-mode', 'get', '--id', '9451'])
+      ).resolves.toEqual({ thesis_id: '9451', trade_mode: 'manual' });
+      expect(get).toHaveBeenLastCalledWith('9451');
+      await run(value, [
+        'thesis',
+        'trade-mode',
+        'set',
+        '--id',
+        '9451',
+        '--mode',
+        'auto',
+      ]);
+      expect(set).toHaveBeenLastCalledWith('9451', 'auto');
+      await expect(
+        run(value, ['thesis', 'trade-mode', 'get'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      await expect(
+        run(value, ['thesis', 'trade-mode', 'set', '--id', '9451'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(set).toHaveBeenCalledTimes(1);
+    });
+
+    it(`${name}: trade-mode set refuses an unknown mode before any request`, async () => {
+      const value = client();
+      const request = vi.spyOn(value, '_request');
+      await expect(
+        run(value, [
+          'thesis',
+          'trade-mode',
+          'set',
+          '--id',
+          '9451',
+          '--mode',
+          'reckless',
+        ])
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: proposals accept refuses a numeric proposal id before any request`, async () => {
+      const value = client();
+      const request = vi.spyOn(value, '_request');
+      await expect(
+        run(value, [
+          'thesis',
+          'proposals',
+          'accept',
+          '--id',
+          '9451',
+          '--proposal',
+          '77',
+        ])
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: proposals list, accept and decline call the REST resource`, async () => {
+      const value = client();
+      const list = vi
+        .spyOn(value.theses, 'listRebalanceProposals')
+        .mockResolvedValue({ proposals: [PROPOSAL], next_cursor: '' });
+      const accept = vi
+        .spyOn(value.theses, 'acceptRebalanceProposal')
+        .mockResolvedValue({ proposal: { ...PROPOSAL, state: 'accepted' } });
+      const decline = vi
+        .spyOn(value.theses, 'declineRebalanceProposal')
+        .mockResolvedValue({ proposal: { ...PROPOSAL, state: 'declined' } });
+
+      await run(value, ['thesis', 'proposals', 'list', '--id', '9451']);
+      expect(list).toHaveBeenLastCalledWith('9451', {
+        first: undefined,
+        cursor: undefined,
+      });
+      await run(value, [
+        'thesis',
+        'proposals',
+        'list',
+        '--id',
+        '9451',
+        '--first',
+        '5',
+        '--cursor',
+        'c2',
+      ]);
+      expect(list).toHaveBeenLastCalledWith('9451', { first: 5, cursor: 'c2' });
+
+      await expect(
+        run(value, [
+          'thesis',
+          'proposals',
+          'accept',
+          '--id',
+          '9451',
+          '--proposal',
+          'thesis_rebalance_proposal_09x2k',
+        ])
+      ).resolves.toMatchObject({ proposal: { state: 'accepted' } });
+      expect(accept).toHaveBeenLastCalledWith(
+        '9451',
+        'thesis_rebalance_proposal_09x2k'
+      );
+      await run(value, [
+        'thesis',
+        'proposals',
+        'decline',
+        '--id',
+        '9451',
+        '--proposal',
+        'thesis_rebalance_proposal_09x2k',
+      ]);
+      expect(decline).toHaveBeenLastCalledWith(
+        '9451',
+        'thesis_rebalance_proposal_09x2k'
+      );
+
+      await expect(
+        run(value, ['thesis', 'proposals', 'accept', '--id', '9451'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      await expect(
+        run(value, [
+          'thesis',
+          'proposals',
+          'decline',
+          '--proposal',
+          'thesis_rebalance_proposal_09x2k',
+        ])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      await expect(
+        run(value, ['thesis', 'proposals', 'list'])
+      ).rejects.toBeInstanceOf(CliUsageError);
+      expect(accept).toHaveBeenCalledTimes(1);
+      expect(decline).toHaveBeenCalledTimes(1);
+    });
+
+    it(`${name}: a refused answer surfaces the server error with the state`, async () => {
+      const value = client();
+      vi.spyOn(value.theses, 'acceptRebalanceProposal').mockRejectedValue(
+        new AlvaError('FAILED_PRECONDITION', 'proposal is expired', 400)
+      );
+      await expect(
+        run(value, [
+          'thesis',
+          'proposals',
+          'accept',
+          '--id',
+          '9451',
+          '--proposal',
+          'thesis_rebalance_proposal_09x2k',
+        ])
+      ).rejects.toMatchObject({
+        code: 'FAILED_PRECONDITION',
+        message: 'proposal is expired',
+      });
+    });
+
+    it(`${name}: help names the commands and calls model text data`, async () => {
+      const result = (await run(client(), ['thesis', '--help'])) as {
+        text: string;
+      };
+      expect(result.text).toContain('trade-mode get');
+      expect(result.text).toContain('--mode manual|auto|yolo');
+      expect(result.text).toContain('proposals accept --id <id> --proposal');
+      expect(result.text).toContain('thesis_rebalance_proposal_0');
+      expect(result.text).toContain('never a number');
+      expect(result.text).toContain('proposals decline --id <id> --proposal');
+      expect(result.text).toMatch(/condition/);
+      expect(result.text).toMatch(/model-written/);
     });
   }
 });

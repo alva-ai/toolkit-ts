@@ -728,17 +728,6 @@ export interface RemixRequest {
   parents: Array<{ username: string; name: string }>;
 }
 
-// --- Screenshot ---
-
-export interface ScreenshotParams {
-  url: string;
-  selector?: string;
-  xpath?: string;
-  compress?: boolean;
-  compressQuality?: number;
-  compressMaxWidth?: number;
-}
-
 // Trading
 
 export interface TradingAccount {
