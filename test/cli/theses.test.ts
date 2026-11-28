@@ -748,12 +748,19 @@ describe('thesis --summary', () => {
     ])) as { text: string };
     expect(terminal.text).toContain('[--summary <text>]');
     expect(terminal.text).toContain('Alva generates one after publication');
-    expect(terminal.text).toContain('Omitting --summary keeps');
+    expect(terminal.text).toContain(
+      'Omitting --summary keeps the current summary only if the body is'
+    );
+    expect(terminal.text).toContain('Resend --summary to keep');
     const embedded = (await dispatchEmbedded(client(), [
       'thesis',
       '--help',
     ])) as { text: string };
     expect(embedded.text).toContain('--summary <text>');
+    expect(embedded.text.replace(/\s+/g, ' ')).toContain(
+      'omission keeps the current summary only while the body is unchanged'
+    );
+    expect(embedded.text).toContain('resend --summary to keep');
   });
 });
 

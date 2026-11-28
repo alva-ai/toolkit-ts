@@ -3,7 +3,7 @@ import { AlvaError } from '../error.js';
 import {
   THESIS_PUBLICATION_FIELDS,
   isPositiveInt64,
-  isThesisPublication,
+  readThesisPublication,
   record,
   type ThesisPublicationSummary,
 } from './thesisPublication.js';
@@ -200,11 +200,12 @@ export async function listTheses(
   if (entityId !== undefined) {
     const data = await graphql(client, ENTITY_QUERY, { id: entityId, input });
     if (!record(data.market)) throw invalid();
-    return thesisPage(data.market.scope, (node) =>
-      isThesisPublication(node)
-        ? { playbookId: node.playbookId, publication: node }
-        : undefined
-    );
+    return thesisPage(data.market.scope, (node) => {
+      const publication = readThesisPublication(node);
+      return publication === undefined
+        ? undefined
+        : { playbookId: publication.playbookId, publication };
+    });
   }
   const profileInput = { ...input, status: params.status };
   const slug =
@@ -224,9 +225,10 @@ export async function listTheses(
     const release = node.latestRelease;
     if (release === null) return { playbookId: node.id, publication: null };
     if (!record(release)) return undefined;
-    const publication = release.thesisPublication;
-    if (publication !== null && !isThesisPublication(publication))
-      return undefined;
+    if (release.thesisPublication === null)
+      return { playbookId: node.id, publication: null };
+    const publication = readThesisPublication(release.thesisPublication);
+    if (publication === undefined) return undefined;
     return { playbookId: node.id, publication };
   });
 }
@@ -254,17 +256,19 @@ export async function relatedTheses(
     (value.nextCursor !== null && !nonempty(value.nextCursor))
   )
     throw invalid();
-  for (const edge of edges(value)) {
+  const relatedEdges = edges(value).map((edge) => {
+    const publication = readThesisPublication(edge.node.publication);
     if (
       !nonempty(edge.node.itemKey) ||
       typeof edge.node.score !== 'number' ||
-      !isThesisPublication(edge.node.publication)
+      publication === undefined
     )
       throw invalid();
-  }
+    return { ...edge, node: { ...edge.node, publication } };
+  });
   return {
     state: value.state as RelatedThesesPage['state'],
-    edges: value.edges as RelatedThesesPage['edges'],
+    edges: relatedEdges as RelatedThesesPage['edges'],
     nextCursor: value.nextCursor as string | null,
   };
 }

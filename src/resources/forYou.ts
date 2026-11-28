@@ -3,7 +3,7 @@ import { AlvaError } from '../error.js';
 import {
   THESIS_PUBLICATION_FIELDS,
   isPositiveInt64,
-  isThesisPublication,
+  readThesisPublication,
   record,
   type ThesisPublicationSummary,
 } from './thesisPublication.js';
@@ -358,22 +358,24 @@ function recommendationPage(value: unknown): ThesisRecommendationPage {
   ) {
     return invalidPage();
   }
-  for (const edge of value.edges) {
+  const edges = value.edges.map((edge: unknown) => {
     if (
       !record(edge) ||
       typeof edge.cursor !== 'string' ||
       !edge.cursor.trim() ||
       !record(edge.node) ||
       typeof edge.node.itemKey !== 'string' ||
-      !edge.node.itemKey.trim() ||
-      !isThesisPublication(edge.node.publication)
+      !edge.node.itemKey.trim()
     ) {
       return invalidPage();
     }
-  }
+    const publication = readThesisPublication(edge.node.publication);
+    if (publication === undefined) return invalidPage();
+    return { ...edge, node: { ...edge.node, publication } };
+  });
   const first = value.edges[0];
   if (page.startCursor !== (first?.cursor ?? '')) return invalidPage();
-  return value as unknown as ThesisRecommendationPage;
+  return { ...value, edges } as unknown as ThesisRecommendationPage;
 }
 
 export class ForYouResource {

@@ -397,7 +397,11 @@ export interface UpdateThesisParams {
   request_id: string;
   expected_author_version_id: ThesisID;
   body: string;
-  /** The card's one-line name, as on create; omitted keeps the current one. */
+  /**
+   * The card's one-line name, as on create. Omitted: the current one is kept
+   * only if the body is unchanged; a changed body clears it and Alva generates
+   * a new one. Resend it to keep an author-written summary.
+   */
   summary?: string;
   entity_ids?: ThesisID[];
   /** Full replacement: resubmit existing directions when only editing the body. */
@@ -1419,8 +1423,9 @@ function requireKeptWeights(
 }
 
 /**
- * Sends the summary only when given: an omitted summary is generated on create
- * and kept on update.
+ * Sends the summary only when given. Omitted, Alva generates one on create; on
+ * update it keeps the current one only if the body is unchanged, and otherwise
+ * clears it and generates a new one.
  */
 function writeSummary(
   body: Record<string, unknown>,

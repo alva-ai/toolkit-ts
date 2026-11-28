@@ -1739,7 +1739,9 @@ Maintenance behavior:
   state; GraphQL errors and noncanonical error codes fail closed.
   update  --id <id> --request-id <uuid> --expected-author-version-id <id> --body ... --visibility <value> [--summary <text>] [--entity-ids <id,id>] [--entity-stances <json>] [--medias <json-array>] [--track-return true|false] [--archived false]
        For text edits, pass current medias unchanged; omission clears media.
-       Omitting --summary keeps the current summary.
+       Omitting --summary keeps the current summary only if the body is
+       unchanged; with a changed body Alva clears it and generates a new one.
+       Resend --summary to keep an author-written summary.
 
   Only editing the body? Resubmit the existing entity IDs and directions.
   On an Update, an omitted or unknown direction of a carried ticker keeps its

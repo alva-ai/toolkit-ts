@@ -204,15 +204,23 @@ function publisher(value: unknown): boolean {
 /**
  * Checks every field the query selects, not a sample: the return is cast to
  * `ThesisPublicationSummary`, so anything left unchecked is a field the public
- * type promises and a caller can still read as `undefined`. Title and summary
- * are display text: a missing or non-string value is normalized to "" in
- * place rather than rejecting the publication.
+ * type promises and a caller can still read as `undefined`. The summary is
+ * display text: a missing or non-string value reads as "" rather than
+ * rejecting the publication. Returns a normalized copy and never writes to
+ * `value`, which may be frozen; undefined when the publication is invalid.
  */
-export function isThesisPublication(
+export function readThesisPublication(
   value: unknown
-): value is ThesisPublicationSummary {
-  if (!record(value)) return false;
-  if (typeof value.summary !== 'string') value.summary = '';
+): ThesisPublicationSummary | undefined {
+  if (!record(value) || !validPublication(value)) return undefined;
+  return {
+    ...value,
+    summary: typeof value.summary === 'string' ? value.summary : '',
+  } as unknown as ThesisPublicationSummary;
+}
+
+/** Every promised field except the summary, which the caller normalizes. */
+function validPublication(value: Record<string, unknown>): boolean {
   for (const field of [
     'thesisId',
     'playbookId',

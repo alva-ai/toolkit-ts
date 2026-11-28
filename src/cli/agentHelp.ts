@@ -168,7 +168,9 @@ only on an Update published with weights. --track-return false turns the Thesis 
 off for good; it is accepted only while the switch is UNSET.
 create/update --summary <text> is optional: the one-line name shown on the
 Thesis card next to the author, at most 1000 UTF-8 bytes. Omit it and Alva
-generates one after publication; on update, omission keeps the current summary.
+generates one after publication. On update, omission keeps the current summary
+only while the body is unchanged: a changed body without --summary clears it and
+Alva generates a new one, so resend --summary to keep an author-written one.
 create --signal-kinds <kind,kind> --signal-min-importance all|notable|major
 limits which Signals the new Thesis shows (omit both: every Signal). Kinds:
 fundamentals, macro, technicals, commentary.

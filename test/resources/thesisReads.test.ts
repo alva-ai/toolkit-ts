@@ -110,6 +110,13 @@ function relatedData(state = 'READY', nextCursor: string | null = null) {
     },
   };
 }
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 function setup(...responses: unknown[]) {
   const client = new AlvaClient({ apiKey: 'test-key' });
   const request = vi.spyOn(client, '_request');
@@ -418,6 +425,30 @@ describe('Thesis read contracts', () => {
     const { client } = setup(authorData(person, pub));
     const [edge] = (await client.theses.list({ person: 'ada' })).edges;
     expect(edge.node.publication).toMatchObject({ summary: '' });
+  });
+  it('normalizes a missing summary without writing to a frozen response', async () => {
+    const pub: Record<string, unknown> = publication();
+    delete pub.summary;
+    const { client } = setup(
+      deepFreeze(authorData(person, pub)),
+      deepFreeze({ market: { scope: { ...entity, theses: page([pub]) } } }),
+      deepFreeze({
+        node: {
+          relatedTheses: {
+            state: 'READY',
+            nextCursor: null,
+            edges: page([{ itemKey: 'k', score: 0.5, publication: pub }]).edges,
+          },
+        },
+      })
+    );
+    const [byPerson] = (await client.theses.list({ person: 'ada' })).edges;
+    const [byEntity] = (await client.theses.list({ entityId: '23' })).edges;
+    const [related] = (await client.theses.related(id)).edges;
+    expect(byPerson.node.publication?.summary).toBe('');
+    expect(byEntity.node.publication?.summary).toBe('');
+    expect(related.node.publication.summary).toBe('');
+    expect(pub).not.toHaveProperty('summary');
   });
   it('rejects a publisher without an author kind', async () => {
     const pub = publication();
