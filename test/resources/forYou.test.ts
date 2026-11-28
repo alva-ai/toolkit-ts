@@ -311,7 +311,7 @@ function publication() {
     authorVersionId: '7100000000000000003',
     materialVersionId,
     itemKey: `thesis:${thesisId}:${materialVersionId}`,
-    title: 'Compute capex is under-modelled',
+    summary: 'Compute capex is under-modelled',
     body: 'Full **thesis** body',
     publishedAtMs: 1788710100000,
     changeKind: 'UPDATE',
@@ -384,6 +384,24 @@ function setupTheses(result: unknown = thesisPage()) {
 }
 
 describe('ForYouResource.theses', () => {
+  it('normalizes a missing summary without writing to a frozen response', async () => {
+    const pub: Record<string, unknown> = publication();
+    delete pub.summary;
+    const result = thesisPage({
+      edges: [{ cursor: 'signed:1', node: { itemKey: 'k', publication: pub } }],
+    });
+    const freeze = (value: unknown): void => {
+      if (typeof value !== 'object' || value === null) return;
+      Object.values(value).forEach(freeze);
+      Object.freeze(value);
+    };
+    freeze(result);
+    const { client } = setupTheses(result);
+    const page = await client.forYou.theses();
+    expect(page.edges[0].node.publication.summary).toBe('');
+    expect(pub).not.toHaveProperty('summary');
+  });
+
   it('reads one ranked page without recording exposure', async () => {
     const result = thesisPage();
     const { client, request } = setupTheses(result);

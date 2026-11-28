@@ -166,6 +166,11 @@ give one to every bullish or bearish entity or to none; without weights the
 shares follow the default rules and what the body says, and get shows weight
 only on an Update published with weights. --track-return false turns the Thesis return
 off for good; it is accepted only while the switch is UNSET.
+create/update --summary <text> is optional: the one-line name shown on the
+Thesis card next to the author, at most 1000 UTF-8 bytes. Omit it and Alva
+generates one after publication. On update, omission keeps the current summary
+only while the body is unchanged: a changed body without --summary clears it and
+Alva generates a new one, so resend --summary to keep an author-written one.
 create --signal-kinds <kind,kind> --signal-min-importance all|notable|major
 limits which Signals the new Thesis shows (omit both: every Signal). Kinds:
 fundamentals, macro, technicals, commentary.
@@ -241,8 +246,8 @@ stale content, incomplete directions, mismatched IDs, and noncanonical GraphQL
 errors fail closed. The returned state is the
 authority for archive, bookmark, and research results.
 Update requires both --expected-author-version-id and --visibility, preventing
-inadvertent publication, and replaces the document's body, title, and entity
-IDs and directions as a full author-version update. Each update that changes
+inadvertent publication, and replaces the document's body, entity IDs and
+directions as a full author-version update. Each update that changes
 the content publishes a new Update; one identical to the current Update writes
 nothing and returns unchanged: true. A published Update cannot be edited in
 place. Update accepts --entity-stances <json>.

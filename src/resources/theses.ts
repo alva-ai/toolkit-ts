@@ -96,7 +96,11 @@ export interface Thesis {
   id: ThesisID;
   author_version_id: ThesisID;
   material_version_id: ThesisID;
-  title: string;
+  /**
+   * The one-line name shown on the Thesis card; "" until Alva generates one
+   * after publication.
+   */
+  summary: string;
   body: string;
   entity_ids: ThesisID[];
   entity_stances?: ThesisEntityStance[];
@@ -334,7 +338,11 @@ export interface CreateThesisParams {
   /** Caller-supplied, stable non-zero UUID. Reuse it only to resolve ambiguity. */
   request_id: string;
   body: string;
-  title?: string;
+  /**
+   * The card's one-line name: a single line of at most 1000 UTF-8 bytes.
+   * Omitted: Alva generates one after publication.
+   */
+  summary?: string;
   entity_ids?: ThesisID[];
   /** Author direction keyed by an entity ID also supplied in entity_ids. */
   entity_stances?: ThesisEntityStance[];
@@ -389,7 +397,12 @@ export interface UpdateThesisParams {
   request_id: string;
   expected_author_version_id: ThesisID;
   body: string;
-  title?: string;
+  /**
+   * The card's one-line name, as on create. Omitted: the current one is kept
+   * only if the body is unchanged; a changed body clears it and Alva generates
+   * a new one. Resend it to keep an author-written summary.
+   */
+  summary?: string;
   entity_ids?: ThesisID[];
   /** Full replacement: resubmit existing directions when only editing the body. */
   entity_stances?: ThesisEntityStance[];
@@ -729,7 +742,6 @@ export class ThesesResource {
       request_id: requestID,
       expected_author_version_id: current.thesis.author_version_id,
       body: current.thesis.body,
-      title: current.thesis.title,
       entity_ids: current.thesis.entity_ids,
       // Directions only: archiving keeps the current Update and unarchiving
       // keeps its shares without restating them.
@@ -1076,10 +1088,10 @@ function createBody(params: CreateThesisParams): Record<string, unknown> {
   const body: Record<string, unknown> = {
     request_id: requireRequestID(params.request_id),
     body: requireBody(params.body),
-    title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requirePublicVisibility(params.visibility ?? 'public'),
   };
+  writeSummary(body, params);
   if (params.images !== undefined) {
     if (!Array.isArray(params.images) || params.images.length > 20)
       throw invalidArgument('images must contain at most 20 URLs');
@@ -1410,6 +1422,19 @@ function requireKeptWeights(
   }
 }
 
+/**
+ * Sends the summary only when given. Omitted, Alva generates one on create; on
+ * update it keeps the current one only if the body is unchanged, and otherwise
+ * clears it and generates a new one.
+ */
+function writeSummary(
+  body: Record<string, unknown>,
+  params: { summary?: string }
+): void {
+  if (params.summary !== undefined)
+    body.summary = requireThesisSummary(params.summary);
+}
+
 function updateBody(params: UpdateThesisParams): Record<string, unknown> {
   const body: Record<string, unknown> = {
     request_id: requireRequestID(params.request_id),
@@ -1418,10 +1443,10 @@ function updateBody(params: UpdateThesisParams): Record<string, unknown> {
       'expected_author_version_id'
     ),
     body: requireBody(params.body),
-    title: requireTitle(params.title ?? ''),
     entity_ids: requireIDs(params.entity_ids ?? [], 'entity_ids'),
     visibility: requireVisibility(params.visibility),
   };
+  writeSummary(body, params);
   if (params.medias !== undefined) {
     if (!Array.isArray(params.medias) || params.medias.length > 20)
       throw invalidArgument('medias must be an array of at most 20 items');
@@ -1467,7 +1492,7 @@ function thesisResponse(response: unknown): ThesisResponse {
       thesis.material_version_id,
       'thesis.material_version_id'
     ),
-    title: responseTitle(thesis.title),
+    summary: responseSummary(thesis.summary),
     body: responseBody(thesis.body),
     entity_ids: responseIDs(thesis.entity_ids, 'thesis.entity_ids'),
     visibility: responseVisibility(thesis.visibility),
@@ -1755,12 +1780,19 @@ function requireBody(value: string): string {
   return body;
 }
 
-function requireTitle(value: string): string {
-  const title = requireText(value, 'title');
-  if (encoder.encode(title).byteLength > 500) {
-    throw invalidArgument('title must be at most 500 UTF-8 bytes');
-  }
-  return title;
+/**
+ * A Thesis summary is one line (no CR, LF, U+2028 or U+2029) of valid UTF-8
+ * text, at most 1000 bytes and without NUL, as Gateway requires.
+ */
+function requireThesisSummary(value: unknown): string {
+  const summary = requireText(value, 'summary');
+  if (summary.includes('\0'))
+    throw invalidArgument('summary must not contain NUL');
+  if (/[\r\n\u2028\u2029]/.test(summary))
+    throw invalidArgument('summary must be a single line');
+  if (encoder.encode(summary).byteLength > 1000)
+    throw invalidArgument('summary must be at most 1000 UTF-8 bytes');
+  return summary;
 }
 
 function requireVisibility(value: string): ThesisVisibility {
@@ -1797,10 +1829,7 @@ function requireText(value: unknown, field: string): string {
   if (UNPAIRED_SURROGATE.test(value)) {
     throw invalidArgument(`${field} contains invalid Unicode`);
   }
-  if (
-    (field === 'body' || field === 'title' || field === 'note') &&
-    value.includes('\0')
-  ) {
+  if ((field === 'body' || field === 'note') && value.includes('\0')) {
     throw invalidArgument(`${field} must not contain NUL`);
   }
   return value;
@@ -1869,14 +1898,9 @@ function responseBody(value: unknown): string {
   }
 }
 
-function responseTitle(value: unknown): string {
-  try {
-    return requireTitle(value as string);
-  } catch {
-    throw invalidResponse(
-      'response title must be valid text at most 500 UTF-8 bytes'
-    );
-  }
+/** The summary is display text: missing or not a string reads as "". */
+function responseSummary(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

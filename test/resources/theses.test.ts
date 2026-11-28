@@ -11,7 +11,7 @@ function thesis(visibility: 'public' | 'private' = 'public') {
       id: MAX_ID,
       author_version_id: '9223372036854775806',
       material_version_id: '9223372036854775805',
-      title: 'Thesis',
+      summary: 'NVDA compounds through the cycle',
       body: 'line one\r\nline two',
       entity_ids: ['9223372036854775804'],
       visibility,
@@ -123,7 +123,6 @@ describe('ThesesResource', () => {
       client.theses.create({
         request_id: REQUEST_ID,
         body: 'line one\r\nline two',
-        title: 'Thesis',
         entity_ids: [MAX_ID],
         tickers: ['NVDA', 'AAPL'],
       })
@@ -139,7 +138,6 @@ describe('ThesesResource', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       request_id: REQUEST_ID,
       body: 'line one\r\nline two',
-      title: 'Thesis',
       entity_ids: [MAX_ID],
       tickers: ['NVDA', 'AAPL'],
       visibility: 'public',
@@ -420,7 +418,6 @@ describe('ThesesResource', () => {
             request_id: REQUEST_ID,
             expected_author_version_id: '9223372036854775806',
             body: 'updated',
-            title: '',
             entity_ids: [],
             visibility: 'private',
           },
@@ -467,7 +464,6 @@ describe('ThesesResource', () => {
           request_id: REQUEST_ID,
           expected_author_version_id: current.thesis.author_version_id,
           body: current.thesis.body,
-          title: current.thesis.title,
           entity_ids: current.thesis.entity_ids,
           entity_stances: current.thesis.entity_stances,
           visibility: current.thesis.visibility,
@@ -679,8 +675,6 @@ describe('ThesesResource', () => {
     ['blank body', { body: ' \r\n\t' }],
     ['oversize body', { body: 'a'.repeat(65_537) }],
     ['NUL body', { body: 'draft\0body' }],
-    ['oversize title', { title: 'a'.repeat(501) }],
-    ['NUL title', { title: 'thesis\0title' }],
     ['NUL closing note', { closing_note: 'done\0unsafe' }],
   ])('rejects %s in a CRUD thesis response', async (_name, patch) => {
     const response = thesis() as { thesis: Record<string, unknown> };
@@ -693,6 +687,132 @@ describe('ThesesResource', () => {
     await expect(client.theses.get(MAX_ID)).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
     });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['non-string', 42],
+  ])(
+    'reads a %s summary in a CRUD thesis response as empty',
+    async (_name, value) => {
+      const response = thesis() as { thesis: Record<string, unknown> };
+      if (value === undefined) delete response.thesis.summary;
+      else response.thesis.summary = value;
+      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+        _request: ReturnType<typeof vi.fn>;
+      };
+      client._request = vi.fn().mockResolvedValue(response);
+
+      const read = await client.theses.getVersion(
+        MAX_ID,
+        '9223372036854775806'
+      );
+      expect(read.thesis.summary).toBe('');
+    }
+  );
+
+  it('parses the summary and drops a title from a CRUD thesis response', async () => {
+    const response = thesis() as { thesis: Record<string, unknown> };
+    response.thesis.title = 'Legacy';
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(response);
+
+    const read = await client.theses.getVersion(MAX_ID, '9223372036854775806');
+    expect(read.thesis.summary).toBe('NVDA compounds through the cycle');
+    expect(read.thesis).not.toHaveProperty('title');
+  });
+
+  it('never sends a title, and sends the summary only when given', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(thesis());
+
+    await client.theses.create({ request_id: REQUEST_ID, body: 'draft' });
+    await client.theses.update(MAX_ID, {
+      request_id: REQUEST_ID,
+      expected_author_version_id: '9223372036854775806',
+      body: 'updated',
+      visibility: 'public',
+    });
+    for (const call of client._request.mock.calls) {
+      const sent = (call[2] as { body: Record<string, unknown> }).body;
+      expect(sent).not.toHaveProperty('title');
+      expect(sent).not.toHaveProperty('summary');
+    }
+
+    client._request.mockClear();
+    await client.theses.create({
+      request_id: REQUEST_ID,
+      body: 'draft',
+      summary: '英伟达穿越周期',
+    });
+    await client.theses.update(MAX_ID, {
+      request_id: REQUEST_ID,
+      expected_author_version_id: '9223372036854775806',
+      body: 'updated',
+      summary: 'NVDA compounds',
+      visibility: 'public',
+    });
+    const [create, update] = client._request.mock.calls.map(
+      (call) => (call[2] as { body: Record<string, unknown> }).body
+    );
+    expect(create).toMatchObject({ summary: '英伟达穿越周期' });
+    expect(update).toMatchObject({ summary: 'NVDA compounds' });
+    expect(create).not.toHaveProperty('title');
+    expect(update).not.toHaveProperty('title');
+  });
+
+  it.each([
+    ['LF', 'one\ntwo'],
+    ['CR', 'one\rtwo'],
+    ['line separator', 'one\u2028two'],
+    ['NUL', 'one\0two'],
+    ['over 1000 bytes', '英'.repeat(334)],
+    ['non-string', 42 as unknown as string],
+  ])(
+    'rejects a summary with %s before the HTTP boundary',
+    async (_name, summary) => {
+      const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+        _request: ReturnType<typeof vi.fn>;
+      };
+      client._request = vi.fn();
+
+      await expect(
+        client.theses.create({ request_id: REQUEST_ID, body: 'draft', summary })
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(
+        client.theses.update(MAX_ID, {
+          request_id: REQUEST_ID,
+          expected_author_version_id: '9223372036854775806',
+          body: 'updated',
+          summary,
+          visibility: 'public',
+        })
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(client._request).not.toHaveBeenCalled();
+    }
+  );
+
+  it('accepts a summary of exactly 1000 UTF-8 bytes', async () => {
+    const client = new AlvaClient({ apiKey: 'key' }) as AlvaClient & {
+      _request: ReturnType<typeof vi.fn>;
+    };
+    client._request = vi.fn().mockResolvedValue(thesis());
+    const summary = '英'.repeat(333) + 'a';
+
+    await client.theses.create({
+      request_id: REQUEST_ID,
+      body: 'draft',
+      summary,
+    });
+    expect(
+      (client._request.mock.calls[0][2] as { body: Record<string, unknown> })
+        .body.summary
+    ).toBe(summary);
   });
 
   it('does not retry a stable request ID after a backend HTTP error', async () => {
@@ -746,14 +866,9 @@ describe('ThesesResource', () => {
       { request_id: REQUEST_ID, body: 'draft', tickers: ['A\0B'] },
     ],
     ['body NUL', { request_id: REQUEST_ID, body: 'draft\0body' }],
-    ['title NUL', { request_id: REQUEST_ID, body: 'draft', title: 'a\0b' }],
     [
       'body over 65536 bytes',
       { request_id: REQUEST_ID, body: 'a'.repeat(65_537) },
-    ],
-    [
-      'title over 500 bytes',
-      { request_id: REQUEST_ID, body: 'draft', title: 'a'.repeat(501) },
     ],
     [
       'unsupported visibility',
